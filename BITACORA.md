@@ -313,6 +313,38 @@ dinero: la diferencia se arrastra como ajuste al siguiente corte.
 
 ---
 
+## 7 bis. Git
+
+El proyecto ya está versionado. Primer commit: `cc74f21`, 261 archivos.
+
+**Lo que no entra al repositorio, a propósito:** `.env` y cualquier
+variante suya. Ahí viven la llave de Google Maps y la privada de los
+avisos push, y una llave en un repositorio es una factura que se paga
+sola. El `.gitignore` ignora `.env*` completo —no solo `.env`— porque un
+comando mal tecleado ya creó una vez un archivo llamado
+`.envodocker compose restart api` con la llave adentro. Esos dos
+quedaron en `backend/_to_delete/envs_rotos/`, que también se ignora.
+
+Tampoco entran `_to_delete/` ni `.pantalla1/`: son los scripts de parche
+con que se construyó el sistema, no el sistema.
+
+**Cómo usarlo, en tres comandos:**
+
+```
+git status                 # que cambió
+git add -A && git commit   # guardar un punto al que volver
+git log --oneline          # de dónde venimos
+```
+
+Para volver atrás de algo que salió mal: `git diff` para ver qué cambió,
+`git checkout -- <archivo>` para deshacer un archivo, `git revert <sha>`
+para deshacer un commit entero sin borrar la historia.
+
+Todavía no hay remoto. Mientras no lo haya, la historia vive solo en
+esta máquina: un respaldo del disco sigue siendo necesario.
+
+---
+
 ## 8. Lo que falta
 
 ### Abierto
@@ -324,5 +356,6 @@ dinero: la diferencia se arrastra como ajuste al siguiente corte.
   tabuladores de viáticos por acuerdo.
 - HTTPS para probar la app en un teléfono real.
 - Traducir `servicio.js` y `finanzas.js`.
-- **El proyecto sigue sin git.** Hoy no hay forma de volver atrás de un
-  cambio ni de saber qué cambió cuándo.
+- **Generar las llaves de push.** `.env` todavía no tiene `VAPID_PUBLIC`
+  ni `VAPID_PRIVATE`, así que los avisos al teléfono no salen:
+  `docker compose exec -T api python generar_llaves_push.py`.
