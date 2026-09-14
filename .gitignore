@@ -1,0 +1,42 @@
+# Lo que nunca debe salir de esta maquina
+#
+# Aqui viven la llave de Google Maps y la llave privada de los avisos
+# push. Una llave de Google en un repositorio es una factura que se
+# paga sola; la privada de push deja mandar notificaciones en nombre de
+# Centauro. Se ignora cualquier variante, no solo ".env", porque un
+# comando mal tecleado ya creo una vez un archivo llamado
+# ".envodocker compose restart api" con la llave adentro.
+.env
+.env.*
+.env*
+*.pem
+*.key
+!requirements.txt
+
+# Basura de Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Estado de los contenedores
+celerybeat-schedule
+celerybeat-schedule.*
+
+# Andamio: scripts de parche y cosas a medio borrar. Son como se
+# construyo el sistema, no el sistema.
+_to_delete/
+.pantalla1/
+*.save
+*.orig
+*.rej
+
+# Del sistema operativo
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

@@ -1,0 +1,495 @@
+/* Consola de Centauro. Misma identidad que el task sheet. */
+:root {
+  --centauro: #1B1546;
+  --suave: #f0f3f5;
+  --linea: #e0e4e8;
+  --gris: #78828c;
+  --texto: #1a1d21;
+  --ok: #1e7a4d;
+  --alerta: #b8860b;
+  --grave: #c0392b;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 14px/1.5 Inter, -apple-system, "Segoe UI", system-ui, sans-serif;
+  color: var(--texto);
+  background: var(--suave);
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+
+/* ---------------------------------------------------------- estructura */
+/* Misma cabecera del task sheet: filo azul arriba, logo a la izquierda
+   y el sello de identidad a la derecha. */
+/* Dos renglones: arriba la marca y quien esta trabajando, abajo el
+   menu. Apretado en una sola linea, el menu quedaba entre el logo y los
+   datos del usuario y se perdia justo lo que mas se usa. */
+header.barra {
+  background: #fff; border-bottom: 1px solid var(--linea);
+  border-top: 5px solid var(--centauro);
+  padding: 10px 20px 0; display: block;
+  position: sticky; top: 0; z-index: 10;
+}
+header.barra .cinta {
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+}
+header.barra img { height: 40px; }
+header.barra .identidad { display: flex; align-items: center; gap: 14px; }
+
+/* La linea de operacion, con el mismo prefijo de los folios. */
+.linea { display: flex; align-items: baseline; gap: 8px; }
+.linea .clave {
+  font-weight: 700; font-size: 13px; letter-spacing: .5px;
+  color: #fff; background: var(--centauro);
+  padding: 3px 9px; border-radius: 5px;
+}
+.linea .nombre {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 1.1px;
+  color: var(--gris); font-weight: 650;
+}
+.entrada .linea { justify-content: center; margin: -10px 0 22px; }
+header.barra nav {
+  display: flex; gap: 4px; margin: 8px 0 0; padding-bottom: 2px;
+  border-top: 1px solid var(--linea); padding-top: 6px;
+  overflow-x: auto;      /* en el celular se recorre, no se encima */
+}
+header.barra nav a {
+  padding: 7px 13px; border-radius: 6px; text-decoration: none;
+  color: var(--gris); font-weight: 600; font-size: 13px;
+}
+header.barra nav a:hover { background: var(--suave); color: var(--centauro); }
+header.barra nav a.activo { background: var(--centauro); color: #fff; }
+header.barra .quien { margin-left: auto; text-align: right; font-size: 12px; }
+header.barra nav a { white-space: nowrap; }
+header.barra .quien b { display: block; }
+header.barra .quien span { color: var(--gris); }
+main { max-width: 1180px; margin: 0 auto; padding: 22px 20px 60px; }
+
+h1 { font-size: 22px; margin: 0 0 4px; }
+h2 { font-size: 16px; margin: 26px 0 10px; }
+.sub { color: var(--gris); margin: 0 0 20px; }
+
+/* ---------------------------------------------------------- tarjetas */
+/* La tarjeta es la "hoja" del task sheet: blanca, con su filo azul. */
+.tarjeta {
+  background: #fff; border: 1px solid var(--linea); border-radius: 8px;
+  border-top: 5px solid var(--centauro);
+  padding: 16px 18px; margin-bottom: 14px;
+}
+.tarjeta.lisa { border-top: 1px solid var(--linea); }
+.tarjeta > h3 { margin: 0 0 12px; font-size: 15px; }
+/* Etiqueta de apartado, igual que en el task sheet. */
+h4 {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .7px;
+  color: var(--gris); margin: 0 0 8px; font-weight: 650;
+}
+.rejilla { display: grid; gap: 14px; }
+.rejilla.dos { grid-template-columns: 1fr 1fr; }
+.rejilla.tres { grid-template-columns: repeat(3, 1fr); }
+.rejilla.cuatro { grid-template-columns: repeat(4, 1fr); }
+/* Un grupo nuevo dentro de la misma tarjeta: su titulo se separa con una
+   linea, como los apartados del task sheet. */
+h4.grupo {
+  margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--linea);
+}
+
+/* ---------------------------------------------------------- tablas */
+table { width: 100%; border-collapse: collapse; background: #fff; }
+table.lista {
+  border: 1px solid var(--linea); border-top: 5px solid var(--centauro);
+  border-radius: 8px; overflow: hidden;
+}
+th {
+  text-align: left; font-size: 10.5px; text-transform: uppercase;
+  letter-spacing: .6px; color: var(--gris); padding: 10px 14px;
+  border-bottom: 1px solid var(--linea); background: #fafbfc;
+}
+td { padding: 11px 14px; border-bottom: 1px solid #f0f2f4; vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+tr.clic { cursor: pointer; }
+tr.clic:hover { background: #fafbfc; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------- controles */
+label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+input, select, textarea {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--linea);
+  border-radius: 6px; background: #fff;
+}
+input:focus, select:focus, textarea:focus {
+  outline: 2px solid var(--centauro); outline-offset: -1px; border-color: var(--centauro);
+}
+.campo { margin-bottom: 12px; }
+button {
+  background: var(--centauro); color: #fff; border: 0; border-radius: 6px;
+  padding: 9px 16px; font-weight: 600; cursor: pointer;
+}
+button:hover { filter: brightness(1.25); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button.claro { background: #fff; color: var(--centauro); border: 1px solid var(--linea); }
+button.chico { padding: 5px 11px; font-size: 12.5px; }
+button.peligro { background: var(--grave); }
+.acciones { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+/* ---------------------------------------------------------- etiquetas */
+.etiqueta {
+  display: inline-block; font-size: 10.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .5px;
+  padding: 2px 8px; border-radius: 20px; background: var(--suave);
+  color: var(--centauro);
+}
+/* Semaforo del dinero: gris sin decidir, azul decidido, ambar con
+   finanzas, verde ya depositado. Un color por renglon y nada mas: el
+   consultor tiene que leer la columna de un golpe. */
+.etiqueta.info { background: #e8ecf7; color: var(--centauro); }
+.etiqueta.ok { background: #e6f4ec; color: var(--ok); }
+.etiqueta.alerta { background: #fdf6e3; color: var(--alerta); }
+.etiqueta.grave { background: #fdecea; color: var(--grave); }
+.gris { color: var(--gris); }
+/* El mismo semaforo del dinero, en texto: verde ya salio, ambar va en
+   camino. Sin esto los tres renglones del desglose se leen igual. */
+.verde { color: var(--ok); }
+.ambar { color: var(--alerta); }
+.chico { font-size: 12px; }
+
+/* Cada pais es una caja aparte en la bandeja de finanzas. */
+.cabeza-pais {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  margin: 22px 0 8px;
+}
+.cabeza-pais h2 { font-size: 17px; color: var(--centauro); }
+
+/* ---------------------------------------------------------- avisos */
+.aviso {
+  border-radius: 6px; padding: 11px 14px; margin: 12px 0; font-size: 13px;
+  border: 1px solid var(--linea); background: #fff;
+}
+.aviso.ok { background: #e6f4ec; border-color: #c2e2d0; color: #14603a; }
+.aviso.alerta { background: #fdf6e3; border-color: #f0e2bd; color: #7a5c07; }
+.aviso.grave { background: #fdecea; border-color: #f5cdc8; color: #8f2b20; }
+.vacio { color: var(--gris); padding: 26px; text-align: center; }
+
+/* ---------------------------------------------------------- entrada */
+.entrada {
+  min-height: 100vh; display: grid; place-items: center; padding: 20px;
+}
+.entrada form {
+  background: #fff; border: 1px solid var(--linea); border-radius: 10px;
+  padding: 30px; width: 100%; max-width: 380px;
+}
+.entrada img { height: 62px; display: block; margin: 0 auto 22px; }
+.entrada button { width: 100%; margin-top: 6px; }
+
+@media (max-width: 800px) {
+  .rejilla.dos, .rejilla.tres { grid-template-columns: 1fr; }
+  .rejilla.cuatro { grid-template-columns: 1fr 1fr; }
+  header.barra { flex-wrap: wrap; }
+  main { padding: 16px 14px 50px; }
+}
+
+/* --------------------------------------------- bloque destacado
+   El mismo recurso del meet and greet: fondo azul, filo dorado. */
+.destacado {
+  background: var(--centauro); color: #fff; border-radius: 6px;
+  border-left: 5px solid #c9a227; padding: 12px 16px; margin: 14px 0;
+}
+.destacado h4 { color: rgba(255,255,255,.75); }
+.destacado .valor { font-size: 15px; font-weight: 650; line-height: 1.35; }
+.destacado .nota { font-size: 11px; color: rgba(255,255,255,.7); margin-top: 3px; }
+
+/* Sello de la esquina, como el Confidencial del task sheet. */
+.sello { text-align: right; }
+.sello .rol {
+  display: block; font-size: 10px; font-weight: 700; letter-spacing: 1.4px;
+  text-transform: uppercase; color: var(--centauro);
+}
+.sello .nombre { font-size: 12.5px; font-weight: 600; }
+.sello .correo { display: block; font-size: 10.5px; color: var(--gris); }
+
+/* Placas y datos tabulares, como en el task sheet. */
+.placas {
+  font-family: ui-monospace, Menlo, monospace; background: var(--suave);
+  padding: 1px 6px; border-radius: 4px;
+}
+.persona { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px; }
+.foto { width: 38px; height: 38px; border-radius: 6px; background: #e7e9ec;
+        object-fit: cover; flex: 0 0 38px; }
+
+/* --------------------------------------------- alta de servicio
+   La lista de arriba dice, en todo momento, que falta para que el
+   servicio quede programado. */
+.minimo-caja { margin-bottom: 18px; }
+.minimo { display: flex; flex-wrap: wrap; gap: 10px 26px; }
+.punto { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.punto .marca {
+  width: 20px; height: 20px; border-radius: 50%; flex: 0 0 20px;
+  display: grid; place-items: center; font-size: 12px; font-weight: 700;
+  background: var(--suave); color: var(--gris);
+}
+.punto .marca.si { background: #e6f4ec; color: var(--ok); }
+td.dia-num { white-space: nowrap; padding-top: 16px; }
+details.plegable { margin-top: 14px; border-top: 1px solid var(--linea);
+                   padding-top: 12px; }
+details.plegable summary {
+  cursor: pointer; font-size: 12px; font-weight: 600; color: var(--centauro);
+}
+details.plegable p { margin: 10px 0; }
+form textarea { resize: vertical; }
+/* El punto de encuentro: la direccion a la izquierda y su mapa en un
+   cuadro chico a la derecha, para verificar de un vistazo. */
+.punto-inicio {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 16px; align-items: start;
+}
+.mapa-caja {
+  border: 1px solid var(--linea); border-radius: 8px; overflow: hidden;
+  background: var(--suave);
+}
+.mapa-caja .mapa-vista {
+  display: block; width: 100%; height: 240px; object-fit: cover;
+}
+.mapa-caja .mapa-vacio {
+  height: 240px; display: grid; place-items: center; padding: 20px;
+  text-align: center; color: var(--gris); font-size: 12.5px;
+}
+/* Lo que Google encontro. Se elige uno y de ahi sale el pin. */
+.resultados { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+button.resultado {
+  display: block; width: 100%; text-align: left; background: #fff;
+  color: var(--texto); border: 1px solid var(--linea); border-radius: 6px;
+  padding: 8px 11px; font-weight: 400; line-height: 1.35;
+}
+button.resultado:hover { border-color: var(--centauro); filter: none; }
+button.resultado b { display: block; font-size: 13px; }
+.mapa-caja .mapa-pie {
+  padding: 6px 10px; font-size: 11.5px; background: #fff;
+  border-top: 1px solid var(--linea);
+}
+.mapa-caja .mapa-pie a { color: var(--centauro); font-weight: 600; }
+@media (max-width: 800px) { .punto-inicio { grid-template-columns: 1fr; } }
+
+/* Una casilla con su texto al lado, no encima. */
+label.casilla {
+  display: flex; align-items: center; gap: 9px; font-weight: 600;
+  font-size: 13px; margin: 4px 0 6px; cursor: pointer;
+}
+label.casilla input { width: auto; margin: 0; }
+
+/* Telefono en dos: la clave del pais y el numero. */
+.telefono { display: flex; gap: 6px; }
+.telefono .tel-pais { width: 68px; text-align: center; }
+.telefono input:last-child { flex: 1; min-width: 0; }
+
+/* Dato que viene de un registro ya guardado: se lee, no se edita. */
+input.fijo, input.fijo:focus {
+  background: var(--suave); color: var(--gris); border-color: var(--linea);
+  outline: none;
+}
+/* La previa de la senal: se ve de un vistazo que es la imagen correcta,
+   sin que se coma la pantalla. */
+img.senal-previa {
+  max-height: 140px; max-width: 100%; margin-top: 8px;
+  border: 1px solid var(--linea); border-radius: 6px; padding: 6px;
+  background: #fff;
+}
+
+/* "Aborda" y su selector en un solo renglon, debajo de la persona. */
+.abordo {
+  display: flex; align-items: center; gap: 6px; margin-top: 5px;
+}
+.abordo select { width: auto; padding: 3px 6px; font-size: 12px; }
+
+/* La cabeza de cada equipo en el alta: su alias a la izquierda y el
+   boton de quitarlo a la derecha, sin que se encimen en el celular. */
+.cabeza-equipo {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 4px;
+}
+/* Un equipo es una tarjeta propia: se ve donde empieza uno y donde el otro. */
+.tarjeta.equipo { border-left: 3px solid var(--centauro); }
+
+/* En la columna de la presentacion caben la hora del dia 1 y el boton de
+   la agenda, que es de todos los dias. */
+td.col-hora { white-space: nowrap; }
+td.col-hora input[type="time"] { width: auto; margin-right: 6px; }
+td.caja-agenda { background: #f7f9fa; }
+
+/* Lo que se puede hacer con el servicio, debajo de su estatus y
+   alineado con el: el estatus es el que dice cual de los dos aplica. */
+.acciones.bajo-sello {
+  justify-content: flex-end; margin-top: 8px; gap: 6px;
+}
+
+/* Lo escondido se esconde, aunque su clase traiga display propio: una
+   .casilla es flex y ese flex le ganaba al hidden del navegador. */
+[hidden] { display: none !important; }
+
+/* Los km son tres digitos: no necesitan mas ancho, y lo que sobra le
+   sirve a la modalidad, que ahi si se lee el nombre completo. */
+.col-km { width: 88px; }
+.col-km input { width: 100%; }
+
+/* La hora y su aviso arriba del boton del dia, no a un lado: en la
+   columna angosta se encimaban. */
+td.col-hora .chico { margin: 2px 0 4px; }
+
+/* Las banderas del idioma de las plantillas, junto a Salir. */
+.banderas { display: flex; gap: 4px; }
+button.bandera {
+  background: none; border: 1px solid transparent; border-radius: 6px;
+  padding: 3px 6px; font-size: 17px; line-height: 1; cursor: pointer;
+  filter: grayscale(1); opacity: .55;
+}
+button.bandera:hover { filter: none; opacity: .85; }
+button.bandera.activa {
+  filter: none; opacity: 1; border-color: var(--linea);
+  background: var(--suave);
+}
+
+/* El selector de idioma: se ve la bandera puesta y las otras se abren
+   debajo, como cualquier menu. */
+.banderas { position: relative; }
+.otras-banderas {
+  position: absolute; right: 0; top: 100%; z-index: 20;
+  background: #fff; border: 1px solid var(--linea); border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(27, 21, 70, .12);
+  padding: 4px; display: flex; flex-direction: column; gap: 2px;
+}
+.otras-banderas button.bandera {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  filter: none; opacity: 1; white-space: nowrap;
+}
+.otras-banderas button.bandera:hover { background: var(--suave); }
+.nombre-idioma { font-size: 12px; font-weight: 600; color: var(--gris); }
+
+
+/* El mes del implantado. Siete columnas de lunes a domingo: el color
+   dice de un vistazo que dia esta cubierto, cual falta y cual no es
+   servicio, que es lo que se pregunta viendo un calendario. */
+.calendario-mes { margin: 4px 0 8px; text-transform: capitalize; }
+.calendario {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px;
+  max-width: 420px;
+}
+.calendario-cabeza {
+  font-size: 11px; color: #7a8290; text-align: center;
+  text-transform: uppercase; letter-spacing: .04em;
+}
+.calendario-hueco { height: 38px; }
+.calendario-dia {
+  height: 38px; display: flex; align-items: center; justify-content: center;
+  border-radius: 8px; font-size: 13px; font-weight: 600;
+}
+.calendario-dia.verde { background: #e3f4e8; color: #1c6b39; }
+.calendario-dia.ambar { background: #fdf1d6; color: #8a6216; }
+.calendario-dia.gris { background: #f0f3f5; color: #aeb6c0; font-weight: 400; }
+.calendario-leyenda {
+  display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px;
+  font-size: 12px; color: #5b6472;
+}
+.calendario-leyenda span { display: flex; align-items: center; gap: 6px; }
+.calendario-leyenda .punto {
+  width: 10px; height: 10px; border-radius: 3px; display: inline-block;
+}
+.calendario-leyenda .punto.verde { background: #7fc79a; }
+.calendario-leyenda .punto.ambar { background: #f0c65c; }
+.calendario-leyenda .punto.gris { background: #dfe4ea; }
+
+/* Las zonas elegidas, una ficha cada una: se ven todas de un vistazo y
+   se quitan de una en una. */
+.zonas { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.zona {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: #eef1f6; border-radius: 999px; padding: 4px 6px 4px 12px;
+  font-size: 12px; color: #2c3442;
+}
+.quitar-zona {
+  border: 0; background: #dfe4ee; color: #5b6472; cursor: pointer;
+  border-radius: 999px; width: 18px; height: 18px; line-height: 1;
+  padding: 0; font-size: 13px;
+}
+.quitar-zona:hover { background: #cdd4e0; color: #1B1546; }
+
+/* Un bloque de campos que se traba entero mientras falte lo de arriba.
+   El fieldset no se ve —sin marco ni margenes— y solo se nota cuando
+   esta trabado: apagado y sin cursor. */
+.grupo-campos { border: 0; margin: 0; padding: 0; min-width: 0; }
+.grupo-campos[disabled] { opacity: .45; }
+.grupo-campos[disabled] * { cursor: not-allowed; }
+.bloqueo {
+  background: #fdf1d6; border-radius: 8px; padding: 10px 14px;
+  margin-bottom: 14px; font-size: 13px; color: #8a6216;
+}
+.bloqueo .minimo { margin: 6px 0 0; }
+
+/* El encabezado de un servicio: folio y cliente a la izquierda, en que
+   va a la derecha. */
+.cabeza-servicio {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px; margin-bottom: 12px;
+}
+.dato { margin-bottom: 10px; }
+.dato > div { white-space: pre-wrap; }
+
+/* La ficha del dia, debajo del calendario: se abre al picar un dia y se
+   cierra sola al elegir otro. */
+.ficha-dia:not(:empty) {
+  margin-top: 16px; padding: 14px; border-radius: 10px;
+  background: #f7f9fb; border: 1px solid #e6eaef;
+}
+.calendario-dia.se-puede { cursor: pointer; }
+.calendario-dia.se-puede:hover { outline: 2px solid #1B1546; outline-offset: 1px; }
+
+
+/* --------------------------------------------- revision de la unidad
+
+   Dos columnas fijas, siempre: antes y despues. Lo que hace evidente un
+   golpe nuevo es que las dos fotos del mismo angulo esten pegadas, del
+   mismo tamano y a la misma altura. */
+
+.rejilla-revision {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+  margin-top: 10px;
+}
+.rejilla-revision.par-foto { margin-top: 8px; }
+.encabeza-revision {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 10px;
+}
+.titulo-revision {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 1.1px;
+  color: var(--gris); font-weight: 650; margin-bottom: 4px;
+}
+.marco-foto { display: block; position: relative; border-radius: 8px;
+              overflow: hidden; border: 1px solid var(--linea); }
+.marco-foto img { width: 100%; aspect-ratio: 4/3; object-fit: cover;
+                  display: block; }
+.marco-foto .pie {
+  position: absolute; left: 0; bottom: 0; background: rgba(0,0,0,.55);
+  color: #fff; font-size: 11px; padding: 2px 7px; border-radius: 0 6px 0 0;
+}
+.sin-foto { border: 1px dashed var(--linea); border-radius: 8px;
+            aspect-ratio: 4/3; display: flex; align-items: center;
+            justify-content: center; text-align: center; padding: 8px; }
+.tira-fotos { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.tira-fotos .mini { width: 110px; height: 82px; object-fit: cover;
+                    border-radius: 6px; border: 1px solid var(--linea); }
+
+@media (max-width: 720px) {
+  .rejilla-revision { grid-template-columns: 1fr; }
+}
+
+
+/* ------------------------------------------------ dias sin cerrar */
+
+.renglon-sin-cerrar { border-top: 1px solid var(--linea); padding: 12px 0; }
+.renglon-sin-cerrar:first-of-type { border-top: 0; }
+.linea-sin-cerrar { display: flex; gap: 14px; align-items: center;
+                    flex-wrap: wrap; }
+.linea-sin-cerrar > :first-child { flex: 1 1 220px; min-width: 0; }
+.marco-cierre { border-left: 3px solid var(--alerta); padding: 12px 0 4px 14px;
+                margin-top: 10px; }
+.marco-cierre textarea {
+  width: 100%; font: inherit; padding: 8px 10px; border-radius: 8px;
+  border: 1px solid var(--linea); resize: vertical;
+}

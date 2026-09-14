@@ -1,0 +1,10 @@
+{
+  "name": "Centauro",
+  "short_name": "Centauro",
+  "start_url": "/app/",
+  "display": "standalone",
+  "background_color": "#f0f3f5",
+  "theme_color": "#ffffff",
+  "lang": "es",
+  "orientation": "portrait"
+}

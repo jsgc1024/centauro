@@ -1,0 +1,269 @@
+"""Nomina semanal del personal de seguridad.
+
+Corre los lunes despues de mediodia. La calcula y la paga finanzas; el
+consultor y la direccion la pueden ver.
+"""
+from datetime import date
+
+from decimal import Decimal
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from app import auth
+from app import models as m
+from app import nomina as motor
+from app import schemas as s
+from app.db import get_db
+
+router = APIRouter(prefix="/nomina", tags=["Nomina del personal"])
+
+FINANZAS = auth.requiere(m.Rol.FINANZAS, m.Rol.DIRECTOR_OPERACIONES)
+LECTURA = auth.requiere(m.Rol.FINANZAS, m.Rol.CONSULTOR, m.Rol.CENTRAL,
+                        m.Rol.DIRECTOR_OPERACIONES)
+
+
+# --------------------------------------------------------- el tabulador
+#
+# Lo que se le paga al personal por un dia de servicio. Dos tablas, una
+# por tipo de operacion: un dia suelto que arranca en un aeropuerto y un
+# dia de la misma persona en el mismo lugar no se pagan igual.
+
+class RenglonComisionIn(BaseModel):
+    perfil_id: int
+    modalidad_id: int
+    monto: Decimal = Decimal("0")
+    monto_hora_extra: Decimal | None = None
+
+
+class TabuladorComisionIn(BaseModel):
+    pais_id: int
+    tipo_servicio: m.TipoServicio
+    renglones: list[RenglonComisionIn] = []
+
+
+@router.get("/tabulador", summary="Lo que se paga por dia, por rol y modalidad")
+def ver_tabulador(pais_id: int, db: Session = Depends(get_db),
+                  _=Depends(LECTURA)):
+    """Las dos tablas completas, con todos los cruces.
+
+    Salen todos los roles contra todas las modalidades del pais, tengan
+    monto o no: un cruce que falta es un dia que no se va a poder pagar,
+    y verlo vacio es mas util que no verlo.
+    """
+    pais = db.get(m.Pais, pais_id)
+    if not pais:
+        raise HTTPException(404, f"No existe el pais {pais_id}")
+
+    roles = (db.query(m.PerfilPersonal)
+             .filter(m.PerfilPersonal.activo.is_(True))
+             .order_by(m.PerfilPersonal.id).all())
+    modalidades = (db.query(m.Modalidad).filter_by(pais_id=pais_id)
+                   .order_by(m.Modalidad.id).all())
+    puestos = {(c.tipo_servicio, c.perfil_id, c.modalidad_id): c
+               for c in db.query(m.ComisionPersonal)
+               .filter_by(pais_id=pais_id).all()}
+
+    def tabla(tipo):
+        # El implantado es siempre dia completo: es la misma persona en
+        # el mismo lugar todos los dias del mes. Ofrecerle medio dia y
+        # transfer es pedir numeros que nunca se van a usar, y peor:
+        # hacen ver la tabla incompleta cuando esta completa.
+        suyas = ([x for x in modalidades
+                  if x.codigo == m.CodigoModalidad.FULL_DAY]
+                 if tipo == m.TipoServicio.IMPLANTADO else modalidades)
+        renglones = []
+        for rol in roles:
+            celdas = []
+            for mod in suyas:
+                fila = puestos.get((tipo, rol.id, mod.id))
+                celdas.append({
+                    "modalidad_id": mod.id,
+                    "modalidad": mod.codigo.value,
+                    "horas": float(mod.horas),
+                    "aplica_horas_extra": mod.aplica_horas_extra,
+                    "monto": str(fila.monto) if fila else None,
+                    "monto_hora_extra": (str(fila.monto_hora_extra)
+                                         if fila and fila.monto_hora_extra
+                                         is not None else None),
+                })
+            renglones.append({"perfil_id": rol.id, "rol": rol.nombre,
+                              "codigo": rol.codigo, "celdas": celdas})
+        faltantes = sum(1 for r in renglones for c in r["celdas"]
+                        if c["monto"] is None)
+        return {"tipo_servicio": tipo.value, "renglones": renglones,
+                "sin_cargar": faltantes,
+                "modalidades": [{"id": x.id, "codigo": x.codigo.value,
+                                 "horas": float(x.horas),
+                                 "aplica_horas_extra": x.aplica_horas_extra}
+                                for x in suyas]}
+
+    return {
+        "pais_id": pais_id, "pais": pais.nombre,
+        "moneda": pais.moneda_local.value,
+        "modalidades": [{"id": x.id, "codigo": x.codigo.value,
+                         "horas": float(x.horas),
+                         "aplica_horas_extra": x.aplica_horas_extra}
+                        for x in modalidades],
+        "eventual": tabla(m.TipoServicio.EVENTUAL),
+        "implantado": tabla(m.TipoServicio.IMPLANTADO),
+    }
+
+
+@router.put("/tabulador", summary="Guardar una de las dos tablas")
+def guardar_tabulador(datos: TabuladorComisionIn,
+                      db: Session = Depends(get_db),
+                      usuario: m.Usuario = Depends(FINANZAS)):
+    """Reescribe los montos de esa tabla.
+
+    Un monto en cero se guarda como cero y no se borra el renglon: cero
+    es una decision ("este rol no cobra en esta modalidad") y vacio es
+    un dato que falta. El corte de nomina los trata distinto.
+    """
+    pais = db.get(m.Pais, datos.pais_id)
+    if not pais:
+        raise HTTPException(404, f"No existe el pais {datos.pais_id}")
+
+    tocados = 0
+    for r in datos.renglones:
+        fila = (db.query(m.ComisionPersonal)
+                .filter_by(pais_id=datos.pais_id,
+                           tipo_servicio=datos.tipo_servicio,
+                           perfil_id=r.perfil_id,
+                           modalidad_id=r.modalidad_id).first())
+        if not fila:
+            fila = m.ComisionPersonal(
+                pais_id=datos.pais_id, tipo_servicio=datos.tipo_servicio,
+                perfil_id=r.perfil_id, modalidad_id=r.modalidad_id,
+                moneda=pais.moneda_local, monto=0)
+            db.add(fila)
+        fila.monto = r.monto
+        fila.monto_hora_extra = r.monto_hora_extra
+        tocados += 1
+
+    db.commit()
+    return {"resultado": "tabulador guardado",
+            "tipo_servicio": datos.tipo_servicio.value,
+            "renglones": tocados}
+
+
+@router.post("/calcular", summary="Armar el corte de la semana")
+def calcular(datos: s.CalcularNominaIn, db: Session = Depends(get_db),
+             _=Depends(FINANZAS)):
+    """Se puede correr las veces que haga falta mientras no se pague."""
+    resultado = motor.calcular(db, datos.pais_id, datos.fecha_corte)
+    db.commit()
+    return resultado
+
+
+@router.get("/{nomina_id}", summary="Ver el detalle del corte")
+def ver(nomina_id: int, db: Session = Depends(get_db), _=Depends(LECTURA)):
+    n = db.get(m.NominaSemanal, nomina_id)
+    if not n:
+        raise HTTPException(404, f"No existe la nomina {nomina_id}")
+    # El corte se paga por dia y por rol, asi que se suma por rol: es la
+    # cuenta que la direccion va a pedir —cuanto se fue en conductores y
+    # cuanto en coordinadores— y no se puede sacar de un total plano.
+    por_rol: dict = {}
+    dias_totales = 0
+    for r in n.renglones:
+        for c in r.conceptos:
+            if c.ajuste_id:
+                continue
+            dias_totales += 1
+            clave = c.rol_id or 0
+            fila = por_rol.setdefault(clave, {
+                "rol_id": c.rol_id,
+                "rol": c.rol.nombre if c.rol else "Sin rol",
+                "dias": 0, "monto": Decimal("0")})
+            fila["dias"] += 1
+            fila["monto"] += Decimal(str(c.monto))
+
+    return {
+        "id": n.id,
+        "fecha_corte": n.fecha_corte.isoformat(),
+        "moneda": n.moneda.value,
+        "estatus": n.estatus.value,
+        "total": n.total,
+        "dias_pagados": dias_totales,
+        "pagada_en": n.pagada_en.isoformat() if n.pagada_en else None,
+        "por_rol": sorted(por_rol.values(), key=lambda x: -x["monto"]),
+        "renglones": [{
+            "persona_id": r.persona_id,
+            "persona": r.persona.nombre,
+            "total": r.total,
+            "dias": len([c for c in r.conceptos if not c.ajuste_id]),
+            "conceptos": [{"descripcion": c.descripcion, "monto": c.monto,
+                           "jornada_id": c.jornada_id,
+                           "rol": c.rol.nombre if c.rol else None,
+                           "horas_extra": c.horas_extra,
+                           "factor_festivo": c.factor_festivo,
+                           "es_ajuste": c.ajuste_id is not None}
+                          for c in r.conceptos],
+        } for r in sorted(n.renglones, key=lambda x: x.persona.nombre)],
+    }
+
+
+@router.get("", summary="Listar cortes")
+def listar(pais_id: int | None = None, db: Session = Depends(get_db),
+           _=Depends(LECTURA)):
+    consulta = db.query(m.NominaSemanal)
+    if pais_id:
+        consulta = consulta.filter_by(pais_id=pais_id)
+    filas = consulta.order_by(m.NominaSemanal.fecha_corte.desc()).all()
+    return [{"id": n.id, "fecha_corte": n.fecha_corte.isoformat(),
+             "estatus": n.estatus.value, "total": n.total,
+             "moneda": n.moneda.value, "personas": len(n.renglones)}
+            for n in filas]
+
+
+@router.post("/{nomina_id}/pagar", summary="Marcar el corte como pagado")
+def pagar(nomina_id: int, db: Session = Depends(get_db),
+          usuario: m.Usuario = Depends(FINANZAS)):
+    """Despues de esto el corte ya no se recalcula: solo se corrige por ajuste."""
+    resultado = motor.pagar(db, nomina_id, usuario.persona_id)
+    db.commit()
+    return resultado
+
+
+@router.get("/ajustes/pendientes", summary="Lo que entrara al proximo corte")
+def ajustes_pendientes(pais_id: int, db: Session = Depends(get_db),
+                       _=Depends(LECTURA)):
+    filas = (db.query(m.AjusteNomina)
+             .filter_by(pais_id=pais_id, aplicado_en_nomina_id=None)
+             .order_by(m.AjusteNomina.creado_en).all())
+    return [{"id": a.id, "persona": a.persona.nombre, "monto": a.monto,
+             "motivo": a.motivo,
+             "sentido": "a favor" if a.monto >= 0 else "descuento"}
+            for a in filas]
+
+
+@router.post("/ajustes", status_code=201,
+             summary="Registrar un ajuste a mano")
+def crear_ajuste(datos: s.AjusteNominaIn, db: Session = Depends(get_db),
+                 usuario: m.Usuario = Depends(FINANZAS)):
+    """Para lo que el sistema no puede deducir solo. Monto con signo:
+    positivo si se le debe, negativo si hay que descontarle."""
+    persona = db.get(m.Persona, datos.persona_id)
+    if not persona:
+        raise HTTPException(404, f"No existe la persona {datos.persona_id}")
+    ajuste = m.AjusteNomina(**datos.model_dump(),
+                            creado_por_id=usuario.persona_id)
+    db.add(ajuste)
+    db.commit()
+    db.refresh(ajuste)
+    return {"id": ajuste.id, "persona": persona.nombre, "monto": ajuste.monto,
+            "motivo": ajuste.motivo,
+            "nota": "Entra en el proximo corte semanal"}
+
+
+@router.post("/servicio/{servicio_id}/revisar-diferencias",
+             summary="Comparar lo pagado contra lo que corresponde hoy")
+def revisar(servicio_id: int, db: Session = Depends(get_db),
+            usuario: m.Usuario = Depends(FINANZAS)):
+    """Corre sola al enviar a finanzas. Esta ruta es para volver a correrla."""
+    resultado = motor.diferencias_del_servicio(db, servicio_id,
+                                               usuario.persona_id)
+    db.commit()
+    return resultado

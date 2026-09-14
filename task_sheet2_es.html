@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<title>AI/EP-0012 · Equipo Alfa</title>
+<style>
+  * { box-sizing: border-box; }
+  :root { --centauro: #1B1546; --suave: #f0f3f5; }
+  body { font: 13px/1.45 Inter, -apple-system, "Segoe UI", system-ui, sans-serif;
+         color: #1a1d21; background: var(--suave); margin: 0; padding: 20px; }
+  .hoja { max-width: 860px; margin: 0 auto; background: #fff;
+          border: 1px solid #dfe2e6; border-radius: 8px; overflow: hidden;
+          border-top: 5px solid var(--centauro); }
+  header { background: #fff; color: var(--centauro); padding: 18px 22px 16px;
+           position: relative; border-bottom: 1px solid #e7e9ec; }
+  header .logo { height: 76px; width: auto; max-width: 340px;
+                 display: block; margin-bottom: 12px; }
+  header .marca-texto { display: block; font-size: 13px; font-weight: 700;
+                        letter-spacing: 3px; margin-bottom: 8px;
+                        color: var(--centauro); }
+  header h1 { font-size: 19px; margin: 0 0 1px; letter-spacing: .2px;
+              font-weight: 700; }
+  header .equipo-linea { font-size: 13px; font-weight: 600;
+                         color: var(--centauro); margin-bottom: 4px; }
+  header .meta { font-size: 12px; color: #5b646d; text-align: center;
+                 margin-top: 10px; padding-top: 10px;
+                 border-top: 1px solid #eef0f2; }
+  /* Pegado a la esquina superior derecha, sin depender del alto del logo. */
+  header .sello { position: absolute; top: 18px; right: 22px;
+                  text-align: right; }
+  header .identidad { padding-right: 130px; }
+  header .confidencial { display: block; font-size: 10px; font-weight: 700;
+                         letter-spacing: 1.4px; text-transform: uppercase;
+                         color: #c0392b; margin-bottom: 6px; }
+  header .version { display: inline-block; font-size: 11px;
+                    border: 1px solid var(--centauro);
+                    color: var(--centauro); padding: 3px 9px;
+                    border-radius: 20px; font-weight: 600; margin-top: 6px; }
+  header .actualizado { display: block; font-size: 10.5px; color: #78828c; }
+  .cuerpo { padding: 6px 22px 22px; }
+  .dia { border-top: 1px solid #e7e9ec; padding: 16px 0; }
+  .dia:first-of-type { border-top: 0; }
+  .cabecera { display: flex; justify-content: space-between;
+              align-items: baseline; flex-wrap: wrap; gap: 8px; }
+  .fecha { font-weight: 650; font-size: 14px; }
+  .modalidad { font-size: 11px; background: var(--suave); color: var(--centauro);
+               padding: 2px 8px; border-radius: 20px; margin-left: 8px; }
+  .horas { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .origen { color: #5b646d; margin: 4px 0 12px; font-size: 12px; }
+  .rejilla { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .rejilla.dos { grid-template-columns: 1fr 1fr; }
+  h4 { font-size: 10.5px; text-transform: uppercase; letter-spacing: .7px;
+       color: #78828c; margin: 0 0 8px; font-weight: 650; }
+  .persona { display: flex; gap: 10px; margin-bottom: 12px;
+             align-items: flex-start; }
+  .persona .datos { line-height: 1.45; }
+  h4.puesto { margin: 0 0 1px; color: var(--centauro); }
+  .subtitulo { font-size: 10.5px; text-transform: uppercase; letter-spacing: .7px;
+               color: #78828c; font-weight: 650; margin: 0 0 12px;
+               text-align: center; }
+  .subtitulo .pequeno { color: #78828c; }
+  .bloque-unidad h4 { margin: 0 0 1px; color: var(--centauro); }
+  .foto { width: 38px; height: 38px; border-radius: 6px; object-fit: cover;
+          flex: 0 0 38px; }
+  .foto.sin { background: #e7e9ec; }
+  .gris { color: #78828c; }
+  .experiencia { font-size: 11px; color: var(--centauro); font-weight: 600; }
+  .tel { font-variant-numeric: tabular-nums; }
+  .unidad { margin-bottom: 12px; line-height: 1.45; }
+  .detalle-unidad { font-size: 11px; color: #78828c; }
+  .placas { font-family: ui-monospace, Menlo, monospace; background: var(--suave);
+            padding: 1px 6px; border-radius: 4px; }
+  .etiqueta { font-size: 10px; background: var(--centauro); color: #fff;
+              padding: 1px 6px; border-radius: 20px; vertical-align: 2px; }
+  table.hosp { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.hosp td { padding: 2px 0; vertical-align: top; }
+  .der { text-align: right; color: #78828c; white-space: nowrap;
+         padding-right: 8px !important; }
+  .fijo { padding: 16px 0 4px; }
+  .encuentro { margin: 14px 0 4px; padding: 12px 16px; border-radius: 6px;
+               background: var(--centauro); color: #fff;
+               border-left: 5px solid #c9a227; }
+  .encuentro h4 { color: rgba(255,255,255,.75); margin: 0 0 4px; }
+  .encuentro-lugar { font-size: 15px; font-weight: 650; line-height: 1.35; }
+  .encuentro-nota { font-size: 11px; color: rgba(255,255,255,.7);
+                    margin-top: 3px; }
+  .encuentro-cuando { float: right; font-weight: 650; letter-spacing: 0;
+                      text-transform: none; font-size: 11px;
+                      font-variant-numeric: tabular-nums;
+                      color: rgba(255,255,255,.9); }
+  .cambios { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 10px;
+             background: var(--suave); border-radius: 6px; padding: 11px 14px; }
+  .cambio-bloque h4 { margin-bottom: 6px; }
+  .pequeno { font-size: 10px; font-weight: 400; letter-spacing: 0;
+             text-transform: none; }
+  .cambio { font-size: 9.5px; background: var(--centauro); color: #fff; padding: 1px 6px;
+            border-radius: 20px; letter-spacing: 0; text-transform: none;
+            margin-left: 4px; }
+  .titulo-dias { font-size: 10.5px; text-transform: uppercase; letter-spacing: .7px;
+                 color: #78828c; margin: 18px 0 0; font-weight: 650;
+                 border-top: 1px solid #e7e9ec; padding-top: 14px; }
+  .cierre { display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+            margin-top: 18px; padding-top: 16px;
+            border-top: 1px solid #e7e9ec; }
+  .hospedaje, .hospitales-bloque { background: var(--suave); border-radius: 6px;
+                                   padding: 12px 14px; margin: 0; }
+  .hotel { margin-bottom: 8px; }
+  .hotel:last-child { margin-bottom: 0; }
+  .agenda { margin-top: 14px; background: #f8f9fa; border-radius: 6px;
+            padding: 11px 14px; }
+  .agenda p { margin: 0 0 6px; }
+  .agenda.abierta { background: #fff; border: 1px dashed #d7dbe0; }
+  .agenda.abierta p { color: #78828c; margin: 0; }
+  .agenda ul { margin: 0; padding-left: 18px; }
+  .agenda li { margin-bottom: 2px; }
+  footer { background: var(--suave); border-top: 1px solid #e7e9ec;
+           padding: 16px 22px; }
+  .aviso { font-size: 10.5px; color: #8a5a5a; background: #fdf3f3;
+           border: 1px solid #f3dede; border-radius: 5px; padding: 8px 11px;
+           margin-bottom: 14px; }
+  .escala { display: flex; gap: 26px; flex-wrap: wrap; }
+  .nivel { display: flex; gap: 9px; align-items: center; }
+  .num { width: 22px; height: 22px; border-radius: 50%; background: var(--centauro);
+         color: #fff; display: grid; place-items: center; font-size: 11px;
+         font-weight: 650; flex: 0 0 22px; }
+  .hoja-senal { border-top: 1px solid #e7e9ec; margin: 0 22px;
+                padding: 26px 0 22px; text-align: center; }
+  .senal-encabezado { font-size: 10.5px; text-transform: uppercase;
+                      letter-spacing: .7px; color: #78828c; font-weight: 650; }
+  .senal-centro { padding: 26px 0 18px; }
+  .senal-imagen { max-width: 100%; max-height: 300px; margin: 0 auto 18px;
+                  display: block; }
+  .senal-texto { font-size: 58px; font-weight: 750; line-height: 1.1;
+                 letter-spacing: -.5px; word-break: break-word;
+                 color: var(--centauro); }
+  .senal-nota { color: #5b646d; font-size: 13px; margin-bottom: 16px; }
+  .senal-pie { font-size: 11px; color: #78828c; }
+  @media (max-width: 640px) {
+    header .sello { position: static; text-align: left; margin-top: 12px; }
+    header .identidad { padding-right: 0; }
+    .rejilla, .rejilla.dos, .cierre { grid-template-columns: 1fr; }
+    .senal-texto { font-size: 40px; }
+  }
+  @media print {
+    body { background: #fff; padding: 0; }
+    .hoja { border: 0; }
+    /* La senal va en su propia hoja, para poder mostrarla sola. */
+    .hoja-senal { page-break-before: always; border-top: 0;
+                  min-height: 85vh; display: flex; flex-direction: column;
+                  justify-content: center; }
+    .senal-texto { font-size: 90px; }
+    .senal-imagen { max-height: 45vh; }
+  }
+</style></head>
+<body><div class="hoja">
+  <header>
+    <div class="identidad">
+      <img class="logo" src="data:image/webp;base64,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" alt="Centauro">
+      <h1>AI/EP-0012</h1>
+      <div class="equipo-linea">Equipo Alfa</div>
+    </div>
+    <div class="meta">Cliente Demo AAA ·
+      Ejecutivo: Mr. Daniel Brooks · +1 312 555 0190 ·
+      Ciudad de Mexico</div>
+    <div class="sello">
+      <span class="confidencial">Confidencial</span>
+      <span class="actualizado">Actualizado 12/09/2026 06:53</span>
+      <span class="version">v1</span>
+    </div>
+  </header>
+  <div class="cuerpo">
+    
+    <section class="fijo">
+      <div class="subtitulo">Equipo de seguridad <span class="gris pequeno">· 3 dias completos · 2 transfers</span></div>
+      <div class="rejilla dos">
+        <div>
+          <div class="persona"><div class="foto sin"></div>
+      <div class="datos"><h4 class="puesto">Conductor de seguridad</h4>
+      <b>Luis Mendoza</b><br><br>
+      <span class="tel">55 1234 5602</span></div></div>
+        </div>
+        <div class="bloque-unidad">
+          <h4>Vehiculo de seguridad</h4>
+          <div class="unidad"><b>Chevrolet Suburban blindada</b> <span class="etiqueta">blindada</span><br><span class="detalle-unidad">Gris Oxford · 2023</span><br><span class="placas">ABC-5678</span></div>
+        </div>
+      </div>
+      
+      <div class="encuentro">
+        <h4>Meet and greet<span class="encuentro-cuando">02 ene 2028 · 07:30</span></h4>
+        <div class="encuentro-lugar">Benito Juarez International Airport, Terminal 1 - International arrivals, at the exit of customs filter</div>
+        <div class="encuentro-nota">Inicio del servicio. Aqui lo espera su equipo.</div>
+      </div>
+    </section>
+    <h3 class="titulo-dias">Programa</h3>
+    
+    <section class="dia">
+      <div class="cabecera">
+        <div><span class="fecha">Dom
+             02 ene 2028</span>
+             <span class="modalidad">transfer</span></div>
+        <div class="horas">07:30 — 10:30</div>
+      </div>
+      
+      <div class="agenda"><h4>Agenda</h4><p>Arrival and transfer to hotel</p><ul><li>07:30 Pickup at Benito Juarez International Airport, Terminal 1</li><li>09:00 Transfer to hotel</li><li>11:00 Standby at hotel</li></ul></div>
+    </section>
+    <section class="dia">
+      <div class="cabecera">
+        <div><span class="fecha">Lun
+             03 ene 2028</span>
+             <span class="modalidad">dia completo</span></div>
+        <div class="horas">07:30 — 19:30</div>
+      </div>
+      
+      <div class="agenda"><h4>Agenda</h4><p>Corporate meetings in Reforma</p><ul><li>07:30 Departure from hotel</li><li>09:00 Corporate offices, Paseo de la Reforma</li><li>13:30 Business lunch, Polanco</li><li>17:00 Return to hotel</li></ul></div>
+    </section>
+    <section class="dia">
+      <div class="cabecera">
+        <div><span class="fecha">Mar
+             04 ene 2028</span>
+             <span class="modalidad">dia completo</span></div>
+        <div class="horas">07:30 — 19:30</div>
+      </div>
+      
+      <div class="agenda"><h4>Agenda</h4><p>Plant visit, Santa Fe</p><ul><li>07:30 Departure from hotel</li><li>09:30 Plant visit, Santa Fe</li><li>14:00 Lunch on site</li><li>18:00 Return to hotel</li></ul></div>
+    </section>
+    <section class="dia">
+      <div class="cabecera">
+        <div><span class="fecha">Mie
+             05 ene 2028</span>
+             <span class="modalidad">dia completo</span></div>
+        <div class="horas">07:30 — 19:30</div>
+      </div>
+      
+      <div class="agenda"><h4>Agenda</h4><p>Meetings and dinner</p><ul><li>07:30 Departure from hotel</li><li>10:00 Meetings, Polanco</li><li>20:00 Dinner, Roma Norte</li><li>23:00 Return to hotel</li></ul></div>
+    </section>
+    <section class="dia">
+      <div class="cabecera">
+        <div><span class="fecha">Jue
+             06 ene 2028</span>
+             <span class="modalidad">transfer</span></div>
+        <div class="horas">07:30 — 10:30</div>
+      </div>
+      
+      <div class="agenda"><h4>Agenda</h4><p>Departure</p><ul><li>07:30 Departure from hotel</li><li>09:00 Benito Juarez International Airport</li><li>10:00 Service ends</li></ul></div>
+    </section>
+    <div class="cierre"><div class="hospedaje"><h4>Hospedaje</h4>
+      <div class="hotel">
+        <b>The St. Regis Mexico City</b>
+        <br><span class="gris">Paseo de la Reforma 439</span>
+        <br><span class="tel">—</span>
+        <span class="gris"> · 02 ene 2028 — 06 ene 2028</span>
+        <br><span class="gris">Check-in previo confirmado por el cliente</span>
+      </div></div><div class="hospitales-bloque"><h4>Hospitales cercanos</h4><table class="hosp"><tr><td>Hospital Angeles Mocel</td><td class="der">2.2 km</td><td>—</td></tr><tr><td>Hospital Espanol</td><td class="der">2.3 km</td><td>—</td></tr><tr><td>Hospital Angeles Metropolitano</td><td class="der">5.0 km</td><td>—</td></tr></table></div></div>
+  </div>
+  
+  <section class="hoja-senal">
+    <div class="senal-encabezado">Senal de identificacion ·
+      AI/EP-0012</div>
+    <div class="senal-centro">
+      
+      <div class="senal-texto">D. BROOKS</div>
+    </div>
+    
+    <div class="senal-pie">Su equipo de seguridad mostrara esta senal.
+      Mr. Daniel Brooks Busquela al salir.</div>
+  </section>
+  <footer>
+    <div class="aviso">Documento confidencial. Contiene datos de seguridad y movimientos del ejecutivo. No compartir fuera de las personas autorizadas del servicio.</div>
+    <h4>Ante cualquier anomalia</h4>
+    <div class="escala"><div class="nivel"><span class="num">1</span><div><b>Ana Solis</b><br><span class="gris">Consultor de seguridad</span><br><span class="tel">55 1234 5610</span></div></div><div class="nivel"><span class="num">2</span><div><b>Director de Operaciones</b><br><span class="gris">Director de operaciones</span><br><span class="tel">55 1234 5620</span></div></div></div>
+  </footer>
+</div></body></html>

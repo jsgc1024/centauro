@@ -1,0 +1,22 @@
+LOGO DEL TASK SHEET
+===================
+
+Guarda aqui el logo con el nombre  logo.png  (tambien sirve logo.svg,
+logo.jpg o logo.webp).
+
+La extension del nombre no importa: el sistema reconoce el formato real
+por el contenido del archivo. Si bajas un .webp de la pagina y lo guardas
+como logo.png, funciona igual.
+
+Lo unico que importa es que el archivo este completo. Si se bajo a medias,
+el sistema NO lo incrusta y pone "CENTAURO" en texto, para no dejar un
+hueco en el documento del cliente.
+
+Para saber que esta viendo el sistema:
+    docker compose exec api python -c "from app.marca import diagnostico; print(diagnostico())"
+
+Entre mas grande el archivo original, mejor se imprime. El actual mide
+321 x 180 px. Si consigues uno de 900 px de ancho o un .svg, mejor.
+
+Los archivos .bak, .b64 y p1/p2/p3.txt son basura de pruebas anteriores,
+los puedes borrar.

@@ -1,0 +1,215 @@
+/* La app del personal de seguridad.
+
+   Misma identidad que la consola y el task sheet: el navy de Centauro,
+   fondo claro, Inter. Lo que cambia no es el color, es la forma: quien
+   la usa esta de pie, con una mano y con prisa.
+
+   - los botones que importan son grandes y estan abajo, donde llega el
+     pulgar sin mover la mano
+   - el texto que se lee en movimiento es mas grande que en la consola
+   - nada depende del color solo: al lado del color siempre hay palabra,
+     porque a pleno sol un ambar y un verde son el mismo gris */
+
+:root {
+  --centauro: #1B1546;
+  --suave: #f0f3f5;
+  --caja: #fff;
+  --linea: #e0e4e8;
+  --gris: #78828c;
+  --texto: #1a1d21;
+  --ok: #1e7a4d;
+  --alerta: #b8860b;
+  --grave: #c0392b;
+  --sombra: 0 1px 3px rgba(27, 21, 70, .07);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+body {
+  margin: 0;
+  background: var(--suave);
+  color: var(--texto);
+  font: 15px/1.5 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        system-ui, sans-serif;
+  /* El notch y la barra de gestos del telefono. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+           env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+#app { max-width: 560px; margin: 0 auto; padding: 16px 16px 96px; }
+
+h1 { font-size: 20px; margin: 0 0 2px; color: var(--centauro); }
+h2 { font-size: 15px; margin: 22px 0 10px; color: var(--centauro); }
+p { margin: 0 0 10px; }
+
+.gris { color: var(--gris); }
+.chico { font-size: 13px; }
+.grande { font-size: 30px; font-weight: 700; line-height: 1.05;
+          color: var(--centauro); letter-spacing: -.5px; }
+.num { font-variant-numeric: tabular-nums; }
+.verde { color: var(--ok); }
+.ambar { color: var(--alerta); }
+.rojo { color: var(--grave); }
+
+/* La marca de la casa: el filo navy arriba de cada tarjeta principal,
+   igual que la cabecera de la consola y del task sheet. */
+.caja {
+  background: var(--caja);
+  border: 1px solid var(--linea);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 14px;
+  box-shadow: var(--sombra);
+}
+.caja.principal { border-top: 4px solid var(--centauro); }
+.caja.urgente { border-left: 4px solid var(--grave); }
+
+a { color: var(--centauro); }
+
+/* Los botones se tocan con el pulgar, no con el raton: 52 px de alto es
+   el minimo con el que no se falla caminando. */
+button {
+  font: inherit;
+  font-weight: 650;
+  min-height: 52px;
+  padding: 14px 18px;
+  width: 100%;
+  border: 0;
+  border-radius: 10px;
+  background: var(--centauro);
+  color: #fff;
+  cursor: pointer;
+}
+button:disabled { opacity: .45; }
+button.claro {
+  background: #fff; color: var(--centauro);
+  border: 1px solid var(--linea);
+}
+button.panico { background: var(--grave); letter-spacing: .5px; }
+button.chico { min-height: 42px; padding: 10px 14px; font-size: 14px;
+               width: auto; }
+
+.fila { display: flex; gap: 10px; align-items: center; }
+.fila.separa { justify-content: space-between; }
+
+.marca {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 650; padding: 4px 10px;
+  border-radius: 999px; background: var(--suave); color: var(--gris);
+}
+.marca.ok { background: #e6f4ec; color: var(--ok); }
+.marca.alerta { background: #fdf6e3; color: #7a5c07; }
+.marca.grave { background: #fdecea; color: #8f2b20; }
+
+.dato { margin-bottom: 12px; }
+.dato .clave {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 1px;
+  color: var(--gris); font-weight: 650; display: block; margin-bottom: 2px;
+}
+
+input, select {
+  font: inherit; width: 100%; padding: 14px;
+  background: #fff; color: var(--texto);
+  border: 1px solid var(--linea); border-radius: 10px;
+}
+input:focus, select:focus { outline: 2px solid var(--centauro);
+                            outline-offset: -2px; }
+label { display: block; font-size: 13px; color: var(--gris);
+        margin-bottom: 6px; }
+.campo { margin-bottom: 14px; }
+
+/* La barra de abajo: donde llega el pulgar sin mover la mano. */
+.barra {
+  position: fixed; left: 0; right: 0; bottom: 0;
+  background: #fff;
+  border-top: 1px solid var(--linea);
+  display: flex;
+  box-shadow: 0 -1px 6px rgba(27, 21, 70, .06);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.barra a {
+  flex: 1; text-align: center; padding: 10px 4px 12px;
+  color: var(--gris); text-decoration: none; font-size: 11px;
+  font-weight: 650;
+}
+.barra a.activo { color: var(--centauro); box-shadow: inset 0 2px 0 var(--centauro); }
+.barra .icono { display: block; font-size: 18px; line-height: 1.4; }
+
+/* Lo que no se ha podido mandar. Vive arriba de todo y no se quita
+   hasta que sale: un pendiente escondido es un pendiente perdido. */
+.pendientes {
+  background: #fdf6e3;
+  border: 1px solid #f0e2bd;
+  color: #7a5c07;
+  border-radius: 10px; padding: 12px; margin-bottom: 14px;
+  font-size: 14px; font-weight: 600;
+}
+
+.aviso { border-radius: 10px; padding: 12px; margin-bottom: 12px;
+         font-size: 14px; border: 1px solid var(--linea); }
+.aviso.ok { background: #e6f4ec; border-color: #c2e2d0; color: #14603a; }
+.aviso.alerta { background: #fdf6e3; border-color: #f0e2bd; color: #7a5c07; }
+.aviso.grave { background: #fdecea; border-color: #f5cdc8; color: #8f2b20; }
+
+.vacio { color: var(--gris); text-align: center; padding: 32px 16px; }
+
+.entrada { min-height: 76vh; display: flex; flex-direction: column;
+           justify-content: center; }
+/* La linea de operacion, igual que en la consola y el task sheet. */
+.linea { display: flex; align-items: baseline; gap: 8px;
+         justify-content: center; margin: 0 0 22px; }
+.linea .clave {
+  font-weight: 700; font-size: 13px; letter-spacing: .5px;
+  color: #fff; background: var(--centauro);
+  padding: 3px 9px; border-radius: 5px;
+}
+.linea .nombre {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 1.1px;
+  color: var(--gris); font-weight: 650;
+}
+
+.marco { border-top: 1px solid var(--linea); margin-top: 14px;
+         padding-top: 14px; }
+
+
+/* ---------------------------------------------- revision de la unidad
+
+   Las fotos se ven de dos en dos: en un telefono, cuatro miniaturas por
+   renglon no dejan ver un golpe, y ver el golpe es toda la razon por la
+   que existe esta pantalla. */
+
+.rejilla { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.celda { min-width: 0; }
+
+.ranura {
+  aspect-ratio: 4 / 3; border: 1px dashed var(--linea); border-radius: 10px;
+  background: #fafbfc; display: flex; align-items: center;
+  justify-content: center; text-align: center; padding: 6px;
+  overflow: hidden; cursor: pointer;
+}
+.ranura.lista { border-style: solid; border-color: var(--ok); padding: 0; }
+.ranura img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ranura.vieja { border-style: solid; border-color: var(--linea);
+                padding: 0; cursor: default; opacity: .85; }
+
+/* Al entregar: como estaba al recibirla, y como esta ahora, pegadas. */
+.par { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.par > div { min-width: 0; }
+
+.tiras { display: flex; gap: 6px; margin-top: 8px; overflow-x: auto; }
+.tira { width: 74px; height: 56px; object-fit: cover; border-radius: 6px;
+        flex: none; border: 1px solid var(--linea); }
+
+.firma {
+  width: 100%; height: 150px; border: 1px solid var(--linea);
+  border-radius: 10px; background: #fff; touch-action: none;
+  display: block;
+}
+
+/* Un enlace que se ve y se toca como boton: el paso siguiente no puede
+   parecer una nota al pie. */
+a.botonazo {
+  display: block; text-align: center; text-decoration: none;
+  background: var(--centauro); color: #fff; border-radius: 10px;
+  min-height: 52px; line-height: 52px; font-weight: 650; font-size: 15px;
+}
