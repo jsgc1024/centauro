@@ -6,7 +6,7 @@ orden de arriba hacia abajo sin adornos.
 """
 import html
 
-from app.encuestas import PREGUNTAS, _textos
+from app.encuestas import _textos
 from app.marca import logo_incrustado
 
 CENTAURO = "#1B1546"

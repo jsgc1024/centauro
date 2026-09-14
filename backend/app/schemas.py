@@ -643,7 +643,7 @@ class TransferenciaOut(Base):
 
 
 # ================================================================ CICLO DIARIO
-from app.models import Canal, Destinatario, TipoAlerta, TipoHito  # noqa: E402
+from app.models import TipoHito  # noqa: E402
 
 
 class OrigenIn(Base):

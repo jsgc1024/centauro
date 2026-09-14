@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app import auditoria, auth
+from app import auth
 from app import bonos as motor
 from app import comisiones as motor_com
 from app import models as m

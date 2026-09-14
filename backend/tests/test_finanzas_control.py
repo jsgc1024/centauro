@@ -7,10 +7,8 @@ Lo que se prueba: que finanzas tenga memoria de lo que pago, que sepa
 cuanto anda afuera sin comprobar, y que un deposito no se confirme dos
 veces.
 """
-from datetime import date, datetime, timedelta
 
-from ayudas import (asignar, cotizar_y_autorizar, crear_servicio, jornada,
-                    manana)
+from ayudas import asignar, crear_servicio, jornada, manana
 
 
 def _con_viaticos(cliente, sesion, datos, monto="3000", dia=20,

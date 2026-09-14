@@ -3,7 +3,6 @@
 Corre los lunes despues de mediodia. La calcula y la paga finanzas; el
 consultor y la direccion la pueden ver.
 """
-from datetime import date
 
 from decimal import Decimal
 

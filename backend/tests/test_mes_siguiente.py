@@ -5,7 +5,7 @@ lo cancela. El mes nuevo no se vuelve a capturar, se abre con los mismos
 terminos y la misma plantilla —a mano con el boton, o solo cuando al mes
 en curso le quedan pocos dias—. El tope es uno por delante.
 """
-from datetime import date, timedelta
+from datetime import date
 
 import calendar
 

@@ -4,7 +4,6 @@ De aqui sale la referencia medica en una emergencia: los tres mas
 cercanos al punto del servicio, dentro de su ciudad, y nunca sin un
 tercer nivel. Google llena los datos; el nivel lo marca Centauro.
 """
-from datetime import date
 
 from tests.test_mes_siguiente import _alta
 

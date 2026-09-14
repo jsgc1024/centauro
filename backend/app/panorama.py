@@ -7,7 +7,7 @@ esta listo, y que se esta atorando en el camino al cobro.
 Todo lo que sale aqui ya existe en otros modulos. La gracia es que este
 en una sola pantalla y que lo urgente se vea primero.
 """
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy.orm import Session

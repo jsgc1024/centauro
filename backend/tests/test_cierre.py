@@ -1,5 +1,5 @@
 """Comparativo, revision antes de facturar, rentabilidad y comision."""
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 from ayudas import (asignar, configurar_origen, cotizar_y_autorizar,
                     crear_servicio, ejecutar_jornada, jornada, manana)

@@ -4,7 +4,7 @@ Lo que se verifica: que una dimension sin datos no cuente como cero, que
 solo pesen las incidencias ya autorizadas, y que los pesos tengan que
 sumar 100 para que la calificacion signifique lo mismo entre personas.
 """
-from ayudas import (asignar, configurar_origen, cotizar_y_autorizar,
+from ayudas import (asignar, configurar_origen,
                     crear_servicio, ejecutar_jornada, jornada, manana)
 
 

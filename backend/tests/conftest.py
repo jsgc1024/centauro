@@ -19,7 +19,7 @@ os.environ["DATABASE_URL"] = BASE_DE_PRUEBAS
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-from sqlalchemy import create_engine, text  # noqa: E402
+from sqlalchemy import text  # noqa: E402
 
 # Las tablas que guardan movimiento. Los catalogos no se tocan.
 TABLAS_DE_OPERACION = [

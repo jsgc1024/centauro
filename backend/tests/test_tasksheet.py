@@ -1,5 +1,5 @@
 """Task sheet: contenido, publicacion, versiones y quien lo ve."""
-from ayudas import (asignar, configurar_origen, crear_servicio, jornada, manana)
+from ayudas import asignar, crear_servicio, jornada, manana
 
 
 def _servicio_planeado(cliente, sesion, datos, offset=80, con_agenda=True,

@@ -1,5 +1,5 @@
 """Quien puede hacer que. Lo que mas importa: que nadie corrija su propia marca."""
-from ayudas import (DENTRO, asignar, configurar_origen, crear_servicio,
+from ayudas import (asignar, configurar_origen, crear_servicio,
                     jornada, manana, marcar)
 from datetime import datetime, timedelta
 

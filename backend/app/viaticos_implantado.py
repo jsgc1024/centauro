@@ -16,7 +16,6 @@ Por eso aqui todo lleva anio y mes, y por eso no se comparte el camino
 con el eventual: un parametro suelto en el otro lado terminaria
 moviendole el corte a quien no lo pidio.
 """
-from datetime import date
 from decimal import Decimal, ROUND_FLOOR
 
 from fastapi import HTTPException

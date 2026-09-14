@@ -1,8 +1,8 @@
 """Estrellas del personal, sancion por incidencia e implantados."""
-from datetime import date, datetime, timedelta
+from datetime import date
 
 from ayudas import (asignar, configurar_origen, crear_servicio,
-                    ejecutar_jornada, jornada, manana)
+                    ejecutar_jornada, jornada)
 
 
 def _mes_trabajado(cliente, sesion, datos, persona_nombre="Luis Mendoza",

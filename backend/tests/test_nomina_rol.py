@@ -5,7 +5,6 @@ martes condujo y el miercoles coordino. El corte tiene que poder decirlo
 —el recibo lo va a reclamar quien no le cuadre— y tiene que poder
 sumarse por rol, que es la cuenta que pide la direccion.
 """
-from datetime import date
 
 from ayudas import (asignar, configurar_origen, cotizar_y_autorizar,
                     crear_servicio, ejecutar_jornada, jornada, manana)
