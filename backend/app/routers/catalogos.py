@@ -18,11 +18,20 @@ router = APIRouter()
 # Cuanto aguanta una ciudad en la lista sin que nadie la use.
 DIAS_SIN_USAR = 30
 
+# Leer un catalogo es cosa de la consola. Estas cuatro rutas estan
+# escritas a mano y se registran antes que el CRUD generico, asi que el
+# candado de crud.py no les tocaba: seguian abiertas a cualquier sesion,
+# la de un elemento de campo incluida, con la flota blindada completa y
+# sus placas adentro.
+LEER = auth.requiere(m.Rol.ADMIN, m.Rol.CONSULTOR, m.Rol.CENTRAL,
+                     m.Rol.FINANZAS, m.Rol.DIRECTOR_OPERACIONES,
+                     m.Rol.DIRECTOR_GENERAL)
+
 
 @router.get("/plazas", response_model=list[s.PlazaOut], tags=["Ciudades"],
             summary="Listar ciudades")
 def listar_ciudades(db: Session = Depends(get_db), todas: bool = False,
-                    _=Depends(auth.usuario_actual)):
+                    _=Depends(LEER)):
     """Las cuatro fijas siempre; las demas, mientras se esten usando.
 
     Una ciudad entra a la lista cuando un servicio cae ahi y sale sola a
@@ -70,7 +79,7 @@ DIAS_SIN_HOSPEDAR = 90
 @router.get("/hoteles", response_model=list[s.HotelOut], tags=["Hoteles"],
             summary="Hoteles de una ciudad")
 def listar_hoteles(db: Session = Depends(get_db), plaza_id: int | None = None,
-                   todos: bool = False, _=Depends(auth.usuario_actual)):
+                   todos: bool = False, _=Depends(LEER)):
     """Los que se usan en esa ciudad, y nada mas.
 
     El catalogo crece con la operacion: cada hotel que se captura queda
@@ -115,8 +124,8 @@ def listar_hoteles(db: Session = Depends(get_db), plaza_id: int | None = None,
 @router.get("/vehiculos", response_model=list[s.VehiculoOut], tags=["Flota"],
             summary="Listar la flota")
 def listar_flota(db: Session = Depends(get_db), incluir_inactivos: bool = False,
-                 incluir_rentados: bool = False, limite: int = 200,
-                 _=Depends(auth.usuario_actual)):
+                 incluir_rentados: bool = False, limite: int = 5000,
+                 _=Depends(LEER)):
     """La flota son las unidades de la casa.
 
     El auto subarrendado vive en la misma tabla, pero no es flota: se
@@ -129,12 +138,16 @@ def listar_flota(db: Session = Depends(get_db), incluir_inactivos: bool = False,
         consulta = consulta.filter(m.Vehiculo.activo.is_(True))
     if not incluir_rentados:
         consulta = consulta.filter(m.Vehiculo.rentado.is_(False))
-    return consulta.limit(limite).all()
+    # Ordenada y con un limite que no corta de verdad. Estaba en 200 y
+    # las pantallas la piden sin parametro: con una flota mas grande, la
+    # unidad 201 no existia para nadie —no salia en el selector para
+    # asignarla— y nada lo avisaba.
+    return consulta.order_by(m.Vehiculo.placa).limit(limite).all()
 
 
 @router.get("/consultores", summary="Quien puede llevar un servicio")
 def consultores(db: Session = Depends(get_db),
-                _=Depends(auth.usuario_actual)):
+                _=Depends(LEER)):
     """Los consultores de la consola.
 
     Sale de los usuarios con rol de consultor y no del puesto de la

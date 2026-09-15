@@ -42,9 +42,15 @@ def reportar(datos: s.AlertaIn, db: Session = Depends(get_db),
     descripcion: quien lo aprieta no esta para escribir. Por eso la
     ubicacion importa tanto. La llamada la captura la central.
     """
-    if datos.canal == m.CanalAlerta.BOTON_APP and not datos.reporta_persona_id:
-        # El boton de la app siempre sabe quien lo apreto: es quien tiene
-        # la sesion abierta. No se acepta un panico anonimo.
+    # Quien reporta es quien tiene la sesion abierta, siempre, y no lo
+    # que diga el cuerpo. Aceptarlo del cuerpo permitia levantar un
+    # panico a nombre de otro elemento, en un servicio ajeno y con
+    # coordenadas inventadas —y un panico mueve equipo de respuesta.
+    # La central sigue pudiendo capturar la llamada de alguien mas,
+    # porque para eso tiene su propio rol.
+    if usuario.rol == m.Rol.PERSONAL_SEGURIDAD:
+        datos.reporta_persona_id = usuario.persona_id
+    elif not datos.reporta_persona_id:
         datos.reporta_persona_id = usuario.persona_id
 
     if not datos.jornada_id and not datos.servicio_id:
@@ -52,6 +58,25 @@ def reportar(datos: s.AlertaIn, db: Session = Depends(get_db),
 
     if datos.jornada_id and not db.get(m.Jornada, datos.jornada_id):
         raise HTTPException(404, f"No existe la jornada {datos.jornada_id}")
+
+    # Y un elemento solo levanta alertas de los servicios en los que va.
+    # Las dos puertas: la jornada y el servicio. Cerrar solo una dejaba
+    # la otra abierta, que es como se cuela casi siempre.
+    if usuario.rol == m.Rol.PERSONAL_SEGURIDAD:
+        if datos.jornada_id:
+            if not auth.es_su_propia_jornada(db, usuario, datos.jornada_id):
+                raise HTTPException(403, "No estas asignado a esa jornada")
+        elif datos.servicio_id:
+            suyo = (db.query(m.AsignacionPersonal)
+                    .join(m.Jornada,
+                          m.AsignacionPersonal.jornada_id == m.Jornada.id)
+                    .join(m.Equipo, m.Jornada.equipo_id == m.Equipo.id)
+                    .filter(m.Equipo.servicio_id == datos.servicio_id,
+                            m.AsignacionPersonal.persona_id
+                            == usuario.persona_id)
+                    .first())
+            if not suyo:
+                raise HTTPException(403, "No participas en ese servicio")
 
     alerta = m.AlertaIncidencia(**datos.model_dump())
     if alerta.jornada_id and not alerta.servicio_id:

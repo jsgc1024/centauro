@@ -528,8 +528,14 @@ def _paradas(db: Session, jornada_id: int) -> list[m.ParadaAgenda]:
             response_model=list[s.ParadaOut],
             summary="Las paradas del dia, en orden")
 def ver_paradas(jornada_id: int, db: Session = Depends(get_db),
-                _=Depends(auth.usuario_actual)):
-    _jornada(db, jornada_id)
+                usuario: m.Usuario = Depends(auth.usuario_actual)):
+    """La agenda dice a que hora y en que direccion va a estar el
+    ejecutivo. Es el dato mas delicado del sistema y estaba abierto a
+    cualquiera con sesion: bastaba recorrer los numeros de jornada para
+    sacar el itinerario de todos los protegidos, incluidos los servicios
+    en los que uno no va."""
+    jornada = _jornada(db, jornada_id)
+    _puede_ver(db, usuario, jornada.equipo)
     return _paradas(db, jornada_id)
 
 

@@ -20,7 +20,13 @@ esquema = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
 
 
 def _clave() -> str:
-    return getattr(settings, "secret_key", None) or "centauro-demo-cambiar-en-produccion"
+    # Sin segunda copia de la clave. Tenerla escrita aqui abajo
+    # contradecia la revision que se hace al arrancar: dejaba una firma
+    # valida a la mano de cualquiera que leyera el codigo.
+    clave = getattr(settings, "secret_key", None)
+    if not clave:
+        raise RuntimeError("No hay SECRET_KEY configurada.")
+    return clave
 
 
 # ---------------------------------------------------------------- contrasenas
@@ -52,6 +58,24 @@ def crear_token(usuario: m.Usuario) -> str:
         "exp": ahora + timedelta(hours=HORAS_SESION),
     }
     return jwt.encode(carga, _clave(), algorithm=ALGORITMO)
+
+
+def usuario_opcional(token: str | None = Depends(esquema),
+                     db: Session = Depends(get_db)) -> m.Usuario | None:
+    """Quien sea que venga, o nadie. No levanta 401.
+
+    Para las pocas puertas cuyo permiso no depende solo del rol —el
+    sembrado inicial se abre mientras la base no tenga ni un usuario, y
+    se cierra sola en cuanto lo tiene.
+    """
+    if not token:
+        return None
+    try:
+        carga = jwt.decode(token, _clave(), algorithms=[ALGORITMO])
+    except jwt.PyJWTError:
+        return None
+    usuario = db.get(m.Usuario, int(carga["sub"]))
+    return usuario if usuario and usuario.activo else None
 
 
 def usuario_actual(token: str | None = Depends(esquema),

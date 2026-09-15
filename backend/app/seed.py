@@ -441,8 +441,10 @@ def sembrar_accesos() -> dict:
         db.commit()
         return {
             "usuarios": db.query(m.Usuario).count(),
-            "contrasena_demo": CONTRASENA_DEMO,
-            "aviso": "Contrasena unica solo para el demo",
+            "aviso": ("Todos quedaron con la misma contrasena de demo. "
+                      "Esta funcion solo se corre desde la linea de "
+                      "comandos, nunca desde la API: reescribe el rol y "
+                      "la contrasena de todos los usuarios que existan."),
         }
     finally:
         db.close()

@@ -2,29 +2,35 @@ from contextlib import asynccontextmanager
 
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from app import models  # noqa: F401  (registra las tablas en Base)
-from app.config import settings
+from app import auth
+from app.config import revisar_secretos, settings
 from app.marca import logo_incrustado
 from app.db import engine
 from app.routers import (acceso, bonos, campo, catalogos, central, cierre,
                          contingencia, encuestas, implantados, mapas, nomina,
                          odoo, operacion, panorama, profesionalismo, servicios,
                          solicitantes, tasksheet, viaticos)
-from app.seed import (sembrar, sembrar_accesos, sembrar_bonos,
-                      sembrar_festivos, sembrar_lugares,
-                      sembrar_parametros, sembrar_recursos)
+from app.seed import (sembrar, sembrar_bonos, sembrar_festivos,
+                      sembrar_lugares, sembrar_parametros, sembrar_recursos)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # El esquema lo maneja Alembic, no la aplicacion:
     #   docker compose exec api alembic upgrade head
+    #
+    # Lo que si se revisa al arrancar son los secretos: un sistema que
+    # enciende igual con o sin clave configurada se despliega tarde o
+    # temprano sin ella.
+    revisar_secretos(settings)
     yield
 
 
@@ -106,12 +112,34 @@ def health():
 
 @app.post("/sistema/sembrar-catalogos", tags=["Sistema"],
           summary="Cargar los catalogos iniciales")
-def sembrar_catalogos():
+def sembrar_catalogos(usuario=Depends(auth.usuario_opcional)):
     """Carga paises, plazas, perfiles, vehiculos, modalidades, tarifario,
-    tabulador de viaticos y comisiones. Se puede correr varias veces."""
+    tabulador de viaticos y comisiones. Se puede correr varias veces.
+
+    Ya no siembra los accesos. Sembrar accesos reescribe el rol y la
+    contrasena de todos los usuarios que existan, y este endpoint
+    estuvo abierto sin credenciales: dos peticiones —una para sembrar,
+    otra para entrar con la contrasena de demo que la misma respuesta
+    regalaba— y cualquiera era director general. Los usuarios de demo
+    se crean ahora desde la linea de comandos:
+
+        docker compose exec -T api python -c \
+            "from app.seed import sembrar_accesos; print(sembrar_accesos())"
+    """
+    # La primera vez pasa sin credenciales, y solo la primera: mientras
+    # no exista ni un usuario no hay a quien pedirle permiso, y exigirlo
+    # dejaba la base recien creada en un circulo —sin catalogos no hay
+    # usuarios, sin usuarios no hay admin, sin admin no hay catalogos.
+    # En cuanto existe el primer usuario, la puerta se cierra sola.
+    with Session(engine) as db:
+        hay_usuarios = db.query(models.Usuario).first() is not None
+    if hay_usuarios and (not usuario or usuario.rol != models.Rol.ADMIN):
+        raise HTTPException(403, {
+            "mensaje": "Sembrar catalogos es cosa de administracion",
+            "que_hacer": "Entra como admin. Esto ya no es una base nueva."})
+
     return {"resultado": "ok", "catalogos": sembrar(), "recursos": sembrar_recursos(),
             "parametros": sembrar_parametros(),
-            "accesos": sembrar_accesos(),
             "festivos": sembrar_festivos(),
             "bonos": sembrar_bonos(),
             "lugares": sembrar_lugares()}

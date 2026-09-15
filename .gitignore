@@ -40,3 +40,6 @@ Thumbs.db
 *.swp
 .idea/
 .vscode/
+
+# Lo que el escritorio deja al entregar archivos.
+Claude outputs/
