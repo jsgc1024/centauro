@@ -77,6 +77,21 @@ peso; los bonos están todos en Decimal y no dejan dinero colgado.
 | 11 | Si fallaba el registro de push, la app decía **"Encendidos"** para siempre y no había forma de reintentar | **Cerrado** |
 | 12 | Los catálogos **se cortaban en 200 filas sin orden y sin avisar**: con más de 200 personas, la 201 no existía para nadie | **Cerrado** |
 
+### Lo que destaparon las pruebas al fallar
+
+Dos cosas que no vieron ninguna de las tres vueltas de revisión, y que
+salieron cuando las pruebas corrieron de verdad:
+
+| Qué | Estado |
+|---|---|
+| **Un ajuste capturado a mano se deshacía solo.** `revisar-diferencias` compara contra la tarifa; un ajuste con concepto `correccion_jornada` entra en esa comparación y el sistema lo lee como un pago de más. Un bono acordado con dirección se revertía en la siguiente revisión, sin explicación | **Cerrado** — ese concepto lo pone el motor, ya no se captura |
+| **La bitácora no devolvía el número de la marca.** El endpoint para corregir una hora existe y es el camino documentado para la central, pero la consola no podía saber qué número mandar | **Cerrado** |
+
+El primero lo encontró una prueba mal planteada: inventaba el ajuste en
+vez de provocarlo, y al fallar mostró que el sistema tenía razón y el
+riesgo estaba en otro lado. Vale la pena anotarlo: **una prueba que
+falla porque el sistema tiene razón suele estar señalando algo.**
+
 ---
 
 ## La herramienta que salió de esto
