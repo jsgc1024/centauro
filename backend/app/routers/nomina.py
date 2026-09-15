@@ -217,6 +217,21 @@ def listar(pais_id: int | None = None, db: Session = Depends(get_db),
             for n in filas]
 
 
+@router.delete("/{nomina_id}", summary="Tirar un borrador de corte")
+def descartar(nomina_id: int, db: Session = Depends(get_db),
+              _=Depends(FINANZAS)):
+    """Solo mientras no se haya pagado.
+
+    Hace falta porque un borrador aparta: mientras exista, sus jornadas
+    y sus ajustes no entran a ningun otro corte. Sin esto, correr el
+    calculo "para ver como queda" dejaba a esa gente sin cobrar en el
+    corte de verdad, y nada lo avisaba.
+    """
+    resultado = motor.descartar(db, nomina_id)
+    db.commit()
+    return resultado
+
+
 @router.post("/{nomina_id}/pagar", summary="Marcar el corte como pagado")
 def pagar(nomina_id: int, db: Session = Depends(get_db),
           usuario: m.Usuario = Depends(FINANZAS)):
@@ -224,6 +239,13 @@ def pagar(nomina_id: int, db: Session = Depends(get_db),
     resultado = motor.pagar(db, nomina_id, usuario.persona_id)
     db.commit()
     return resultado
+
+
+CONCEPTO_EN_PALABRAS = {
+    motor.AJUSTE_CORRECCION: "Correccion del pago del dia",
+    motor.AJUSTE_VIATICO: "Viaticos sin comprobar",
+    motor.AJUSTE_MANUAL: "Capturado a mano",
+}
 
 
 @router.get("/ajustes/pendientes", summary="Lo que entrara al proximo corte")
@@ -234,6 +256,8 @@ def ajustes_pendientes(pais_id: int, db: Session = Depends(get_db),
              .order_by(m.AjusteNomina.creado_en).all())
     return [{"id": a.id, "persona": a.persona.nombre, "monto": a.monto,
              "motivo": a.motivo,
+             "concepto": a.concepto,
+             "de_que": CONCEPTO_EN_PALABRAS.get(a.concepto, a.concepto),
              "sentido": "a favor" if a.monto >= 0 else "descuento"}
             for a in filas]
 
@@ -247,6 +271,18 @@ def crear_ajuste(datos: s.AjusteNominaIn, db: Session = Depends(get_db),
     persona = db.get(m.Persona, datos.persona_id)
     if not persona:
         raise HTTPException(404, f"No existe la persona {datos.persona_id}")
+
+    # Una correccion tiene que decir de que dia es. Si no lo dice, el
+    # motor no la encuentra al comparar lo pagado contra lo que
+    # corresponde, y vuelve a generar la misma diferencia en la
+    # siguiente corrida: se paga dos veces.
+    if (datos.concepto == motor.AJUSTE_CORRECCION and not datos.jornada_id):
+        raise HTTPException(400, {
+            "mensaje": "Una correccion de un dia tiene que decir de que dia",
+            "que_hacer": "Manda el jornada_id. Sin el, el sistema no puede "
+                         "saber que ese dia ya quedo corregido y volveria a "
+                         "generar la misma diferencia."})
+
     ajuste = m.AjusteNomina(**datos.model_dump(),
                             creado_por_id=usuario.persona_id)
     db.add(ajuste)

@@ -13,6 +13,73 @@ from sqlalchemy.orm import Session
 
 from app import models as m
 
+# Cuanto se tolera de mas al comprobar. No es cero porque pasa de
+# verdad: alguien pone de su bolsa la diferencia de una caseta o de una
+# comida y sube el ticket completo. Pero no puede ser libre, porque lo
+# comprobado es lo que se le factura al cliente y lo que decide si hay
+# descuento de nomina.
+TOLERANCIA_COMPROBADO = Decimal("1.20")
+
+# Cuanto tiempo cuenta como "el mismo toque". Un ticket identico un
+# minuto despues es la app mandando dos veces con mala senal; el mismo
+# ticket tres horas despues son dos casetas, una de ida y otra de
+# vuelta, y esas son dos de verdad.
+MINUTOS_DOBLE_TOQUE = 3
+
+
+def revisar_comprobante(viatico, monto, concepto, descripcion, ahora=None):
+    """Las reglas de un ticket, en un solo lugar.
+
+    Hay dos endpoints que escriben la misma tabla —el de la consola y el
+    de la app— con el mismo rol. Poner las reglas en uno solo era dejar
+    la otra puerta abierta, que es exactamente lo que pasaba.
+
+    Devuelve None si todo esta bien, o un dict con el error.
+    """
+    ahora = ahora or datetime.now()
+
+    if monto <= 0:
+        return {"codigo": 400,
+                "mensaje": "El monto del ticket tiene que ser mayor a cero",
+                "que_hacer": "Escribe lo que dice el ticket."}
+
+    entregado = Decimal(str(viatico.monto_total or 0))
+    ya = sum((Decimal(str(c.monto)) for c in viatico.comprobantes
+              if not c.rechazado), Decimal("0"))
+
+    # Con cero entregado no hay contra que topar: puede ser un dia que el
+    # tabulador dejo en cero y el gasto salio igual. Se deja pasar y lo
+    # revisa el consultor, que es quien puede decidirlo.
+    if entregado > 0 and ya + monto > entregado * TOLERANCIA_COMPROBADO:
+        return {"codigo": 409,
+                "mensaje": "Ese ticket pasa de lo que se entrego",
+                "que_hacer": (f"Lleva comprobado {ya} de {entregado}. Si de "
+                              f"verdad se gasto mas, eso se resuelve con "
+                              f"viaticos adicionales, no con un comprobante."),
+                "entregado": str(entregado), "comprobado": str(ya)}
+
+    # El mismo ticket dos veces seguidas: un doble toque con media barra
+    # de senal, que es la situacion normal en una gasolinera.
+    desde = ahora - timedelta(minutes=MINUTOS_DOBLE_TOQUE)
+    for c in viatico.comprobantes:
+        if c.rechazado:
+            continue
+        cuando = getattr(c, "subido_en", None)
+        if cuando is not None:
+            if cuando.tzinfo:
+                cuando = cuando.replace(tzinfo=None)
+            if cuando < desde:
+                continue
+        if (Decimal(str(c.monto)) == monto and c.concepto == concepto
+                and (c.descripcion or "") == (descripcion or "")):
+            return {"codigo": 409,
+                    "mensaje": "Ese ticket se acaba de subir",
+                    "que_hacer": "Si son dos gastos distintos por el mismo "
+                                 "monto, escribe en la nota de que fue cada "
+                                 "uno.",
+                    "comprobante_id": c.id}
+    return None
+
 HORAS_PARA_COMPROBAR = 24
 
 # A esa hora no hay transporte publico con el que llegar a la base, y el

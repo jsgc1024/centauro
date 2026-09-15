@@ -925,6 +925,12 @@ class AjusteNominaIn(Base):
     motivo: str
     servicio_id: int | None = None
     jornada_id: int | None = None
+    # De que es. Sin esto, un descuento por viaticos y una correccion
+    # del pago del mismo dia compartian la llave (jornada, persona) y se
+    # tapaban uno al otro: el descuento hacia que la correccion nunca se
+    # generara. Lo que captura finanzas a mano es "manual".
+    concepto: Literal["correccion_jornada", "viatico_no_comprobado",
+                      "manual"] = "manual"
 
 
 class CierreConDescuentoIn(Base):

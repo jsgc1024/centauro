@@ -2236,6 +2236,13 @@ class AjusteNomina(Base):
         ForeignKey("servicio.id"), nullable=True)
     jornada_id: Mapped[int | None] = mapped_column(
         ForeignKey("jornada.id"), nullable=True)
+    # De que es el ajuste. Sin esto, dos ajustes muy distintos —corregir
+    # lo que se pago por un dia, y descontar viaticos que no se
+    # comprobaron— compartian la llave (jornada, persona) y se tapaban
+    # uno al otro: un descuento de viaticos hacia que la correccion de
+    # nomina de ese mismo dia nunca se generara.
+    concepto: Mapped[str] = mapped_column(
+        String(30), default="manual", server_default="manual")
     monto: Mapped[float] = mapped_column(Numeric(12, 2))
     motivo: Mapped[str] = mapped_column(String(400))
     pagado_en_nomina_id: Mapped[int | None] = mapped_column(

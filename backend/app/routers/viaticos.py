@@ -13,6 +13,7 @@ from app import imagenes
 from app import models as m
 from app import schemas as s
 from app import finanzas as control
+from app import nomina
 from app import viaticos as motor
 from app.db import get_db
 
@@ -89,8 +90,19 @@ def asignar(datos: s.AsignarViaticoIn, db: Session = Depends(get_db),
 
 @router.get("/{viatico_id}", response_model=s.ViaticoOut, summary="Ver viaticos")
 def ver(viatico_id: int, db: Session = Depends(get_db),
-        _=Depends(auth.usuario_actual)):
-    return _obtener(db, viatico_id)
+        usuario: m.Usuario = Depends(auth.usuario_actual)):
+    """El personal de seguridad solo ve los suyos.
+
+    Aqui se ve cuanto efectivo trae encima cada quien y a quien le
+    descontaron de nomina. Recorriendo los numeros se sacaba de toda la
+    plantilla; y saber quien anda en la calle con dinero es justo lo que
+    no debe saberse.
+    """
+    viatico = _obtener(db, viatico_id)
+    if (usuario.rol == m.Rol.PERSONAL_SEGURIDAD
+            and viatico.persona_id != usuario.persona_id):
+        raise HTTPException(403, "Solo puedes ver tus propios viaticos")
+    return viatico
 
 
 @router.post("/{viatico_id}/adicional", response_model=s.ViaticoOut,
@@ -228,6 +240,14 @@ def subir_comprobante(viatico_id: int, datos: s.ComprobanteIn,
     if v.estatus in (m.EstatusViatico.CERRADO, m.EstatusViatico.DEVUELTO):
         raise HTTPException(409, "Los viaticos ya estan cerrados")
 
+    # Las mismas reglas que la app. Son la misma tabla y el mismo rol:
+    # tener los topes en un solo endpoint era dejar la otra puerta
+    # abierta, y la persona bloqueada por una entraba por la otra.
+    mal = motor.revisar_comprobante(v, Decimal(str(datos.monto)),
+                                    datos.concepto, datos.descripcion)
+    if mal:
+        raise HTTPException(mal.pop("codigo"), mal)
+
     db.add(m.Comprobante(asignacion_id=v.id, **datos.model_dump()))
     if v.estatus == m.EstatusViatico.TRANSFERIDO:
         v.estatus = m.EstatusViatico.EN_COMPROBACION
@@ -327,6 +347,7 @@ def cerrar_con_descuento(viatico_id: int, datos: s.CierreConDescuentoIn,
     ajuste = None
     if descuento > 0:
         ajuste = m.AjusteNomina(
+            concepto=nomina.AJUSTE_VIATICO,
             persona_id=v.persona_id, pais_id=servicio.pais_id,
             servicio_id=servicio.id, jornada_id=v.jornada_id,
             monto=-descuento, creado_por_id=usuario.persona_id,
@@ -415,9 +436,38 @@ def devolver(viatico_id: int, monto: Decimal, archivo_url: str | None = None,
              db: Session = Depends(get_db),
              _=Depends(CONSULTOR)):
     """Si sobro dinero se devuelve con comprobante.
-    Si el servicio se cancela despues de transferido, se devuelve todo."""
+    Si el servicio se cancela despues de transferido, se devuelve todo.
+
+    Es acumulativo, asi que hay que cuidarlo: mandar el POST dos veces
+    dejaba el devuelto al doble, el pendiente en negativo, y a la
+    persona fuera del tablero de dinero en la calle —que filtra por
+    pendiente mayor a cero. Y con un monto negativo se borraba una
+    devolucion real sin dejar mas rastro que una nota.
+    """
     v = _obtener(db, viatico_id)
-    v.monto_devuelto = Decimal(str(v.monto_devuelto)) + monto
+
+    if monto <= 0:
+        raise HTTPException(400, {
+            "mensaje": "La devolucion tiene que ser mayor a cero",
+            "que_hacer": "Si hay que corregir una devolucion anterior, "
+                         "se hace como ajuste, no devolviendo en negativo."})
+
+    if v.estatus in (m.EstatusViatico.CANCELADO,):
+        raise HTTPException(409, "Ese viatico esta cancelado")
+
+    entregado = Decimal(str(v.monto_total))
+    devuelto = Decimal(str(v.monto_devuelto))
+    comprobado = Decimal(str(v.monto_comprobado))
+    puede = entregado - comprobado - devuelto
+    if monto > puede:
+        raise HTTPException(409, {
+            "mensaje": "Esa devolucion pasa de lo que queda por devolver",
+            "que_hacer": (f"Se entregaron {entregado}, hay {comprobado} "
+                          f"comprobados y {devuelto} ya devueltos: quedan "
+                          f"{puede}."),
+            "por_devolver": str(puede)})
+
+    v.monto_devuelto = devuelto + monto
     db.add(m.Comprobante(
         asignacion_id=v.id, concepto=m.ConceptoViatico.OTROS,
         tipo=m.TipoComprobante.NOTA, monto=Decimal("0"),

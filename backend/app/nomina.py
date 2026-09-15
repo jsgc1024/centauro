@@ -124,9 +124,9 @@ def pago_de_jornada(db: Session, jornada: m.Jornada,
 
 # ---------------------------------------------------------------- que entra
 
-def jornadas_pendientes(db: Session,
-                        pais_id: int) -> list[tuple[m.Jornada,
-                                                    m.AsignacionPersonal]]:
+def jornadas_pendientes(db: Session, pais_id: int,
+                        excepto_nomina_id: int | None = None
+                        ) -> list[tuple[m.Jornada, m.AsignacionPersonal]]:
     """Pares (jornada, persona) que se deben y no se han pagado.
 
     El eventual entra cuando su cierre ya va camino a facturacion. El
@@ -135,12 +135,19 @@ def jornadas_pendientes(db: Session,
     el mes se revisa el periodo completo y lo que salga distinto se
     arrastra como ajuste (ver diferencias_del_servicio).
     """
-    ya_pagadas = {
-        (c.jornada_id, r.persona_id)
-        for c, r in db.query(m.ConceptoNomina, m.RenglonNomina)
-        .join(m.RenglonNomina, m.ConceptoNomina.renglon_id == m.RenglonNomina.id)
-        .filter(m.ConceptoNomina.jornada_id.isnot(None)).all()
-    }
+    # Lo que ya esta pagado o apartado por OTRO corte. La diferencia
+    # importa: un borrador que nadie pago no puede excluir esas jornadas
+    # para siempre —eso dejaba a alguien sin cobrar sin que nada lo
+    # avisara— pero mientras exista tampoco puede pagarse dos veces. Por
+    # eso un borrador se puede descartar (ver `descartar`), y mientras
+    # no se descarte, aparta.
+    tomadas = (db.query(m.ConceptoNomina, m.RenglonNomina)
+               .join(m.RenglonNomina,
+                     m.ConceptoNomina.renglon_id == m.RenglonNomina.id)
+               .filter(m.ConceptoNomina.jornada_id.isnot(None)))
+    if excepto_nomina_id:
+        tomadas = tomadas.filter(m.RenglonNomina.nomina_id != excepto_nomina_id)
+    ya_pagadas = {(c.jornada_id, r.persona_id) for c, r in tomadas.all()}
 
     cierres = {c.servicio_id: c.estatus for c in db.query(m.Cierre).all()}
 
@@ -181,7 +188,13 @@ def calcular(db: Session, pais_id: int, fecha_corte: date | None = None) -> dict
                        "a la siguiente",
             "nomina_id": nomina.id})
     if nomina:
-        # Recalcular es rehacerla: mientras no se pague, no hay nada que cuidar.
+        # Recalcular es rehacerla: mientras no se pague, no hay nada que
+        # cuidar. Lo que si hay que hacer es soltar lo apartado, o los
+        # ajustes quedarian retenidos por un borrador que ya no los
+        # incluye.
+        for a in db.query(m.AjusteNomina).filter_by(
+                pagado_en_nomina_id=nomina.id).all():
+            a.pagado_en_nomina_id = None
         for r in list(nomina.renglones):
             db.delete(r)
         db.flush()
@@ -194,7 +207,7 @@ def calcular(db: Session, pais_id: int, fecha_corte: date | None = None) -> dict
     # No se filtra por fecha: lo que manda es que la jornada este
     # terminada y su servicio ya vaya a facturacion. Una jornada no puede
     # estar terminada sin haber ocurrido.
-    pendientes = jornadas_pendientes(db, pais_id)
+    pendientes = jornadas_pendientes(db, pais_id, excepto_nomina_id=nomina.id)
 
     # Antes de armar nada: si algo no tiene tarifa, el corte no sale.
     # Pagar de menos a alguien que trabajo es peor que retrasar el corte,
@@ -222,9 +235,15 @@ def calcular(db: Session, pais_id: int, fecha_corte: date | None = None) -> dict
         pago["jornada_id"] = jornada.id
         por_persona.setdefault(a.persona_id, []).append(pago)
 
-    # Los ajustes de semanas pasadas entran a este corte.
-    ajustes = (db.query(m.AjusteNomina)
-               .filter_by(pais_id=pais_id, aplicado_en_nomina_id=None).all())
+    # Los ajustes de semanas pasadas entran a este corte. Los que ya
+    # aparto otro borrador no: dos borradores con fechas de corte
+    # distintas podian llevarse el mismo ajuste, y al pagar los dos la
+    # persona cobraba la diferencia dos veces.
+    ajustes = [a for a in db.query(m.AjusteNomina)
+               .filter_by(pais_id=pais_id, aplicado_en_nomina_id=None).all()
+               if a.pagado_en_nomina_id in (None, nomina.id)]
+    for ajuste in ajustes:
+        ajuste.pagado_en_nomina_id = nomina.id
     for ajuste in ajustes:
         por_persona.setdefault(ajuste.persona_id, []).append({
             "monto": _d(ajuste.monto), "factor": Decimal("1"), "horas_extra": 0,
@@ -270,31 +289,105 @@ def pagar(db: Session, nomina_id: int, persona_id: int | None = None) -> dict:
     nomina.pagada_en = datetime.now()
     nomina.pagada_por_id = persona_id
 
-    aplicados = 0
+    aplicados, repetidos = 0, []
     for renglon in nomina.renglones:
         for concepto in renglon.conceptos:
-            if concepto.ajuste_id:
-                ajuste = db.get(m.AjusteNomina, concepto.ajuste_id)
-                if ajuste:
-                    ajuste.aplicado_en_nomina_id = nomina.id
-                    aplicados += 1
+            if not concepto.ajuste_id:
+                continue
+            ajuste = db.get(m.AjusteNomina, concepto.ajuste_id)
+            if not ajuste:
+                continue
+            # Un ajuste que ya se salgo en otro corte no se vuelve a
+            # pagar. Es el ultimo candado: si algo se coló hasta aqui,
+            # el corte no sale y dice cual.
+            if ajuste.aplicado_en_nomina_id not in (None, nomina.id):
+                repetidos.append(
+                    f"{ajuste.motivo} (ya se pago en la nomina "
+                    f"{ajuste.aplicado_en_nomina_id})")
+                continue
+            ajuste.aplicado_en_nomina_id = nomina.id
+            aplicados += 1
+
+    if repetidos:
+        raise HTTPException(409, {
+            "mensaje": "Este corte trae ajustes que ya se pagaron",
+            "que_hacer": "Vuelve a calcular el corte antes de pagarlo.",
+            "repetidos": repetidos})
     db.flush()
     return {"nomina_id": nomina.id, "total": nomina.total,
             "personas": len(nomina.renglones), "ajustes_saldados": aplicados}
 
 
+def descartar(db: Session, nomina_id: int) -> dict:
+    """Tira un borrador de corte que no se va a pagar.
+
+    Hace falta porque un borrador aparta: mientras exista, sus jornadas
+    y sus ajustes no entran a ningun otro corte. Sin forma de tirarlo,
+    una corrida "para ver como queda" dejaba a esa gente sin cobrar en
+    el corte de verdad, y nada lo avisaba.
+    """
+    nomina = db.get(m.NominaSemanal, nomina_id)
+    if not nomina:
+        raise HTTPException(404, f"No existe la nomina {nomina_id}")
+    if nomina.estatus == m.EstatusNomina.PAGADA:
+        raise HTTPException(409, {
+            "mensaje": "Esa nomina ya se pago y no se puede tirar",
+            "que_hacer": "Lo que haya que corregir va como ajuste al "
+                         "siguiente corte."})
+
+    for a in db.query(m.AjusteNomina).filter_by(
+            pagado_en_nomina_id=nomina.id).all():
+        a.pagado_en_nomina_id = None
+    renglones = len(nomina.renglones)
+    db.delete(nomina)
+    db.flush()
+    return {"resultado": "borrador descartado", "nomina_id": nomina_id,
+            "renglones": renglones,
+            "nota": "Sus jornadas y ajustes vuelven a estar disponibles "
+                    "para el siguiente corte."}
+
+
 # ---------------------------------------------------------------- ajustes
 
+# De que es un ajuste. Importa porque dos ajustes del mismo dia y la
+# misma persona pueden ser cosas completamente distintas.
+AJUSTE_CORRECCION = "correccion_jornada"   # se pago de mas o de menos ese dia
+AJUSTE_VIATICO = "viatico_no_comprobado"   # dinero de la empresa sin comprobar
+AJUSTE_MANUAL = "manual"                   # lo captura finanzas a mano
+
+
 def _pagado_de(db: Session, jornada_id: int, persona_id: int) -> Decimal | None:
-    """Lo que ya se le pago por esa jornada, si la nomina salio."""
-    fila = (db.query(m.ConceptoNomina)
+    """Todo lo que ya salio por esa jornada: el dia y sus correcciones.
+
+    Los ajustes se guardan con `jornada_id = None` en el concepto de
+    nomina, asi que sumar solo el concepto del dia dejaba fuera lo que
+    ya se corrigio. El efecto era feo: pagado 800, corresponde 1100,
+    ajuste de +300; se paga el ajuste; la siguiente corrida vuelve a
+    ver 800 contra 1100 y genera otros +300. Cada vez que el servicio
+    se movia, 300 mas. Aqui se suma lo que de verdad salio.
+
+    Solo cuentan las correcciones de la jornada. Un descuento por
+    viaticos no comprobados salio del mismo bolsillo, pero no es pago
+    por el dia: contarlo aqui generaria una "diferencia" a favor que
+    devolveria el descuento.
+    """
+    base = (db.query(m.ConceptoNomina)
             .join(m.RenglonNomina, m.ConceptoNomina.renglon_id == m.RenglonNomina.id)
             .join(m.NominaSemanal, m.RenglonNomina.nomina_id == m.NominaSemanal.id)
             .filter(m.ConceptoNomina.jornada_id == jornada_id,
                     m.RenglonNomina.persona_id == persona_id,
                     m.NominaSemanal.estatus == m.EstatusNomina.PAGADA)
             .first())
-    return _d(fila.monto) if fila else None
+    if not base:
+        return None
+
+    corregido = (db.query(m.AjusteNomina)
+                 .filter(m.AjusteNomina.jornada_id == jornada_id,
+                         m.AjusteNomina.persona_id == persona_id,
+                         m.AjusteNomina.concepto == AJUSTE_CORRECCION,
+                         m.AjusteNomina.aplicado_en_nomina_id.isnot(None))
+                 .all())
+    return _d(base.monto) + sum((_d(a.monto) for a in corregido), CERO)
 
 
 def diferencias_del_servicio(db: Session, servicio_id: int,
@@ -309,10 +402,14 @@ def diferencias_del_servicio(db: Session, servicio_id: int,
     if not servicio:
         raise HTTPException(404, f"No existe el servicio {servicio_id}")
 
+    # Solo los ajustes de correccion tapan una nueva correccion. Un
+    # descuento de viaticos pendiente es otra cosa y no tiene por que
+    # impedir que se corrija lo que se pago por ese dia.
     pendientes = {
         (a.jornada_id, a.persona_id)
         for a in db.query(m.AjusteNomina)
-        .filter_by(servicio_id=servicio_id, aplicado_en_nomina_id=None).all()
+        .filter_by(servicio_id=servicio_id, aplicado_en_nomina_id=None,
+                   concepto=AJUSTE_CORRECCION).all()
     }
 
     generados = []
@@ -340,6 +437,7 @@ def diferencias_del_servicio(db: Session, servicio_id: int,
                 ajuste = m.AjusteNomina(
                     persona_id=persona.id, pais_id=servicio.pais_id,
                     servicio_id=servicio_id, jornada_id=jornada.id,
+                    concepto=AJUSTE_CORRECCION,
                     monto=diferencia, creado_por_id=creado_por_id,
                     motivo=(f"{servicio.folio} {jornada.fecha.isoformat()}: "
                             f"se pago {pagado}, corresponde {debido}"))
