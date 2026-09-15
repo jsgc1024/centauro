@@ -570,8 +570,20 @@ def reabrir(db: Session, jornada_id: int, quien_id: int,
     pagado = (db.query(m.ConceptoNomina)
               .filter_by(jornada_id=jornada.id).first() is not None)
 
-    jornada.estatus = m.EstatusJornada.EN_CURSO
+    # Se deshace todo lo que escribio el cierre a mano, la hora de
+    # inicio incluida. Dejarla era peor que no haber cerrado: quedaba
+    # una hora que tecleo alguien en una oficina, sin firma, que se lee
+    # exactamente igual que una marcada desde la calle.
+    #
+    # Y el dia vuelve a PLANEADA, no a EN_CURSO. EN_CURSO significa
+    # "esta pasando ahora mismo" para el pulso de la central, para el
+    # barrido de standby y para el panorama de direccion: un dia
+    # reabierto de hace tres semanas subia a la banda roja con "sin
+    # reporte hace 512 horas".
+    jornada.estatus = m.EstatusJornada.PLANEADA
     jornada.fin_real = None
+    if jornada.cerrada_a_mano_en:
+        jornada.inicio_real = None
     jornada.cerrada_a_mano_por_id = None
     jornada.cerrada_a_mano_en = None
     jornada.cierre_motivo = None

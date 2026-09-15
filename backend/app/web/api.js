@@ -20,7 +20,11 @@ export class ErrorApi extends Error {
   static mensajeDe(d) {
     if (!d) return null;
     if (typeof d === "string") return d;
-    if (d.mensaje) return d.mensaje;
+    /* El backend escribe dos cosas distintas: que paso y que hacer. La
+       segunda es la unica que sirve para salir del problema —"Registra
+       primero la recepcion"— y se estaba tirando. Van juntas. */
+    if (d.mensaje) return d.que_hacer ? `${d.mensaje}\n\n${d.que_hacer}`
+                                      : d.mensaje;
     if (Array.isArray(d)) return d.map(x => x.msg || JSON.stringify(x)).join(". ");
     return null;
   }

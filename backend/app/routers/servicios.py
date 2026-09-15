@@ -1,5 +1,6 @@
 """Alta de servicios, equipos, jornadas y asignacion de recursos."""
 from datetime import datetime, time, timedelta, timezone
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -1210,9 +1211,15 @@ def auditoria_servicio(servicio_id: int, db: Session = Depends(get_db),
 # ---------------------------------------------------------------- eliminar
 
 # Un servicio que ya arranco no se borra: se cancela.
-ANTES_DE_ARRANCAR = {m.EstatusServicio.BORRADOR, m.EstatusServicio.COTIZADO,
-                     m.EstatusServicio.AUTORIZADO, m.EstatusServicio.PLANEADO,
-                     m.EstatusServicio.ASIGNADO}
+#
+# SOLICITADO entra aqui porque es como nace un implantado. Faltaba —el
+# estatus se agrego despues y esta lista no se actualizo— y el efecto
+# era que una captura equivocada no se podia deshacer nunca: contestaba
+# "Un servicio que ya arranco se cancela, no se borra", que ni siquiera
+# era cierto.
+ANTES_DE_ARRANCAR = {m.EstatusServicio.BORRADOR, m.EstatusServicio.SOLICITADO,
+                     m.EstatusServicio.COTIZADO, m.EstatusServicio.AUTORIZADO,
+                     m.EstatusServicio.PLANEADO, m.EstatusServicio.ASIGNADO}
 
 
 # Viaticos que todavia no son dinero en manos de nadie: asignados es
@@ -1229,11 +1236,36 @@ def _viaticos_de(db: Session, jornada_ids: list[int]) -> list:
             .filter(m.AsignacionViatico.jornada_id.in_(jornada_ids)).all())
 
 
-def _movimientos(db: Session, jornada_ids: list[int]) -> list[str]:
+def _compras_del_equipo(db: Session, equipo_ids: list[int]) -> list:
+    """Vuelos y hoteles que finanzas ya compro para ese equipo.
+
+    Cuelgan del equipo con borrado en cascada, asi que borrar el equipo
+    los desaparece de la base. El dinero ya salio de la empresa: sin la
+    fila no queda ni el monto real ni el numero de reserva, y la unica
+    forma de enterarse es que alguien note el cargo en el estado de
+    cuenta y no sepa de que fue.
+    """
+    if not equipo_ids:
+        return []
+    return (db.query(m.CompraEspecial)
+            .filter(m.CompraEspecial.equipo_id.in_(equipo_ids)).all())
+
+
+def _movimientos(db: Session, jornada_ids: list[int],
+                 equipo_ids: list[int] | None = None) -> list[str]:
     """Que le impide a estos dias desaparecer sin dejar hueco."""
-    if not jornada_ids:
+    if not jornada_ids and not equipo_ids:
         return []
     razones = []
+    compradas = [c for c in _compras_del_equipo(db, equipo_ids or [])
+                 if c.estatus not in (m.EstatusCompra.SOLICITADA,
+                                      m.EstatusCompra.CANCELADA)]
+    if compradas:
+        razones.append(
+            f"tiene {len(compradas)} compra(s) que finanzas ya resolvio "
+            f"({', '.join(c.tipo.value for c in compradas)})")
+    if not jornada_ids:
+        return razones
     depositados = [v for v in _viaticos_de(db, jornada_ids)
                    if v.estatus not in VIATICOS_SIN_DEPOSITAR]
     if depositados:
@@ -1319,7 +1351,7 @@ def eliminar_equipo(equipo_id: int, datos: s.EliminarIn | None = None,
         })
 
     jornada_ids = [j.id for j in equipo.jornadas]
-    razones = _movimientos(db, jornada_ids)
+    razones = _movimientos(db, jornada_ids, [equipo.id])
     if razones:
         raise HTTPException(409, {
             "mensaje": f"El equipo {equipo.alias} " + " y ".join(razones),
@@ -1387,7 +1419,8 @@ def eliminar_servicio(servicio_id: int, datos: s.EliminarIn | None = None,
         })
 
     jornada_ids = [j.id for e in servicio.equipos for j in e.jornadas]
-    razones = _movimientos(db, jornada_ids)
+    razones = _movimientos(db, jornada_ids,
+                           [e.id for e in servicio.equipos])
     if razones:
         raise HTTPException(409, {
             "mensaje": "El servicio " + " y ".join(razones),
@@ -1407,8 +1440,43 @@ def eliminar_servicio(servicio_id: int, datos: s.EliminarIn | None = None,
         db.query(m.RespuestaEncuesta).filter(
             m.RespuestaEncuesta.encuesta_id.in_(encuestas)).delete(
                 synchronize_session=False)
+    # La cotizacion y el cierre cuelgan del servicio sin ondelete, asi
+    # que hay que quitarlos a mano y en orden: primero los renglones,
+    # luego la cabecera. Faltaban, y borrar un servicio ya cotizado
+    # reventaba con una violacion de llave foranea.
+    cotizaciones = [c.id for c in db.query(m.Cotizacion).filter_by(
+        servicio_id=servicio.id).all()]
+    if cotizaciones:
+        db.query(m.LineaCotizacion).filter(
+            m.LineaCotizacion.cotizacion_id.in_(cotizaciones)).delete(
+                synchronize_session=False)
+        db.query(m.Cotizacion).filter(
+            m.Cotizacion.id.in_(cotizaciones)).delete(
+                synchronize_session=False)
+
+    cierres = [c.id for c in db.query(m.Cierre).filter_by(
+        servicio_id=servicio.id).all()]
+    if cierres:
+        db.query(m.Desviacion).filter(
+            m.Desviacion.cierre_id.in_(cierres)).delete(
+                synchronize_session=False)
+        db.query(m.Cierre).filter(m.Cierre.id.in_(cierres)).delete(
+            synchronize_session=False)
+
+    contratos = [c.id for c in db.query(m.ContratoImplantado).filter_by(
+        servicio_id=servicio.id).all()]
+    if contratos:
+        for tabla in (m.PersonaImplantado, m.UnidadImplantado):
+            db.query(tabla).filter(
+                tabla.contrato_id.in_(contratos)).delete(
+                    synchronize_session=False)
+        db.query(m.ContratoImplantado).filter(
+            m.ContratoImplantado.id.in_(contratos)).delete(
+                synchronize_session=False)
+
     for tabla in (m.TaskSheet, m.Notificacion, m.RegistroAccion, m.Hospedaje,
-                  m.Encuesta, m.AlertaIncidencia, m.ReemplazoRecurso):
+                  m.Encuesta, m.AlertaIncidencia, m.ReemplazoRecurso,
+                  m.ComisionConsultor, m.RevisionUnidad):
         db.query(tabla).filter_by(servicio_id=servicio.id).delete(
             synchronize_session=False)
     # La incidencia es de la persona, no del servicio: pierde el enlace.
@@ -1559,9 +1627,19 @@ def cancelar_servicio(servicio_id: int, datos: s.CancelarIn,
                                      m.EstatusViatico.DEVUELTO,
                                      m.EstatusViatico.CANCELADO):
             persona = db.get(m.Persona, viatico.persona_id)
+            # Lo que de verdad hay que devolver es el neto: lo que ya se
+            # comprobo es gasto real de la empresa y no vuelve. Decia el
+            # total entregado, y el endpoint de devolucion solo acepta el
+            # neto, asi que el numero que daba el sistema y el que
+            # aceptaba el sistema no eran el mismo.
+            neto = (Decimal(str(viatico.monto_total))
+                    - Decimal(str(viatico.monto_comprobado or 0))
+                    - Decimal(str(viatico.monto_devuelto or 0)))
             por_devolver.append({
                 "persona": persona.nombre if persona else viatico.persona_id,
-                "monto": float(viatico.monto_total),
+                "monto": float(max(neto, Decimal("0"))),
+                "entregado": float(viatico.monto_total),
+                "ya_comprobado": float(viatico.monto_comprobado or 0),
                 "moneda": viatico.moneda.value,
                 "estatus": viatico.estatus.value,
             })
@@ -1593,8 +1671,9 @@ def cancelar_servicio(servicio_id: int, datos: s.CancelarIn,
 
 @router.get("/{servicio_id}/revisiones",
             summary="Como se recibio y como se entrego cada unidad")
-def revisiones_del_servicio(servicio_id: int, db: Session = Depends(get_db),
-                            _=Depends(auth.usuario_actual)):
+def revisiones_del_servicio(servicio_id: int, fotos: bool = False,
+                            db: Session = Depends(get_db),
+                            usuario: m.Usuario = Depends(auth.usuario_actual)):
     """Lo que la consola necesita para resolver un reclamo de dano.
 
     De un lado las fotos de cuando la unidad cambio de manos hacia el
@@ -1604,6 +1683,18 @@ def revisiones_del_servicio(servicio_id: int, db: Session = Depends(get_db),
     servicio = db.get(m.Servicio, servicio_id)
     if not servicio:
         raise HTTPException(404, f"No existe el servicio {servicio_id}")
+    # Las fotos de la unidad ensenan placas, el interior y muchas veces
+    # el punto de encuentro. El equipo ve las de sus propios servicios
+    # por su app; aqui solo entra quien opera el servicio.
+    if usuario.rol == m.Rol.PERSONAL_SEGURIDAD:
+        suyo = (db.query(m.AsignacionPersonal)
+                .join(m.Jornada, m.AsignacionPersonal.jornada_id == m.Jornada.id)
+                .join(m.Equipo, m.Jornada.equipo_id == m.Equipo.id)
+                .filter(m.Equipo.servicio_id == servicio_id,
+                        m.AsignacionPersonal.persona_id == usuario.persona_id)
+                .first())
+        if not suyo:
+            raise HTTPException(403, "No participas en ese servicio")
     filas = (db.query(m.RevisionUnidad)
              .filter_by(servicio_id=servicio.id)
              .order_by(m.RevisionUnidad.momento).all())
@@ -1624,9 +1715,14 @@ def revisiones_del_servicio(servicio_id: int, db: Session = Depends(get_db),
             "combustible_octavos": r.combustible_octavos,
             "nota": r.nota,
             "tiene_firma": bool(r.firma),
+            # Las imagenes solo cuando se piden. Van como data URI y son
+            # varios megas por servicio; esta pantalla se recarga sola
+            # en casi cada accion del consultor, asi que mandarlas
+            # siempre era hacerle esperar por algo que casi nunca mira.
             "fotos": [{"angulo": (f.angulo.value if hasattr(f.angulo, "value")
                                   else f.angulo),
-                       "imagen": f.imagen, "nota": f.nota}
+                       "nota": f.nota,
+                       **({"imagen": f.imagen} if fotos else {})}
                       for f in r.fotos],
         }
 

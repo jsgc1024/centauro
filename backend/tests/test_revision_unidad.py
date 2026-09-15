@@ -43,7 +43,9 @@ def _revision(servicio, datos, tipo, km, fotos=None, **extra):
               "tipo": tipo,
               "kilometraje": km,
               "combustible_octavos": 8,
-              "firma": "data:image/png;base64,iVBORw0KGgo=",
+              # Una firma de verdad son cientos de puntos; el backend
+              # exige que lo parezca para que no pase un lienzo vacio.
+              "firma": "data:image/png;base64," + ("A" * 200),
               "fotos": CUATRO if fotos is None else fotos}
     cuerpo.update(extra)
     return cuerpo

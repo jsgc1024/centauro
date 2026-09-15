@@ -28,10 +28,15 @@ export function recordar(llave) {
   } catch { return null; }
 }
 
-export function olvidar() {
-  for (const k of Object.keys(localStorage)) {
-    if (k.startsWith(PREFIJO)) localStorage.removeItem(k);
-  }
+export function olvidar(llave = null) {
+  // Con llave, olvida solo esa. Sin llave, todo —que es lo que hace
+  // falta al salir de la sesion, y solo ahi.
+  try {
+    if (llave) return localStorage.removeItem(PREFIJO + llave);
+    for (const k of Object.keys(localStorage)) {
+      if (k.startsWith(PREFIJO)) localStorage.removeItem(k);
+    }
+  } catch { /* sin localStorage no hay nada que olvidar */ }
 }
 
 /* Pide al servidor y, si no contesta, echa mano de lo guardado.

@@ -1829,11 +1829,11 @@ async function bloqueRevisiones(servicio) {
     return caja;
   }
 
-  for (const u of datos.unidades) caja.append(tarjetaRevision(u));
+  for (const u of datos.unidades) caja.append(tarjetaRevision(u, servicio));
   return caja;
 }
 
-function tarjetaRevision(u) {
+function tarjetaRevision(u, servicio) {
   const bloque = h("div", { clase: "tarjeta lisa", style: "margin:0 0 14px" },
     h("div", { clase: "fila separa" },
       h("b", {}, u.placa || "Sin placa"),
@@ -1856,8 +1856,47 @@ function tarjetaRevision(u) {
     return bloque;
   }
 
-  bloque.append(ladoALado(u.recibe, u.entrega));
+  /* La comparacion no se pinta de entrada: las fotos van como data URI
+     y son varios megas por servicio. Esta pantalla se recarga sola en
+     casi cada accion del consultor, asi que bajarlas siempre era
+     hacerlo esperar por algo que casi nunca mira. Se piden cuando de
+     verdad las va a ver, y se piden una sola vez. */
+  const zona = h("div", {});
+  const abrir = h("button", { clase: "claro chico", style: "margin-top:10px" },
+    "Ver las fotos lado a lado");
+
+  abrir.addEventListener("click", async () => {
+    if (zona.firstChild) {
+      zona.replaceChildren();
+      abrir.textContent = "Ver las fotos lado a lado";
+      return;
+    }
+    abrir.disabled = true;
+    abrir.textContent = "Bajando las fotos…";
+    try {
+      const conFotos = await api.get(
+        `/servicios/${servicio.id}/revisiones?fotos=true`);
+      const suya = conFotos.unidades.find(
+        x => x.vehiculo_id === u.vehiculo_id);
+      zona.replaceChildren(ladoALado(suya.recibe, suya.entrega));
+      abrir.textContent = "Ocultar las fotos";
+    } catch (e) {
+      zona.replaceChildren(aviso(e.message, "alerta"));
+    }
+    abrir.disabled = false;
+  });
+
+  bloque.append(columnas(u.recibe, u.entrega), abrir, zona);
   return bloque;
+}
+
+/* Los datos de las dos puntas —quien, cuando, kilometraje, firma— si se
+   ven de entrada: pesan nada y son lo que se consulta a diario. */
+function columnas(entrada, salida) {
+  return h("div", { clase: "rejilla-revision" },
+    columna("Al recibirla", entrada),
+    salida ? columna("Al entregarla", salida)
+           : h("div", { clase: "chico gris" }, "Todavía no se entrega."));
 }
 
 /* Las dos revisiones, angulo por angulo, en el mismo renglon. Ver la
@@ -1865,12 +1904,6 @@ function tarjetaRevision(u) {
    nuevo; dos galerias separadas obligan a recordar, y nadie recuerda. */
 function ladoALado(entrada, salida) {
   const zona = h("div", {});
-
-  zona.append(h("div", { clase: "rejilla-revision" },
-    columna("Al recibirla", entrada),
-    salida ? columna("Al entregarla", salida)
-           : h("div", { clase: "chico gris" },
-               "Todavía no se entrega.")));
 
   const angulos = ["frente", "atras", "izquierdo", "derecho"];
   const deEntrada = mapaFotos(entrada);
@@ -1888,8 +1921,9 @@ function ladoALado(entrada, salida) {
     zona.append(h("p", { clase: "chico", style: "margin-top:10px" },
       h("b", {}, "Golpes registrados")));
     zona.append(h("div", { clase: "tira-fotos" },
-      ...golpes.map(f => h("img", { clase: "mini", src: f.imagen,
-                                    alt: f.nota || "golpe" }))));
+      ...golpes.filter(f => f.imagen)
+        .map(f => h("img", { clase: "mini", src: f.imagen,
+                             alt: f.nota || "golpe" }))));
   }
   return zona;
 }

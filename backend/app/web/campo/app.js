@@ -548,7 +548,7 @@ async function pantallaYo() {
       ...(c.dimensiones || []).filter(x => x.aplica).map(x =>
         h("div", { clase: "fila separa chico", style: "margin-top:8px" },
           h("span", {}, x.dimension),
-          h("span", { clase: "num" }, String(x.calificacion ?? "—"))))));
+          h("span", { clase: "num" }, String(x.valor ?? "—"))))));
   } catch { /* sin tablero todavia */ }
 
   try {
@@ -810,7 +810,10 @@ async function encenderAvisos() {
     alert("Listo. Este teléfono ya recibe avisos.");
     pintar();
   } catch (err) {
-    alert("No se pudo activar: " + err.message);
+    alert("No se pudo activar: " + err.message
+          + "\n\nEl permiso quedó dado, pero el servidor no te registró. "
+          + "Vuelve a intentarlo desde «Yo» cuando tengas señal.");
+    pintar();
   }
 }
 
@@ -821,6 +824,23 @@ async function probarAviso(e) {
     alert("Aviso enviado. Debe aparecer en unos segundos.");
   } catch (err) { alert(err.message); }
   e.target.disabled = false;
+}
+
+/* Lo que el servidor sabe de este telefono. La pantalla no puede
+   decidir solo con el permiso del navegador: el permiso puede estar
+   concedido y la suscripcion no haberse guardado nunca —o haberla
+   rotado el navegador— y entonces "Encendidos" es mentira. */
+async function suscripcionDelServidor() {
+  try {
+    let endpoint = null;
+    if (soportaAvisos() && navigator.serviceWorker) {
+      const reg = await navigator.serviceWorker.ready;
+      const sus = await reg.pushManager.getSubscription();
+      endpoint = sus ? sus.endpoint : null;
+    }
+    return await api.get("/campo/push/estado"
+      + (endpoint ? `?endpoint=${encodeURIComponent(endpoint)}` : ""));
+  } catch { return null; }
 }
 
 /* El interruptor, en "Yo". */
@@ -842,12 +862,29 @@ function bloqueAvisos() {
     return caja;
   }
   if (estado === "granted") {
-    caja.append(
-      h("p", { clase: "chico gris", style: "margin-top:8px" },
-        "Encendidos. Te va a llegar el recordatorio de confirmar el día "
-        + "anterior."),
-      h("button", { clase: "claro", onclick: (e) => probarAviso(e) },
-        "Mandarme un aviso de prueba"));
+    /* El permiso esta, pero eso no quiere decir que el servidor tenga a
+       donde mandar. Se pregunta, y mientras llega la respuesta se dice
+       lo que se sabe con certeza. */
+    const linea = h("p", { clase: "chico gris", style: "margin-top:8px" },
+      "Comprobando…");
+    const accion = h("div", {});
+    caja.append(linea, accion);
+
+    suscripcionDelServidor().then((estado) => {
+      if (estado && estado.este_telefono) {
+        linea.textContent = "Encendidos. Te va a llegar el recordatorio de "
+          + "confirmar el día anterior.";
+        accion.replaceChildren(
+          h("button", { clase: "claro", onclick: (e) => probarAviso(e) },
+            "Mandarme un aviso de prueba"));
+        return;
+      }
+      linea.textContent = "Diste permiso, pero este teléfono no quedó "
+        + "registrado en el servidor. No te van a llegar los avisos.";
+      accion.replaceChildren(
+        h("button", { onclick: () => encenderAvisos() },
+          "Volver a intentarlo"));
+    });
     return caja;
   }
   caja.append(
@@ -1028,7 +1065,13 @@ function formRevision(servicioId, unidad, tipo) {
   guardar.addEventListener("click", () => mandar(guardar));
 
   const cuerpo = [
-    h("a", { href: `#/revision/${servicioId}`, clase: "chico" }, "‹ Volver"),
+    /* Un enlace al mismo hash no dispara nada: el formulario se abrio
+       reemplazando el DOM, sin tocar la direccion. Con las cuatro fotos
+       ya tomadas, tocar "Volver" y que no pase nada se siente como una
+       pantalla congelada. */
+    h("a", { href: "#", clase: "chico",
+             onclick: (e) => { e.preventDefault(); pantallaRevision(); } },
+      "‹ Volver"),
     h("h1", {}, entrando ? "Recibir la unidad" : "Entregar la unidad"),
     h("div", { clase: "chico gris" },
       `${unidad.placa}${unidad.color ? " · " + unidad.color : ""}`),

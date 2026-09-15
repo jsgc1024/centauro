@@ -345,6 +345,57 @@ esta máquina: un respaldo del disco sigue siendo necesario.
 
 ---
 
+## 9. La revisión de septiembre
+
+Tres vueltas al sistema completo: una buscando problemas, otra revisando
+los arreglos de la primera, y una tercera prediciendo qué pruebas se
+iban a romper antes de correrlas. El detalle está en
+`REVISION_2026_09.md`. Lo que hay que recordar:
+
+**Siete agujeros de seguridad**, todos cerrados. El peor: el endpoint de
+sembrar catálogos estaba abierto sin contraseña, reescribía el rol y la
+contraseña de todos los usuarios, y devolvía la contraseña en la
+respuesta. Dos peticiones sin credenciales y cualquiera era director
+general. Los otros seis eran del mismo tipo: **pedir sesión no es pedir
+permiso**. Un elemento de seguridad freelance tiene sesión, y con ella
+llegaba al itinerario de ejecutivos que no protege, a los viáticos de
+sus compañeros, y al tarifario completo de la empresa.
+
+**Ocho errores en el dinero**, todos cerrados. El más caro: la misma
+corrección se volvía a generar en cada corrida, para siempre. Pagado
+800, corresponde 1100, ajuste de +300; se paga; la siguiente revisión
+vuelve a ver 800 contra 1100 y genera otros 300. El origen era que
+`AjusteNomina` no decía de qué era el ajuste, así que dos cosas
+distintas —corregir un pago y descontar viáticos— se pisaban.
+
+**Tres formas de perder un dato que explica dinero** al borrar: un vuelo
+ya comprado desaparecía con el equipo, sin quedar ni el número de
+reserva.
+
+**Doce cosas de la app y del código nuevo**, casi todas mías de estos
+días. La que más pena da: `olvidar("mi-dia")` borraba **toda** la
+memoria sin conexión, así que el agente registraba la unidad en un
+estacionamiento y ahí perdía la copia guardada de su día, sus viáticos y
+sus pagos —justo antes de bajar al sótano.
+
+### Lo que dejó la revisión
+
+`backend/revisar.py`. Un verificador propio que corre sin instalar nada:
+
+```
+python3 revisar.py
+```
+
+Nació de un `settings` que se usaba arriba y solo se importaba dentro de
+una función de más abajo: compilaba, arrancaba, y reventaba en la
+primera petición real. Ocho pruebas en rojo por una línea que ningún
+compilador iba a señalar. Revisa nombres que no existen, imports que
+sobran, funciones de JS que se llaman y no están, claves de idioma que
+no estén las tres veces, y la cadena de migraciones. Conviene correrlo
+antes de cada `./probar.sh`: tarda un segundo y ahorra cinco minutos.
+
+---
+
 ## 8. Lo que falta
 
 ### Abierto
@@ -359,3 +410,12 @@ esta máquina: un respaldo del disco sigue siendo necesario.
 - **Generar las llaves de push.** `.env` todavía no tiene `VAPID_PUBLIC`
   ni `VAPID_PRIVATE`, así que los avisos al teléfono no salen:
   `docker compose exec -T api python generar_llaves_push.py`.
+- **La zona horaria.** Es lo más serio de lo que queda abierto. El
+  sistema decide con un solo reloj —el del servidor— y `Pais` no guarda
+  zona horaria. Con el contenedor en UTC, el corte de las 18:00 de la
+  central cae a las 12:00 en CDMX. Lo mínimo hoy: `TZ=America/Mexico_City`
+  en `api`, `worker` y `beat` del `docker-compose.yml`. Brasil y
+  Venezuela necesitan zona por país, que es un cambio de fondo.
+- **La moneda.** `Cotizacion.tipo_cambio` existe y no se lee en ninguna
+  parte. Hoy no duele porque todo está en pesos; el día que entre un
+  tarifario en dólares, la utilidad y la comisión salen sin sentido.

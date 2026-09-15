@@ -122,13 +122,13 @@ def revisar_python() -> None:
         _globales(tabla, techo, archivo)
 
         usados = _usados(arbol)
-        renglones = fuente.split("\n")
+        renglones = fuente.split(chr(10))
         for nombre, linea in _importados(arbol).items():
             # `# noqa` en el renglon significa "esta aqui a proposito":
             # el import de models en main.py registra las tablas y
             # quitarlo rompe el arranque sin que nadie lo note hasta
             # la primera consulta.
-            if "# noqa" in renglones[linea - 1]:
+            if '# noqa' in renglones[linea - 1]:
                 continue
             if nombre not in usados:
                 apuntar(archivo, linea, f"importa '{nombre}' y no lo usa")

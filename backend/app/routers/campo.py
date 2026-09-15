@@ -13,12 +13,13 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app import auth
 from app import models as m
 from app import tasksheet
+from app import viaticos as viaticos_motor
 from app.config import settings
 from app.db import get_db
 from app.operacion import MINUTOS_ANTES_PERMITIDOS, MINUTOS_DESPUES_PERMITIDOS
@@ -261,17 +262,19 @@ def mis_viaticos(db: Session = Depends(get_db),
             "servicio_id": servicio.id, "folio": servicio.folio,
             "cliente": servicio.cliente.nombre if servicio.cliente else None,
             "moneda": v.moneda.value,
-            "entregado": 0.0, "comprobado": 0.0, "por_comprobar": 0.0,
+            "entregado": Decimal("0"), "comprobado": Decimal("0"),
+            "por_comprobar": Decimal("0"),
             "dias": [], "limite": None, "vencido": False,
         })
-        entregado = float(v.monto_total or 0)
-        comprobado = float(v.monto_comprobado or 0)
+        entregado = Decimal(str(v.monto_total or 0))
+        comprobado = Decimal(str(v.monto_comprobado or 0))
         # Lo que todavia no sale como comprobado es lo que se le va a
         # pedir. Se dice por dia para que sepa cual le falta.
         fila["entregado"] += entregado
         fila["comprobado"] += comprobado
-        fila["por_comprobar"] += max(entregado - comprobado
-                                     - float(v.monto_devuelto or 0), 0)
+        fila["por_comprobar"] += max(
+            entregado - comprobado - Decimal(str(v.monto_devuelto or 0)),
+            Decimal("0"))
         if v.limite_comprobacion:
             actual = v.limite_comprobacion.isoformat()
             fila["limite"] = min(fila["limite"] or actual, actual)
@@ -320,9 +323,9 @@ def mis_comisiones(db: Session = Depends(get_db),
             "pagado": n.estatus == m.EstatusNomina.PAGADA,
             "pagada_en": n.pagada_en.isoformat() if n.pagada_en else None,
             "moneda": n.moneda.value,
-            "total": float(r.total or 0),
+            "total": Decimal(str(r.total or 0)),
             "dias": [{"descripcion": c.descripcion,
-                      "monto": float(c.monto or 0),
+                      "monto": Decimal(str(c.monto or 0)),
                       "rol": c.rol.nombre if c.rol else None,
                       "es_ajuste": c.ajuste_id is not None}
                      for c in r.conceptos],
@@ -352,14 +355,14 @@ def mis_comisiones(db: Session = Depends(get_db),
                 "fecha": jornada.fecha.isoformat(),
                 "folio": jornada.equipo.servicio.folio,
                 "rol": asignacion.rol.nombre if asignacion.rol else None,
-                "monto": float(pago["monto"]),
+                "monto": Decimal(str(pago["monto"])),
             })
 
     return {
         "cortes": cortes,
         "en_curso": {
             "dias": pendientes,
-            "total": sum(p["monto"] for p in pendientes),
+            "total": sum((p["monto"] for p in pendientes), Decimal("0")),
             "nota": "Todavia no entra a un corte. Puede cambiar si un dia "
                     "se corrige.",
         },
@@ -458,6 +461,11 @@ def comprobar(viatico_id: int, datos: ComprobanteDeCampoIn,
     if datos.imagen and len(datos.imagen) > 4_000_000:
         raise HTTPException(400, "La foto pesa demasiado. Vuelve a tomarla.")
 
+    mal = viaticos_motor.revisar_comprobante(
+        viatico, datos.monto, datos.concepto, datos.descripcion)
+    if mal:
+        raise HTTPException(mal.pop("codigo"), mal)
+
     db.add(m.Comprobante(
         asignacion_id=viatico.id, concepto=datos.concepto, tipo=datos.tipo,
         monto=datos.monto, descripcion=datos.descripcion,
@@ -502,6 +510,25 @@ def llave_push():
     from app import push
 
     return {"llave": settings.vapid_public, "activo": push.hay_llaves()}
+
+
+@router.get("/push/estado", summary="Este telefono, esta suscrito?")
+def estado_push(endpoint: str | None = None, db: Session = Depends(get_db),
+                usuario: m.Usuario = Depends(CAMPO)):
+    """Lo que la pantalla necesita para no mentir.
+
+    El permiso del navegador y la suscripcion del servidor son dos cosas
+    distintas, y se pueden separar: el permiso queda concedido y la fila
+    nunca se guardo, o el navegador rota la suscripcion por su cuenta. Si
+    la pantalla solo mira el permiso, dice "encendidos" para siempre
+    mientras el servidor no tiene a donde mandar nada.
+    """
+    filas = (db.query(m.SuscripcionPush)
+             .filter_by(persona_id=usuario.persona_id, activa=True).all())
+    return {"suscrito": bool(filas),
+            "este_telefono": bool(endpoint and any(f.endpoint == endpoint
+                                                   for f in filas)),
+            "telefonos": len(filas)}
 
 
 @router.post("/push/suscribir", summary="Este telefono quiere avisos")
@@ -583,9 +610,14 @@ class RevisionIn(BaseModel):
     servicio_id: int
     vehiculo_id: int
     tipo: m.TipoRevision
-    kilometraje: int | None = None
-    # El tanque como se lee en el tablero: octavos, de 0 a 8.
-    combustible_octavos: int | None = None
+    # Un odometro no cuenta para atras y no llega al millon. Sin topes,
+    # un dedazo al entregar (45000 donde decia 145000) deja a la consola
+    # ensenando "-100,000 km recorridos durante el servicio" sin que
+    # nada lo marque como raro.
+    kilometraje: int | None = Field(default=None, ge=0, le=2_000_000)
+    # El tanque como se lee en el tablero: octavos, de 0 a 8. Pedir
+    # litros es pedir que alguien invente un numero.
+    combustible_octavos: int | None = Field(default=None, ge=0, le=8)
     nota: str | None = None
     firma: str | None = None
     lat: Decimal | None = None
@@ -719,6 +751,46 @@ def revisar(datos: RevisionIn, db: Session = Depends(get_db),
                 "mensaje": "Esa unidad nunca se reviso al recibirla",
                 "que_hacer": "Sin el estado de entrada no hay contra que "
                              "comparar. Registra primero la recepcion."})
+
+    # La firma se exigia solo en la pantalla. Media promesa —"cuatro
+    # fotos y una firma"— vivia en el JavaScript del telefono: cualquier
+    # peticion directa guardaba una revision sin firmar y nadie se
+    # enteraba hasta que habia un reclamo.
+    if not datos.firma or len(datos.firma) < 100:
+        raise HTTPException(409, {
+            "mensaje": "Falta la firma",
+            "que_hacer": "Firma con el dedo en el recuadro. Sin firma, la "
+                         "revision no sirve para discutir un dano."})
+
+    # Las fotos viajan como data URI dentro del JSON. Cuatro lados mas
+    # los golpes se van facil a varios megas, y del otro lado hay un
+    # telefono con media barra de senal.
+    pesa = sum(len(f.imagen) for f in datos.fotos)
+    if pesa > 8_000_000:
+        raise HTTPException(413, {
+            "mensaje": "Las fotos pesan demasiado juntas",
+            "que_hacer": "Quita algunas fotos de golpes y vuelve a "
+                         "intentarlo. Los cuatro lados son los que "
+                         "importan."})
+    for f in datos.fotos:
+        if len(f.imagen) > 3_000_000:
+            raise HTTPException(413, {
+                "mensaje": f"La foto de {f.angulo.value} pesa demasiado",
+                "que_hacer": "Vuelve a tomarla."})
+
+    if datos.kilometraje is not None and tipo == "entrega":
+        entrada_km = (db.query(m.RevisionUnidad)
+                      .filter_by(servicio_id=datos.servicio_id,
+                                 vehiculo_id=datos.vehiculo_id,
+                                 tipo="recibe").first())
+        if (entrada_km and entrada_km.kilometraje is not None
+                and datos.kilometraje < entrada_km.kilometraje):
+            raise HTTPException(409, {
+                "mensaje": "El kilometraje es menor que al recibirla",
+                "que_hacer": (f"Al recibirla marcaba "
+                              f"{entrada_km.kilometraje:,}. Revisa el "
+                              f"tablero: un odometro no cuenta para atras."),
+                "al_recibir": entrada_km.kilometraje})
 
     puestos = {f.angulo.value for f in datos.fotos}
     faltan = [a for a in ANGULOS_MINIMOS if a not in puestos]
