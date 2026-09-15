@@ -307,6 +307,12 @@ def bitacora(jornada_id: int, db: Session = Depends(get_db),
             } if jornada.cerrada_a_mano_en else None),
         },
         "hitos": [{
+            # El numero de la marca. Faltaba, y sin el la bitacora no
+            # sirve para lo unico que la central hace con ella:
+            # `POST /operacion/hitos/{id}/ajustar` existe y es la forma
+            # documentada de corregir una hora, pero desde la consola no
+            # habia manera de saber que numero mandar.
+            "id": h.id,
             "tipo": h.tipo.value,
             "marcado_en": h.marcado_en.isoformat(),
             "marcado_por": h.persona.nombre,

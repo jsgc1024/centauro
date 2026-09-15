@@ -9,7 +9,7 @@ Corregir lo que se pago por un dia y descontar viaticos que no se
 comprobaron son cosas distintas que compartian la llave (jornada,
 persona), asi que se pisaban.
 """
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from ayudas import (asignar, configurar_origen, cotizar_y_autorizar,
@@ -22,7 +22,11 @@ def _lunes(dia=None):
 
 
 def _dia_pagado(cliente, sesion, datos, offset=300):
-    """Un dia trabajado, enviado a finanzas y ya pagado en un corte."""
+    """Un dia trabajado, enviado a finanzas y ya pagado en un corte.
+
+    El corte se paga con fecha de hace dos semanas para dejar libre la
+    semana en curso: es donde van a caer los ajustes de las pruebas.
+    """
     h = sesion("consultor")
     servicio = crear_servicio(
         cliente, h, datos,
@@ -45,8 +49,6 @@ def _dia_pagado(cliente, sesion, datos, offset=300):
                          headers=h)
     assert envio.status_code == 200, envio.text
 
-    # El corte del dia trabajado se paga en su propia semana, para que
-    # la semana en curso quede libre: es donde van a caer los ajustes.
     f = sesion("finanzas")
     r = cliente.post("/nomina/calcular", headers=f,
                      json={"pais_id": datos["mx"]["id"],
@@ -66,11 +68,31 @@ def _pendientes(cliente, sesion, pais_id):
     return r.json()
 
 
-def _ajuste(cliente, sesion, **campos):
+def _ajuste(cliente, sesion, esperado=201, **campos):
     r = cliente.post("/nomina/ajustes", headers=sesion("finanzas"),
                      json=campos)
-    assert r.status_code == 201, r.text
-    return r.json()
+    assert r.status_code == esperado, r.text
+    return r
+
+
+def _alargar_el_dia(cliente, sesion, jornada_id, horas):
+    """Mueve la marca de fin para que el dia salga con horas extra.
+
+    Es el escenario que de verdad genera una correccion: el dia ya se
+    pago, la central ajusta la hora de termino, y lo que corresponde
+    sube. Inventar el ajuste a mano no prueba nada, porque el motor
+    compara contra la tarifa y no contra lo que alguien tecleo.
+    """
+    h = sesion("central")
+    b = cliente.get(f"/operacion/jornadas/{jornada_id}/bitacora",
+                    headers=h).json()
+    fin = next(x for x in b["hitos"] if x["tipo"] == "fin_servicio")
+    nuevo = datetime.fromisoformat(fin["marcado_en"]) + timedelta(hours=horas)
+    r = cliente.post(f"/operacion/hitos/{fin['id']}/ajustar", headers=h,
+                     json={"nuevo_momento": nuevo.isoformat(),
+                           "justificacion": "El servicio se alargo y el "
+                                            "equipo marco tarde el fin."})
+    assert r.status_code == 200, r.text
 
 
 def test_la_misma_diferencia_no_se_arrastra_dos_veces(cliente, sesion, datos):
@@ -79,27 +101,34 @@ def test_la_misma_diferencia_no_se_arrastra_dos_veces(cliente, sesion, datos):
     `_pagado_de` solo miraba el concepto del dia, y los ajustes se
     guardan aparte. Una vez pagado el ajuste, la siguiente corrida
     volvia a ver "se pago 800, corresponde 1100" y generaba otros 300.
-    Cada vez que el servicio se movia, 300 mas, para siempre.
+    Cada vez que el servicio se movia, 300 mas.
     """
-    servicio, j, juan, pais_id = _dia_pagado(cliente, sesion, datos)
+    servicio, j, _, pais_id = _dia_pagado(cliente, sesion, datos)
     h = sesion("finanzas")
 
-    _ajuste(cliente, sesion, persona_id=juan, pais_id=pais_id,
-            servicio_id=servicio["id"], jornada_id=j["id"],
-            concepto="correccion_jornada", monto="300",
-            motivo="Horas extra que no se habian cargado")
-    assert len(_pendientes(cliente, sesion, pais_id)) == 1
+    # El dia resulta que fue mas largo: ahora corresponde mas.
+    _alargar_el_dia(cliente, sesion, j["id"], horas=3)
 
-    # Se paga el ajuste, en el corte de esta semana.
-    r = cliente.post("/nomina/calcular", headers=h,
-                     json={"pais_id": pais_id, "fecha_corte": str(_lunes())})
+    r = cliente.post(f"/nomina/servicio/{servicio['id']}/revisar-diferencias",
+                     headers=h)
     assert r.status_code == 200, r.text
-    cliente.post(f"/nomina/{r.json()['nomina_id']}/pagar", headers=h)
+    pendientes = _pendientes(cliente, sesion, pais_id)
+    assert len(pendientes) == 1, pendientes
+    assert pendientes[0]["concepto"] == "correccion_jornada"
+    diferencia = Decimal(str(pendientes[0]["monto"]))
+    assert diferencia > 0, "las horas extra se le deben"
+
+    # Se paga la diferencia.
+    corte = cliente.post("/nomina/calcular", headers=h,
+                         json={"pais_id": pais_id,
+                               "fecha_corte": str(_lunes())})
+    assert corte.status_code == 200, corte.text
+    cliente.post(f"/nomina/{corte.json()['nomina_id']}/pagar", headers=h)
     assert _pendientes(cliente, sesion, pais_id) == []
 
-    # Y aqui estaba el agujero: volver a revisar el servicio generaba
-    # otra vez la misma diferencia, y otra, y otra.
-    for _ in range(2):
+    # Y aqui estaba el agujero: revisar otra vez generaba la misma
+    # diferencia, y otra, y otra, cada vez que el servicio se movia.
+    for _ in range(3):
         cliente.post(f"/nomina/servicio/{servicio['id']}/revisar-diferencias",
                      headers=h)
     despues = _pendientes(cliente, sesion, pais_id)
@@ -112,15 +141,18 @@ def test_un_descuento_de_viaticos_no_tapa_la_correccion_del_dia(cliente, sesion,
     hacia que la correccion de nomina de ese dia nunca se generara, y no
     quedaba rastro de la omision."""
     servicio, j, juan, pais_id = _dia_pagado(cliente, sesion, datos)
+    h = sesion("finanzas")
 
+    # Un descuento por viaticos no comprobados, del mismo dia.
     _ajuste(cliente, sesion, persona_id=juan, pais_id=pais_id,
             servicio_id=servicio["id"], jornada_id=j["id"],
             concepto="viatico_no_comprobado", monto="-600",
             motivo="Viaticos sin comprobar")
-    _ajuste(cliente, sesion, persona_id=juan, pais_id=pais_id,
-            servicio_id=servicio["id"], jornada_id=j["id"],
-            concepto="correccion_jornada", monto="200",
-            motivo="Dos horas extra")
+
+    # Y el mismo dia resulta que fue mas largo.
+    _alargar_el_dia(cliente, sesion, j["id"], horas=2)
+    cliente.post(f"/nomina/servicio/{servicio['id']}/revisar-diferencias",
+                 headers=h)
 
     pendientes = _pendientes(cliente, sesion, pais_id)
     assert len(pendientes) == 2, pendientes
@@ -131,15 +163,55 @@ def test_un_descuento_de_viaticos_no_tapa_la_correccion_del_dia(cliente, sesion,
         "Viaticos sin comprobar", "Correccion del pago del dia"}
 
 
+def test_la_correccion_de_un_dia_no_se_captura_a_mano(cliente, sesion, datos):
+    """La calcula el motor comparando contra la tarifa.
+
+    Un ajuste capturado con ese concepto se mete en esa comparacion y el
+    sistema lo lee como un pago de mas: en la siguiente revision genera
+    otro ajuste para quitarlo. Un bono acordado a mano se desharia solo,
+    sin que nadie entienda por que.
+    """
+    servicio, j, juan, pais_id = _dia_pagado(cliente, sesion, datos)
+    r = _ajuste(cliente, sesion, esperado=400,
+                persona_id=juan, pais_id=pais_id,
+                servicio_id=servicio["id"], jornada_id=j["id"],
+                concepto="correccion_jornada", monto="300",
+                motivo="Horas extra que no se habian cargado")
+    assert "lo pone el sistema" in r.json()["detail"]["mensaje"]
+
+    # Lo que se captura a mano es "manual", y ese si pasa.
+    _ajuste(cliente, sesion, persona_id=juan, pais_id=pais_id,
+            servicio_id=servicio["id"], concepto="manual", monto="300",
+            motivo="Bono acordado con direccion")
+
+
+def test_un_ajuste_manual_no_lo_deshace_el_sistema(cliente, sesion, datos):
+    """Es la otra mitad de lo mismo: lo capturado a mano no entra a la
+    comparacion contra la tarifa, asi que sobrevive a las revisiones."""
+    servicio, _, juan, pais_id = _dia_pagado(cliente, sesion, datos)
+    h = sesion("finanzas")
+    _ajuste(cliente, sesion, persona_id=juan, pais_id=pais_id,
+            servicio_id=servicio["id"], concepto="manual", monto="500",
+            motivo="Apoyo de transporte acordado con direccion")
+
+    for _ in range(2):
+        cliente.post(f"/nomina/servicio/{servicio['id']}/revisar-diferencias",
+                     headers=h)
+
+    pendientes = _pendientes(cliente, sesion, pais_id)
+    assert len(pendientes) == 1, pendientes
+    assert pendientes[0]["concepto"] == "manual"
+    assert Decimal(str(pendientes[0]["monto"])) == Decimal("500")
+
+
 def test_un_ajuste_no_se_paga_en_dos_cortes(cliente, sesion, datos):
     """Dos borradores con fechas de corte distintas se llevaban el mismo
     ajuste, y al pagar los dos la persona cobraba la diferencia dos
     veces."""
-    servicio, j, juan, pais_id = _dia_pagado(cliente, sesion, datos)
+    servicio, _, juan, pais_id = _dia_pagado(cliente, sesion, datos)
     h = sesion("finanzas")
     _ajuste(cliente, sesion, persona_id=juan, pais_id=pais_id,
-            servicio_id=servicio["id"], jornada_id=j["id"],
-            concepto="correccion_jornada", monto="1200",
+            servicio_id=servicio["id"], concepto="manual", monto="1200",
             motivo="Diferencia de la semana pasada")
 
     a = cliente.post("/nomina/calcular", headers=h,
@@ -159,7 +231,7 @@ def test_un_borrador_se_puede_tirar_y_suelta_lo_que_aparto(cliente, sesion,
                                                             datos):
     """Un borrador aparta. Sin forma de tirarlo, una corrida "para ver
     como queda" dejaba ese dinero retenido, y nada lo avisaba."""
-    servicio, j, juan, pais_id = _dia_pagado(cliente, sesion, datos)
+    servicio, _, juan, pais_id = _dia_pagado(cliente, sesion, datos)
     h = sesion("finanzas")
     _ajuste(cliente, sesion, persona_id=juan, pais_id=pais_id,
             concepto="manual", monto="500", motivo="Apoyo de transporte")

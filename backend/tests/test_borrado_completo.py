@@ -85,7 +85,7 @@ def test_una_compra_que_nadie_tomo_no_impide_borrar(cliente, sesion, datos):
 
     compra = cliente.post(f"/viaticos/equipos/{equipo['id']}/compras",
                           headers=h,
-                          json={"tipo": "hotel",
+                          json={"tipo": "hospedaje",
                                 "solicitud": "Dos noches cerca del corporativo",
                                 "monto_estimado": "5200"})
     assert compra.status_code == 201, compra.text

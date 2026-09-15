@@ -272,16 +272,19 @@ def crear_ajuste(datos: s.AjusteNominaIn, db: Session = Depends(get_db),
     if not persona:
         raise HTTPException(404, f"No existe la persona {datos.persona_id}")
 
-    # Una correccion tiene que decir de que dia es. Si no lo dice, el
-    # motor no la encuentra al comparar lo pagado contra lo que
-    # corresponde, y vuelve a generar la misma diferencia en la
-    # siguiente corrida: se paga dos veces.
-    if (datos.concepto == motor.AJUSTE_CORRECCION and not datos.jornada_id):
+    # La correccion de un dia no se teclea: la calcula el motor
+    # comparando lo que ya salio contra lo que corresponde segun la
+    # tarifa. Un ajuste capturado con ese concepto se mete en esa
+    # comparacion y el sistema lo lee como un pago de mas, asi que en la
+    # siguiente revision genera otro ajuste para quitarlo. Un bono
+    # acordado a mano se desharia solo, sin que nadie entienda por que.
+    if datos.concepto == motor.AJUSTE_CORRECCION:
         raise HTTPException(400, {
-            "mensaje": "Una correccion de un dia tiene que decir de que dia",
-            "que_hacer": "Manda el jornada_id. Sin el, el sistema no puede "
-                         "saber que ese dia ya quedo corregido y volveria a "
-                         "generar la misma diferencia."})
+            "mensaje": "Ese concepto lo pone el sistema, no se captura",
+            "que_hacer": "Lo que capturas a mano va como 'manual'. Si lo "
+                         "que quieres es corregir lo que se pago por un "
+                         "dia, eso sale solo al revisar diferencias: "
+                         "corrige el dia y vuelve a mandarlo a finanzas."})
 
     ajuste = m.AjusteNomina(**datos.model_dump(),
                             creado_por_id=usuario.persona_id)
