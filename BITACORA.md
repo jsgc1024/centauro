@@ -410,12 +410,14 @@ antes de cada `./probar.sh`: tarda un segundo y ahorra cinco minutos.
 - **Generar las llaves de push.** `.env` todavía no tiene `VAPID_PUBLIC`
   ni `VAPID_PRIVATE`, así que los avisos al teléfono no salen:
   `docker compose exec -T api python generar_llaves_push.py`.
-- **La zona horaria.** Es lo más serio de lo que queda abierto. El
-  sistema decide con un solo reloj —el del servidor— y `Pais` no guarda
-  zona horaria. Con el contenedor en UTC, el corte de las 18:00 de la
-  central cae a las 12:00 en CDMX. Lo mínimo hoy: `TZ=America/Mexico_City`
-  en `api`, `worker` y `beat` del `docker-compose.yml`. Brasil y
-  Venezuela necesitan zona por país, que es un cambio de fondo.
+- **La zona horaria, fuera de México.** Ya está
+  `TZ=America/Mexico_City` en `api`, `worker` y `beat`, así que la
+  operación de hoy queda alineada. Lo que sigue abierto es lo de fondo:
+  el sistema decide con un solo reloj y `Pais` no guarda zona horaria,
+  así que Brasil y Venezuela operan con la hora de México. Eso no se
+  arregla con configuración: hay que guardar la zona por país y usarla
+  en el corte de la víspera, en las ventanas de marcado y en el aviso
+  del día siguiente.
 - **La moneda.** `Cotizacion.tipo_cambio` existe y no se lee en ninguna
   parte. Hoy no duele porque todo está en pesos; el día que entre un
   tarifario en dólares, la utilidad y la comisión salen sin sentido.
