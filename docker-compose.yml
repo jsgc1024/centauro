@@ -1,14 +1,19 @@
 # La zona horaria de los contenedores.
 #
-# Todo el sistema decide con un solo reloj —el del servidor— y `Pais` no
-# guarda zona horaria. Sin esta linea, docker levanta en UTC y entonces
-# el corte de las 18:00 de la central cae a las 12:00 en CDMX, las
-# ventanas de marcado se corren seis horas, y la lista de dias sin
-# cerrar puede ofrecer un dia que todavia esta corriendo.
+# Desde que `Pais` guarda su zona horaria, cada servicio se juzga con el
+# reloj de su pais y no con el del contenedor: eso lo resuelve
+# `app/reloj.py`, no esta linea. Lo que queda aqui es la hora de la casa
+# —Mexico—, la que se usa cuando no hay un pais de por medio: el
+# encabezado de una pantalla, el calendario de Celery, el ancho de las
+# consultas que mezclan paises.
 #
-# Esto alinea todo para Mexico, que es donde esta la operacion. Brasil y
-# Venezuela siguen pendientes: necesitan zona por pais, que es un cambio
-# de fondo y no una linea de configuracion.
+# Sin ella docker levanta en UTC y esa hora de la casa quedaria seis
+# horas corrida. Se queda.
+#
+# ATENCION: este archivo es de DESARROLLO. Publica Postgres y Redis al
+# exterior, trae la contrasena de la base a la vista, monta el codigo
+# desde el disco y corre uvicorn con --reload. Para el servidor de
+# produccion, ver ARQUITECTURA.md.
 
 services:
   db:

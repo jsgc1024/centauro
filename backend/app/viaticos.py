@@ -66,8 +66,15 @@ def revisar_comprobante(viatico, monto, concepto, descripcion, ahora=None):
             continue
         cuando = getattr(c, "subido_en", None)
         if cuando is not None:
+            # `subido_en` lleva zona horaria: guarda un instante
+            # absoluto en UTC. Quitarle la zona con `replace` no
+            # convertia nada —dejaba la hora UTC como si fuera local— y
+            # al compararla contra la hora local quedaba corrida por el
+            # desfase del servidor. Resultado: la ventana de tres
+            # minutos no disparaba nunca, ni en Mexico. Hay que
+            # convertir, no truncar.
             if cuando.tzinfo:
-                cuando = cuando.replace(tzinfo=None)
+                cuando = cuando.astimezone().replace(tzinfo=None)
             if cuando < desde:
                 continue
         if (Decimal(str(c.monto)) == monto and c.concepto == concepto

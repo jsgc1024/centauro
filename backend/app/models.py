@@ -83,6 +83,20 @@ class Pais(Base):
     anticipacion_min: Mapped[int] = mapped_column(
         Integer, default=30, server_default="30")
     moneda_local: Mapped[Moneda] = mapped_column(Enum(Moneda))
+    # Que hora es alla. Nombre IANA: America/Mexico_City,
+    # America/Sao_Paulo, America/Caracas.
+    #
+    # Las columnas de fecha del sistema son naive y guardan hora de
+    # pared del pais del servicio: un servicio de Sao Paulo que arranca
+    # a las 07:00 guarda 07:00. Sin esta columna, todo se comparaba
+    # contra el reloj del servidor, y con el contenedor en Mexico eso
+    # dejaba a Brasil corrido tres horas: el conductor puntual caia
+    # fuera de la ventana permitida, el servicio en curso salia siempre
+    # "sin reporte" en la banda roja de la central, y el aviso de horas
+    # extra —una ventana de media hora— no coincidia nunca.
+    zona_horaria: Mapped[str] = mapped_column(
+        String(64), default="America/Mexico_City",
+        server_default="America/Mexico_City")
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
 
     plazas: Mapped[list["Plaza"]] = relationship(back_populates="pais")

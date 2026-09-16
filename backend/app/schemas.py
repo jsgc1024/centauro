@@ -44,6 +44,10 @@ class PaisIn(Base):
     lada: str = ""          # clave internacional: +52, +55, +58
     anticipacion_aeropuerto_min: int = 45
     anticipacion_min: int = 30
+    # Nombre IANA. De aqui sale la hora con la que se juzga todo lo de
+    # ese pais: la ventana de marcado, el silencio de un servicio en
+    # curso, el plazo del consultor para cerrar.
+    zona_horaria: str = "America/Mexico_City"
 
 
 class PaisOut(PaisIn):

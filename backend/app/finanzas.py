@@ -18,6 +18,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from app import models as m
+from app import reloj
 
 CERO = Decimal("0")
 
@@ -148,7 +149,9 @@ def por_comprobar(db: Session, ahora: datetime | None = None) -> dict:
     Lo vencido va primero. El limite son 24 horas despues de que termina
     el servicio, y lo calcula el motor de viaticos al transferir.
     """
-    ahora = ahora or datetime.now()
+    # Esta pantalla ya agrupa el dinero en cajas por pais; lo unico que
+    # le faltaba era medir el vencimiento con la hora de cada caja.
+    relojes = reloj.Relojes(db, ahora)
     viaticos = (db.query(m.AsignacionViatico)
                 .filter(m.AsignacionViatico.estatus.in_(AFUERA)).all())
 
@@ -165,10 +168,11 @@ def por_comprobar(db: Session, ahora: datetime | None = None) -> dict:
             continue
 
         limite = v.limite_comprobacion
-        vencido = bool(limite and limite < ahora)
+        suyo = relojes.ahora(origen["pais_id"])
+        vencido = bool(limite and limite < suyo)
         dias = None
         if limite:
-            dias = int((ahora - limite).total_seconds() / 86400)
+            dias = int((suyo - limite).total_seconds() / 86400)
 
         caja = _caja(cajas, paises, origen["pais_id"],
                      personas=list, total=CERO, vencido=CERO)
@@ -201,8 +205,13 @@ def por_comprobar(db: Session, ahora: datetime | None = None) -> dict:
         caja["cuantos"] = len(caja["personas"])
         caja["cuantos_vencidos"] = len([p for p in caja["personas"]
                                         if p["vencido"]])
+        # Cada caja dice con que hora se midio. Es la suya: un viatico
+        # de Sao Paulo vence a las 24 horas de Sao Paulo.
+        caja["momento"] = relojes.ahora(caja["pais_id"]).isoformat()
 
-    return {"momento": ahora.isoformat(),
+    # El de arriba es el de la casa, para el encabezado. No se juzga
+    # nada con el: los vencimientos ya se midieron caja por caja.
+    return {"momento": reloj.ahora_en(None, ahora).isoformat(),
             "paises": sorted(cajas.values(), key=lambda p: p["pais"])}
 
 

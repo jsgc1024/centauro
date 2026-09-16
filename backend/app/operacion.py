@@ -14,6 +14,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app import models as m
+from app import reloj
 
 # --- parametros del ciclo
 MINUTOS_ANTES_PERMITIDOS = 60      # puede marcar llegada hasta 1 h antes
@@ -89,7 +90,13 @@ def registrar_hito(db: Session, jornada_id: int, persona_id: int,
     # La app puede marcar sin senal y mandar despues, asi que la hora de
     # la marca puede ser anterior; lo que no puede es perderse el rastro
     # de cuanto tardo en llegar.
-    recibido = datetime.now()
+    #
+    # Y "lo que sabe el servidor" es la hora del pais donde esta el
+    # equipo, no la del contenedor. La marca se compara contra
+    # `inicio_programado`, que guarda hora de pared de alla: con el
+    # reloj del servidor, un conductor en Brasil que marcaba puntual
+    # caia fuera de la ventana por tres horas y le levantaba alerta.
+    recibido = reloj.ahora_de_la_jornada(db, jornada)
     ahora = marcado_en or recibido
     atraso = (recibido - ahora).total_seconds() / 60
     hito = m.Hito(jornada_id=jornada.id, persona_id=persona_id, tipo=tipo,
@@ -248,12 +255,19 @@ def ajustar_hito(db: Session, hito_id: int, nuevo_momento: datetime,
 def tablero_proximos(db: Session, ahora: datetime | None = None) -> list[dict]:
     """Servicios a dos horas de iniciar: valida confirmacion del recurso,
     viatico transferido y vehiculo asignado."""
+    # Una consulta no puede llevar tres relojes, asi que se ensancha la
+    # ventana por la mayor diferencia horaria entre los paises activos y
+    # despues se filtra pais por pais. Traer de mas y descartar es
+    # correcto; traer de menos es perder un servicio que esta por
+    # arrancar, que es justo lo que esta pantalla existe para evitar.
+    relojes = reloj.Relojes(db, ahora)
+    margen = reloj.margen_de_paises(db)
     ahora = ahora or datetime.now()
     limite = ahora + timedelta(hours=VENTANA_PROXIMOS_HORAS)
 
     jornadas = (db.query(m.Jornada)
-                .filter(m.Jornada.inicio_programado >= ahora,
-                        m.Jornada.inicio_programado <= limite,
+                .filter(m.Jornada.inicio_programado >= ahora - margen,
+                        m.Jornada.inicio_programado <= limite + margen,
                         m.Jornada.estatus.in_([m.EstatusJornada.PLANEADA,
                                                m.EstatusJornada.CONFIRMADA,
                                                m.EstatusJornada.PROXIMA_A_INICIAR]))
@@ -261,6 +275,12 @@ def tablero_proximos(db: Session, ahora: datetime | None = None) -> list[dict]:
 
     tablero = []
     for j in jornadas:
+        # Ahora si, con el reloj de ese pais. Lo que entro por el margen
+        # y no le toca todavia, se descarta aqui.
+        suyo = relojes.de_la_jornada(j)
+        if not (suyo <= j.inicio_programado
+                <= suyo + timedelta(hours=VENTANA_PROXIMOS_HORAS)):
+            continue
         pendientes = []
 
         sin_confirmar = [a.persona.nombre for a in j.personal if not a.confirmado]
@@ -284,7 +304,7 @@ def tablero_proximos(db: Session, ahora: datetime | None = None) -> list[dict]:
                 pendientes.append(f"Viatico no transferido: {', '.join(sin_transferir)}")
 
         j.estatus = m.EstatusJornada.PROXIMA_A_INICIAR
-        minutos = (j.inicio_programado - ahora).total_seconds() / 60
+        minutos = (j.inicio_programado - suyo).total_seconds() / 60
 
         tablero.append({
             "jornada_id": j.id,
@@ -303,21 +323,26 @@ def tablero_proximos(db: Session, ahora: datetime | None = None) -> list[dict]:
 
 def revisar_standby(db: Session, ahora: datetime | None = None) -> list[dict]:
     """Si el conductor no reporta en el intervalo, la central recibe alerta."""
-    ahora = ahora or datetime.now()
-    limite = ahora - timedelta(hours=INTERVALO_STANDBY_HORAS)
+    # El silencio de un servicio se mide contra la hora del pais donde
+    # esta: con el reloj del servidor, todo servicio brasileño aparentaba
+    # tres horas de silencio desde que arrancaba y se le levantaba
+    # alerta falsa de inmediato.
+    relojes = reloj.Relojes(db, ahora)
 
     en_curso = (db.query(m.Jornada)
                 .filter(m.Jornada.estatus == m.EstatusJornada.EN_CURSO).all())
 
     generadas = []
     for j in en_curso:
+        suyo = relojes.de_la_jornada(j)
+        limite = suyo - timedelta(hours=INTERVALO_STANDBY_HORAS)
         ultimo = (db.query(m.Hito)
                   .filter_by(jornada_id=j.id)
                   .order_by(m.Hito.marcado_en.desc())
                   .first())
         referencia = ultimo.marcado_en if ultimo else j.inicio_programado
         if referencia < limite:
-            horas = (ahora - referencia).total_seconds() / 3600
+            horas = (suyo - referencia).total_seconds() / 3600
             ya = (db.query(m.Alerta)
                   .filter_by(jornada_id=j.id, tipo=m.TipoAlerta.SIN_REPORTE,
                              atendida=False).first())
@@ -336,18 +361,29 @@ def revisar_standby(db: Session, ahora: datetime | None = None) -> list[dict]:
 def avisar_horas_extra(db: Session, ahora: datetime | None = None) -> list[dict]:
     """Aviso preventivo 30 minutos antes de cumplir la jornada.
     Se notifica al solicitante y al ejecutivo."""
+    # La ventana es de media hora. Con el reloj del servidor y tres
+    # horas de diferencia, para Brasil no coincidia nunca: el aviso
+    # preventivo de horas extra sencillamente no existia fuera de
+    # Mexico. Se ensancha la consulta por el margen entre paises y se
+    # afina despues, uno por uno.
+    relojes = reloj.Relojes(db, ahora)
+    margen = reloj.margen_de_paises(db)
     ahora = ahora or datetime.now()
-    desde = ahora
-    hasta = ahora + timedelta(minutes=AVISO_HORAS_EXTRA_MINUTOS)
 
     jornadas = (db.query(m.Jornada)
                 .filter(m.Jornada.estatus == m.EstatusJornada.EN_CURSO,
-                        m.Jornada.fin_programado >= desde,
-                        m.Jornada.fin_programado <= hasta)
+                        m.Jornada.fin_programado >= ahora - margen,
+                        m.Jornada.fin_programado
+                        <= ahora + timedelta(minutes=AVISO_HORAS_EXTRA_MINUTOS)
+                        + margen)
                 .all())
 
     avisos = []
     for j in jornadas:
+        suyo = relojes.de_la_jornada(j)
+        if not (suyo <= j.fin_programado
+                <= suyo + timedelta(minutes=AVISO_HORAS_EXTRA_MINUTOS)):
+            continue
         if not j.modalidad.aplica_horas_extra:
             continue
         ya = (db.query(m.Alerta)
@@ -407,13 +443,19 @@ def dias_sin_cerrar(db: Session, ahora: datetime | None = None,
     porque el mas viejo es el que mas cerca esta de convertirse en un
     reclamo.
     """
+    # Cada dia se juzga con la hora de su pais. Sin esto, un dia
+    # brasileño aparecia aqui tres horas antes de tiempo —y la central
+    # podia cerrar y pagar un dia que todavia estaba corriendo, que es
+    # justo lo que el candado de `cerrar_a_mano` dice impedir.
+    relojes = reloj.Relojes(db, ahora)
+    margen = reloj.margen_de_paises(db)
     ahora = ahora or datetime.now()
     limite = ahora - timedelta(hours=HORAS_DE_GRACIA)
 
     q = (db.query(m.Jornada)
          .join(m.Equipo, m.Jornada.equipo_id == m.Equipo.id)
          .join(m.Servicio, m.Equipo.servicio_id == m.Servicio.id)
-         .filter(m.Jornada.fin_programado < limite,
+         .filter(m.Jornada.fin_programado < limite + margen,
                  m.Jornada.estatus.notin_([m.EstatusJornada.TERMINADA,
                                            m.EstatusJornada.CANCELADA])))
     if pais_id:
@@ -433,6 +475,11 @@ def dias_sin_cerrar(db: Session, ahora: datetime | None = None,
     salida = []
     for j in abiertas:
         servicio = j.equipo.servicio
+        # Lo que entro por el margen y alla todavia no cumple las horas
+        # de gracia, se descarta: ese dia aun puede estar corriendo.
+        suyo = relojes.ahora(servicio.pais_id)
+        if j.fin_programado >= suyo - timedelta(hours=HORAS_DE_GRACIA):
+            continue
         hechos = marcas.get(j.id, set())
         salida.append({
             "jornada_id": j.id,
@@ -446,7 +493,7 @@ def dias_sin_cerrar(db: Session, ahora: datetime | None = None,
             "fin_programado": j.fin_programado.isoformat(),
             "inicio_real": j.inicio_real.isoformat() if j.inicio_real else None,
             "horas_abierto": round(
-                (ahora - j.fin_programado).total_seconds() / 3600),
+                (suyo - j.fin_programado).total_seconds() / 3600),
             # Que se alcanzo a marcar. Un dia con contacto y sin fin es
             # una marca que falto; uno sin ninguna marca es un dia del
             # que no se sabe nada, y no es lo mismo.
@@ -471,8 +518,6 @@ def cerrar_a_mano(db: Session, jornada_id: int, quien_id: int,
     tenemos de lo que si se marco. Lo que se guarda es lo que de verdad
     ocurrio: la central cerro este dia, a esta hora, por esta razon.
     """
-    ahora = ahora or datetime.now()
-
     if not justificacion or len(justificacion.strip()) < MINIMO_JUSTIFICACION:
         raise HTTPException(400, {
             "mensaje": "Falta decir por que se cierra a mano",
@@ -484,6 +529,12 @@ def cerrar_a_mano(db: Session, jornada_id: int, quien_id: int,
     jornada = db.get(m.Jornada, jornada_id)
     if not jornada:
         raise HTTPException(404, f"No existe la jornada {jornada_id}")
+
+    # Con la hora del pais del servicio. El candado de abajo —"un dia no
+    # se cierra antes de que termine"— es el que impide pagar trabajo
+    # que todavia no ocurre, y con el reloj del servidor se saltaba solo
+    # para los paises adelantados.
+    ahora = reloj.ahora_de_la_jornada(db, jornada, ahora)
 
     if jornada.estatus == m.EstatusJornada.CANCELADA:
         raise HTTPException(409, {

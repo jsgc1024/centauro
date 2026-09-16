@@ -13,6 +13,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from app import models as m
+from app import reloj
 from app.nomina import lunes_de
 
 CERO = Decimal("0")
@@ -37,21 +38,26 @@ def panorama(db: Session, ahora: datetime | None = None) -> dict:
 
 
 def _en_curso(db: Session, ahora: datetime) -> dict:
+    # El silencio y las horas extra son de cada servicio, y se miden con
+    # la hora de su pais. Con la del contenedor, un servicio brasileño
+    # aparecia con tres horas de silencio desde que arrancaba.
+    relojes = reloj.Relojes(db, ahora)
     jornadas = (db.query(m.Jornada)
                 .filter(m.Jornada.estatus == m.EstatusJornada.EN_CURSO).all())
     detalle = []
     for j in jornadas:
+        suyo = relojes.de_la_jornada(j)
         ultimo = (db.query(m.Hito)
                   .filter_by(jornada_id=j.id)
                   .order_by(m.Hito.marcado_en.desc()).first())
         sin_reporte_min = None
         if ultimo and ultimo.marcado_en:
-            sin_reporte_min = int((ahora - ultimo.marcado_en).total_seconds() / 60)
+            sin_reporte_min = int((suyo - ultimo.marcado_en).total_seconds() / 60)
 
         # Las 12 horas son exactas: el aviso preventivo va 30 min antes.
         minutos_para_extra = None
         if j.fin_programado:
-            minutos_para_extra = int((j.fin_programado - ahora).total_seconds() / 60)
+            minutos_para_extra = int((j.fin_programado - suyo).total_seconds() / 60)
 
         detalle.append({
             "jornada_id": j.id,
@@ -71,15 +77,22 @@ def _en_curso(db: Session, ahora: datetime) -> dict:
 
 
 def _por_iniciar(db: Session, ahora: datetime) -> dict:
+    relojes = reloj.Relojes(db, ahora)
+    margen = reloj.margen_de_paises(db)
     limite = ahora + timedelta(hours=VENTANA_PROXIMOS_HORAS)
     jornadas = (db.query(m.Jornada)
-                .filter(m.Jornada.inicio_programado >= ahora,
-                        m.Jornada.inicio_programado <= limite,
+                .filter(m.Jornada.inicio_programado >= ahora - margen,
+                        m.Jornada.inicio_programado <= limite + margen,
                         m.Jornada.estatus.notin_([m.EstatusJornada.CANCELADA,
                                                   m.EstatusJornada.TERMINADA]))
                 .order_by(m.Jornada.inicio_programado).all())
     sin_listo = []
     for j in jornadas:
+        # Lo que entro por el margen y alla todavia no esta en ventana.
+        suyo = relojes.de_la_jornada(j)
+        if not (suyo <= j.inicio_programado
+                <= suyo + timedelta(hours=VENTANA_PROXIMOS_HORAS)):
+            continue
         faltas = []
         if not j.personal:
             faltas.append("sin personal")
@@ -126,8 +139,12 @@ def _dinero(db: Session, ahora: datetime) -> dict:
                                        m.EstatusViatico.SOLICITADO)]
     en_comprobacion = [v for v in viaticos
                        if v.estatus == m.EstatusViatico.EN_COMPROBACION]
-    vencidos = [v for v in en_comprobacion
-                if v.limite_comprobacion and v.limite_comprobacion < ahora]
+    # El plazo de comprobacion se vence a la hora de alla.
+    relojes = reloj.Relojes(db, ahora)
+    vencidos = [
+        v for v in en_comprobacion
+        if v.limite_comprobacion and v.limite_comprobacion < relojes.ahora(
+            reloj.pais_de_la_jornada(v.jornada))]
 
     corte = lunes_de(ahora.date())
     nomina = (db.query(m.NominaSemanal)
@@ -158,9 +175,14 @@ def _dinero(db: Session, ahora: datetime) -> dict:
 
 
 def _cierres(db: Session, ahora: datetime) -> dict:
+    relojes = reloj.Relojes(db, ahora)
     filas = db.query(m.Cierre).all()
     abiertos = [c for c in filas if c.estatus == m.EstatusCierre.ABIERTO]
-    vencidos = [c for c in abiertos if c.limite_consultor < ahora]
+    # El plazo del consultor corre en su pais, y de si lo cumple depende
+    # que cobre su comision.
+    vencidos = [c for c in abiertos
+                if c.limite_consultor < relojes.ahora(
+                    c.servicio.pais_id if c.servicio else None)]
     en_finanzas = [c for c in filas
                    if c.estatus == m.EstatusCierre.ENVIADO_FINANZAS]
     devueltos = [c for c in filas

@@ -30,14 +30,19 @@ def sembrar() -> dict:
         # ---------------------------------------------------- paises
         mx, _ = _obtener_o_crear(db, m.Pais, {"codigo": "MX"},
                                  {"nombre": "Mexico", "moneda_local": m.Moneda.MXN,
-                                  "lada": "+52"})
+                                  "lada": "+52",
+                                  "zona_horaria": "America/Mexico_City"})
         br, _ = _obtener_o_crear(db, m.Pais, {"codigo": "BR"},
                                  {"nombre": "Brasil", "moneda_local": m.Moneda.BRL,
-                                  "lada": "+55"})
-        # Por si la base ya existia antes de que hubiera lada.
-        for pais, lada in ((mx, "+52"), (br, "+55")):
+                                  "lada": "+55",
+                                  "zona_horaria": "America/Sao_Paulo"})
+        # Por si la base ya existia antes de que hubiera lada o zona.
+        for pais, lada, zona in ((mx, "+52", "America/Mexico_City"),
+                                 (br, "+55", "America/Sao_Paulo")):
             if not pais.lada:
                 pais.lada = lada
+            if not pais.zona_horaria:
+                pais.zona_horaria = zona
 
         # ------------------------------------- plazas con recurso local
         # Estas cuatro son la operacion de todos los dias: van fijas en la

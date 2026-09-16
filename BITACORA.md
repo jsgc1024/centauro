@@ -345,7 +345,7 @@ esta máquina: un respaldo del disco sigue siendo necesario.
 
 ---
 
-## 9. La revisión de septiembre
+## 8. La revisión de septiembre
 
 Tres vueltas al sistema completo: una buscando problemas, otra revisando
 los arreglos de la primera, y una tercera prediciendo qué pruebas se
@@ -396,7 +396,92 @@ antes de cada `./probar.sh`: tarda un segundo y ahorra cinco minutos.
 
 ---
 
-## 8. Lo que falta
+## 9. Cada país con su hora
+
+**El problema.** Las columnas de fecha del sistema son *naive* y guardan
+hora de pared del país del servicio: un servicio de São Paulo que
+arranca a las 07:00 guarda 07:00. Todo el sistema las comparaba contra
+el reloj del servidor, y con el contenedor en México eso dejaba a
+Brasil corrido tres horas y a Venezuela dos.
+
+Lo que provocaba, todos los días:
+
+- El conductor que marcaba puntual caía fuera de la ventana permitida,
+  se le levantaba alerta y su marca quedaba en revisión.
+- Todo servicio brasileño en curso aparecía "sin reporte" en la banda
+  roja de la central, desde que arrancaba. Un tablero que siempre grita
+  deja de leerse.
+- El aviso preventivo de horas extra —una ventana de treinta minutos—
+  no coincidía nunca: fuera de México no existía.
+- El plazo de 24 horas del consultor para cerrar, del que depende su
+  comisión, nacía torcido.
+
+**La decisión.** `Pais` guarda su zona horaria IANA (migración
+`f94d1a2e70b5`), y un módulo nuevo —`app/reloj.py`— es el único lugar
+que responde qué hora es. El resto del sistema le pregunta a él y no al
+servidor:
+
+```
+ahora_en(pais)      el instante, en hora de pared de allá
+hoy_en(pais)        qué día es allá
+Relojes(db)         los relojes de los países, traídos una vez
+```
+
+**Lo que NO cambió.** Nada de lo que ya está guardado se convierte. Las
+columnas siguen siendo hora de pared del país; lo que cambia es contra
+qué se comparan. Y una columna con `timezone=True` guarda un instante
+absoluto: esas no tienen nada que ver con esto y ya estaban bien.
+
+**Tres decisiones de diseño que vale explicar.**
+
+Una zona mal escrita en el catálogo no tumba la pantalla: se cae a la
+hora de la casa y sigue. Dejar a la central sin monitoreo por una errata
+en un nombre sería peor que la errata.
+
+Las consultas que mezclan países no se pueden escribir con tres relojes
+en un solo `WHERE`. Se ensancha la ventana por la mayor diferencia
+horaria entre países activos (`margen_de_paises`) y se afina después en
+Python, país por país. Traer de más y descartar es correcto; traer de
+menos es perder un servicio.
+
+La hora del contenedor sigue siendo `America/Mexico_City`, pero ya no
+decide nada de operación. Es la hora de la casa: la que se usa cuando no
+hay un país de por medio.
+
+**Lo que destapó.** Dos cosas que ya estaban rotas y nadie había visto:
+
+- `viaticos.py` descartaba la zona de una fecha con `tzinfo` en vez de
+  convertirla —`.replace(tzinfo=None)` donde iba `.astimezone()`—. Eso
+  fallaba también en México.
+- La pantalla de **dinero por comprobar** reventaba con 500 al abrirse
+  sin fecha, o sea siempre. Ahora cada caja dice con qué hora se midió,
+  que es la suya: un viático de São Paulo vence a las 24 horas de São
+  Paulo.
+
+**Lo que queda pendiente.** El calendario de Celery es uno solo, en hora
+de México: el recordatorio de la víspera sale a las 17:00 de México, o
+sea a las 19:00 de São Paulo. La tarea ya calcula bien el "mañana" de
+cada país; lo que no está partido por país es la hora a la que se
+dispara. El aviso llega —llega tarde.
+
+**Las zonas sembradas.**
+
+| País | Zona |
+|---|---|
+| México | `America/Mexico_City` |
+| Brasil | `America/Sao_Paulo` |
+| Venezuela | `America/Caracas` |
+| Colombia | `America/Bogota` |
+| Argentina | `America/Argentina/Buenos_Aires` |
+| Chile | `America/Santiago` |
+| Perú | `America/Lima` |
+| Panamá | `America/Panama` |
+
+Lo que no esté en esa lista se queda con la hora de la casa.
+
+---
+
+## 10. Lo que falta
 
 ### Abierto
 
@@ -410,14 +495,14 @@ antes de cada `./probar.sh`: tarda un segundo y ahorra cinco minutos.
 - **Generar las llaves de push.** `.env` todavía no tiene `VAPID_PUBLIC`
   ni `VAPID_PRIVATE`, así que los avisos al teléfono no salen:
   `docker compose exec -T api python generar_llaves_push.py`.
-- **La zona horaria, fuera de México.** Ya está
-  `TZ=America/Mexico_City` en `api`, `worker` y `beat`, así que la
-  operación de hoy queda alineada. Lo que sigue abierto es lo de fondo:
-  el sistema decide con un solo reloj y `Pais` no guarda zona horaria,
-  así que Brasil y Venezuela operan con la hora de México. Eso no se
-  arregla con configuración: hay que guardar la zona por país y usarla
-  en el corte de la víspera, en las ventanas de marcado y en el aviso
-  del día siguiente.
+- **El servidor de producción.** Ver `ARQUITECTURA.md`. Tres cosas hay
+  que hacer antes de encender: el `docker-compose.yml` del repositorio
+  es de desarrollo y no se puede subir tal cual (publica Postgres y
+  Redis a internet, trae la contraseña a la vista, corre uvicorn con
+  `--reload`), el pozo de conexiones de SQLAlchemy se queda corto contra
+  el pozo de hilos de FastAPI, y el respaldo tiene que estar probado
+  antes de que haya datos reales que perder —con las imágenes dentro de
+  la base, el `pg_dump` *es* el sistema completo.
 - **La moneda.** `Cotizacion.tipo_cambio` existe y no se lee en ninguna
   parte. Hoy no duele porque todo está en pesos; el día que entre un
   tarifario en dólares, la utilidad y la comisión salen sin sentido.

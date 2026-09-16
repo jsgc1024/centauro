@@ -13,6 +13,7 @@ from app import cierre as motor
 from app import cotizacion as cotmotor
 from app import models as m
 from app import comisiones as motor_comisiones
+from app import reloj
 from app import revisor
 from app.db import get_db
 
@@ -183,7 +184,9 @@ def enviar_finanzas(cierre_id: int, db: Session = Depends(get_db),
     if not cierre:
         raise HTTPException(404, f"No existe el cierre {cierre_id}")
 
-    momento = ahora or datetime.now()
+    # En hora del pais del servicio: de esta comparacion depende que el
+    # consultor cobre su comision o la pierda.
+    momento = reloj.ahora_del_servicio(db, cierre.servicio, ahora)
     revision = revisor.revisar(db, cierre.servicio_id, momento)
 
     if not revision["listo_para_finanzas"]:

@@ -8,10 +8,13 @@ LEJOS = {"lat": "19.4540", "lon": "-99.1677"}       # a unos 3 km
 
 
 def crear_servicio(cliente, headers, datos, jornadas, tipo="eventual",
-                   consultor_id=None):
+                   consultor_id=None, pais_id=None, plaza_id=None):
+    """Por omision en Mexico. `pais_id` y `plaza_id` sirven para las
+    pruebas de zona horaria, que necesitan un servicio de otro pais."""
     cuerpo = {
-        "cliente_id": datos["cliente_id"], "pais_id": datos["mx"]["id"],
-        "plaza_id": datos["cdmx"]["id"], "tipo": tipo,
+        "cliente_id": datos["cliente_id"],
+        "pais_id": pais_id or datos["mx"]["id"],
+        "plaza_id": plaza_id or datos["cdmx"]["id"], "tipo": tipo,
         "solicitante_nombre": "Patricia", "solicitante_apellidos": "Lundgren",
         "solicitante_correo": "solicitante@cliente.com",
         "ejecutivo_nombre": "Ingrid", "ejecutivo_apellidos": "Halvorsen",

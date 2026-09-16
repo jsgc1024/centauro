@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app import auth
 from app import models as m
+from app import reloj
 from app import tasksheet
 from app import viaticos as viaticos_motor
 from app.config import settings
@@ -164,7 +165,9 @@ def mi_dia(db: Session = Depends(get_db), ahora: datetime | None = None,
     Manana entra porque la confirmacion de la vispera se hace la noche
     anterior: si la app solo mostrara hoy, nadie podria confirmar nunca.
     """
-    ahora = ahora or datetime.now()
+    # El hoy del agente, no el del contenedor: cerca de la medianoche
+    # son dias distintos, y esta es la pantalla que abre cada manana.
+    ahora = reloj.ahora_de_la_persona(db, usuario.persona, ahora)
     hoy = ahora.date()
     jornadas = _jornadas_de(db, usuario.persona_id, hoy,
                             hoy + timedelta(days=1))
@@ -245,7 +248,9 @@ def mis_viaticos(db: Session = Depends(get_db),
     consultor y el deposito lo hace finanzas: mostrarle un boton de
     "pedir mas" seria ofrecerle algo que la app no puede cumplir.
     """
-    ahora = datetime.now()
+    # El plazo de comprobacion se vence a la hora del pais donde se
+    # esta dando el servicio, que puede no ser el del contenedor.
+    relojes = reloj.Relojes(db)
     viaticos = (db.query(m.AsignacionViatico)
                 .filter(m.AsignacionViatico.persona_id == usuario.persona_id,
                         m.AsignacionViatico.estatus.notin_(
@@ -278,7 +283,7 @@ def mis_viaticos(db: Session = Depends(get_db),
         if v.limite_comprobacion:
             actual = v.limite_comprobacion.isoformat()
             fila["limite"] = min(fila["limite"] or actual, actual)
-            if v.limite_comprobacion < ahora:
+            if v.limite_comprobacion < relojes.de_la_jornada(jornada):
                 fila["vencido"] = True
         fila["dias"].append({
             "viatico_id": v.id,
@@ -725,7 +730,8 @@ def revisar(datos: RevisionIn, db: Session = Depends(get_db),
     que existe. Si falta un angulo, mas vale decirlo ahora que
     descubrirlo cuando ya no se puede volver a tomar.
     """
-    _suya(db, datos.servicio_id, datos.vehiculo_id, usuario.persona_id)
+    servicio = _suya(db, datos.servicio_id, datos.vehiculo_id,
+                     usuario.persona_id)
     if not db.get(m.Vehiculo, datos.vehiculo_id):
         raise HTTPException(404, f"No existe la unidad {datos.vehiculo_id}")
 
@@ -801,7 +807,7 @@ def revisar(datos: RevisionIn, db: Session = Depends(get_db),
                          "medias no sirve para discutir un golpe despues.",
             "faltan": faltan})
 
-    ahora = datetime.now()
+    ahora = reloj.ahora_del_servicio(db, servicio)
     revision = m.RevisionUnidad(
         servicio_id=datos.servicio_id, vehiculo_id=datos.vehiculo_id,
         persona_id=usuario.persona_id, tipo=tipo,

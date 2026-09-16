@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app import cotizacion as cot
 from app import models as m
+from app import reloj
 
 HORAS_CONSULTOR = 24
 HORAS_MAXIMO_TOTAL = 48
@@ -348,7 +349,10 @@ def abrir(db: Session, servicio_id: int, abierto_en: datetime | None = None) -> 
     if existente:
         return existente
 
-    momento = abierto_en or datetime.now()
+    # En hora del pais del servicio. El plazo de 24 horas del consultor
+    # decide si cobra su comision: si nace con el reloj del contenedor y
+    # se juzga con otro, queda torcido desde el principio.
+    momento = reloj.ahora_del_servicio(db, servicio, abierto_en)
     cierre = m.Cierre(servicio_id=servicio_id, abierto_en=momento,
                       limite_consultor=momento + timedelta(hours=HORAS_CONSULTOR))
     db.add(cierre)

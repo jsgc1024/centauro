@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app import disponibilidad
 from app import models as m
+from app import reloj
 
 
 # Hasta que dia de la semana llega cada esquema. weekday(): lunes es 0.
@@ -987,7 +988,9 @@ def rehacer_dias(db: Session, contrato: m.ContratoImplantado) -> int:
     if not equipo:
         return 0
 
-    hoy = date.today()
+    # El hoy del pais del servicio: de esto depende que dias se dan por
+    # pasados, y un dia de error reescribe un dia que ya se opero.
+    hoy = reloj.ahora_del_servicio(db, contrato.servicio).date()
     ultimo = calendar.monthrange(contrato.anio, contrato.mes)[1]
     primero = date(contrato.anio, contrato.mes, 1)
     fin = date(contrato.anio, contrato.mes, ultimo)
@@ -1149,10 +1152,14 @@ def por_abrir(db: Session, hoy: date | None = None) -> list:
     antes de eso no hay prisa, y despues el consultor llega un dia 1 sin
     calendario.
     """
-    hoy = hoy or date.today()
-    ultimo_dia = calendar.monthrange(hoy.year, hoy.month)[1]
-    if ultimo_dia - hoy.day > DIAS_ANTES:
-        return []
+    # El proceso corre a una hora fija de Mexico, pero el mes se acaba
+    # en cada pais a su hora. Se mira el calendario de cada servicio.
+    relojes = reloj.Relojes(db)
+
+    def le_toca(servicio) -> bool:
+        cuando = hoy or relojes.hoy(servicio.pais_id)
+        ultimo_dia = calendar.monthrange(cuando.year, cuando.month)[1]
+        return ultimo_dia - cuando.day <= DIAS_ANTES
 
     vivos = (db.query(m.Servicio)
              .filter(m.Servicio.tipo == m.TipoServicio.IMPLANTADO,
@@ -1161,7 +1168,9 @@ def por_abrir(db: Session, hoy: date | None = None) -> list:
                                                 m.EstatusServicio.TERMINADO]))
              .all())
     return [s for s in vivos
-            if estado_del_siguiente(db, s, hoy)["se_puede"]]
+            if le_toca(s)
+            and estado_del_siguiente(
+                db, s, hoy or relojes.hoy(s.pais_id))["se_puede"]]
 
 
 def abrir_los_que_toquen(db: Session, hoy: date | None = None) -> dict:

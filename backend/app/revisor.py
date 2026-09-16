@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app import cierre as motor
 from app import models as m
+from app import reloj
 
 GRAVE = "corregir"
 AVISO = "revisar"
@@ -21,8 +22,9 @@ INFO = "informativo"
 
 
 def revisar(db: Session, servicio_id: int, ahora: datetime | None = None) -> dict:
-    ahora = ahora or datetime.now()
     servicio = db.get(m.Servicio, servicio_id)
+    # "Te quedan N horas para cerrar" se cuenta en el pais del servicio.
+    ahora = reloj.ahora_del_servicio(db, servicio, ahora)
     comparativo = motor.comparar(db, servicio_id)
     observaciones = []
 

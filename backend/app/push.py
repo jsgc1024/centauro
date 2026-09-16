@@ -118,10 +118,22 @@ def recordar_la_vispera(db: Session, dia=None) -> dict:
     """
     from datetime import date, timedelta
 
-    dia = dia or (date.today() + timedelta(days=1))
+    from app import reloj
+
+    # "Manana" es el manana de cada pais. El beat corre a una hora fija
+    # de Mexico, asi que sin esto el recordatorio le llega a Brasil a
+    # las 19:00 y hablandole del dia equivocado cuando cae en el borde.
+    if dia is None:
+        dias = {reloj.hoy_en(p) + timedelta(days=1)
+                for p in db.query(m.Pais).filter(m.Pais.activo.is_(True)).all()}
+        dias = dias or {date.today() + timedelta(days=1)}
+    else:
+        dias = {dia}
+
     por_persona: dict[int, list] = {}
-    for persona_id, jornada in sin_confirmar(db, dia):
-        por_persona.setdefault(persona_id, []).append(jornada)
+    for cada in sorted(dias):
+        for persona_id, jornada in sin_confirmar(db, cada):
+            por_persona.setdefault(persona_id, []).append(jornada)
 
     avisados = []
     for persona_id, jornadas in por_persona.items():

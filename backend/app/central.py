@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from app import implantado as imp
 from app import models as m
+from app import reloj
 from app.presentacion import llegada_del_equipo
 
 # ------------------------------------------------------------- reglas
@@ -46,6 +47,15 @@ VIVAS = (m.EstatusJornada.PLANEADA, m.EstatusJornada.EN_CURSO)
 
 
 def tablero(db: Session, ahora: datetime | None = None) -> dict:
+    """El tablero se mira desde un solo lugar, con un solo reloj.
+
+    El corte de la vispera y el "manana" de esta pantalla son del turno
+    que esta mirando, no de cada servicio: si la central de Mexico ve un
+    servicio de Sao Paulo, el corte de las 18:00 que aplica es el de
+    Mexico. Lo que si se juzga con la hora de alla es lo de cada
+    servicio —cuanto lleva callado, cuanto le falta para horas extra—,
+    y eso vive en `pulso`.
+    """
     ahora = ahora or datetime.now()
     manana_ = manana(db, ahora)
     pulso_ = pulso(db, ahora)
@@ -281,15 +291,21 @@ def _color_del_silencio(minutos: int | None) -> str:
 
 
 def _en_curso(db: Session, jornada: m.Jornada, ahora: datetime,
-              nombres: dict) -> dict:
+              nombres: dict, relojes=None) -> dict:
     servicio = jornada.equipo.servicio
+    # Cuanto lleva callado y cuanto le falta para horas extra se miden
+    # con la hora del pais donde esta el equipo, no con la del
+    # contenedor: sin esto, todo servicio brasileño salia "sin reporte"
+    # o en rojo desde que arrancaba —en la banda que la central lee
+    # primero— y nunca avisaba que iba a entrar en horas extra.
+    suyo = relojes.ahora(servicio.pais_id) if relojes else ahora
     ultimo = (db.query(m.Hito).filter_by(jornada_id=jornada.id)
               .order_by(m.Hito.marcado_en.desc()).first())
-    minutos = _silencio(ultimo, ahora)
+    minutos = _silencio(ultimo, suyo)
 
     para_extra = None
     if jornada.fin_programado:
-        para_extra = int((jornada.fin_programado - ahora).total_seconds() / 60)
+        para_extra = int((jornada.fin_programado - suyo).total_seconds() / 60)
 
     abiertas = (db.query(m.Alerta)
                 .filter_by(jornada_id=jornada.id, atendida=False).count())
@@ -325,13 +341,14 @@ def pulso(db: Session, ahora: datetime | None = None) -> dict:
     pueden empujar hacia abajo el eventual que arranca en veinte minutos.
     """
     ahora = ahora or datetime.now()
+    relojes = reloj.Relojes(db, ahora)
     jornadas = (db.query(m.Jornada)
                 .filter(m.Jornada.estatus == m.EstatusJornada.EN_CURSO).all())
 
     nombres = _nombres(db)
     eventuales, implantados = [], []
     for j in jornadas:
-        ficha = _en_curso(db, j, ahora, nombres)
+        ficha = _en_curso(db, j, ahora, nombres, relojes)
         (implantados if ficha["tipo"] == "implantado"
          else eventuales).append(ficha)
 
