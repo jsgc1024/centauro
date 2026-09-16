@@ -1118,13 +1118,26 @@ def asignaciones_equipo(equipo_id: int, db: Session = Depends(get_db),
         ficha = gente.setdefault(a.persona_id, {
             "persona_id": a.persona_id, "nombre": a.persona.nombre,
             "puesto": a.rol.nombre if a.rol else None,
+            # Lo necesita el cambio por contingencia: el que entra va con
+            # el mismo rol, porque de ahi salen el precio al cliente y la
+            # comision.
+            "rol_id": a.rol_id,
             "telefono": a.persona.telefono,
             "foto": a.persona.foto_url,
             "ciudad": a.persona.plaza.nombre if a.persona.plaza else None,
             "vehiculo_id": a.vehiculo_id,
             "abordo": a.vehiculo.placa if a.vehiculo else None,
+            # El cambio por contingencia rompe la premisa de que los
+            # recursos son los mismos todos los dias. La ficha tiene que
+            # decirlo, o el consultor lee un equipo que no existe.
+            "relevado_en": None, "reemplaza_a": None,
             "dias": 0})
         ficha["dias"] += 1
+        if a.relevado_en:
+            ficha["relevado_en"] = a.relevado_en.isoformat()
+        if a.reemplaza_a_id:
+            titular = db.get(m.Persona, a.reemplaza_a_id)
+            ficha["reemplaza_a"] = titular.nombre if titular else None
 
     unidades: dict = {}
     for a in (db.query(m.AsignacionVehiculo)
@@ -1167,6 +1180,11 @@ def ver_asignaciones(jornada_id: int, db: Session = Depends(get_db),
                       "ciudad": a.persona.plaza.nombre if a.persona.plaza else None,
                       "vehiculo_id": a.vehiculo_id,
                       "abordo": a.vehiculo.placa if a.vehiculo else None,
+                      # Un dia puede traer dos personas en el mismo rol:
+                      # una salio a media jornada y entro la otra.
+                      "relevado_en": (a.relevado_en.isoformat()
+                                      if a.relevado_en else None),
+                      "reemplaza_a_id": a.reemplaza_a_id,
                       "confirmado": a.confirmado} for a in jornada.personal],
         "vehiculos": [{"vehiculo_id": a.vehiculo_id, "placa": a.vehiculo.placa,
                        "unidad": a.vehiculo.categoria.nombre,

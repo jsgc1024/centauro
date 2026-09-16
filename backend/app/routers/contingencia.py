@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app import auditoria, auth, contingencia as motor
 from app import models as m
+from app import push
 from app import schemas as s
 from app.db import get_db
 
@@ -102,7 +103,29 @@ def listar(abiertas: bool = True, db: Session = Depends(get_db),
     if abiertas:
         consulta = consulta.filter(
             m.AlertaIncidencia.estatus != m.EstatusAlerta.CERRADA)
-    return consulta.order_by(m.AlertaIncidencia.reportada_en.desc()).all()
+    filas = consulta.order_by(m.AlertaIncidencia.reportada_en.desc()).all()
+
+    # Que paso despues de la alerta. Una alerta atendida que dejo un
+    # cambio de recurso y una que no se leen distinto: la central ve si
+    # el consultor ya hizo lo suyo.
+    cambios = {}
+    for r in (db.query(m.ReemplazoRecurso)
+              .filter(m.ReemplazoRecurso.alerta_id.isnot(None)).all()):
+        if r.tipo == m.TipoRecurso.PERSONAL:
+            sale = db.get(m.Persona, r.sale_persona_id)
+            entra = db.get(m.Persona, r.entra_persona_id)
+            nombres = (sale.nombre if sale else "?",
+                       entra.nombre if entra else "?")
+        else:
+            sale = db.get(m.Vehiculo, r.sale_vehiculo_id)
+            entra = db.get(m.Vehiculo, r.entra_vehiculo_id)
+            nombres = (sale.placa if sale else "?",
+                       entra.placa if entra else "?")
+        cambios[r.alerta_id] = f"{nombres[1]} entra por {nombres[0]}"
+
+    for fila in filas:
+        fila.cambio = cambios.get(fila.id)
+    return filas
 
 
 @router.post("/alertas/{alerta_id}/tomar", response_model=s.AlertaOut,
@@ -171,7 +194,8 @@ def reemplazo_personal(datos: s.ReemplazoPersonalIn,
     resultado = motor.reemplazar_personal(
         db, datos.desde_jornada_id, datos.sale_persona_id,
         datos.entra_persona_id, datos.motivo,
-        hecho_por_id=usuario.persona_id, alerta_id=datos.alerta_id)
+        hecho_por_id=usuario.persona_id, alerta_id=datos.alerta_id,
+        motivo_tipo=datos.motivo_tipo, hasta_jornada_id=datos.hasta_jornada_id)
 
     jornada = db.get(m.Jornada, datos.desde_jornada_id)
     sale = db.get(m.Persona, datos.sale_persona_id)
@@ -181,6 +205,11 @@ def reemplazo_personal(datos: s.ReemplazoPersonalIn,
         f"entra {entra.nombre} en lugar de {sale.nombre}: {datos.motivo}",
         jornada_id=jornada.id)
     db.commit()
+
+    # El aviso sale aqui y no en el recordatorio de la vispera: ese solo
+    # mira manana, y un cambio hecho hoy para hoy nunca lo dispararia.
+    # El caso urgente seria justo el que no avisa.
+    resultado["avisado"] = push.avisar_relevo(db, entra, sale, resultado)
     return resultado
 
 
@@ -192,7 +221,8 @@ def reemplazo_vehiculo(datos: s.ReemplazoVehiculoIn,
     resultado = motor.reemplazar_vehiculo(
         db, datos.desde_jornada_id, datos.sale_vehiculo_id,
         datos.entra_vehiculo_id, datos.motivo,
-        hecho_por_id=usuario.persona_id, alerta_id=datos.alerta_id)
+        hecho_por_id=usuario.persona_id, alerta_id=datos.alerta_id,
+        motivo_tipo=datos.motivo_tipo, hasta_jornada_id=datos.hasta_jornada_id)
 
     jornada = db.get(m.Jornada, datos.desde_jornada_id)
     sale = db.get(m.Vehiculo, datos.sale_vehiculo_id)
@@ -201,6 +231,45 @@ def reemplazo_vehiculo(datos: s.ReemplazoVehiculoIn,
         db, usuario, jornada.equipo.servicio, "reemplazo de unidad",
         f"entra {entra.placa} en lugar de {sale.placa}: {datos.motivo}",
         jornada_id=jornada.id)
+    db.commit()
+    return resultado
+
+
+@router.post("/reemplazos/personal/vista-previa",
+             summary="Que pasaria con este cambio, sin guardarlo")
+def vista_previa(datos: s.ReemplazoPersonalIn, db: Session = Depends(get_db),
+                 _: m.Usuario = Depends(CONSULTOR)):
+    """Los dias que se mueven, los que chocan y —sobre todo— los viaticos.
+
+    Lo delicado de un reemplazo no es el nombre de quien va: es que la
+    persona que sale se queda con dinero que tiene que comprobar y la
+    que entra necesita dinero nuevo. Eso ya pasaba; lo que faltaba era
+    decirlo antes.
+    """
+    return motor.vista_previa(
+        db, desde_jornada_id=datos.desde_jornada_id,
+        sale_persona_id=datos.sale_persona_id,
+        entra_persona_id=datos.entra_persona_id, motivo=datos.motivo,
+        motivo_tipo=datos.motivo_tipo, hasta_jornada_id=datos.hasta_jornada_id)
+
+
+@router.post("/reemplazos/{reemplazo_id}/deshacer",
+             summary="Deshacer un cambio recien hecho")
+def deshacer(reemplazo_id: int, db: Session = Depends(get_db),
+             usuario: m.Usuario = Depends(CONSULTOR)):
+    """Para el que se equivoco de persona hace un minuto.
+
+    Solo mientras nadie haya tocado el dinero. Despues de eso, deshacer
+    a mano seria peor que el error: lo que corresponde es un cambio en
+    sentido contrario, con su rastro.
+    """
+    reemplazo = db.get(m.ReemplazoRecurso, reemplazo_id)
+    if not reemplazo:
+        raise HTTPException(404, f"No existe el reemplazo {reemplazo_id}")
+    servicio = db.get(m.Servicio, reemplazo.servicio_id)
+    resultado = motor.deshacer(db, reemplazo_id)
+    auditoria.registrar(db, usuario, servicio, "reemplazo deshecho",
+                        f"se deshizo el cambio {reemplazo_id}")
     db.commit()
     return resultado
 
@@ -225,9 +294,19 @@ def historial(servicio_id: int, db: Session = Depends(get_db),
             v_entra = db.get(m.Vehiculo, r.entra_vehiculo_id)
             sale, entra = (v_sale.placa if v_sale else None,
                            v_entra.placa if v_entra else None)
+        quien = db.get(m.Persona, r.hecho_por_id) if r.hecho_por_id else None
+        desde = db.get(m.Jornada, r.desde_jornada_id)
+        hasta = db.get(m.Jornada, r.hasta_jornada_id) if r.hasta_jornada_id else None
         salida.append({
             "id": r.id, "tipo": r.tipo.value, "sale": sale, "entra": entra,
-            "motivo": r.motivo, "jornadas_afectadas": r.jornadas_afectadas,
+            "motivo": r.motivo,
+            "motivo_tipo": r.motivo_tipo.value if r.motivo_tipo else None,
+            "jornadas_afectadas": r.jornadas_afectadas,
+            "desde": desde.fecha.isoformat() if desde else None,
+            # Vacio quiere decir "de ahi en adelante", que es como se
+            # resuelve una contingencia.
+            "hasta": hasta.fecha.isoformat() if hasta else None,
+            "formalizo": quien.nombre if quien else None,
             "alerta_id": r.alerta_id,
             "creado_en": r.creado_en.isoformat() if r.creado_en else None,
         })

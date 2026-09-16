@@ -694,6 +694,14 @@ class AsignacionPersonal(Base):
     confirmado: Mapped[bool] = mapped_column(Boolean, default=False)
     # Reemplazo por contingencia: a quien sustituye esta asignacion.
     reemplaza_a_id: Mapped[int | None] = mapped_column(ForeignKey("persona.id"), nullable=True)
+    # El otro lado del mismo cambio: esta asignacion fue relevada a media
+    # jornada y quien la relevo. El dia no se muta, se parte: el que se
+    # presento esa manana se queda aqui y cobra su dia, y el que entro
+    # tiene su propia asignacion. Vacio quiere decir que nadie la
+    # relevo, que es el caso de siempre.
+    relevado_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    relevado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
     # En que unidad va esa persona. Con una sola unidad sobra decirlo;
     # cuando el equipo lleva dos o mas, es lo que ordena las salidas y le
     # dice a la central con quien va cada vehiculo.
@@ -702,6 +710,8 @@ class AsignacionPersonal(Base):
 
     jornada: Mapped[Jornada] = relationship(back_populates="personal")
     persona: Mapped[Persona] = relationship(foreign_keys=[persona_id])
+    relevado_por: Mapped["Persona | None"] = relationship(
+        foreign_keys=[relevado_por_id])
     rol: Mapped["PerfilPersonal | None"] = relationship()
     vehiculo: Mapped["Vehiculo | None"] = relationship()
 
@@ -713,9 +723,17 @@ class AsignacionVehiculo(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     jornada_id: Mapped[int] = mapped_column(ForeignKey("jornada.id"))
     vehiculo_id: Mapped[int] = mapped_column(ForeignKey("vehiculo.id"))
+    # Relevada a media jornada, igual que la del personal: la unidad que
+    # salio se queda en el servicio para que se le pueda hacer su
+    # revision de devolucion. Al cliente se le cobra una sola.
+    relevado_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    relevado_por_vehiculo_id: Mapped[int | None] = mapped_column(
+        ForeignKey("vehiculo.id"), nullable=True)
 
     jornada: Mapped[Jornada] = relationship(back_populates="vehiculos")
-    vehiculo: Mapped[Vehiculo] = relationship()
+    vehiculo: Mapped[Vehiculo] = relationship(foreign_keys=[vehiculo_id])
+    relevado_por_vehiculo: Mapped["Vehiculo | None"] = relationship(
+        foreign_keys=[relevado_por_vehiculo_id])
 
 
 # ================================================================ VIATICOS

@@ -215,7 +215,14 @@ def test_el_que_sale_sin_dinero_se_cancela(cliente, sesion, datos):
     assert despues["estatus"] == "cancelado"
 
 
-def test_al_que_entra_se_le_abren_viaticos(cliente, sesion, datos):
+def test_al_que_entra_se_le_proponen_viaticos(cliente, sesion, datos):
+    """El sistema propone, el consultor decide.
+
+    Antes se le abrian solos: el sistema decidiendo gastar sin que nadie
+    lo pidiera, y de paso el cierre quedaba trabado con viaticos que
+    nadie habia solicitado. Ahora sale la cuenta del tabulador —para que
+    el consultor no tenga que ir a buscarla— y la solicitud la hace el.
+    """
     servicio = _servicio_de_tres_dias(cliente, sesion, datos)
     jornadas = servicio["equipos"][0]["jornadas"]
     h = sesion("consultor")
@@ -228,9 +235,16 @@ def test_al_que_entra_se_le_abren_viaticos(cliente, sesion, datos):
                      headers=h).json()
 
     # Uno por cada dia que le queda al servicio, con monto del tabulador.
-    nuevos = r["viaticos"]["nuevos"]
-    assert len(nuevos) == 2
-    assert all(n["monto"] > 0 for n in nuevos)
+    propuestos = r["viaticos"]["propuestos"]
+    assert len(propuestos) == 2
+    assert all(n["monto"] > 0 for n in propuestos)
+
+    # Propuestos quiere decir propuestos: no hay nada asignado todavia.
+    suyos = cliente.get(
+        "/viaticos/finanzas/por-comprobar", headers=sesion("finanzas")).json()
+    de_luis = [x for p in suyos["paises"] for x in p["personas"]
+               if x["persona"] == "Luis Mendoza"]
+    assert de_luis == [], de_luis
 
 
 # ---------------------------------------------------------------- unidad

@@ -887,6 +887,10 @@ class AlertaOut(Base):
     tomada_en: datetime | None = None
     equipo_respuesta_enviado: bool
     resolucion: str | None = None
+    # Si el consultor ya formalizo el cambio que esta alerta provoco. La
+    # central estabiliza y el consultor formaliza; asi la central ve que
+    # lo suyo ya siguio su camino, sin tener que llamar a preguntar.
+    cambio: str | None = None
 
 
 class TomarAlertaIn(Base):
@@ -904,6 +908,13 @@ class ReemplazoPersonalIn(Base):
     entra_persona_id: int
     motivo: str
     alerta_id: int | None = None
+    # Por que cambio. Con nombre y no como texto libre porque de aqui
+    # salen dos cuentas que la direccion va a pedir: cuanto ausentismo
+    # hay y cuanto tiempo pasan las unidades en el taller.
+    motivo_tipo: MotivoCambio | None = None
+    # Hasta cuando dura. Vacio es "de ahi en adelante", que es como se
+    # resuelve una contingencia. Lo planeado si tiene fin.
+    hasta_jornada_id: int | None = None
 
 
 class ReemplazoVehiculoIn(Base):
@@ -912,6 +923,8 @@ class ReemplazoVehiculoIn(Base):
     entra_vehiculo_id: int
     motivo: str
     alerta_id: int | None = None
+    motivo_tipo: MotivoCambio | None = None
+    hasta_jornada_id: int | None = None
 
 
 # ================================================================ NOMINA

@@ -365,6 +365,7 @@ const TEXTOS = {
     central_equipo_respuesta: "equipo de respuesta",
     central_reportada: "Reportada",
     central_jornada: "jornada",
+    central_cambio: "Cambio formalizado",
     central_ver_mapa: "Ver ubicacion en el mapa",
     central_proximos: "Proximos a iniciar",
     central_proximos_sub: "Servicios a menos de dos horas de arrancar. A partir "
@@ -927,6 +928,7 @@ const TEXTOS = {
     central_equipo_respuesta: "response team",
     central_reportada: "Reported",
     central_jornada: "day",
+    central_cambio: "Change recorded",
     central_ver_mapa: "See the location on the map",
     central_proximos: "Starting soon",
     central_proximos_sub: "Services less than two hours from starting. From "
@@ -1483,6 +1485,7 @@ const TEXTOS = {
     central_equipo_respuesta: "equipe de resposta",
     central_reportada: "Reportada",
     central_jornada: "jornada",
+    central_cambio: "Troca formalizada",
     central_ver_mapa: "Ver localizacao no mapa",
     central_proximos: "Proximos a iniciar",
     central_proximos_sub: "Servicos a menos de duas horas de comecar. A partir "

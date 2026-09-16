@@ -61,6 +61,13 @@ def ejecutado(db: Session, servicio: m.Servicio, tarifario_id: int) -> dict:
             horas_extra_total += extras
 
             for a in j.personal:
+                # La asignacion relevada no se le cobra al cliente. Ese
+                # dia hubo dos personas porque una salio a media jornada
+                # y entro otra: el cliente tuvo un conductor, no dos. A
+                # la empresa si le costaron los dos (ver `utilidad`), y
+                # esa diferencia es el costo de la contingencia.
+                if a.relevado_en:
+                    continue
                 # Se cobra el rol con el que fue ese dia, no lo que la
                 # persona es: eso es lo que se le vendio al cliente.
                 tarifa = cot.precio_recurso(db, tarifario_id, a.rol_id,
@@ -80,6 +87,10 @@ def ejecutado(db: Session, servicio: m.Servicio, tarifario_id: int) -> dict:
                 total += importe
 
             for a in j.vehiculos:
+                # Lo mismo con la unidad relevada: el cliente tuvo una
+                # camioneta ese dia, aunque en la base haya dos filas.
+                if a.relevado_en:
+                    continue
                 tarifa = cot.precio_vehiculo(db, tarifario_id, a.vehiculo.categoria_id,
                                              j.modalidad_id)
                 importe = _d(tarifa.precio)
@@ -291,6 +302,9 @@ def rentabilidad(db: Session, servicio_id: int) -> dict:
             factor = factor_festivo(db, servicio.pais_id, j.fecha)
             if factor > 1:
                 dias_festivos += 1
+            # Aqui si entran las relevadas: a la empresa le costaron las
+            # dos. Lo que el cliente no paga de ese dia es el costo de la
+            # contingencia, y sale solo en esta resta.
             for a in j.personal:
                 comision = None
                 if a.rol_id:

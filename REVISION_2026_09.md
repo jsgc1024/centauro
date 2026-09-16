@@ -161,10 +161,10 @@ otra moneda, duele de inmediato.
   de Postgres: guardan el valor en minúscula mientras todas las demás
   columnas de enum guardan el nombre. Funciona porque todo pasa por
   Pydantic, pero es una excepción al patrón.
-- Al reemplazar personal por contingencia, **quien sale pierde el día
-  completo**: la asignación se muta en vez de cerrarse y abrirse otra.
-  Trabajó ocho horas y cobra cero. No se tocó porque el arreglo correcto
-  cambia cómo se modelan las asignaciones.
+- ~~Al reemplazar personal por contingencia, **quien sale pierde el día
+  completo**~~. **Resuelto** (ver `BITACORA.md`, sección 11): el día del
+  cambio ya no se muta, se parte. Queda abierto lo mismo en el
+  implantado, que tiene su propio reemplazo en `implantado.py`.
 - Cualquier sobrecosto se etiqueta "horas extra" si hubo una sola hora
   extra en cualquier día del servicio, y eso lo vuelve informativo: pasa
   a facturación sin que nadie lo recotice.

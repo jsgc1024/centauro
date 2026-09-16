@@ -151,3 +151,34 @@ def recordar_la_vispera(db: Session, dia=None) -> dict:
     db.commit()
     return {"dia": dia.isoformat(), "avisados": avisados,
             "sin_telefono": len(por_persona) - len(avisados)}
+
+
+# ==================================================================
+# El relevo: el aviso que no puede esperar al de la vispera
+# ==================================================================
+
+def avisar_relevo(db: Session, entra: m.Persona, sale: m.Persona,
+                  cambio: dict) -> dict:
+    """Le avisa al que entra, en el momento del cambio.
+
+    El recordatorio de la vispera solo mira manana. Un reemplazo hecho
+    hoy para hoy nunca lo dispararia, y ese es justamente el urgente: la
+    persona que entra se enteraba porque le hablaban por telefono, o no
+    se enteraba.
+
+    Como todos los avisos, este no detiene nada: si no sale, el cambio
+    ya quedo hecho igual.
+    """
+    dias = cambio.get("jornadas_afectadas") or []
+    if not dias:
+        return {"enviados": 0, "motivo": "sin dias"}
+
+    cuantos = len(dias)
+    cuando = dias[0] if cuantos == 1 else f"{dias[0]} al {dias[-1]}"
+    return avisar(
+        db, entra.id,
+        titulo="Entras a un servicio",
+        cuerpo=(f"Cubres a {sale.nombre}: {cuando}"
+                + (f" · {cuantos} dias" if cuantos > 1 else "")
+                + ". Abre la app y confirma."),
+        etiqueta="relevo")

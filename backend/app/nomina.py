@@ -102,7 +102,14 @@ def pago_de_jornada(db: Session, jornada: m.Jornada,
         return None
 
     factor = factor_festivo(db, pais_id, jornada.fecha)
-    extras = _horas_extra(jornada)
+    # Quien fue relevado a media jornada cobra su dia completo —se
+    # presento y perdio el dia, y no fue su culpa— pero no las horas
+    # extra: esas las trabajo quien se quedo hasta el final.
+    #
+    # Y quien no alcanzo a marcar su llegada no aparece aqui siquiera:
+    # el reemplazo no le deja asignacion, porque no trabajo. La regla
+    # vive en `contingencia.se_presento`, donde se puede verificar sola.
+    extras = 0 if asignacion.relevado_en else _horas_extra(jornada)
     monto = base * factor + hora_extra * extras * factor
 
     modalidad = jornada.modalidad.codigo.value
@@ -112,6 +119,11 @@ def pago_de_jornada(db: Session, jornada: m.Jornada,
     # lo dice se lee como un error de la empresa.
     if asignacion.rol:
         partes.append(asignacion.rol.nombre)
+    # El recibo tiene que decir por que ese dia se pago a dos personas.
+    if asignacion.relevado_en:
+        partes.append(f"relevado {asignacion.relevado_en.strftime('%H:%M')}")
+    elif asignacion.reemplaza_a_id:
+        partes.append("entra por relevo")
     if extras:
         partes.append(f"{extras} h extra")
     if factor > 1:

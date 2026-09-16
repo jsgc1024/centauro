@@ -481,7 +481,152 @@ Lo que no esté en esa lista se queda con la hora de la casa.
 
 ---
 
-## 10. Lo que falta
+## 10. Los viáticos: el sistema propone, el consultor decide
+
+**La regla.** Dos partes, y las dos son de la casa:
+
+1. **El sistema nunca asigna viáticos por su cuenta.** Calcula lo que
+   tocaría por tabulador —para que nadie tenga que ir a buscarlo— y lo
+   propone. Quién recibe dinero, cuánto y cuándo lo decide el consultor,
+   siempre, sin excepción.
+2. **Lo que ya se depositó es de quien lo recibió.** Cada persona de
+   seguridad se hace responsable de comprobar su dinero, y esa
+   comprobación hace falta para cerrar el servicio. El dinero no cambia
+   de dueño porque cambie quien trabaja.
+
+**Por qué.** Un sistema que abre dinero solo es un sistema que gasta sin
+que nadie lo haya pedido. Y del otro lado: si al cambiar de persona el
+dinero se moviera con el puesto, nadie quedaría obligado a comprobar lo
+que ya se llevó, y ese es justo el hueco por donde se pierde.
+
+**Dónde se cumple.** Los tres lugares que crean una asignación de
+viáticos —el alta del consultor, el depósito adicional y los dos del
+implantado— reciben un monto capturado y guardan quién lo autorizó
+(`asignado_por_id`). No hay un cuarto.
+
+**El único que la rompía.** El reemplazo por contingencia le abría
+viáticos a quien entraba, con el tabulador, sin que nadie los pidiera
+—aunque el que salía no tuviera un peso asignado. Además de gastar solo,
+dejaba el cierre trabado: el revisor no deja enviar a finanzas con
+viáticos sin comprobar, así que el servicio se quedaba atorado esperando
+la comprobación de un dinero que nadie había solicitado.
+
+Ahora el reemplazo devuelve la propuesta y el consultor la asigna con el
+botón de siempre:
+
+> A Luis Mendoza le tocarían $1,152 por tabulador (2 días).
+> Se los asignas tú.
+
+Y lo que el que sale ya tenía encima no se toca: pasa a comprobación con
+su plazo de 24 horas, a su nombre. Lo que todavía no había salido se
+cancela, porque esa persona ya no va a trabajar ese día.
+
+---
+
+## 11. El relevo a media jornada
+
+**El agujero.** El reemplazo por contingencia hacía esto:
+
+```python
+asignacion.persona_id = entra_persona_id
+```
+
+La asignación cambiaba de dueño. Juan se presentaba a las siete,
+trabajaba hasta las once y lo relevaban; a las once y cinco el consultor
+formalizaba el cambio y esa fila dejaba de ser de Juan. La nómina paga
+por asignación, así que **Juan cobraba cero por las cuatro horas que sí
+trabajó**, y nada en el sistema recordaba que estuvo ahí.
+
+Y más de fondo: no había **ninguna pantalla** que usara el reemplazo.
+Los endpoints existían desde el principio; el cambio se hacía por
+teléfono y no se registraba.
+
+**La decisión.** El día del cambio no se muta: se parte.
+
+- La asignación de quien sale **se queda**, marcada con la hora del
+  relevo (`relevado_en`) y con quién entró (`relevado_por_id`).
+- Se **crea** una asignación nueva para quien entra, con el mismo rol y
+  la misma unidad.
+- Los días siguientes sí cambian de dueño: nadie los trabajó todavía.
+
+Ese día el equipo tiene dos personas en el mismo rol, y hay que saber
+leerlo:
+
+| | |
+|---|---|
+| **Al cliente** se le cobra **una** | La asignación relevada no entra al cierre ni a la cotización |
+| **A la empresa** le cuestan **dos** | Las dos entran a nómina, cada quien su día completo |
+
+La diferencia es el costo de la contingencia. Antes se lo comía el que
+trabajó.
+
+**Las reglas del pago.**
+
+- **Día completo a los dos.** El que se presentó perdió su día y no fue
+  su culpa; el que entró tampoco va a cobrar menos por llegar tarde a
+  algo que no eligió. El consultor **no captura ningún monto**, que es
+  lo que hace esto gestionable.
+- **Cobra el día quien alcanzó a marcar su llegada.** Quien no se
+  presentó no trabajó, y relevarlo es cambiar un nombre en una lista: su
+  día se muta y no deja rastro. La regla vive en
+  `contingencia.se_presento` y el sistema la verifica solo.
+- **Las horas extra son de quien se quedó.** El relevado cobra su día,
+  no las horas de más que no trabajó.
+- **El rol se hereda y no se cambia aquí.** De él salen el precio al
+  cliente y la comisión; moverlo descuadraría la cotización sin avisar.
+
+**La pantalla.** El botón `Cambiar` va junto a `Quitar`, en la ficha de
+cada persona: el consultor está viendo a Juan Ramírez y lo que quiere es
+cambiar a Juan Ramírez. Abre debajo, en la misma tarjeta, igual que
+`Asignar recursos`. Cuatro preguntas —desde qué día, hasta cuándo, por
+qué, quién entra— y una **vista previa antes de guardar** que dice en voz
+alta lo que va a pasar: los días, la nómina, los viáticos y los choques.
+
+Esa vista previa **es el cambio de verdad, ejecutado y deshecho** en el
+servidor. No hay una segunda cuenta que calcule "lo que pasaría": esa
+siempre acaba separándose de la primera, y entonces el recuadro que el
+consultor lee deja de ser lo que el sistema hace.
+
+**Lo que se ve después.** La ficha del equipo dice "Relevado el 16 sep a
+las 11:00" y "Reemplaza a Juan Ramírez"; los días afectados traen
+etiqueta de *cambio*; al final del servicio hay un bloque de **Cambios de
+recurso** con el historial; y la ficha de pánico de la central muestra
+"Cambio formalizado · Luis Mendoza entra por Juan Ramírez", que ahorra la
+llamada de "¿ya lo cambiaste?".
+
+**El aviso sale en el momento.** El recordatorio de la víspera solo mira
+mañana, así que un cambio hecho hoy para hoy nunca lo disparaba —y ese
+es justo el urgente. Ahora el aviso al teléfono de quien entra sale al
+formalizar.
+
+**Deshacer.** Para el consultor que se equivocó de persona hace un
+minuto, y **solo mientras nadie haya tocado el dinero**. En cuanto hay
+una transferencia y un plazo corriendo, deshacer a mano sería peor que
+el error: lo que corresponde es un cambio en sentido contrario, con su
+rastro.
+
+**Lo que se arregló de paso, en el cambio de unidad.**
+
+- No movía `AsignacionPersonal.vehiculo_id`: después del cambio, "quién
+  va en qué unidad" seguía apuntando a la camioneta que ya no estaba en
+  el servicio, y así lo veía la central.
+- Al mutar la asignación, la unidad que salía **desaparecía del
+  servicio** y ya no se le podía hacer la revisión de devolución. Un
+  golpe en esa camioneta quedaba sin dueño, que es exactamente lo que la
+  revisión con fotos vino a resolver. Ahora la unidad también se releva.
+
+**La raya con el implantado.** Este motor es de eventual y lo dice por
+candado, no por costumbre: rechaza una jornada de implantado con un 409
+que apunta a su calendario. No es separación de gusto —el implantado
+reutiliza el mismo equipo mes tras mes, así que un cambio "de aquí en
+adelante" barrería todas las jornadas abiertas y abriría decenas de
+viáticos de un solo clic. Su reemplazo va día por día, en
+`implantado.cambiar_personal`, **y ahí sigue el mismo agujero de nómina**
+(ver sección 12).
+
+---
+
+## 12. Lo que falta
 
 ### Abierto
 
@@ -503,6 +648,13 @@ Lo que no esté en esa lista se queda con la hora de la casa.
   el pozo de hilos de FastAPI, y el respaldo tiene que estar probado
   antes de que haya datos reales que perder —con las imágenes dentro de
   la base, el `pg_dump` *es* el sistema completo.
+- **El relevo del implantado.** Su reemplazo vive aparte
+  (`implantado.py`, tabla `Reemplazo`) y sigue mutando la asignacion:
+  quien sale a media jornada cobra cero, igual que pasaba en eventual.
+  Ahi pasa mas seguido, porque es operacion diaria con plantilla fija.
+  El arreglo de fondo es el mismo —relevar en vez de mutar— pero cuidado
+  con el alcance: el implantado reutiliza el mismo equipo mes tras mes,
+  asi que necesita un tope duro (el mes en curso) antes de tocarlo.
 - **La moneda.** `Cotizacion.tipo_cambio` existe y no se lee en ninguna
   parte. Hoy no duele porque todo está en pesos; el día que entre un
   tarifario en dólares, la utilidad y la comisión salen sin sentido.

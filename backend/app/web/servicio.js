@@ -16,10 +16,16 @@ export async function pantallaServicio(main, servicioId) {
 
   main.append(encabezado(servicio, cliente, plaza));
 
+  /* Los cambios de recurso se piden una sola vez: los usan la tabla de
+     dias —para marcar cuales se movieron— y el bloque del final. */
+  const cambios = await api.get(
+    `/contingencia/reemplazos/servicio/${servicioId}`).catch(() => []);
+
   for (const equipo of servicio.equipos) {
-    main.append(await bloqueEquipo(servicio, equipo, cat));
+    main.append(await bloqueEquipo(servicio, equipo, cat, cambios));
   }
   main.append(await bloqueTaskSheet(servicio));
+  main.append(bloqueCambios(cambios));
   main.append(await bloqueRevisiones(servicio));
 }
 
@@ -105,7 +111,7 @@ async function borrar(ruta, advertencia, listo, destino = null) {
 
 /* ------------------------------------------------------------ equipo */
 
-async function bloqueEquipo(servicio, equipo, cat) {
+async function bloqueEquipo(servicio, equipo, cat, cambios) {
   const caja = h("div", { clase: "tarjeta" },
     h("div", { clase: "cabeza-equipo" },
         h("div", {},
@@ -135,13 +141,13 @@ async function bloqueEquipo(servicio, equipo, cat) {
         ? h("span", { clase: "gris num" }, ` · ${equipo.ejecutivo_telefono}`)
         : ""));
 
-  caja.append(await bloqueRecursos(equipo, cat));
+  caja.append(await bloqueRecursos(servicio, equipo, cat));
   /* El dinero va pegado a la gente: en cuanto hay alguien asignado
      aparece cuanto se le deposita. Sin personal no se pinta nada,
      porque no hay a quien depositarle. */
   caja.append(await bloqueViaticos(equipo));
   caja.append(await bloqueHotel(servicio, equipo, cat));
-  caja.append(tablaDias(servicio, equipo, cat));
+  caja.append(tablaDias(servicio, equipo, cat, cambios));
   return caja;
 }
 
@@ -168,7 +174,7 @@ function alternador(boton, zona, abrir, textoCerrar = "Cerrar") {
    conductor que recoge al ejecutivo el lunes es el que lo lleva al
    aeropuerto el jueves. Por eso se asignan una vez, para todos sus dias,
    en vez de repetir la misma decision dia por dia. */
-async function bloqueRecursos(equipo, cat) {
+async function bloqueRecursos(servicio, equipo, cat) {
   const caja = h("div", { clase: "tarjeta lisa", style: "margin:0 0 14px" });
   let datos;
   try {
@@ -203,18 +209,48 @@ async function bloqueRecursos(equipo, cat) {
       boton || ""));
 
   const variasUnidades = datos.vehiculos.length > 1;
+  const zonaCambio = h("div", { style: "margin-top:12px" });
+
+  /* Un boton por persona, junto a Quitar: el consultor esta viendo a
+     Juan Ramirez y lo que quiere es cambiar a Juan Ramirez. No hay que
+     ensenarle a nadie donde esta. */
+  function botonCambiar(servicio_, equipo_, cat_, persona, datos_) {
+    return h("button", { clase: "claro chico", type: "button",
+      onclick: () => abrirCambio(zonaCambio, servicio_, equipo_, cat_,
+                                 persona, datos_) }, "Cambiar");
+  }
 
   const gente = h("div", {}, h("h4", {}, "Equipo de seguridad"));
   if (datos.personal.length) {
     for (const p of datos.personal) {
+      /* La zona del cambio vive debajo de la tarjeta de recursos, igual
+         que la de asignar: un solo panel abierto a la vez y nada que se
+         encime con la ficha que se esta leyendo. */
+      const acciones = h("div", { clase: "acciones", style: "margin-top:6px" },
+        p.relevado_en
+          ? ""
+          : botonCambiar(servicio, equipo, cat, p, datos),
+        quitar(`/servicios/equipos/${equipo.id}/personal/${p.persona_id}`,
+               p.nombre));
       gente.append(ficha(p, p.puesto || "Personal", [
         h("b", {}, p.nombre),
         h("div", { clase: "chico" },
           p.telefono || h("span", { clase: "gris" }, "Sin telefono")),
         h("div", { clase: "chico gris" }, p.ciudad || ""),
+        /* Un cambio a media semana rompe la premisa de que el equipo es
+           el mismo todos los dias. La ficha tiene que decirlo o el
+           consultor lee un equipo que no existe. */
+        p.relevado_en
+          ? h("div", { clase: "chico", style: "color:#b8860b" },
+              `Relevado el ${fecha(p.relevado_en.slice(0, 10))} `
+              + `a las ${p.relevado_en.slice(11, 16)}`)
+          : "",
+        p.reemplaza_a
+          ? h("div", { clase: "chico", style: "color:#b8860b" },
+              `Reemplaza a ${p.reemplaza_a}`)
+          : "",
         variasUnidades ? selectorAbordo(equipo, p, datos.vehiculos) : "",
-      ], quitar(`/servicios/equipos/${equipo.id}/personal/${p.persona_id}`,
-                p.nombre)));
+      ], acciones));
     }
   } else {
     gente.append(h("span", { clase: "gris" }, "Por asignar"));
@@ -256,7 +292,7 @@ async function bloqueRecursos(equipo, cat) {
       alternador(h("button", { clase: "claro chico", type: "button" },
                    "Asignar recursos"),
                  zona, () => abrirAsignacion(zona, equipo, cat))),
-    zona);
+    zona, zonaCambio);
   return caja;
 }
 
@@ -545,6 +581,263 @@ function formularioRenta(equipo, cat, categoriaId) {
     h("div", { clase: "acciones", style: "margin-top:10px" }, guardar));
 }
 
+
+/* --------------------------------------- cambio por contingencia */
+
+/* Lo delicado de un reemplazo no es el nombre de quien va: son los
+   viaticos. El que sale se queda con dinero que ya recibio y tiene que
+   comprobarlo; el que entra necesita dinero nuevo. Eso ya pasaba, solo
+   que en silencio, y el consultor se enteraba despues. Por eso aqui
+   nada se guarda hasta que la pantalla dice en voz alta lo que va a
+   pasar. */
+
+/* Con nombre y no como texto libre: de aqui salen las dos cuentas que
+   la direccion va a pedir —cuanto ausentismo hay y cuanto tiempo pasan
+   las unidades en el taller— y escrito a mano no se puede contar. */
+const MOTIVOS = [
+  { valor: "contingencia", texto: "Contingencia" },
+  { valor: "enfermedad", texto: "Enfermedad" },
+  { valor: "vacaciones", texto: "Vacaciones" },
+  { valor: "descanso", texto: "Descanso" },
+  { valor: "baja", texto: "Baja" },
+  { valor: "otro", texto: "Otro" },
+];
+
+const CERRADOS = ["cancelada", "terminada"];
+
+function diasPendientes(equipo) {
+  return [...equipo.jornadas]
+    .filter(j => !CERRADOS.includes(j.estatus))
+    .sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
+}
+
+async function abrirCambio(zona, servicio, equipo, cat, persona, datos) {
+  const dias = diasPendientes(equipo);
+  if (!dias.length) {
+    return zona.replaceChildren(aviso(
+      "Este equipo ya no tiene dias pendientes: no hay nada que cambiar.",
+      "alerta"));
+  }
+
+  /* El cambio aplica del dia que se elija en adelante. Se propone hoy si
+     hoy es uno de los dias del equipo, que es el caso de la contingencia
+     de verdad; si no, el primero que queda. */
+  const hoy = new Date().toISOString().slice(0, 10);
+  const desde = lista("desde", dias.map(
+    j => ({ valor: j.id, texto: fecha(j.fecha) })));
+  const suyo = dias.find(j => j.fecha === hoy);
+  desde.value = (suyo || dias[0]).id;
+
+  const hasta = lista("hasta", dias.map(
+    j => ({ valor: j.id, texto: fecha(j.fecha) })), { disabled: "disabled" });
+  hasta.value = dias[dias.length - 1].id;
+
+  const conFin = h("input", { type: "radio", name: "alcance" });
+  const adelante = h("input", { type: "radio", name: "alcance",
+                                checked: "checked" });
+  const marcar_ = () => { hasta.disabled = !conFin.checked; };
+  conFin.addEventListener("change", marcar_);
+  adelante.addEventListener("change", marcar_);
+
+  const motivo = lista("motivo", MOTIVOS);
+  const nota = entrada("nota", { placeholder: "Que paso, en una linea" });
+
+  const candidatos = h("div", { style: "margin-top:12px" },
+    h("div", { clase: "gris chico" }, "Buscando quien puede entrar…"));
+  const previa = h("div", { style: "margin-top:12px" });
+
+  const armar = () => ({
+    desde_jornada_id: Number(desde.value),
+    hasta_jornada_id: conFin.checked ? Number(hasta.value) : null,
+    sale_persona_id: persona.persona_id,
+    motivo: nota.value.trim() || MOTIVOS.find(x => x.valor === motivo.value).texto,
+    motivo_tipo: motivo.value,
+  });
+
+  zona.replaceChildren(h("div", { clase: "tarjeta lisa" },
+    h("h4", { style: "margin:0 0 2px" }, `Cambiar a ${persona.nombre}`),
+    h("p", { clase: "gris chico", style: "margin:0 0 12px" },
+      "El cambio aplica del dia que elijas en adelante. Los dias ya "
+      + "terminados no se tocan."),
+    h("div", { clase: "rejilla dos" },
+      campo("Desde que dia", desde),
+      campo("Hasta cuando", h("div", {},
+        h("label", { clase: "chico" }, adelante, " De aqui en adelante"),
+        h("label", { clase: "chico", style: "margin-left:12px" },
+          conFin, " Hasta el dia "), hasta,
+        h("div", { clase: "gris chico", style: "margin-top:4px" },
+          "Una contingencia no tiene fin: nadie sabe cuando vuelve el "
+          + "que salio. Unas vacaciones si.")))),
+    h("div", { clase: "rejilla dos" },
+      campo("Por que", motivo), campo("Nota", nota)),
+    candidatos, previa));
+
+  /* La misma lista de recomendaciones que usa "Asignar recursos", con
+     su disponibilidad y sus choques ya resueltos. Filtrada al rol que
+     traia el que sale: un conductor se reemplaza con un conductor. */
+  try {
+    /* Con el rol que traia el que sale: un conductor se reemplaza con un
+       conductor. Si la asignacion venia sin rol —no deberia, pero pasa—
+       se cae al primero del catalogo en vez de pedir la lista vacia. */
+    const categoria = cat.categorias[0];
+    const rol = persona.rol_id || (cat.perfiles[0] || {}).id;
+    const r = await api.get(
+      `/servicios/equipos/${equipo.id}/recomendaciones`
+      + `?perfil_id=${rol}&categoria_id=${categoria.id}`);
+    candidatos.replaceChildren(
+      tablaCandidatos(r.personal, persona, armar, previa));
+  } catch (err) {
+    candidatos.replaceChildren(aviso(err.message, "grave"));
+  }
+}
+
+function tablaCandidatos(bloque, sale, armar, previa) {
+  const gente = ordenar(todos(bloque))
+    .filter(x => x.persona_id !== sale.persona_id);
+  const cuerpo = h("tbody");
+  for (const p of gente) {
+    const est = estadoDe(p);
+    cuerpo.append(h("tr", {},
+      h("td", {}, h("b", {}, p.nombre), lineaCiudad(p)),
+      celdaEstado(est),
+      h("td", {}, h("button", { clase: "chico", type: "button",
+        onclick: (e) => verPrevia(e, previa, armar(), p) }, "Elegir"))));
+  }
+  return caja(`Quien entra en lugar de ${sale.nombre}`, bloque, gente.length,
+              ["Persona", "Disponibilidad", ""], cuerpo,
+              "No hay nadie con ese rol");
+}
+
+/* Nada se guarda hasta aqui. Lo que se pinta es el cambio de verdad,
+   ejecutado y deshecho en el servidor: no hay una segunda cuenta que
+   calcule "lo que pasaria" y se separe de la primera. */
+async function verPrevia(e, zona, cambio, entra) {
+  e.target.disabled = true;
+  zona.replaceChildren(h("div", { clase: "gris chico" }, "Calculando…"));
+  const cuerpo = { ...cambio, entra_persona_id: entra.persona_id };
+  try {
+    const r = await api.post("/contingencia/reemplazos/personal/vista-previa",
+                             cuerpo);
+    zona.replaceChildren(recuadroPrevia(r, cuerpo, entra));
+  } catch (err) {
+    zona.replaceChildren(aviso(err.message, "grave"));
+  }
+  e.target.disabled = false;
+}
+
+function recuadroPrevia(r, cuerpo, entra) {
+  const dias = r.jornadas_afectadas || [];
+  const v = r.viaticos || {};
+  const linea = (texto, tono) =>
+    h("div", { clase: "chico" + (tono ? "" : " gris") },
+      tono ? h("b", {}, texto) : texto);
+
+  const dinero_ = h("div", { style: "margin-top:8px" },
+    h("h4", { style: "margin:0 0 2px" }, "Viaticos"));
+  for (const x of v.a_comprobar || []) {
+    dinero_.append(linea(
+      `Comprueba ${dinero(x.monto)} que ya recibio · vence `
+      + `${fecha((x.limite || "").slice(0, 10))}`, true));
+  }
+  if ((v.cancelados || []).length) {
+    dinero_.append(linea(
+      `Se cancelan ${v.cancelados.length} dia(s) que no habian salido`));
+  }
+  /* Propuesta, no asignacion: el sistema saca la cuenta del tabulador
+     para que el consultor no tenga que ir a buscarla, pero la solicitud
+     la hace el, como con cualquier otra. */
+  const propuesto = (v.propuestos || []).reduce((a, x) => a + x.monto, 0);
+  if (propuesto) {
+    dinero_.append(linea(
+      `A ${entra.nombre} le tocarian ${dinero(propuesto)} por tabulador `
+      + `(${v.propuestos.length} dia(s)). Se los asignas tu.`, true));
+  }
+  if (!(v.a_comprobar || []).length && !propuesto
+      && !(v.cancelados || []).length) {
+    dinero_.append(linea("Nada que mover: todavia no hay viaticos asignados"));
+  }
+
+  const confirmar = h("button", { clase: "chico", type: "button",
+    onclick: async (ev) => {
+      ev.target.disabled = true;
+      try {
+        await api.post("/contingencia/reemplazos/personal", cuerpo);
+        mensaje("Cambio formalizado");
+        location.reload();
+      } catch (err) {
+        mensaje(err.message, "grave");
+        ev.target.disabled = false;
+      }
+    } }, "Confirmar el cambio");
+
+  return h("div", { clase: "tarjeta lisa" },
+    h("h4", { style: "margin:0 0 6px" },
+      dias.length === 1
+        ? fecha(dias[0])
+        : `Del ${fecha(dias[0])} al ${fecha(dias[dias.length - 1])}`
+          + ` · ${dias.length} dias`),
+    h("div", { clase: "chico" },
+      "Entra ", h("b", {}, entra.nombre), " con el mismo rol"),
+    /* Lo que hasta hoy se perdia: el que se presento esa manana cobra su
+       dia. Decirlo aqui es lo que evita el reclamo de la semana que
+       viene. */
+    (r.jornadas_partidas || []).length
+      ? h("div", { style: "margin-top:8px" },
+          h("h4", { style: "margin:0 0 2px" }, "Nomina"),
+          linea(`Se presento: cobra el ${fecha(r.jornadas_partidas[0])} `
+                + "completo", true),
+          linea(`${entra.nombre} cobra sus dias`))
+      : h("div", { clase: "chico gris", style: "margin-top:8px" },
+          "No alcanzo a marcar su llegada, asi que ese dia no se le paga."),
+    dinero_,
+    (r.jornadas_con_choque || []).length
+      ? aviso(`${entra.nombre} ya esta en este equipo el `
+              + r.jornadas_con_choque.map(fecha).join(", ")
+              + ". Esos dias no se cambian.", "alerta")
+      : "",
+    h("div", { clase: "acciones", style: "margin-top:10px" },
+      h("button", { clase: "claro chico", type: "button",
+        onclick: (ev) => ev.target.closest(".tarjeta").remove() }, "Cancelar"),
+      confirmar));
+}
+
+/* ------------------------------------------------ cambios de recurso */
+
+/* El historial existia en la API desde el principio y nadie lo pintaba.
+   Sumado por mes y por motivo es el reporte que la direccion va a
+   pedir: cuanto ausentismo hay y cuanto cuesta. */
+/* Un dia queda dentro de un cambio si cae en su rango. Sin fecha de
+   fin, el cambio va de ese dia en adelante. */
+function huboCambio(cambios, dia) {
+  return (cambios || []).some(
+    r => r.desde && r.desde <= dia && (!r.hasta || dia <= r.hasta));
+}
+
+function bloqueCambios(filas) {
+  const caja = h("div", { clase: "tarjeta" });
+  if (!filas || !filas.length) return h("div");
+
+  caja.append(h("h3", { style: "margin:0 0 2px" }, "Cambios de recurso"),
+    h("p", { clase: "gris chico", style: "margin:0 0 12px" },
+      "Quien entro en lugar de quien, desde cuando y por que."));
+
+  for (const r of filas) {
+    caja.append(h("div", { clase: "tarjeta lisa", style: "margin:0 0 10px" },
+      h("div", {},
+        etiqueta(r.motivo_tipo || r.tipo, "alerta"), " ",
+        h("b", {}, `${r.sale || "?"} → ${r.entra || "?"}`),
+        h("span", { clase: "gris chico" },
+          ` · ${r.jornadas_afectadas} dia(s)`)),
+      h("div", { clase: "chico gris" },
+        `Desde ${fecha(r.desde)}`
+        + (r.hasta ? ` hasta ${fecha(r.hasta)}` : " en adelante")),
+      r.motivo ? h("p", { clase: "chico", style: "margin:6px 0 0" },
+                   `"${r.motivo}"`) : "",
+      h("div", { clase: "chico gris", style: "margin-top:4px" },
+        r.formalizo ? `Formalizo: ${r.formalizo}` : "")));
+  }
+  return caja;
+}
 
 /* -------------------------------------------- el dia: punto y agenda */
 
@@ -1315,7 +1608,7 @@ function ciudadDe(equipo, cat) {
 /* El mismo recuadro del alta, siempre a la vista: el servicio se sigue
    armando despues de darlo de alta. La fecha, la modalidad y la hora del
    dia 1 se corrigen aqui, y la agenda de cada dia se sube aqui. */
-function tablaDias(servicio, equipo, cat) {
+function tablaDias(servicio, equipo, cat, cambios = []) {
   const cuerpo = h("tbody");
   const dias = [...equipo.jornadas].sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
 
@@ -1389,7 +1682,11 @@ function tablaDias(servicio, equipo, cat) {
         h("td", {}, fechaDia),
         h("td", {}, modalidad),
         h("td", { clase: "col-hora" }, hora_, nota, botonDia),
-        h("td", { clase: "chico gris" }, etiqueta(jornada.estatus || "")),
+        h("td", { clase: "chico gris" }, etiqueta(jornada.estatus || ""),
+          /* Un dia que cambio de gente no se lee igual que uno normal:
+             puede traer dos personas en la nomina. */
+          huboCambio(cambios, jornada.fecha)
+            ? h("span", {}, " ", etiqueta("cambio", "alerta")) : ""),
         h("td", {}, quitar)),
       filaDia);
   });

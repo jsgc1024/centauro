@@ -165,6 +165,12 @@ function fichaPanico(a, zona) {
           `${t("central_reportada")} ${hora(a.reportada_en)}`)),
       etiqueta(a.estatus, urgente ? "grave" : "alerta")),
     a.descripcion ? h("p", { style: "margin:8px 0 0" }, a.descripcion) : null,
+    /* La central estabiliza y el consultor formaliza. Verlo aqui ahorra
+       la llamada de "oye, ¿ya lo cambiaste?". */
+    a.cambio
+      ? h("div", { clase: "chico", style: "margin-top:6px" },
+          etiqueta(t("central_cambio"), "ok"), " ", a.cambio)
+      : null,
     a.lat
       ? h("div", { clase: "chico" },
           h("a", { target: "_blank",
