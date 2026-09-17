@@ -188,8 +188,11 @@ def test_un_intento_de_marcar_lejos_del_punto_queda_contado(cliente, sesion,
     intentos = r.json()["intentos_fuera_de_geocerca"]
     assert len(intentos) == 1
     assert intentos[0]["servicio"] == servicio["folio"]
-    # El mensaje de la alerta carga la distancia y el limite, que es lo
-    # unico que queda: el hito rechazado no guarda a quien lo intento.
+    # El nombre es el punto: el hito rechazado no se guarda, asi que si
+    # la alerta no lo carga, la direccion ve el intento y no tiene a
+    # quien preguntarle.
+    assert intentos[0]["persona"] == "Juan Ramirez"
+    # Y el mensaje carga la distancia y el limite.
     assert "250" in intentos[0]["mensaje"]
 
 

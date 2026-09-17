@@ -536,9 +536,8 @@ def marcas_raras(db: Session, consultor_id: int | None = None,
             "servicio_id": j.equipo.servicio_id,
             "servicio": j.equipo.servicio.folio,
             "equipo": j.equipo.alias,
-            # El mensaje trae la distancia y el limite. La persona no: el
-            # hito se rechazo y nunca se guardo, asi que no hay a quien
-            # colgarselo.
+            "persona": a.persona.nombre if a.persona else None,
+            # El mensaje trae la distancia y el limite.
             "mensaje": a.mensaje,
             "creada_en": a.creada_en.isoformat() if a.creada_en else None,
             "atendida": a.atendida,

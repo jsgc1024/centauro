@@ -1114,6 +1114,12 @@ class Alerta(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     jornada_id: Mapped[int] = mapped_column(ForeignKey("jornada.id"))
     tipo: Mapped[TipoAlerta] = mapped_column(Enum(TipoAlerta))
+    # A quien se refiere, cuando se refiere a alguien. Una llegada
+    # marcada desde lejos se rechaza y el hito no se guarda, asi que sin
+    # esto no quedaria a quien preguntarle. Las alertas de la jornada
+    # entera --sin reporte, horas extra-- la dejan vacia.
+    persona_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
     mensaje: Mapped[str] = mapped_column(String(400))
     creada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atendida: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -1121,6 +1127,7 @@ class Alerta(Base):
     resolucion: Mapped[str | None] = mapped_column(String(400), nullable=True)
 
     jornada: Mapped[Jornada] = relationship()
+    persona: Mapped["Persona | None"] = relationship()
 
 
 class Notificacion(Base):

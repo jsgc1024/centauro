@@ -44,8 +44,12 @@ def distancia_metros(lat1, lon1, lat2, lon2) -> int:
     return int(r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
 
 
-def _alertar(db: Session, jornada_id: int, tipo: m.TipoAlerta, mensaje: str) -> m.Alerta:
-    alerta = m.Alerta(jornada_id=jornada_id, tipo=tipo, mensaje=mensaje)
+def _alertar(db: Session, jornada_id: int, tipo: m.TipoAlerta, mensaje: str,
+             persona_id: int | None = None) -> m.Alerta:
+    """`persona_id` va cuando la alerta es de alguien. Las de la jornada
+    entera --sin reporte, horas extra-- no llevan nombre."""
+    alerta = m.Alerta(jornada_id=jornada_id, tipo=tipo, mensaje=mensaje,
+                      persona_id=persona_id)
     db.add(alerta)
     return alerta
 
@@ -128,7 +132,8 @@ def registrar_hito(db: Session, jornada_id: int, persona_id: int,
         if not hito.dentro_geocerca:
             _alertar(db, jornada.id, m.TipoAlerta.FUERA_DE_GEOCERCA,
                      f"Intento de marcar llegada a {distancia} m del origen "
-                     f"(limite {jornada.geocerca_metros} m)")
+                     f"(limite {jornada.geocerca_metros} m)",
+                     persona_id=persona_id)
             db.commit()
             raise HTTPException(409, {
                 "mensaje": "No se puede marcar la llegada fuera de la geocerca",
@@ -146,7 +151,8 @@ def registrar_hito(db: Session, jornada_id: int, persona_id: int,
             desfase = (ahora - jornada.inicio_programado).total_seconds() / 60
             _alertar(db, jornada.id, m.TipoAlerta.FUERA_DE_VENTANA,
                      f"{tipo.value} marcado con {desfase:+.0f} min respecto a la "
-                     f"hora de presentacion. Requiere revision de la central.")
+                     f"hora de presentacion. Requiere revision de la central.",
+                     persona_id=persona_id)
             alertas.append("Marca fuera de la ventana de horario: la central debe revisarla")
 
     # ---- Secuencia obligatoria

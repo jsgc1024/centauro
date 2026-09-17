@@ -366,21 +366,22 @@ async function verMarcas(e) {
 function listaMarcas(d) {
   const caja = h("div", { clase: "detalle_marcas", style: "margin-top:14px" });
 
-  /* Un intento no tiene persona: el sistema rechaza la marca y no la
-     guarda, asi que lo unico que queda es la alerta con su mensaje. */
+  /* La marca se rechaza y el hito no se guarda; lo que queda es la
+     alerta, y ahi va el nombre de quien lo intento. */
   if (d.intentos_fuera_de_geocerca.length) {
     const cuerpo = h("tbody");
     for (const f of d.intentos_fuera_de_geocerca) {
       cuerpo.append(h("tr", {},
         h("td", {}, h("b", {}, f.servicio),
           h("div", { clase: "gris chico" }, `${t("col_equipo")} ${f.equipo}`)),
+        h("td", {}, f.persona || "—"),
         h("td", { clase: "num" }, f.creada_en ? hora(f.creada_en) : "—"),
         h("td", { clase: "chico" }, f.mensaje)));
     }
     caja.append(h("h4", {}, t("pan_intentos_geocerca")),
       h("table", {}, h("thead", {}, h("tr", {},
-        h("th", {}, t("col_servicio")), h("th", {}, t("hora")),
-        h("th", {}, t("pan_detalle")))), cuerpo));
+        h("th", {}, t("col_servicio")), h("th", {}, t("srv_persona")),
+        h("th", {}, t("hora")), h("th", {}, t("pan_detalle")))), cuerpo));
   }
 
   if (d.por_validar.length) {
