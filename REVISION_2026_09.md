@@ -155,8 +155,7 @@ otra moneda, duele de inmediato.
   quien cubrió un día de un servicio de cinco lee el itinerario de los
   cinco. Puede ser correcto —el equipo es la misma gente todos los
   días— pero conviene decidirlo a propósito.
-- `taller_vehiculo.recibido_en`: el modelo la declara NOT NULL y la
-  migración la creó nullable.
+- ~~`taller_vehiculo.recibido_en`: el modelo la declara NOT NULL y la migración la creó nullable.~~ **Resuelto** (migración `b2f47c10d938`), y `test_migraciones.py` ahora compara la obligatoriedad de todas las columnas para que no vuelva a pasar en otra.
 - `RevisionUnidad.tipo` y `FotoRevision.angulo` son `String`, no `Enum`
   de Postgres: guardan el valor en minúscula mientras todas las demás
   columnas de enum guardan el nombre. Funciona porque todo pasa por
@@ -165,12 +164,7 @@ otra moneda, duele de inmediato.
   completo**~~. **Resuelto** (ver `BITACORA.md`, sección 11): el día del
   cambio ya no se muta, se parte. Queda abierto lo mismo en el
   implantado, que tiene su propio reemplazo en `implantado.py`.
-- Cualquier sobrecosto se etiqueta "horas extra" si hubo una sola hora
-  extra en cualquier día del servicio, y eso lo vuelve informativo: pasa
-  a facturación sin que nadie lo recotice.
-- La manifiesto de la PWA no trae iconos y el aviso apunta a
-  `/app/icono.png`, que no existe. Sin icono de 192 px, Android no
-  ofrece "Instalar" —y en iPhone hace falta tenerla instalada para
-  recibir avisos.
-- `POST /auth/token` no tiene límite de intentos.
+- ~~Cualquier sobrecosto se etiqueta "horas extra" si hubo una sola hora extra en cualquier día del servicio.~~ **Resuelto**: ahora solo se etiqueta así si las horas extra de *ese renglón* explican el sobrecosto completo. Lo que no, es un día de más y hay que corregirlo antes de enviar a finanzas.
+- ~~La manifiesto de la PWA no trae iconos.~~ **Resuelto**: cuatro tamaños sacados del emblema del logo, más el maskable de Android y el plano de iOS.
+- ~~`POST /auth/token` no tiene límite de intentos.~~ **Resuelto**: `app/intentos.py`, ocho fallos por correo y cuarenta por IP en quince minutos, con contadores en Redis y abierto si Redis no contesta.
 - `/docs` y `/openapi.json` son públicos.

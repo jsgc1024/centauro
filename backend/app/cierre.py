@@ -173,9 +173,14 @@ def comparar(db: Session, servicio_id: int) -> dict:
         mapa_cot[k]["importe"] += l["importe"]
     for l in real["detalle"]:
         k = _clave(l)
-        mapa_eje.setdefault(k, {"cantidad": 0, "importe": CERO, "descripcion": l["descripcion"]})
+        mapa_eje.setdefault(k, {"cantidad": 0, "importe": CERO,
+                                "extra": CERO, "descripcion": l["descripcion"]})
         mapa_eje[k]["cantidad"] += l["cantidad"]
         mapa_eje[k]["importe"] += l["importe"]
+        # Cuanto de esa linea son horas extra. Se guarda por linea y no
+        # por servicio: es lo unico que puede decir si el sobrecosto de
+        # ESTE renglon se explica solo.
+        mapa_eje[k]["extra"] += l.get("importe_horas_extra") or CERO
 
     desviaciones = []
 
@@ -199,11 +204,21 @@ def comparar(db: Session, servicio_id: int) -> dict:
         else:
             diferencia = v["importe"] - mapa_cot[k]["importe"]
             if diferencia > 0:
+                # Horas extra solo si las de ESTE renglon lo explican
+                # completo. Antes bastaba con que hubiera una sola hora
+                # extra en cualquier dia del servicio para etiquetar asi
+                # todos los sobrecostos, y "horas extra" es informativo:
+                # el cobro de mas se iba a facturacion sin que nadie lo
+                # recotizara. Lo que no explica la hora extra es un dia
+                # de mas, y eso si hay que corregirlo antes de enviar.
+                explicado = v["extra"] > 0 and diferencia <= v["extra"]
                 desviaciones.append({
-                    "tipo": m.TipoDesviacion.HORAS_EXTRA.value if real["horas_extra"]
-                            else m.TipoDesviacion.DIAS_DE_MAS.value,
+                    "tipo": (m.TipoDesviacion.HORAS_EXTRA.value if explicado
+                             else m.TipoDesviacion.DIAS_DE_MAS.value),
                     "descripcion": f"{fecha} {equipo}: {v['descripcion']} cobra "
-                                   f"{diferencia} mas de lo cotizado",
+                                   f"{diferencia} mas de lo cotizado"
+                                   + (f" ({v['extra']} son horas extra)"
+                                      if v["extra"] and not explicado else ""),
                     "monto": diferencia})
             elif diferencia < 0:
                 desviaciones.append({

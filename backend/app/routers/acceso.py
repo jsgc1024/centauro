@@ -1,12 +1,12 @@
 """Alta de accesos, creacion de contrasena e inicio de sesion."""
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app import auth
+from app import auth, intentos
 from app import models as m
 from app.db import get_db
 
@@ -74,14 +74,28 @@ def establecer_contrasena(datos: EstablecerContrasenaIn, db: Session = Depends(g
 
 
 @router.post("/token", summary="Iniciar sesion")
-def iniciar_sesion(formulario: OAuth2PasswordRequestForm = Depends(),
+def iniciar_sesion(peticion: Request,
+                   formulario: OAuth2PasswordRequestForm = Depends(),
                    db: Session = Depends(get_db)):
+    """Con limite de intentos: sin el, una lista de correos y un
+    diccionario bastan para entrar, y en la bitacora no queda nada raro
+    porque cada intento es una peticion normal."""
+    # Detras del proxy, `client.host` es la IP real solo si uvicorn corre
+    # con --proxy-headers (ver docker-compose.prod.yml). Sin eso, todos
+    # los intentos cuentan como uno solo y el tope por IP no sirve.
+    ip = peticion.client.host if peticion.client else None
+    intentos.revisar(formulario.username, ip)
+
     usuario = db.query(m.Usuario).filter_by(correo=formulario.username).first()
     if not usuario or not auth.verificar(formulario.password, usuario.hash_contrasena):
+        intentos.fallo(formulario.username, ip)
+        # El mismo mensaje exista o no la cuenta: decir "ese correo no
+        # existe" regala la mitad del trabajo a quien esta probando.
         raise HTTPException(401, "Correo o contrasena incorrectos")
     if not usuario.activo:
         raise HTTPException(403, "Ese acceso esta desactivado")
 
+    intentos.exito(formulario.username, ip)
     usuario.ultimo_acceso = datetime.now()
     db.commit()
     return {"access_token": auth.crear_token(usuario), "token_type": "bearer",

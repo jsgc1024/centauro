@@ -88,3 +88,33 @@ def test_no_falta_ninguna_tabla_ni_columna(base_migrada):
         columnas = {c["name"] for c in inspector.get_columns(nombre)}
         faltan = {c.name for c in tabla.columns} - columnas
         assert not faltan, f"a {nombre} le faltan columnas: {sorted(faltan)}"
+
+
+def test_lo_obligatorio_en_el_modelo_lo_es_en_la_base(base_migrada):
+    """Una columna que el modelo declara NOT NULL y la migracion creo
+    nullable.
+
+    Es de las que no se notan: el INSERT normal siempre trae valor, asi
+    que la base nunca se queja. Lo que se rompe es la promesa —el modelo
+    dice `datetime` y la base puede entregar None— y eso revienta lejos
+    del lugar donde se origino, en cualquier `.isoformat()` a medio
+    calculo.
+
+    Se reportan todas de una vez: arreglar una y descubrir la siguiente
+    en la corrida que sigue es perder media tarde.
+    """
+    from app.db import Base
+
+    inspector = inspect(base_migrada)
+    mal = []
+    for nombre, tabla in Base.metadata.tables.items():
+        en_la_base = {c["name"]: c for c in inspector.get_columns(nombre)}
+        for columna in tabla.columns:
+            suya = en_la_base.get(columna.name)
+            if not suya:
+                continue        # eso ya lo dice la prueba de arriba
+            if not columna.nullable and suya["nullable"]:
+                mal.append(f"{nombre}.{columna.name}")
+
+    assert not mal, ("el modelo las declara obligatorias y la base las "
+                     f"dejo opcionales: {sorted(mal)}")
