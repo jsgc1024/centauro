@@ -322,7 +322,7 @@ function dineroBloque(d) {
    lo que nos reportan es cierto. */
 
 function calidad(c) {
-  const hay = c.fuera_de_geocerca || c.marcas_por_validar
+  const hay = c.intentos_fuera_de_geocerca || c.marcas_por_validar
            || c.unidades_sin_revision_de_entrada || c.relevos_hoy;
   if (!hay) return null;
 
@@ -337,7 +337,7 @@ function calidad(c) {
                         onclick: (e) => verMarcas(e) }, t("pan_ver_marcas"))
         : "")));
   };
-  renglon(t("pan_fuera_geocerca"), c.fuera_de_geocerca, true);
+  renglon(t("pan_intentos_geocerca"), c.intentos_fuera_de_geocerca, true);
   renglon(t("pan_por_validar"), c.marcas_por_validar, true);
   renglon(t("pan_sin_entrada_n"), c.unidades_sin_revision_de_entrada, false);
   renglon(t("pan_relevos_hoy"), c.relevos_hoy, false);
@@ -365,28 +365,38 @@ async function verMarcas(e) {
 
 function listaMarcas(d) {
   const caja = h("div", { clase: "detalle_marcas", style: "margin-top:14px" });
-  const grupo = (titulo, filas, conDistancia) => {
-    if (!filas.length) return;
+
+  /* Un intento no tiene persona: el sistema rechaza la marca y no la
+     guarda, asi que lo unico que queda es la alerta con su mensaje. */
+  if (d.intentos_fuera_de_geocerca.length) {
     const cuerpo = h("tbody");
-    for (const f of filas) {
+    for (const f of d.intentos_fuera_de_geocerca) {
+      cuerpo.append(h("tr", {},
+        h("td", {}, h("b", {}, f.servicio),
+          h("div", { clase: "gris chico" }, `${t("col_equipo")} ${f.equipo}`)),
+        h("td", { clase: "num" }, f.creada_en ? hora(f.creada_en) : "—"),
+        h("td", { clase: "chico" }, f.mensaje)));
+    }
+    caja.append(h("h4", {}, t("pan_intentos_geocerca")),
+      h("table", {}, h("thead", {}, h("tr", {},
+        h("th", {}, t("col_servicio")), h("th", {}, t("hora")),
+        h("th", {}, t("pan_detalle")))), cuerpo));
+  }
+
+  if (d.por_validar.length) {
+    const cuerpo = h("tbody");
+    for (const f of d.por_validar) {
       cuerpo.append(h("tr", {},
         h("td", {}, h("b", {}, f.servicio),
           h("div", { clase: "gris chico" }, `${t("col_equipo")} ${f.equipo}`)),
         h("td", {}, f.persona || "—"),
         h("td", {}, t(HITOS[f.tipo] || "")),
-        h("td", { clase: "num" }, f.marcado_en ? hora(f.marcado_en) : "—"),
-        h("td", { clase: "num" }, conDistancia && f.distancia_m !== null
-          ? t("pan_a_metros").replace("{n}", Math.round(f.distancia_m))
-              .replace("{g}", f.geocerca_m)
-          : "")));
+        h("td", { clase: "num" }, f.marcado_en ? hora(f.marcado_en) : "—")));
     }
-    caja.append(h("h4", {}, titulo),
+    caja.append(h("h4", {}, t("pan_por_validar")),
       h("table", {}, h("thead", {}, h("tr", {},
         h("th", {}, t("col_servicio")), h("th", {}, t("srv_persona")),
-        h("th", {}, t("pan_marca")), h("th", {}, t("hora")),
-        h("th", {}, ""))), cuerpo));
-  };
-  grupo(t("pan_fuera_geocerca"), d.fuera_de_geocerca, true);
-  grupo(t("pan_por_validar"), d.por_validar, false);
+        h("th", {}, t("pan_marca")), h("th", {}, t("hora")))), cuerpo));
+  }
   return caja;
 }

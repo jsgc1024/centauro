@@ -88,6 +88,9 @@ def test_cuenta_personas_y_no_folios(cliente, sesion, datos):
     assert calle["servicios"] == 1
     assert calle["eventual"] == 1
     assert calle["implantado"] == 0
+    # Con un solo equipo el ejecutivo se captura en el servicio y el
+    # equipo lo hereda; si se leen nada mas los campos del equipo, esto
+    # da cero.
     assert calle["ejecutivos"] == 1
 
 
@@ -155,10 +158,12 @@ def test_lo_que_falta_viaja_en_clave_y_no_en_espanol(cliente, sesion, datos):
 # La calidad del reporte
 # ==================================================================
 
-def test_una_marca_lejos_del_punto_se_cuenta_y_se_puede_abrir(cliente, sesion,
-                                                              datos):
-    """Marcar la llegada desde tres kilometros es exactamente lo que la
-    direccion nunca ve, porque hoy solo sale al cerrar el servicio."""
+def test_un_intento_de_marcar_lejos_del_punto_queda_contado(cliente, sesion,
+                                                           datos):
+    """El sistema no deja marcar la llegada desde tres kilometros: la
+    rechaza de plano. Pero el intento queda anotado, y eso es justo lo
+    que la direccion nunca ve, porque hoy solo sale al cerrar el
+    servicio, uno por uno."""
     h = sesion("consultor")
     hp = sesion("juan")
     servicio = _servicio_hoy(cliente, h, datos)
@@ -166,20 +171,26 @@ def test_una_marca_lejos_del_punto_se_cuenta_y_se_puede_abrir(cliente, sesion,
     juan = datos["personal"]["Juan Ramirez"]["id"]
     asignar(cliente, h, j["id"], persona_id=juan)
     configurar_origen(cliente, h, j["id"])
-    marcar(cliente, hp, j["id"], "llegada_origen", _momento(11, 40),
-           ubicacion=LEJOS)
+
+    r = marcar(cliente, hp, j["id"], "llegada_origen", _momento(11, 40),
+               ubicacion=LEJOS)
+    assert r.status_code == 409, r.text
 
     hd = sesion("dirgeneral")
     p = _panorama(cliente, hd, _momento(12))
-    assert p["calidad"]["fuera_de_geocerca"] == 1
+    assert p["calidad"]["intentos_fuera_de_geocerca"] == 1
+    # La marca se rechazo, asi que nadie quedo en la calle.
+    assert p["en_la_calle"]["personas"] == 0
 
     r = cliente.get(f"/panorama/marcas?ahora={_momento(12).isoformat()}",
                     headers=hd)
     assert r.status_code == 200, r.text
-    fuera = r.json()["fuera_de_geocerca"]
-    assert len(fuera) == 1
-    assert fuera[0]["servicio"] == servicio["folio"]
-    assert fuera[0]["distancia_m"] > fuera[0]["geocerca_m"]
+    intentos = r.json()["intentos_fuera_de_geocerca"]
+    assert len(intentos) == 1
+    assert intentos[0]["servicio"] == servicio["folio"]
+    # El mensaje de la alerta carga la distancia y el limite, que es lo
+    # unico que queda: el hito rechazado no guarda a quien lo intento.
+    assert "250" in intentos[0]["mensaje"]
 
 
 # ==================================================================

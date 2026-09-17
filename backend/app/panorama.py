@@ -127,8 +127,11 @@ def _ficha(db: Session, j: m.Jornada, relojes: reloj.Relojes,
         "tipo": servicio.tipo.value,
         "cliente": servicio.cliente.nombre,
         "equipo": j.equipo.alias,
-        "ejecutivo": " ".join(filter(None, [j.equipo.ejecutivo_nombre,
-                                            j.equipo.ejecutivo_apellidos])).strip(),
+        # Con un solo equipo el ejecutivo se captura en el servicio y el
+        # equipo lo hereda: armarlo a mano con los campos del equipo daba
+        # vacio, y el rengon de arriba decia "0 ejecutivos cubiertos"
+        # todos los dias.
+        "ejecutivo": j.equipo.ejecutivo_completo,
         "pais_id": servicio.pais_id,
         "pais": pais.nombre if pais else None,
         "plaza": plazas.get(j.equipo.plaza_id),
@@ -439,11 +442,16 @@ def _calidad(db: Session, relojes: reloj.Relojes, mios: set[int] | None,
                and j.fecha == hoy_por_pais.get(j.equipo.servicio.pais_id)]
     ids = [j.id for j in del_dia]
 
-    fuera = por_validar = 0
+    # Una llegada marcada fuera de la geocerca no se guarda: operacion.py
+    # la rechaza con 409 y deja una alerta. Asi que lo que se puede
+    # contar no son marcas malas sino INTENTOS, que para el caso dice
+    # mas: alguien quiso reportar que ya habia llegado desde lejos.
+    intentos = por_validar = 0
     if ids:
-        fuera = (db.query(m.Hito)
-                 .filter(m.Hito.jornada_id.in_(ids),
-                         m.Hito.dentro_geocerca.is_(False)).count())
+        intentos = (db.query(m.Alerta)
+                    .filter(m.Alerta.jornada_id.in_(ids),
+                            m.Alerta.tipo == m.TipoAlerta.FUERA_DE_GEOCERCA)
+                    .count())
     pendientes = db.query(m.Hito).filter(m.Hito.requiere_revision.is_(True))
     if mios is not None:
         pendientes = (pendientes
@@ -470,7 +478,7 @@ def _calidad(db: Session, relojes: reloj.Relojes, mios: set[int] | None,
                    .filter(m.Reemplazo.jornada_id.in_(ids)).count())
 
     return {
-        "fuera_de_geocerca": fuera,
+        "intentos_fuera_de_geocerca": intentos,
         "marcas_por_validar": por_validar,
         "unidades_sin_revision_de_entrada": sin_entrada,
         "relevos_hoy": relevos,
@@ -511,14 +519,35 @@ def marcas_raras(db: Session, consultor_id: int | None = None,
             "nota": h.nota,
         }
 
-    fuera = [h for h in consulta.filter(m.Hito.dentro_geocerca.is_(False)).all()
-             if h.jornada.fecha == hoy_por_pais.get(
-                 h.jornada.equipo.servicio.pais_id)]
+    alertas = (db.query(m.Alerta)
+               .join(m.Jornada, m.Alerta.jornada_id == m.Jornada.id)
+               .join(m.Equipo, m.Jornada.equipo_id == m.Equipo.id)
+               .filter(m.Alerta.tipo == m.TipoAlerta.FUERA_DE_GEOCERCA))
+    if mios is not None:
+        alertas = alertas.filter(m.Equipo.servicio_id.in_(mios or {0}))
+
+    intentos = []
+    for a in alertas.order_by(m.Alerta.creada_en.desc()).all():
+        j = a.jornada
+        if j.fecha == hoy_por_pais.get(j.equipo.servicio.pais_id):
+            intentos.append({
+            "alerta_id": a.id,
+            "jornada_id": j.id,
+            "servicio_id": j.equipo.servicio_id,
+            "servicio": j.equipo.servicio.folio,
+            "equipo": j.equipo.alias,
+            # El mensaje trae la distancia y el limite. La persona no: el
+            # hito se rechazo y nunca se guardo, asi que no hay a quien
+            # colgarselo.
+            "mensaje": a.mensaje,
+            "creada_en": a.creada_en.isoformat() if a.creada_en else None,
+            "atendida": a.atendida,
+        })
+
     por_validar = consulta.filter(m.Hito.requiere_revision.is_(True)).all()
 
     return {
-        "fuera_de_geocerca": [ficha(h) for h in sorted(
-            fuera, key=lambda x: -(x.distancia_origen_m or 0))],
+        "intentos_fuera_de_geocerca": intentos,
         "por_validar": [ficha(h) for h in sorted(
             por_validar, key=lambda x: x.marcado_en or datetime.min)],
     }
