@@ -465,9 +465,40 @@ async function pantallaViaticos() {
         ? h("div", { clase: "chico gris" },
             `Fecha límite: ${new Date(s.limite).toLocaleDateString("es-MX")}`)
         : null,
+      ...depositos(s),
       s.por_comprobar > 0 ? comprobar(s) : null));
   }
   conBarra(...cuerpo);
+}
+
+/* Con qué depósito le llegó el dinero.
+
+   Es la pregunta que hoy termina en una llamada al consultor —"¿ya me
+   depositaron?"— y la referencia es con lo que puede reclamarle al
+   banco si el dinero no aparece. Cada quien ve únicamente el suyo. */
+function depositos(servicio) {
+  const filas = servicio.depositos || [];
+  if (!filas.length) return [];
+  return [h("div", { clase: "marco", style: "margin-top:12px" },
+    h("div", { clase: "gris chico", style: "margin-bottom:6px" },
+      filas.length === 1 ? "Tu depósito" : "Tus depósitos"),
+    ...filas.map(d => h("div", { clase: "fila separa",
+                                 style: "margin-bottom:6px" },
+      h("div", {},
+        h("b", { clase: "num" },
+          `$${Number(d.monto).toLocaleString("es-MX")}`),
+        d.cuando
+          ? h("div", { clase: "chico gris" },
+              new Date(d.cuando).toLocaleDateString("es-MX"))
+          : null,
+        d.referencia
+          ? h("div", { clase: "chico gris num" }, `Ref ${d.referencia}`)
+          : null),
+      d.tiene_comprobante
+        ? h("a", { clase: "chico", target: "_blank",
+                   href: `/viaticos/depositos/${d.id}/comprobante` },
+            "Ver comprobante")
+        : h("span", { clase: "chico gris" }, "Sin comprobante"))))];
 }
 
 function renglon(clave, valor, tono = "") {

@@ -529,7 +529,11 @@ class AsignarViaticoIn(Base):
     jornada_id: int
     persona_id: int
     conceptos: list[ConceptoIn]
-    asignado_por_id: int | None = None
+    # Quien autoriza NO viene en el cuerpo: sale de la sesion. Venia de
+    # aqui, nadie lo mandaba nunca, y por eso finanzas no sabia a quien
+    # preguntarle por un gasto. Y aunque alguien lo hubiera mandado,
+    # seria el cliente diciendo quien autorizo, que es peor que no
+    # saberlo.
 
 
 class ConceptoOut(Base):

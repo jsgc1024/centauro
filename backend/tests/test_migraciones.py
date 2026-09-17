@@ -118,3 +118,34 @@ def test_lo_obligatorio_en_el_modelo_lo_es_en_la_base(base_migrada):
 
     assert not mal, ("el modelo las declara obligatorias y la base las "
                      f"dejo opcionales: {sorted(mal)}")
+
+
+def test_los_depositos_viejos_conservan_su_referencia(base_migrada):
+    """La migracion del deposito bancario rellena hacia atras.
+
+    Antes de que el deposito existiera, cada solicitud confirmada
+    guardaba su referencia y su firma. La migracion las agrupa en un
+    deposito por persona y equipo: si eso se hiciera mal, se perderia el
+    rastro de todo lo que ya se pago, y eso no se puede recuperar.
+
+    La base migrada esta vacia de movimientos, asi que aqui se verifica
+    lo que si se puede verificar sin datos: que la tabla quedo, que la
+    columna que las amarra existe, y que la llave foranea esta puesta.
+    Lo que pasa con datos reales lo cubre la migracion en la base de
+    verdad, que es donde hay filas.
+    """
+    inspector = inspect(base_migrada)
+    assert "deposito_bancario" in inspector.get_table_names()
+
+    columnas = {c["name"] for c in inspector.get_columns("deposito_bancario")}
+    for necesaria in ("persona_id", "equipo_id", "monto", "moneda",
+                      "referencia", "comprobante", "depositado_en",
+                      "despachado_por_id"):
+        assert necesaria in columnas, f"falta {necesaria}"
+
+    amarre = {c["name"] for c in inspector.get_columns("solicitud_transferencia")}
+    assert "deposito_id" in amarre
+
+    llaves = [f for f in inspector.get_foreign_keys("solicitud_transferencia")
+              if f["referred_table"] == "deposito_bancario"]
+    assert llaves, "la solicitud no apunta al deposito"

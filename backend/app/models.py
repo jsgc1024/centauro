@@ -361,6 +361,17 @@ class Persona(Base):
     # Para el task sheet: la foto y el telefono vienen de Odoo.
     telefono: Mapped[str | None] = mapped_column(String(40), nullable=True)
     foto_url: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    # A donde se le deposita. Vienen de Odoo igual que el telefono y la
+    # foto: el maestro de empleados vive alla. Mientras esa conexion no
+    # exista, finanzas los puede llenar y se van poblando conforme se
+    # deposita; el dia que Odoo conecte, Odoo manda.
+    #
+    # Solo finanzas y direccion los ven: es el dato mas sensible que
+    # guarda el sistema sobre su gente.
+    banco: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    clabe: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    titular_cuenta: Mapped[str | None] = mapped_column(String(160),
+                                                        nullable=True)
 
     plaza: Mapped[Plaza] = relationship()
 
@@ -883,8 +894,73 @@ class SolicitudTransferencia(Base):
                                                            nullable=True)
     confirmada_por_id: Mapped[int | None] = mapped_column(
         ForeignKey("persona.id"), nullable=True)
+    # De que deposito salio. Varias solicitudes --los dias de una persona
+    # en un equipo-- se pagan con una sola transferencia, y es ahi donde
+    # vive la evidencia.
+    deposito_id: Mapped[int | None] = mapped_column(
+        ForeignKey("deposito_bancario.id", ondelete="SET NULL"),
+        nullable=True)
 
     asignacion: Mapped[AsignacionViatico] = relationship()
+    deposito: Mapped["DepositoBancario | None"] = relationship(
+        back_populates="solicitudes")
+
+
+class DepositoBancario(Base):
+    """La transferencia que de verdad sale del banco.
+
+    El sistema tenia una solicitud por jornada, pero finanzas paga un
+    deposito por persona y equipo: son cuatro dias y una sola
+    transferencia. Esa transferencia no existia en ninguna tabla --la
+    pantalla la armaba al vuelo-- y por eso no habia a que colgarle la
+    referencia ni el comprobante.
+
+    Aqui vive, y las solicitudes cuelgan de ella. El comprobante se
+    guarda UNA vez por deposito: colgado de cada solicitud serian cuatro
+    copias de la misma imagen dentro de la base.
+
+    Un deposito por persona y equipo, a proposito. Si alguien anda en dos
+    servicios recibe dos depositos el mismo dia: es mas movimiento en el
+    banco, pero cada transferencia queda amarrada a un servicio y la
+    rentabilidad de ese servicio cuadra sola.
+    """
+    __tablename__ = "deposito_bancario"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    persona_id: Mapped[int] = mapped_column(ForeignKey("persona.id"),
+                                            index=True)
+    equipo_id: Mapped[int] = mapped_column(
+        ForeignKey("equipo.id", ondelete="CASCADE"), index=True)
+    monto: Mapped[float] = mapped_column(Numeric(12, 2))
+    moneda: Mapped[Moneda] = mapped_column(Enum(Moneda))
+    # El folio del banco. Sin el y sin comprobante no se registra: es la
+    # misma regla que ya tienen las compras especiales, y es el punto de
+    # todo esto.
+    referencia: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    comprobante: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Naive: hora de pared del pais del servicio, como el resto de la
+    # operacion.
+    depositado_en: Mapped[datetime | None] = mapped_column(DateTime,
+                                                            nullable=True)
+    despachado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    # Subir el archivo correcto es lo mas comun que pasa despues de
+    # registrar. Se permite siempre, y queda quien lo cambio y cuando.
+    corregido_en: Mapped[datetime | None] = mapped_column(DateTime,
+                                                           nullable=True)
+    corregido_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    creado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+    persona: Mapped["Persona"] = relationship(foreign_keys=[persona_id])
+    equipo: Mapped["Equipo"] = relationship()
+    despachado_por: Mapped["Persona | None"] = relationship(
+        foreign_keys=[despachado_por_id])
+    corregido_por: Mapped["Persona | None"] = relationship(
+        foreign_keys=[corregido_por_id])
+    solicitudes: Mapped[list["SolicitudTransferencia"]] = relationship(
+        back_populates="deposito")
 
 
 # ------------------------------------------------- compras especiales

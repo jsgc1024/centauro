@@ -3,12 +3,13 @@ import base64
 from datetime import date, datetime
 from decimal import Decimal, ROUND_FLOOR
 
-from fastapi import (APIRouter, Depends, File, HTTPException, Query,
+from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query,
                      Response, UploadFile)
 from sqlalchemy.orm import Session
 
 from app import auditoria
 from app import auth
+from app import depositos as motor_depositos
 from app import imagenes
 from app import models as m
 from app import schemas as s
@@ -24,6 +25,13 @@ FINANZAS = auth.requiere(m.Rol.FINANZAS)
 CAMPO = auth.requiere(m.Rol.PERSONAL_SEGURIDAD)
 LECTURA = auth.requiere(m.Rol.CONSULTOR, m.Rol.DIRECTOR_OPERACIONES,
                         m.Rol.FINANZAS, m.Rol.CENTRAL)
+# La evidencia del deposito la ven finanzas y direccion, el consultor
+# —que es quien recibe la llamada de "no me ha llegado"— y el agente,
+# pero solo la suya. Lo ultimo se revisa dentro del endpoint, no aqui:
+# el rol deja pasar, la pertenencia decide.
+EVIDENCIA = auth.requiere(m.Rol.FINANZAS, m.Rol.DIRECTOR_OPERACIONES,
+                          m.Rol.DIRECTOR_GENERAL, m.Rol.CONSULTOR,
+                          m.Rol.PERSONAL_SEGURIDAD)
 
 
 def _obtener(db: Session, viatico_id: int) -> m.AsignacionViatico:
@@ -69,7 +77,9 @@ def asignar(datos: s.AsignarViaticoIn, db: Session = Depends(get_db),
         persona_id=datos.persona_id,
         escenario=motor.escenario_de(jornada),
         moneda=pais.moneda_local,
-        asignado_por_id=datos.asignado_por_id,
+        # Quien lo autorizo, tomado de la sesion. Es lo que finanzas lee
+        # en la bandeja para saber a quien preguntarle por un gasto.
+        asignado_por_id=usuario.persona_id,
     )
     db.add(viatico)
     db.flush()
@@ -212,17 +222,18 @@ def confirmar(solicitud_id: int, referencia_odoo: str | None = None,
                               if solicitud.confirmada_en else None),
             "referencia_odoo": solicitud.referencia_odoo})
 
-    solicitud.estatus = m.EstatusTransferencia.CONFIRMADA
-    solicitud.referencia_odoo = referencia_odoo
-    # La firma: cuando salio y quien lo despacho. Sin esto, en cuanto el
-    # renglon sale de la bandeja la unica forma de saber si ya se pago
-    # era preguntarle a la persona.
-    solicitud.confirmada_en = datetime.now()
-    solicitud.confirmada_por_id = usuario.persona_id
-    solicitud.asignacion.estatus = m.EstatusViatico.TRANSFERIDO
+    # Esta es la puerta del barrido por lote y de lo que llega ya
+    # confirmado de Odoo: no hay una persona subiendo una captura del
+    # banco. El deposito se crea igual —para que todo lo confirmado
+    # tenga a que colgarse— y sale marcado *sin comprobante*. Desde la
+    # pantalla, en cambio, la evidencia es obligatoria.
+    deposito = motor_depositos.registrar(
+        db, [solicitud.id], referencia_odoo,
+        despachado_por_id=usuario.persona_id, exige_evidencia=False)
     db.commit()
     return {"resultado": "confirmada", "solicitud_id": solicitud.id,
             "viatico_id": solicitud.asignacion_id,
+            "deposito_id": deposito.id,
             "nota": "Ya aparece en la app del personal como saldo disponible"}
 
 
@@ -1102,7 +1113,12 @@ def ver_comprobante_compra(compra_id: int, db: Session = Depends(get_db),
     compra = _compra(db, compra_id)
     if not compra.comprobante:
         raise HTTPException(404, "Esa compra no trae imagen")
-    cabeza, _, datos = compra.comprobante.partition(",")
+    return _imagen(compra.comprobante)
+
+
+def _imagen(data_uri: str) -> Response:
+    """Un data URI guardado, servido como el archivo que era."""
+    cabeza, _, datos = data_uri.partition(",")
     tipo = cabeza[5:].split(";")[0] or "image/png"
     return Response(content=base64.b64decode(datos), media_type=tipo)
 
@@ -1149,13 +1165,44 @@ def bandeja(db: Session = Depends(get_db), _=Depends(LECTURA)):
             "moneda": viatico.moneda.value,
             "monto": Decimal("0"), "dias": 0,
             "primera_jornada": jornada.fecha.isoformat(),
-            "solicitudes": [],
+            "solicitudes": [], "detalle": [],
+            "solicito": None, "solicitada_en": None,
+            # A donde se deposita. Viene de Odoo; mientras esa conexion
+            # no exista, finanzas lo llena y se va poblando.
+            "banco": viatico.persona.banco,
+            "clabe": viatico.persona.clabe,
+            "titular_cuenta": viatico.persona.titular_cuenta,
         })
         fila["monto"] += Decimal(str(solicitud.monto))
         fila["dias"] += 1
         fila["solicitudes"].append(solicitud.id)
         fila["primera_jornada"] = min(fila["primera_jornada"],
                                       jornada.fecha.isoformat())
+
+        # De que se compone. Finanzas veia un total y nada mas: para
+        # depositar alcanzaba, para revisar antes de depositar no. El
+        # origen importa tanto como el monto —un numero del tabulador no
+        # se discute, uno capturado a mano si— y hasta hoy no se podian
+        # distinguir.
+        fila["detalle"].append({
+            "solicitud_id": solicitud.id,
+            "fecha": jornada.fecha.isoformat(),
+            "monto": Decimal(str(solicitud.monto)),
+            "conceptos": [{"concepto": c.concepto.value,
+                           "descripcion": c.descripcion,
+                           "monto": Decimal(str(c.monto)),
+                           "origen": c.origen.value,
+                           "adicional": c.es_adicional}
+                          for c in viatico.conceptos],
+        })
+        # Quien autorizo el gasto. El dato existia y nunca llegaba a la
+        # pantalla: finanzas no sabia a quien preguntarle.
+        if not fila["solicito"] and viatico.asignado_por_id:
+            quien = db.get(m.Persona, viatico.asignado_por_id)
+            fila["solicito"] = quien.nombre if quien else None
+        if solicitud.creada_en:
+            pedida = solicitud.creada_en.isoformat()
+            fila["solicitada_en"] = min(fila["solicitada_en"] or pedida, pedida)
 
     compras = (db.query(m.CompraEspecial)
                .filter(m.CompraEspecial.estatus.in_(ABIERTAS))
@@ -1184,6 +1231,7 @@ def bandeja(db: Session = Depends(get_db), _=Depends(LECTURA)):
 
     for fila in sorted(depositos.values(),
                        key=lambda f: f["primera_jornada"]):
+        fila["detalle"].sort(key=lambda d: d["fecha"])
         destino = caja(fila["pais_id"])
         destino["depositos"].append(fila)
         destino["total_depositos"] += fila["monto"]
@@ -1226,6 +1274,88 @@ def bandeja(db: Session = Depends(get_db), _=Depends(LECTURA)):
 # La bandeja despacha; esto controla. Son dos trabajos distintos y por
 # eso son cuatro vistas: lo que hay que pagar hoy, lo que ya se pago, lo
 # que anda afuera sin comprobar y lo que tiene que regresar.
+
+# ------------------------------------------------------- el deposito
+
+@router.patch("/depositos/{deposito_id}",
+              summary="Corregir la referencia o el comprobante")
+async def corregir_deposito(deposito_id: int,
+                            referencia: str | None = Form(None),
+                            archivo: UploadFile | None = File(None),
+                            db: Session = Depends(get_db),
+                            usuario: m.Usuario = Depends(FINANZAS)):
+    """Subir el archivo correcto es lo mas comun que pasa despues.
+
+    Se permite siempre, y queda escrito quien lo cambio: una evidencia
+    que se reemplaza sin dejar rastro no es evidencia.
+    """
+    comprobante = await imagenes.leer(archivo) if archivo else None
+    deposito = motor_depositos.corregir(db, deposito_id, referencia,
+                                        comprobante,
+                                        por_id=usuario.persona_id)
+    auditoria.registrar(db, usuario, deposito.equipo.servicio,
+                        "correccion de deposito",
+                        f"deposito {deposito.id}, ref {deposito.referencia}")
+    db.commit()
+    db.refresh(deposito)
+    return _deposito(deposito)
+
+
+@router.post("/depositos/{deposito_id}/anular",
+             summary="Anular un deposito mal registrado")
+def anular_deposito(deposito_id: int, motivo: str = Form(...),
+                    db: Session = Depends(get_db),
+                    usuario: m.Usuario = Depends(FINANZAS)):
+    """Solo mientras el agente no haya comprobado nada de ese dinero."""
+    deposito = db.get(m.DepositoBancario, deposito_id)
+    if not deposito:
+        raise HTTPException(404, f"No existe el deposito {deposito_id}")
+    servicio = deposito.equipo.servicio
+    resultado = motor_depositos.anular(db, deposito_id, motivo,
+                                       por_id=usuario.persona_id)
+    auditoria.registrar(db, usuario, servicio, "deposito anulado",
+                        f"deposito {deposito_id}: {motivo}")
+    db.commit()
+    return resultado
+
+
+@router.get("/depositos/{deposito_id}/comprobante",
+            summary="Ver el comprobante del deposito")
+def ver_comprobante_deposito(deposito_id: int, db: Session = Depends(get_db),
+                             usuario: m.Usuario = Depends(EVIDENCIA)):
+    """El agente ve solo el suyo. Los demas roles, el de quien sea.
+
+    Es la respuesta a la pregunta mas frecuente que recibe finanzas:
+    "¿ya me depositaron?".
+    """
+    deposito = db.get(m.DepositoBancario, deposito_id)
+    if not deposito:
+        raise HTTPException(404, f"No existe el deposito {deposito_id}")
+    if (usuario.rol == m.Rol.PERSONAL_SEGURIDAD
+            and deposito.persona_id != usuario.persona_id):
+        raise HTTPException(403, "Ese deposito no es tuyo")
+    if not deposito.comprobante:
+        raise HTTPException(404, "Ese deposito no tiene comprobante")
+    return _imagen(deposito.comprobante)
+
+
+def _deposito(d: m.DepositoBancario) -> dict:
+    return {
+        "id": d.id, "persona_id": d.persona_id,
+        "persona": d.persona.nombre if d.persona else None,
+        "equipo_id": d.equipo_id,
+        "monto": d.monto, "moneda": d.moneda.value,
+        "referencia": d.referencia,
+        "tiene_comprobante": bool(d.comprobante),
+        "depositado_en": (d.depositado_en.isoformat()
+                          if d.depositado_en else None),
+        "despacho": (d.despachado_por.nombre if d.despachado_por else None),
+        "corregido_en": (d.corregido_en.isoformat()
+                         if d.corregido_en else None),
+        "corregido_por": (d.corregido_por.nombre if d.corregido_por else None),
+        "solicitudes": [f.id for f in d.solicitudes],
+    }
+
 
 @router.get("/finanzas/corte", summary="Los numeros de arriba, por pais")
 def corte(db: Session = Depends(get_db), ahora: datetime | None = None,
@@ -1278,17 +1408,25 @@ def renta_cancelada(vehiculo_id: int, db: Session = Depends(get_db),
             "arrendadora": vehiculo.arrendadora}
 
 
-@router.post("/finanzas/depositar", summary="Finanzas confirma el deposito")
-def depositar(datos: s.DepositoIn, db: Session = Depends(get_db),
-              usuario: m.Usuario = Depends(FINANZAS)):
-    """Un solo movimiento por persona, aunque por dentro sean varios dias."""
-    equipo = _equipo(db, datos.equipo_id)
+@router.post("/finanzas/depositar", summary="Finanzas registra el deposito")
+async def depositar(equipo_id: int = Form(...), persona_id: int = Form(...),
+                    referencia: str = Form(...),
+                    archivo: UploadFile = File(...),
+                    db: Session = Depends(get_db),
+                    usuario: m.Usuario = Depends(FINANZAS)):
+    """Un solo movimiento por persona, aunque por dentro sean varios dias.
+
+    La referencia y el comprobante son obligatorios: es lo que contesta
+    "¿ya me depositaron?" sin tener que creerle a nadie, y lo que sirve
+    para rastrear el dinero en el banco si no llego.
+    """
+    equipo = _equipo(db, equipo_id)
     dias = _dias_vivos(equipo)
     solicitudes = (db.query(m.SolicitudTransferencia)
                    .join(m.AsignacionViatico,
                          m.SolicitudTransferencia.asignacion_id
                          == m.AsignacionViatico.id)
-                   .filter(m.AsignacionViatico.persona_id == datos.persona_id,
+                   .filter(m.AsignacionViatico.persona_id == persona_id,
                            m.AsignacionViatico.jornada_id.in_(
                                [j.id for j in dias]),
                            m.SolicitudTransferencia.estatus.in_(
@@ -1298,21 +1436,17 @@ def depositar(datos: s.DepositoIn, db: Session = Depends(get_db),
     if not solicitudes:
         raise HTTPException(404, "No hay depositos pendientes de esa persona")
 
-    monto = Decimal("0")
-    for solicitud in solicitudes:
-        solicitud.estatus = m.EstatusTransferencia.CONFIRMADA
-        solicitud.referencia_odoo = datos.referencia
-        # Un segundo deposito no regresa a la persona al principio: si ya
-        # estaba comprobando o cerrada, ahi se queda.
-        if solicitud.asignacion.estatus in (m.EstatusViatico.ASIGNADO,
-                                            m.EstatusViatico.SOLICITADO):
-            solicitud.asignacion.estatus = m.EstatusViatico.TRANSFERIDO
-        monto += Decimal(str(solicitud.monto))
+    comprobante = await imagenes.leer(archivo)
+    deposito = motor_depositos.registrar(
+        db, [x.id for x in solicitudes], referencia, comprobante,
+        despachado_por_id=usuario.persona_id)
 
-    auditoria.registrar(db, usuario, equipo.servicio, "confirmar deposito",
-                        f"{monto} a persona {datos.persona_id} · "
-                        f"{datos.referencia or 'sin referencia'}")
+    auditoria.registrar(db, usuario, equipo.servicio, "deposito bancario",
+                        f"{deposito.monto} {deposito.moneda.value} a "
+                        f"{deposito.persona.nombre}, ref {deposito.referencia}")
     db.commit()
-    return {"resultado": "depositado", "monto": monto,
-            "depositos": len(solicitudes),
+    db.refresh(deposito)
+    return {"resultado": "depositado", "monto": deposito.monto,
+            "deposito_id": deposito.id,
+            "depositos": len(deposito.solicitudes),
             "nota": "Ya aparece en la app del personal como saldo disponible"}

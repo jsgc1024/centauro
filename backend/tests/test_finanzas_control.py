@@ -64,9 +64,13 @@ def test_el_deposito_queda_firmado(cliente, sesion, datos):
     suyos = [d for pais in historial["paises"] for d in pais["depositos"]
              if d["folio"] == servicio["folio"]]
     assert suyos, "el deposito no quedo en el historial"
-    assert all(d["referencia_odoo"] == "TR-9001" for d in suyos)
+    assert all(d["referencia"] == "TR-9001" for d in suyos)
     assert all(d["confirmada_en"] for d in suyos)
-    assert all(d["confirmada_por"] == "Jorge Diaz" for d in suyos), suyos
+    assert all(d["despacho"] == "Jorge Diaz" for d in suyos), suyos
+    # Lo que llega por esta puerta --el barrido por lote, lo que viene
+    # ya confirmado de Odoo-- no trae captura del banco: no hay una
+    # persona subiendola. Se ve el hueco en vez de esconderlo.
+    assert all(d["tiene_comprobante"] is False for d in suyos)
 
 
 def test_un_deposito_no_se_confirma_dos_veces(cliente, sesion, datos):

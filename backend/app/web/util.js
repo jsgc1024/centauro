@@ -190,3 +190,42 @@ export function vigilarCapturas(raiz = document) {
     }
   }, true);
 }
+
+/* Una imagen lista para subir, sin que el navegador la mande entera.
+
+   Una captura de pantalla de una Mac o de un iPhone sale en varios
+   megas, y el servidor no acepta mas de tres. Se reduce aqui antes de
+   salir: lo que no se sube, no se espera.
+
+   La app de campo tiene su propia copia de esto en campo/foto.js, a
+   proposito: ese archivo vive en el cache del trabajador de fondo, con
+   su lista fija, y hacerlo depender de este romperia la app sin senal.
+   Dos copias chicas cuestan menos que eso. */
+const LADO_MAXIMO = 1600;
+const CALIDAD = 0.75;
+
+export function reducirImagen(archivo, lado = LADO_MAXIMO, calidad = CALIDAD) {
+  return new Promise((listo, falla) => {
+    const lector = new FileReader();
+    lector.onerror = () => falla(new Error("No se pudo leer el archivo"));
+    lector.onload = () => {
+      const img = new Image();
+      img.onerror = () => falla(new Error("Esa imagen no se puede abrir"));
+      img.onload = () => {
+        const escala = Math.min(1, lado / Math.max(img.width, img.height));
+        const lienzo = document.createElement("canvas");
+        lienzo.width = Math.round(img.width * escala);
+        lienzo.height = Math.round(img.height * escala);
+        lienzo.getContext("2d").drawImage(img, 0, 0, lienzo.width,
+                                          lienzo.height);
+        lienzo.toBlob(
+          (b) => b ? listo(new File([b], "comprobante.jpg",
+                                    { type: "image/jpeg" }))
+                   : falla(new Error("No se pudo preparar la imagen")),
+          "image/jpeg", calidad);
+      };
+      img.src = lector.result;
+    };
+    lector.readAsDataURL(archivo);
+  });
+}

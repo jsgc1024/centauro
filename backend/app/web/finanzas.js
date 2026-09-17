@@ -17,11 +17,27 @@
    la misma cosa. */
 import { api } from "./api.js";
 import { aviso, campo, dinero, entrada, etiqueta, fecha, h,
-         mensaje } from "./util.js";
+         mensaje, reducirImagen } from "./util.js";
 import { t } from "./idioma.js";
 
 const TIPOS = { vuelo: t("fin_tipo_vuelo"), hospedaje: t("fin_tipo_hospedaje"),
                 transporte: t("fin_tipo_transporte"), otro: t("fin_tipo_otro") };
+
+/* Los conceptos del desglose, uno por uno.
+
+   Armar la clave al vuelo pegando el nombre del concepto funciona, pero
+   entonces revisar.py no puede verificar que las tres traducciones
+   existan: una clave que no esta escrita no se puede revisar. Un mapa
+   explicito si, y de paso un concepto nuevo salta aqui en vez de salir
+   en pantalla con su nombre tecnico. */
+const CONCEPTOS = {
+  alimentos: () => t("fin_c_alimentos"),
+  hospedaje: () => t("fin_c_hospedaje"),
+  combustible: () => t("fin_c_combustible"),
+  casetas: () => t("fin_c_casetas"),
+  traslado_personal: () => t("fin_c_traslado_personal"),
+  otros: () => t("fin_c_otros"),
+};
 
 const VISTAS = [
   { clave: "pagar", texto: t("fin_v_pagar") },
@@ -140,51 +156,157 @@ function bloqueDepositos(filas, moneda, repintar) {
     return caja;
   }
 
-  const cuerpo = h("tbody");
-  for (const f of filas) cuerpo.append(
+  for (const f of filas) caja.append(
     renglonDeposito(f, f.moneda || moneda, repintar));
-  caja.append(h("table", {},
-    h("thead", {}, h("tr", {},
-      h("th", {}, t("fin_persona")),
-      h("th", {}, t("fin_servicio")),
-      h("th", {}, t("fin_arranca")),
-      h("th", { style: "text-align:right" }, t("fin_monto")),
-      h("th", {}, t("fin_referencia")),
-      h("th", {}, ""))),
-    cuerpo));
   return caja;
 }
 
-function renglonDeposito(f, moneda, repintar) {
-  /* La referencia es opcional pero se pide en el mismo renglon: pedirla
-     en una segunda pantalla termina en depositos sin rastro. */
-  const referencia = entrada("referencia", {
-    placeholder: t("fin_folio_ref"), style: "max-width:180px" });
+/* Un renglon por persona: son varios dias pero un solo deposito.
 
-  const confirmar = h("button", { clase: "chico", type: "button",
+   Cerrado dice lo que hace falta para decidir; abierto, de que se
+   compone. Finanzas veia un total y nada mas, y con eso se puede
+   depositar pero no revisar antes de depositar. */
+function renglonDeposito(f, moneda, repintar) {
+  const zona = h("div", { hidden: true, style: "margin-top:10px" });
+  const flecha = h("span", { clase: "gris" }, "\u25B8");
+  const abrir = h("button", { clase: "claro chico", type: "button",
+    onclick: () => {
+      zona.hidden = !zona.hidden;
+      flecha.textContent = zona.hidden ? "\u25B8" : "\u25BE";
+      if (!zona.firstChild) zona.append(desglose(f, moneda));
+    } }, flecha);
+
+  const cabeza = h("div", {
+    style: "display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start" },
+    h("div", {},
+      h("div", {}, abrir, " ", h("b", {}, f.persona)),
+      h("div", { clase: "chico gris", style: "margin-left:34px" },
+        h("a", { href: `#/servicio/${f.servicio_id}` }, f.folio || "\u2014"),
+        " \u00b7 ",
+        [f.cliente, t("fin_equipo").replace("{e}", f.equipo)]
+          .filter(Boolean).join(" \u00b7 ")),
+      h("div", { clase: "chico gris", style: "margin-left:34px" },
+        t("fin_arranca") + " " + fecha(f.primera_jornada),
+        /* Quien autorizo el gasto. El dato existia y nunca llegaba a la
+           pantalla: finanzas no sabia a quien preguntarle. */
+        f.solicito ? " \u00b7 " + t("fin_solicito").replace("{p}", f.solicito)
+                   : "")),
+    h("div", { style: "text-align:right" },
+      h("b", { clase: "num", style: "font-size:17px" },
+        dinero(f.monto, moneda)),
+      h("div", { clase: "chico gris" },
+        t("fin_dias").replace("{n}", f.dias))));
+
+  const acciones = h("div", { clase: "acciones", style: "margin-top:8px" });
+  const formulario = h("div");
+  acciones.append(h("button", { clase: "chico", type: "button",
+    onclick: () => {
+      if (formulario.firstChild) return formulario.replaceChildren();
+      formulario.replaceChildren(ventanaDeposito(f, moneda, repintar));
+    } }, t("fin_depositar")));
+
+  return h("div", { clase: "tarjeta lisa", style: "margin:0 0 10px" },
+    cabeza, cuentaBancaria(f), zona, acciones, formulario);
+}
+
+/* A donde se deposita. Viene de Odoo; mientras esa conexion no exista
+   el hueco se dice en voz alta, porque es el paso lento del proceso:
+   sin esto alguien va a buscar la cuenta a otro lado cada vez. */
+function cuentaBancaria(f) {
+  if (!f.clabe) {
+    return h("div", { clase: "chico", style: "margin:6px 0 0 34px;color:#b8860b" },
+             t("fin_sin_cuenta"));
+  }
+  return h("div", { clase: "chico gris", style: "margin:6px 0 0 34px" },
+    h("span", { clase: "num" }, f.clabe),
+    f.banco ? " \u00b7 " + f.banco : "",
+    f.titular_cuenta ? " \u00b7 " + f.titular_cuenta : "");
+}
+
+/* De que se compone, dia por dia. El origen importa tanto como el
+   monto: un numero del tabulador no se discute, uno capturado a mano
+   si, y hasta hoy no se podian distinguir. */
+function desglose(f, moneda) {
+  const cuerpo = h("tbody");
+  for (const dia of f.detalle || []) {
+    let primero = true;
+    for (const c of dia.conceptos || []) {
+      cuerpo.append(h("tr", {},
+        h("td", { clase: "chico gris" }, primero ? fecha(dia.fecha) : ""),
+        h("td", {}, CONCEPTOS[c.concepto] ? CONCEPTOS[c.concepto]() : c.concepto,
+          c.descripcion
+            ? h("span", { clase: "chico gris" }, " \u00b7 " + c.descripcion)
+            : "",
+          c.adicional ? " " + t("fin_adicional") : ""),
+        h("td", { clase: "chico gris" }, marcaOrigen(c.origen)),
+        h("td", { clase: "num", style: "text-align:right" },
+          dinero(c.monto, moneda))));
+      primero = false;
+    }
+    if (!(dia.conceptos || []).length) {
+      cuerpo.append(h("tr", {},
+        h("td", { clase: "chico gris" }, fecha(dia.fecha)),
+        h("td", { clase: "gris chico" }, t("fin_sin_desglose")),
+        h("td", {}, ""),
+        h("td", { clase: "num", style: "text-align:right" },
+          dinero(dia.monto, moneda))));
+    }
+  }
+  return h("div", { clase: "tarjeta lisa", style: "margin:0 0 0 34px" },
+    h("table", {}, cuerpo),
+    h("div", { clase: "chico gris", style: "margin-top:8px" },
+      t("fin_leyenda_origen")));
+}
+
+function marcaOrigen(origen) {
+  if (origen === "estimado") return t("fin_o_estimado");
+  if (origen === "manual") return t("fin_o_manual");
+  return "";
+}
+
+/* El deposito: la operacion bancaria y su evidencia, en la misma
+   peticion. Si el archivo viajara aparte, un corte de red a medio
+   camino dejaria un deposito registrado sin su comprobante. */
+function ventanaDeposito(f, moneda, repintar) {
+  const referencia = entrada("referencia", {
+    placeholder: t("fin_ref_banco") });
+  const archivo = h("input", { type: "file", accept: "image/*" });
+  const zonaError = h("div");
+
+  const registrar = h("button", { clase: "chico", type: "button",
     onclick: async (e) => {
+      if (!referencia.value.trim() || !archivo.files.length) {
+        return zonaError.replaceChildren(aviso(t("fin_falta_evidencia"),
+                                               "alerta"));
+      }
+      zonaError.replaceChildren();
       e.target.disabled = true;
       try {
-        await api.post("/viaticos/finanzas/depositar", {
+        /* Una captura de Mac o de iPhone sale en varios megas y el
+           servidor no acepta mas de tres: se reduce antes de salir. */
+        const imagen = await reducirImagen(archivo.files[0]);
+        await api.formulario("/viaticos/finanzas/depositar", {
           equipo_id: f.equipo_id, persona_id: f.persona_id,
-          referencia: referencia.value.trim() || null,
+          referencia: referencia.value.trim(), archivo: imagen,
         });
         mensaje(t("fin_confirmado").replace("{p}", f.persona));
         await repintar();
-      } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
-    } }, t("fin_confirmar"));
+      } catch (err) {
+        zonaError.replaceChildren(aviso(err.message, "grave"));
+        e.target.disabled = false;
+      }
+    } }, t("fin_registrar_dep"));
 
-  return h("tr", {},
-    h("td", {}, h("b", {}, f.persona),
-      h("div", { clase: "chico gris" }, t("fin_dias").replace("{n}", f.dias))),
-    h("td", {}, h("a", { href: `#/servicio/${f.servicio_id}` }, f.folio),
-      h("div", { clase: "chico gris" },
-        [f.cliente, t("fin_equipo").replace("{e}", f.equipo)].filter(Boolean).join(" · "))),
-    h("td", {}, fecha(f.primera_jornada)),
-    h("td", { style: "text-align:right" },
-      h("b", { clase: "num" }, dinero(f.monto, moneda))),
-    h("td", {}, referencia),
-    h("td", {}, confirmar));
+  return h("div", { clase: "tarjeta lisa", style: "margin-top:10px" },
+    h("div", { clase: "chico gris", style: "margin-bottom:8px" },
+      t("fin_dep_a").replace("{p}", f.persona)
+        .replace("{m}", dinero(f.monto, moneda))
+        .replace("{n}", f.dias)),
+    h("div", { clase: "rejilla dos" },
+      campo(t("fin_ref_banco"), referencia),
+      campo(t("fin_comprobante"), archivo)),
+    zonaError,
+    h("div", { clase: "acciones", style: "margin-top:8px" }, registrar));
 }
 
 /* ------------------------------------------------------------ compras */
@@ -388,7 +510,11 @@ async function pintarDepositado(zona) {
         h("h2", { style: "margin:0" }, p_.pais),
         h("span", { clase: "etiqueta" }, p_.moneda || p_.codigo),
         h("span", { clase: "gris chico" },
-          t("fin_resumen_dep").replace("{n}", p_.cuantos).replace("{m}", dinero(p_.total, p_.moneda)))),
+          t("fin_resumen_dep").replace("{n}", p_.cuantos).replace("{m}", dinero(p_.total, p_.moneda))),
+        p_.sin_comprobante
+          ? etiqueta(t("fin_faltan_comprobantes")
+                       .replace("{n}", p_.sin_comprobante), "alerta")
+          : null),
       h("div", { clase: "tarjeta" },
         h("table", {},
           h("thead", {}, h("tr", {},
@@ -397,21 +523,34 @@ async function pintarDepositado(zona) {
             h("th", {}, t("fin_servicio")),
             h("th", { style: "text-align:right" }, t("fin_monto")),
             h("th", {}, t("fin_referencia")),
-            h("th", {}, t("fin_despacho")))),
+            h("th", {}, t("fin_despacho")),
+            h("th", {}, t("fin_evidencia")))),
           h("tbody", {}, ...p_.depositos.map(d => h("tr", {},
             h("td", {}, fecha(d.confirmada_en)),
-            h("td", {}, h("b", {}, d.persona)),
+            h("td", {}, h("b", {}, d.persona),
+              h("div", { clase: "chico gris" },
+                t("fin_dias").replace("{n}", d.dias))),
             h("td", {},
               h("a", { href: rutaServicio(d) }, d.folio || "—"),
               h("div", { clase: "chico gris" }, d.cliente || "")),
             h("td", { style: "text-align:right" },
               h("b", { clase: "num" }, dinero(d.monto, d.moneda))),
-            h("td", { clase: "chico" }, d.referencia_odoo || "—"),
+            h("td", { clase: "chico" }, d.referencia || "—"),
             /* Los depositos de antes de que existiera la firma no
                tienen quien. Se dice, en vez de dejar un hueco que
                parece un error. */
             h("td", { clase: "chico gris" },
-              d.confirmada_por || t("fin_sin_registro"))))))))));
+              d.despacho || t("fin_sin_registro")),
+            /* La evidencia. Lo que llega ya confirmado del lote o de
+               Odoo no trae captura del banco: se enseña el hueco en vez
+               de esconderlo, porque es algo que alguien tiene que
+               completar. */
+            h("td", {}, d.tiene_comprobante
+              ? h("a", { clase: "chico", target: "_blank",
+                         href: `/viaticos/depositos/${d.deposito_id}/comprobante` },
+                  t("fin_ver_comprobante"))
+              : h("span", { clase: "chico", style: "color:#b8860b" },
+                  t("fin_sin_comprobante")))))))))));
   };
 
   zona.replaceChildren(

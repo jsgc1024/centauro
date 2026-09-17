@@ -626,7 +626,72 @@ viáticos de un solo clic. Su reemplazo va día por día, en
 
 ---
 
-## 12. Lo que falta
+## 12. El depósito bancario
+
+**El hallazgo.** Finanzas paga un depósito por persona y equipo: son
+cuatro días y una sola transferencia. Pero el sistema solo tenía una
+solicitud por jornada, y eso que de verdad sale del banco —con su
+referencia y su comprobante— **no vivía en ninguna tabla**. La bandeja lo
+armaba al vuelo agrupando solicitudes.
+
+Por eso no había a qué colgarle la evidencia. Y colgarla de cada
+solicitud habría guardado la misma imagen cuatro veces: 1.2 MB repetidos
+dentro de la base por cada depósito.
+
+**Lo que finanzas no veía.** Un total y nada más. No quién autorizó el
+gasto, no de qué se componía, no qué día traía qué, y no había forma de
+subir el comprobante del banco.
+
+**La decisión.** Nace `deposito_bancario` —persona, equipo, monto,
+referencia, comprobante, cuándo salió y quién lo despachó— y las
+solicitudes cuelgan de él. La migración rellena hacia atrás: por cada
+grupo ya confirmado se crea su depósito con la referencia y la firma que
+ya tenía. El rastro de lo pagado no se recupera si se pierde.
+
+**Las reglas.**
+
+- **Un depósito por persona y equipo.** Si alguien anda en dos servicios,
+  recibe dos depósitos el mismo día. Es más movimiento en el banco, pero
+  cada transferencia queda amarrada a un servicio y su rentabilidad
+  cuadra sola.
+- **Se deposita lo solicitado**, ni un peso más ni uno menos. El monto lo
+  decide el consultor (sección 10); finanzas ejecuta. Así el desglose que
+  el agente tiene que comprobar siempre cuadra con lo que recibió.
+- **Referencia y comprobante, los dos**, para poder registrar desde la
+  pantalla. Es la misma regla que ya tenían las compras especiales.
+- **La evidencia se corrige siempre**, y queda escrito quién la cambió y
+  cuándo: una evidencia que se reemplaza sin rastro no es evidencia. El
+  depósito se anula solo mientras el agente no haya subido ningún
+  comprobante de gasto —después de eso quedarían comprobaciones colgando
+  de un depósito que ya no existe, y lo que corresponde es una
+  devolución.
+
+**Lo que llega por lote no trae captura.** El barrido y lo que viene ya
+confirmado de Odoo no tienen a una persona subiendo un archivo. Esos
+depósitos se crean igual —para que todo lo confirmado tenga a qué
+colgarse— y salen marcados **sin comprobante**, con su cuenta en ámbar por
+país. Se ve el hueco en vez de esconderlo: es algo que alguien tiene que
+completar.
+
+**Quién ve la evidencia.** Finanzas y dirección, el consultor del
+servicio —que es quien recibe la llamada de "no me ha llegado"— y el
+agente en su app, cada quien únicamente el suyo.
+
+**Lo que destapó.** `asignado_por_id` —quién autoriza el gasto— venía en
+el cuerpo de la petición, opcional, y nadie lo mandaba nunca: siempre
+quedaba vacío. No es que el dato no se enseñara, es que no existía. Y
+aunque alguien lo hubiera mandado estaría mal, porque sería el cliente
+diciendo quién autorizó. Ahora sale de la sesión.
+
+**Los datos bancarios.** `Persona` guarda banco, CLABE y titular, y
+vienen de Odoo como el teléfono y la foto. Mientras esa conexión no
+exista finanzas los llena y se van poblando; el día que Odoo conecte,
+Odoo manda. Si la cuenta falta, la bandeja lo dice en ámbar en vez de
+dejar el hueco callado: es el paso lento del proceso.
+
+---
+
+## 13. Lo que falta
 
 ### Abierto
 

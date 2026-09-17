@@ -7,6 +7,8 @@ consultor lo pide y finanzas lo compra y contesta con la reserva.
 """
 from datetime import date, timedelta
 
+from ayudas import depositar
+
 MANANA = date.today() + timedelta(days=1)
 
 
@@ -120,9 +122,7 @@ def test_el_circuito_completo_del_deposito(cliente, sesion, datos):
     assert float(suyo[0]["monto"]) == 2400
     assert suyo[0]["dias"] == 2
 
-    r = cliente.post("/viaticos/finanzas/depositar",
-                     json={"equipo_id": equipo_id, "persona_id": persona,
-                           "referencia": "SPEI 88213"}, headers=finanzas)
+    r = depositar(cliente, finanzas, equipo_id, persona, "SPEI 88213")
     assert r.status_code == 200, r.text
 
     panel = cliente.get(f"/viaticos/equipos/{equipo_id}", headers=h).json()
@@ -149,9 +149,7 @@ def test_se_puede_mandar_otro_deposito_encima_del_primero(
                  json={"persona_id": persona, "monto": "2400"}, headers=h)
     cliente.post(f"/viaticos/equipos/{equipo_id}/solicitar",
                  json={"persona_id": persona}, headers=h)
-    cliente.post("/viaticos/finanzas/depositar",
-                 json={"equipo_id": equipo_id, "persona_id": persona},
-                 headers=finanzas)
+    depositar(cliente, finanzas, equipo_id, persona)
     assert fila()["estatus"] == "depositado"
 
     # Segunda: 500 mas.
@@ -176,9 +174,7 @@ def test_se_puede_mandar_otro_deposito_encima_del_primero(
     assert float(f["en_camino"]) == 500
     assert f["estatus"] == "solicitado"
 
-    cliente.post("/viaticos/finanzas/depositar",
-                 json={"equipo_id": equipo_id, "persona_id": persona},
-                 headers=finanzas)
+    depositar(cliente, finanzas, equipo_id, persona)
     f = fila()
     assert float(f["depositado"]) == 2900
     assert float(f["por_solicitar"]) == 0
@@ -273,9 +269,7 @@ def test_lo_ya_depositado_no_se_cancela(cliente, sesion, datos):
                  json={"persona_id": persona, "monto": "2400"}, headers=h)
     cliente.post(f"/viaticos/equipos/{equipo_id}/solicitar",
                  json={"persona_id": persona}, headers=h)
-    cliente.post("/viaticos/finanzas/depositar",
-                 json={"equipo_id": equipo_id, "persona_id": persona},
-                 headers=finanzas)
+    depositar(cliente, finanzas, equipo_id, persona)
 
     r = cliente.post(f"/viaticos/equipos/{equipo_id}/cancelar-solicitud",
                      json={"persona_id": persona}, headers=h)
@@ -389,9 +383,7 @@ def test_el_consultor_no_deposita_ni_finanzas_pide(cliente, sesion, datos):
     _, equipo_id = equipo_armado(cliente, h, datos)
     persona = datos["personal"]["Luis Mendoza"]["id"]
 
-    r = cliente.post("/viaticos/finanzas/depositar",
-                     json={"equipo_id": equipo_id, "persona_id": persona},
-                     headers=h)
+    r = depositar(cliente, h, equipo_id, persona)
     assert r.status_code == 403, r.text
 
     r = cliente.post(f"/viaticos/equipos/{equipo_id}/persona",

@@ -10,7 +10,7 @@ correcta por su lado, se estorben entre ellas.
 """
 from decimal import Decimal
 
-from ayudas import asignar, crear_servicio, jornada, manana
+from ayudas import asignar, crear_servicio, depositar, jornada, manana
 
 
 def _equipo(servicio):
@@ -112,10 +112,8 @@ def test_proyecto_de_tres_dias_con_hotel_y_viaticos(cliente, sesion, datos):
                        "monto": str(fila["propuesto"])}, headers=h)
     cliente.post(f"/viaticos/equipos/{equipo['id']}/solicitar", json={},
                  headers=h)
-    r = cliente.post("/viaticos/finanzas/depositar",
-                     json={"equipo_id": equipo["id"],
-                           "persona_id": fila["persona_id"],
-                           "referencia": "SPEI 1001"}, headers=finanzas)
+    r = depositar(cliente, finanzas, equipo["id"], fila["persona_id"],
+                  "SPEI 1001")
     assert r.status_code == 200, r.text
 
     panel = cliente.get(f"/viaticos/equipos/{equipo['id']}", headers=h).json()
@@ -259,9 +257,7 @@ def test_el_servicio_con_dinero_afuera_ya_no_se_borra(cliente, sesion, datos):
                  json={"persona_id": persona, "monto": "1500"}, headers=h)
     cliente.post(f"/viaticos/equipos/{equipo['id']}/solicitar", json={},
                  headers=h)
-    cliente.post("/viaticos/finanzas/depositar",
-                 json={"equipo_id": equipo["id"], "persona_id": persona},
-                 headers=finanzas)
+    depositar(cliente, finanzas, equipo["id"], persona)
 
     r = cliente.request("DELETE", f"/servicios/{servicio['id']}", headers=h)
     assert r.status_code == 409, r.text

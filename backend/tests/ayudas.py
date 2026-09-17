@@ -115,3 +115,29 @@ def cotizar_y_autorizar(cliente, headers, servicio, perfil_id, categoria_id,
 
 def manana(dias=1):
     return date.today() + timedelta(days=dias)
+
+
+# Un PNG de un pixel: el comprobante del banco que el deposito exige.
+# Lo que importa en las pruebas no es que se vea, sino que exista.
+PIXEL = (b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00"
+         b"\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\xda"
+         b"c\xfc\xcf\xc0P\x0f\x00\x04\x85\x01\x80\x84\xa9\x8c!\x00\x00\x00"
+         b"\x00IEND\xaeB`\x82")
+
+
+def depositar(cliente, headers, equipo_id, persona_id,
+              referencia="SPEI-000001"):
+    """Finanzas registra el deposito de una persona en un equipo.
+
+    Referencia y comprobante son obligatorios: sin evidencia, la unica
+    prueba de que se pago es la palabra de quien lo hizo. Por eso va
+    como formulario con archivo y no como JSON.
+    """
+    import io
+
+    return cliente.post(
+        "/viaticos/finanzas/depositar",
+        data={"equipo_id": str(equipo_id), "persona_id": str(persona_id),
+              "referencia": referencia},
+        files={"archivo": ("comprobante.png", io.BytesIO(PIXEL), "image/png")},
+        headers=headers)

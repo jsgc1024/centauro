@@ -76,55 +76,71 @@ def _caja(cajas: dict, paises: dict, pais_id, **vacios) -> dict:
 def depositado(db: Session, desde: date | None = None,
                hasta: date | None = None, persona_id: int | None = None,
                folio: str | None = None) -> dict:
-    """Lo que ya se pago, con su referencia y quien lo despacho.
+    """Lo que ya se pago, con su referencia, su evidencia y quien lo despacho.
 
     Es lo que contesta "¿cuanto depositamos esta semana?" y "¿ya le
     pagamos a Juan el martes?". Antes eso solo se podia contestar
     preguntandole a la persona.
+
+    Un renglon por DEPOSITO, no por dia. Son cuatro dias y una sola
+    transferencia: listarla cuatro veces hacia parecer que se pago
+    cuatro veces, y no dejaba ver que el comprobante es uno solo.
     """
     hasta = hasta or date.today()
     desde = desde or (hasta - timedelta(days=DIAS_POR_OMISION))
 
-    consulta = (db.query(m.SolicitudTransferencia)
-                .filter(m.SolicitudTransferencia.estatus
-                        == m.EstatusTransferencia.CONFIRMADA))
-    filas = consulta.order_by(m.SolicitudTransferencia.id.desc()).all()
+    filas = (db.query(m.DepositoBancario)
+             .order_by(m.DepositoBancario.id.desc()).all())
 
     paises, cajas = _por_pais(db), {}
-    nombres = {p.id: p.nombre for p in db.query(m.Persona).all()}
 
-    for solicitud in filas:
-        cuando = solicitud.confirmada_en or solicitud.creada_en
+    for deposito in filas:
+        cuando = deposito.depositado_en or deposito.creado_en
         if cuando and not (desde <= cuando.date() <= hasta):
             continue
-        viatico = solicitud.asignacion
-        if not viatico:
-            continue
-        if persona_id and viatico.persona_id != persona_id:
-            continue
-        origen = _de_donde(viatico)
-        if folio and folio.lower() not in (origen["folio"] or "").lower():
+        if persona_id and deposito.persona_id != persona_id:
             continue
 
-        caja = _caja(cajas, paises, origen["pais_id"],
-                     depositos=list, total=CERO)
+        equipo = deposito.equipo
+        servicio = equipo.servicio if equipo else None
+        if not servicio:
+            continue
+        if folio and folio.lower() not in (servicio.folio or "").lower():
+            continue
+
+        caja = _caja(cajas, paises, servicio.pais_id,
+                     depositos=list, total=CERO, sin_comprobante=0)
         caja["depositos"].append({
-            "solicitud_id": solicitud.id,
-            "viatico_id": viatico.id,
-            "persona_id": viatico.persona_id,
-            "persona": nombres.get(viatico.persona_id),
-            "monto": _d(solicitud.monto),
-            "moneda": solicitud.moneda.value,
-            "referencia_odoo": solicitud.referencia_odoo,
-            "lote": solicitud.lote,
+            "deposito_id": deposito.id,
+            "persona_id": deposito.persona_id,
+            "persona": deposito.persona.nombre if deposito.persona else None,
+            "monto": _d(deposito.monto),
+            "moneda": deposito.moneda.value,
+            "referencia": deposito.referencia,
+            "dias": len(deposito.solicitudes),
             "confirmada_en": cuando.isoformat() if cuando else None,
             # Con firma o sin ella: los depositos de antes de que esto
             # existiera no tienen quien, y se dice en vez de dejar un
             # hueco que parece un error.
-            "confirmada_por": nombres.get(solicitud.confirmada_por_id),
-            **origen,
+            "despacho": (deposito.despachado_por.nombre
+                         if deposito.despachado_por else None),
+            # Lo que llega ya confirmado del lote o de Odoo no trae
+            # captura del banco. Se enseña en vez de esconderse: un
+            # deposito sin evidencia es algo que alguien tiene que
+            # completar, no un renglon normal.
+            "tiene_comprobante": bool(deposito.comprobante),
+            "corregido_en": (deposito.corregido_en.isoformat()
+                             if deposito.corregido_en else None),
+            "corregido_por": (deposito.corregido_por.nombre
+                              if deposito.corregido_por else None),
+            "servicio_id": servicio.id, "folio": servicio.folio,
+            "cliente": servicio.cliente.nombre if servicio.cliente else None,
+            "equipo": equipo.alias, "equipo_id": equipo.id,
+            "tipo": servicio.tipo.value,
         })
-        caja["total"] += _d(solicitud.monto)
+        caja["total"] += _d(deposito.monto)
+        if not deposito.comprobante:
+            caja["sin_comprobante"] += 1
 
     for caja in cajas.values():
         caja["depositos"].sort(key=lambda x: x["confirmada_en"] or "",

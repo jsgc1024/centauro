@@ -105,6 +105,29 @@ export const api = {
     return datos;
   },
 
+  /* Un formulario con archivo y campos juntos. `subir` manda un solo
+     archivo y nada mas; el deposito necesita mandar tambien la
+     referencia y a quien se le paga, en la misma peticion: si el
+     archivo viajara aparte, un corte de red a medio camino dejaria un
+     deposito registrado sin su comprobante. */
+  async formulario(ruta, campos, metodo = "POST") {
+    const cab = {};
+    if (sesion.token) cab["Authorization"] = `Bearer ${sesion.token}`;
+    const cuerpo = new FormData();
+    for (const [k, v] of Object.entries(campos)) {
+      if (v !== null && v !== undefined) cuerpo.append(k, v);
+    }
+    const r = await fetch(ruta, { method: metodo, headers: cab, body: cuerpo });
+    if (r.status === 401) {
+      sesion.token = null;
+      location.hash = "#/entrar";
+      throw new ErrorApi(401, "La sesion vencio. Vuelve a entrar.");
+    }
+    const datos = await r.json().catch(() => null);
+    if (!r.ok) throw new ErrorApi(r.status, datos && datos.detail);
+    return datos;
+  },
+
   async entrar(correo, contrasena) {
     const cuerpo = new URLSearchParams({ username: correo, password: contrasena });
     const r = await fetch("/auth/token", {

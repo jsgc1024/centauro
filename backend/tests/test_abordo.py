@@ -6,6 +6,8 @@ persona va en una sola.
 """
 from datetime import date, timedelta
 
+from ayudas import depositar
+
 MANANA = date.today() + timedelta(days=1)
 
 
@@ -323,9 +325,7 @@ def test_no_se_quita_a_quien_ya_recibio_viaticos(cliente, sesion, datos):
                  json={"persona_id": luis, "monto": "1200"}, headers=h)
     cliente.post(f"/viaticos/equipos/{equipo_id}/solicitar",
                  json={"persona_id": luis}, headers=h)
-    cliente.post("/viaticos/finanzas/depositar",
-                 json={"equipo_id": equipo_id, "persona_id": luis},
-                 headers=finanzas)
+    depositar(cliente, finanzas, equipo_id, luis)
 
     r = cliente.request(
         "DELETE", f"/servicios/equipos/{equipo_id}/personal/{luis}", headers=h)

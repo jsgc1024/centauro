@@ -270,6 +270,11 @@ def mis_viaticos(db: Session = Depends(get_db),
             "entregado": Decimal("0"), "comprobado": Decimal("0"),
             "por_comprobar": Decimal("0"),
             "dias": [], "limite": None, "vencido": False,
+            # Los depositos con los que le llego ese dinero. Contesta la
+            # pregunta que hoy termina en una llamada al consultor
+            # —"¿ya me depositaron?"— y le da con que reclamarle al
+            # banco si el dinero no aparece.
+            "depositos": [],
         })
         entregado = Decimal(str(v.monto_total or 0))
         comprobado = Decimal(str(v.monto_comprobado or 0))
@@ -294,11 +299,27 @@ def mis_viaticos(db: Session = Depends(get_db),
             "comprobantes": len(v.comprobantes),
             "rechazados": len([c for c in v.comprobantes if c.rechazado]),
         })
+        for solicitud in db.query(m.SolicitudTransferencia).filter_by(
+                asignacion_id=v.id):
+            deposito = solicitud.deposito
+            if not deposito or any(x["id"] == deposito.id
+                                   for x in fila["depositos"]):
+                continue
+            fila["depositos"].append({
+                "id": deposito.id,
+                "monto": Decimal(str(deposito.monto)),
+                "moneda": deposito.moneda.value,
+                "referencia": deposito.referencia,
+                "cuando": (deposito.depositado_en.isoformat()
+                           if deposito.depositado_en else None),
+                "tiene_comprobante": bool(deposito.comprobante),
+            })
 
     filas = sorted(por_servicio.values(),
                    key=lambda x: (not x["vencido"], x["limite"] or ""))
     for f in filas:
         f["dias"].sort(key=lambda d: d["fecha"])
+        f["depositos"].sort(key=lambda d: d["cuando"] or "", reverse=True)
     return {"servicios": filas,
             "total_por_comprobar": sum(f["por_comprobar"] for f in filas)}
 
