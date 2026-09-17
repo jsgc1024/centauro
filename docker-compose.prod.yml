@@ -1,0 +1,144 @@
+# Produccion. El de al lado, docker-compose.yml, es de desarrollo y no se
+# sube a un servidor tal cual: publica Postgres y Redis a internet, trae
+# la contrasena a la vista, monta el codigo desde el disco y corre
+# uvicorn con --reload.
+#
+# Se levanta asi:
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Ver ARQUITECTURA.md para el orden de encendido completo.
+
+services:
+  db:
+    image: postgres:16
+    container_name: centauro_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: centauro
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD en .env}
+      POSTGRES_DB: centauro
+      TZ: America/Mexico_City
+    # Sin `ports`: solo la red interna de compose. Postgres no se asoma a
+    # internet ni un minuto.
+    #
+    # max_connections tiene que aguantar el pozo de SQLAlchemy por cada
+    # proceso que se conecte: dos trabajadores de uvicorn, el worker de
+    # Celery y beat. Ver app/db.py.
+    command: postgres -c max_connections=200
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U centauro"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: centauro_redis
+    restart: unless-stopped
+    # Con contrasena y con disco: la cola de Celery y los contadores de
+    # intentos fallidos no tienen que sobrevivir a un reinicio, pero
+    # perderlos en silencio tampoco ayuda.
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:?falta REDIS_PASSWORD en .env}
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy noeviction
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+  api:
+    build: ./backend
+    image: centauro-api:prod
+    container_name: centauro_api
+    restart: unless-stopped
+    environment:
+      TZ: America/Mexico_City
+    # Sin --reload: el recargador vigila el disco, corre en un solo
+    # proceso y no esta hecho para servir.
+    #
+    # --proxy-headers para que el registro de auditoria vea la IP del
+    # cliente y no la del proxy; y por lo mismo el limite de intentos
+    # fallidos cuenta bien. `--forwarded-allow-ips` se limita a la red
+    # interna: si se deja abierto, cualquiera puede decir que viene de
+    # otra IP y saltarse el contador.
+    command: >
+      uvicorn app.main:app --host 0.0.0.0 --port 8000
+      --workers 2 --proxy-headers --forwarded-allow-ips='172.16.0.0/12'
+      --no-server-header
+    # Sin `volumes`: corre la imagen construida, no la carpeta. Montarla
+    # le pasaria por encima a la imagen y se desplegaria lo que haya en
+    # el disco, no lo que se probo.
+    expose:
+      - "8000"
+    env_file: .env
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status==200 else 1)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  worker:
+    build: ./backend
+    image: centauro-api:prod
+    container_name: centauro_worker
+    restart: unless-stopped
+    environment:
+      TZ: America/Mexico_City
+    command: celery -A app.celery_app.celery worker --loglevel=warning --concurrency=2
+    env_file: .env
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+
+  # El reloj de las tareas programadas. Va aparte del worker para que
+  # reiniciar uno no se lleve al otro, y **corre en una sola instancia**:
+  # dos beat disparan todo por duplicado.
+  beat:
+    build: ./backend
+    image: centauro-api:prod
+    container_name: centauro_beat
+    restart: unless-stopped
+    environment:
+      TZ: America/Mexico_City
+    command: celery -A app.celery_app.celery beat --loglevel=warning
+    env_file: .env
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+
+  # El unico que se asoma a internet. Saca y renueva el certificado solo.
+  proxy:
+    image: caddy:2-alpine
+    container_name: centauro_proxy
+    restart: unless-stopped
+    environment:
+      DOMINIO: ${DOMINIO:?falta DOMINIO en .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./despliegue/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  redisdata:
+  caddydata:
+  caddyconfig:

@@ -302,6 +302,12 @@ TELEFONO_CENTRAL=+525550221022
 VAPID_PUBLIC=...
 VAPID_PRIVATE=...
 VAPID_CONTACTO=mailto:operaciones@centauro.lat
+
+# El respaldo fuera del servidor. La credencial solo escribe: nunca borra.
+RESPALDO_S3_DESTINO=s3://centauro-respaldos/postgres
+RESPALDO_S3_REGION=us-west-1
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
 ```
 
 Cómo se generan las que faltan:
@@ -344,8 +350,20 @@ de arriba.
 
 **2. El respaldo.** Con las imágenes dentro de la base, el respaldo *es* el
 sistema completo: se pierde el `pg_dump` y se pierden las fotos que prueban
-en qué estado se entregó una unidad. `pg_dump` diario comprimido, fuera del
-servidor, con una restauración de prueba verificada **antes** de que el
+en qué estado se entregó una unidad.
+
+Está resuelto en `despliegue/respaldo.sh`: `pg_dump` diario que **se
+restaura en una base desechable y cuenta las filas** —servicios, viáticos,
+fotos y nómina— antes de borrar nada viejo, y que después sube la copia a
+**object storage S3 multizona** y verifica el tamaño del otro lado.
+
+Lo que no puede quedarse a medias es del lado del bucket: la credencial del
+servidor solo debe poder escribir, nunca borrar, y el bucket va con
+versionado y Object Lock. Si alguien entra al servidor se lleva esas
+llaves; con permiso de borrado se lleva también el historial de respaldos,
+que es justo lo que se iba a usar para recuperarse.
+
+Y córrelo a mano una vez, leyendo la salida completa, **antes** de que el
 sistema tenga datos reales que perder.
 
 ---

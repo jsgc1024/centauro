@@ -1,0 +1,51 @@
+# El unico proceso que se asoma a internet.
+#
+# Caddy en vez de Nginx por una sola razon: saca y renueva el
+# certificado de Let's Encrypt solo, sin cron ni certbot ni un dia en
+# que alguien se olvido de renovar y la app de campo deja de funcionar
+# —y sin certificado no hay service worker, ni camara, ni ubicacion, ni
+# avisos: la app de campo simplemente no existe.
+#
+# El dominio sale del .env (DOMINIO=operacion.centauro.lat).
+
+{
+	# A donde escribe Let's Encrypt si un certificado esta por vencer y
+	# no se pudo renovar. Es la unica forma de enterarse antes.
+	email operaciones@centauro.lat
+}
+
+{$DOMINIO} {
+	encode zstd gzip
+
+	# La IP real del cliente. Sin esto el registro de auditoria guarda la
+	# IP del proxy para todos, y el limite de intentos fallidos cuenta a
+	# toda la empresa como una sola persona.
+	reverse_proxy api:8000 {
+		header_up X-Real-IP {remote_host}
+	}
+
+	header {
+		# Solo https, tambien en las visitas siguientes.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "same-origin"
+		# Que version corre no es asunto de nadie.
+		-Server
+	}
+
+	# El service worker de la app de campo tiene que poder controlar
+	# /app/ y nada mas. Se sirve desde ahi, asi que no hace falta
+	# ampliarle el alcance; esta linea solo evita que un cache
+	# intermedio se quede con una version vieja del trabajador, que es
+	# como una app se queda congelada sin que nadie entienda por que.
+	@sw path /app/sw.js
+	header @sw Cache-Control "no-cache"
+
+	log {
+		output file /data/acceso.log {
+			roll_size 20mb
+			roll_keep 10
+		}
+	}
+}
