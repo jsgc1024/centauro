@@ -274,13 +274,13 @@ def manana(db: Session, ahora: datetime | None = None) -> dict:
 # El pulso: lo que esta en curso
 # ==================================================================
 
-def _silencio(ultimo: m.Hito | None, ahora: datetime) -> int | None:
+def silencio(ultimo: m.Hito | None, ahora: datetime) -> int | None:
     if not ultimo or not ultimo.marcado_en:
         return None
     return int((ahora - ultimo.marcado_en).total_seconds() / 60)
 
 
-def _color_del_silencio(minutos: int | None) -> str:
+def color_del_silencio(minutos: int | None) -> str:
     if minutos is None:
         return "sin_reporte"
     if minutos >= SILENCIO_ROJO:
@@ -301,7 +301,7 @@ def _en_curso(db: Session, jornada: m.Jornada, ahora: datetime,
     suyo = relojes.ahora(servicio.pais_id) if relojes else ahora
     ultimo = (db.query(m.Hito).filter_by(jornada_id=jornada.id)
               .order_by(m.Hito.marcado_en.desc()).first())
-    minutos = _silencio(ultimo, suyo)
+    minutos = silencio(ultimo, suyo)
 
     para_extra = None
     if jornada.fin_programado:
@@ -325,7 +325,7 @@ def _en_curso(db: Session, jornada: m.Jornada, ahora: datetime,
         "ultimo_en": ultimo.marcado_en.isoformat()
                      if ultimo and ultimo.marcado_en else None,
         "minutos_callado": minutos,
-        "silencio": _color_del_silencio(minutos),
+        "silencio": color_del_silencio(minutos),
         "minutos_para_horas_extra": para_extra,
         "por_entrar_en_extra": (para_extra is not None
                                 and 0 <= para_extra <= AVISO_HORAS_EXTRA),

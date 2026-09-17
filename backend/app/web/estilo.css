@@ -493,3 +493,81 @@ button.bandera.activa {
   width: 100%; font: inherit; padding: 8px 10px; border-radius: 8px;
   border: 1px solid var(--linea); resize: vertical;
 }
+
+/* ------------------------------------------------------------ panorama
+
+   El recuadro de estado es lo unico que se lee de lejos. Un dia normal
+   es un punto verde y un conteo; el filo de la izquierda es lo que
+   cambia de color, porque es lo que se ve sin enfocar la vista. */
+.tarjeta.estado { border-left: 4px solid var(--ok); }
+.tarjeta.estado.atender { border-left-color: var(--alerta); }
+.tarjeta.estado.grave { border-left-color: var(--grave); }
+
+.estado_fila {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+}
+.estado_conteo { margin: 10px 0 4px; font-size: 16px; }
+
+.punto {
+  display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+  background: var(--ok); vertical-align: middle;
+}
+.punto.atender { background: var(--alerta); }
+.punto.grave { background: var(--grave); }
+
+.atender {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  border-top: 1px solid var(--linea); padding: 10px 0 0; margin-top: 10px;
+}
+.atender > div:first-child { flex: 1 1 260px; }
+.atender.grave > div:first-child b { color: var(--grave); }
+.rojo { color: var(--grave); font-weight: 600; }
+
+/* La tira del dia. Una barra por equipo sobre su propio eje: las 14:00
+   de la tira son las 14:00 de donde esta parado ese equipo. */
+.tira { position: relative; }
+.renglon_tira {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 5px;
+}
+.etiqueta_tira { flex: 0 0 150px; }
+.carril {
+  position: relative; flex: 1; height: 16px; border-radius: 4px;
+  background: var(--suave);
+}
+.barra {
+  position: absolute; top: 3px; height: 10px; border-radius: 5px;
+  background: var(--centauro);
+}
+.barra.proxima_a_iniciar, .barra.confirmada, .barra.planeada {
+  background: #cfd6dd;
+}
+.barra.terminada { background: #aeb8c2; }
+.barra.s_ambar { background: var(--alerta); }
+.barra.s_rojo, .barra.s_sin_reporte { background: var(--grave); }
+.muesca {
+  position: absolute; top: 0; width: 2px; height: 16px;
+  background: rgba(0,0,0,.35);
+}
+.capa_ahora {
+  position: absolute; inset: 0; display: flex; gap: 10px;
+  pointer-events: none;
+}
+.capa_ahora .pista { position: relative; flex: 1; }
+.ahora {
+  position: absolute; top: 0; bottom: 0; width: 1px;
+  background: var(--grave);
+}
+.horas { position: relative; height: 16px; margin-left: 160px; }
+.horas span { position: absolute; transform: translateX(-50%); }
+
+/* En el telefono el panorama se aprieta a lo esencial: pais, hora,
+   gente y si alguien no reporta. El desglose por plaza y la cuenta de
+   servicios son el detalle, y el detalle no cabe en un semaforo. */
+@media (max-width: 700px) {
+  .etiqueta_tira { flex: 0 0 96px; }
+  .horas { margin-left: 106px; }
+  .solo_ancho { display: none; }
+  .paises th, .paises td { padding-left: 8px; padding-right: 8px; }
+  .paises .etiqueta { white-space: normal; }
+}

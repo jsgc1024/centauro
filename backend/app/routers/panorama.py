@@ -17,5 +17,15 @@ LECTURA = auth.requiere(m.Rol.DIRECTOR_GENERAL, m.Rol.DIRECTOR_OPERACIONES,
 
 @router.get("/panorama", summary="Todo lo que esta pasando ahora")
 def ver(db: Session = Depends(get_db), ahora: datetime | None = None,
-        _=Depends(LECTURA)):
-    return motor.panorama(db, ahora)
+        usuario: m.Usuario = Depends(LECTURA)):
+    """La misma pantalla para todos, recortada a lo que a cada quien le
+    toca: el consultor ve su cartera, la direccion ve todo."""
+    mio = (usuario.persona_id if usuario.rol == m.Rol.CONSULTOR else None)
+    return motor.panorama(db, ahora, consultor_id=mio)
+
+
+@router.get("/panorama/marcas", summary="Las marcas que no cuadran")
+def marcas(db: Session = Depends(get_db), ahora: datetime | None = None,
+           usuario: m.Usuario = Depends(LECTURA)):
+    mio = (usuario.persona_id if usuario.rol == m.Rol.CONSULTOR else None)
+    return motor.marcas_raras(db, consultor_id=mio, ahora=ahora)

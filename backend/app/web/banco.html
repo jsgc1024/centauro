@@ -38,6 +38,8 @@
   <b>Banco de pruebas</b>
   <a href="?p=finanzas&i=es">Finanzas</a>
   <a href="?p=servicio&i=es">Servicio</a>
+  <a href="?p=panorama&i=es">Panorama</a>
+  <a href="?p=panorama&i=es&d=roto">Panorama · mal día</a>
   <span style="opacity:.6">|</span>
   <a href="?p=finanzas&i=en">EN</a>
   <a href="?p=finanzas&i=pt">PT</a>
@@ -188,6 +190,106 @@ const CORTE = {
              vencido: 1152, compras_abiertas: 1 }],
 };
 
+/* Panorama se arma en vivo con la hora de este momento: una tira del dia
+   con horas fijas se ve mal cada vez que uno abre el banco a otra hora.
+   Con ?d=roto sale el dia malo —panico, un equipo callado y uno que
+   arranca sin unidad— para poder mirar los dos estados. */
+const MAL_DIA = params.get("d") === "roto";
+
+function reloj(horas) {
+  const f = new Date(HOY.getTime() + horas * 3600000);
+  return f.toISOString().slice(0, 19);
+}
+
+const MARCAS = {
+  fuera_de_geocerca: [
+    { hito_id: 1, jornada_id: 1, servicio_id: 1, servicio: "CN-2026-0142",
+      equipo: "Alfa", persona: "Luis Mendoza", tipo: "llegada_origen",
+      marcado_en: reloj(-4), distancia_m: 3120, geocerca_m: 250,
+      fuera_de_ventana: false, nota: null }],
+  por_validar: [
+    { hito_id: 2, jornada_id: 2, servicio_id: 2, servicio: "CN-2026-0148",
+      equipo: "Alfa", persona: "Marta Solis", tipo: "fin_servicio",
+      marcado_en: reloj(-20), distancia_m: 40, geocerca_m: 250,
+      fuera_de_ventana: true, nota: "Se fue la bateria" }],
+};
+
+function panorama() {
+  const atender = MAL_DIA ? [
+    { tipo: "panico", nivel: "grave", alerta_id: 1, servicio_id: 1,
+      canal: "boton_app", reportada_en: reloj(-0.2) },
+    { tipo: "silencio", nivel: "grave", jornada_id: 1, servicio_id: 1,
+      servicio: "CN-2026-0142", equipo: "Alfa", minutos_callado: 103,
+      ultimo_hito: "llegada_destino", ultima_marca: reloj(-1.7) },
+    { tipo: "sin_listo", nivel: "alerta", jornada_id: 4, servicio_id: 4,
+      servicio: "CN-2026-0151", equipo: "Beta", en_minutos: 35,
+      faltas: ["unidad"] },
+  ] : [];
+
+  return {
+    momento: reloj(0),
+    umbral_silencio: 60,
+    estado: { nivel: MAL_DIA ? "grave" : "normal", atender, mas: MAL_DIA ? 2 : 0 },
+    en_la_calle: {
+      personas: 38, eventual: 23, implantado: 15, ejecutivos: 14,
+      servicios: 11, equipos: 12, todos_reportando: !MAL_DIA },
+    paises: [
+      { pais_id: 1, pais: "Mexico", hora_local: reloj(0), personas: 23,
+        servicios: 8, callados: MAL_DIA ? 1 : 0,
+        plazas: [{ plaza: "Ciudad de Mexico", personas: 14 },
+                 { plaza: "Guadalajara", personas: 6 },
+                 { plaza: "Monterrey", personas: 3 }] },
+      { pais_id: 2, pais: "Brasil", hora_local: reloj(3), personas: 9,
+        servicios: 2, callados: 0,
+        plazas: [{ plaza: "Sao Paulo", personas: 9 }] },
+      { pais_id: 3, pais: "Colombia", hora_local: reloj(1), personas: 6,
+        servicios: 1, callados: 0,
+        plazas: [{ plaza: "Bogota", personas: 6 }] },
+    ],
+    dia: [{
+      pais_id: 1, pais: "Mexico", ahora: reloj(0),
+      barras: [
+        { jornada_id: 1, servicio_id: 1, servicio: "CN-2026-0142",
+          equipo: "Alfa", estatus: "en_curso", inicio: reloj(-6),
+          fin_programado: reloj(6), fin_real: null,
+          silencio: MAL_DIA ? "rojo" : "verde",
+          minutos_callado: MAL_DIA ? 103 : 8, ultima_marca: reloj(-1.7) },
+        { jornada_id: 2, servicio_id: 2, servicio: "CN-2026-0148",
+          equipo: "Alfa", estatus: "en_curso", inicio: reloj(-4),
+          fin_programado: reloj(8), fin_real: null, silencio: "verde",
+          minutos_callado: 22, ultima_marca: reloj(-0.4) },
+        { jornada_id: 3, servicio_id: 3, servicio: "CN-2026-0150",
+          equipo: "Beta", estatus: "terminada", inicio: reloj(-9),
+          fin_programado: reloj(-1), fin_real: reloj(-1),
+          silencio: null, minutos_callado: null, ultima_marca: reloj(-1) },
+        { jornada_id: 4, servicio_id: 4, servicio: "CN-2026-0151",
+          equipo: "Beta", estatus: "proxima_a_iniciar", inicio: reloj(0.6),
+          fin_programado: reloj(8), fin_real: null, silencio: null,
+          minutos_callado: null, ultima_marca: null },
+      ],
+    }],
+    dinero: {
+      por_depositar: { monto: 7460, cuantos: 3 },
+      afuera_sin_comprobar: { monto: 12300, personas: 2, vencido: 1152,
+                              detalle_vencido: [] },
+      nomina_de_la_semana: { fecha_corte: dia(4), estatus: "sin_calcular",
+                             total: 86400, personas: 18 },
+      cierres: { abiertos: 7, vencidos: MAL_DIA ? 2 : 0,
+                 esperando_finanzas: 3,
+                 devueltos: MAL_DIA
+                   ? [{ servicio: "CN-2026-0139",
+                        motivo: "Falta el comprobante del hospedaje" }]
+                   : [] },
+    },
+    calidad: {
+      fuera_de_geocerca: MAL_DIA ? 3 : 1,
+      marcas_por_validar: MAL_DIA ? 5 : 1,
+      unidades_sin_revision_de_entrada: MAL_DIA ? 2 : 0,
+      relevos_hoy: 2,
+    },
+  };
+}
+
 const RUTAS = {
   "/catalogos/paises": PAISES,
   "/catalogos/plazas": PLAZAS,
@@ -245,6 +347,8 @@ const RUTAS = {
     compras: [],
   },
   "/servicios/1/revisiones": { unidades: [] },
+  "/panorama": panorama(),
+  "/panorama/marcas": MARCAS,
   "/viaticos/finanzas/bandeja": BANDEJA,
   "/viaticos/finanzas/corte": CORTE,
 };
@@ -274,7 +378,10 @@ const main = document.createElement("main");
 document.getElementById("app").append(main);
 
 try {
-  if (PANTALLA === "servicio") {
+  if (PANTALLA === "panorama") {
+    const { pantallaPanorama } = await import("/consola/panorama.js");
+    await pantallaPanorama(main);
+  } else if (PANTALLA === "servicio") {
     const { pantallaServicio } = await import("/consola/servicio.js");
     await pantallaServicio(main, 1);
   } else {

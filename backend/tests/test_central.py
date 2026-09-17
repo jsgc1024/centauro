@@ -116,10 +116,10 @@ def test_el_corte_de_la_vispera_cambia_lo_que_es_urgente(cliente, sesion,
 def test_el_silencio_se_mide_contra_el_ultimo_hito(cliente, sesion, datos):
     from app import central as motor
 
-    assert motor._color_del_silencio(None) == "sin_reporte"
-    assert motor._color_del_silencio(5) == "verde"
-    assert motor._color_del_silencio(motor.SILENCIO_AMBAR) == "ambar"
-    assert motor._color_del_silencio(motor.SILENCIO_ROJO) == "rojo"
+    assert motor.color_del_silencio(None) == "sin_reporte"
+    assert motor.color_del_silencio(5) == "verde"
+    assert motor.color_del_silencio(motor.SILENCIO_AMBAR) == "ambar"
+    assert motor.color_del_silencio(motor.SILENCIO_ROJO) == "rojo"
 
 
 def test_la_tira_de_dias_cuenta_lo_que_viene(cliente, sesion, datos):
