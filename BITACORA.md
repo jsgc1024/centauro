@@ -716,6 +716,38 @@ consultor, y ahí sí, cada uno ve la suya.
 
 ### Abierto
 
+- **El panel de usuarios y permisos.** Pedido por Salvador, para más
+  adelante. Debe gestionar: qué permisos ve cada perfil, la categoría
+  adicional de quienes están registrados, cuándo fue su última sesión
+  abierta y los tiempos de gestión. Aparte, recuperación y cambio de
+  contraseña.
+
+  Mucho de esto ya está cimentado y conviene saberlo antes de empezar:
+
+  - `permisos.py` ya tiene la tabla de **actividad → roles**, con una
+    descripción de cada actividad escrita pensando en este panel. Son 32
+    actividades hasta hoy, y se va llenando pantalla por pantalla.
+  - Los endpoints ya preguntan `auth.puede("actividad")`, no por rol. El
+    día que los permisos salgan de la base, **los endpoints no se tocan**:
+    lo único que cambia es de dónde lee `permisos.roles_de()`. Eso sí
+    necesita tabla y migración.
+  - `Usuario.ultimo_acceso` ya existe **y ya se escribe** en cada inicio
+    de sesión (`acceso.py:99`). El dato está desde hace tiempo; nadie lo
+    muestra todavía.
+  - El alta de acceso, la invitación con vencimiento y el "crea tu
+    contraseña" ya funcionan (`acceso.py`, `auth.token_invitacion`).
+
+  Lo que de verdad no existe: **recuperar la contraseña** —hay
+  invitación para la primera, no para la olvidada— y **cambiarla** uno
+  mismo estando dentro. Las dos se apoyan en el token de invitación que
+  ya está hecho.
+
+  Dos cosas hay que definir contigo antes de programar: qué es esa
+  "categoría adicional" —si son etiquetas por colaborador aparte del rol,
+  o algo más— y qué son los "tiempos de gestión": si es cuánto dura una
+  sesión abierta antes de caducar, o cuánto tarda cada quien en despachar
+  lo suyo. Son dos pantallas distintas según la respuesta.
+
 - Restringir la llave de Google por IP del servidor.
 - Cargar los montos reales: tarifas, comisiones de los cuatro roles y
   tabuladores de viáticos por acuerdo.
