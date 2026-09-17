@@ -731,6 +731,29 @@ async function verPrevia(e, zona, cambio, entra) {
   e.target.disabled = false;
 }
 
+/* La hora que parte el dia decide cuanto cobra cada quien y cuanto se le
+   factura al cliente. El sistema propone la ultima marca del que sale
+   --lo ultimo que se supo de el ese dia-- y aqui se confirma o se
+   corrige: un dia estatico, con el ejecutivo en su oficina, puede no
+   tener marcas desde el contacto de la manana.
+
+   Solo se manda si el consultor la movio. Si la deja como viene, el
+   servidor vuelve a calcular la misma y queda constancia de que nadie
+   la toco. */
+function campoDeHora(r) {
+  const dia = (r.jornadas_partidas || [])[0];
+  const propuesta = (r.hora_propuesta || "").slice(11, 16);
+  const campo_ = h("input", { type: "time", value: propuesta,
+                              style: "width:auto;margin-left:6px" });
+  return {
+    nodo: h("div", { clase: "chico", style: "margin-top:6px" },
+      h("label", {}, t("srv_relevado_a_las"), campo_),
+      h("div", { clase: "gris" }, t("srv_hora_relevo_pie"))),
+    leer: () => (campo_.value && campo_.value !== propuesta
+                 ? `${dia}T${campo_.value}:00` : null),
+  };
+}
+
 function recuadroPrevia(r, cuerpo, entra) {
   const dias = r.jornadas_afectadas || [];
   const v = r.viaticos || {};
@@ -764,11 +787,17 @@ function recuadroPrevia(r, cuerpo, entra) {
     dinero_.append(linea(t("srv_nada_mover")));
   }
 
+  const partido = (r.jornadas_partidas || []).length > 0;
+  const hora = partido ? campoDeHora(r) : null;
+
   const confirmar = h("button", { clase: "chico", type: "button",
     onclick: async (ev) => {
       ev.target.disabled = true;
       try {
-        await api.post("/contingencia/reemplazos/personal", cuerpo);
+        const corregida = hora && hora.leer();
+        await api.post("/contingencia/reemplazos/personal",
+                       corregida ? { ...cuerpo, relevado_en: corregida }
+                                 : cuerpo);
         mensaje(t("srv_cambio_hecho"));
         location.reload();
       } catch (err) {
@@ -789,12 +818,13 @@ function recuadroPrevia(r, cuerpo, entra) {
     /* Lo que hasta hoy se perdia: el que se presento esa manana cobra su
        dia. Decirlo aqui es lo que evita el reclamo de la semana que
        viene. */
-    (r.jornadas_partidas || []).length
+    partido
       ? h("div", { style: "margin-top:8px" },
           h("h4", { style: "margin:0 0 2px" }, t("srv_nomina")),
           linea(t("srv_se_presento")
                   .replace("{f}", fecha(r.jornadas_partidas[0])), true),
-          linea(t("srv_cobra_dias").replace("{p}", entra.nombre)))
+          linea(t("srv_cobra_dias").replace("{p}", entra.nombre)),
+          hora.nodo)
       : h("div", { clase: "chico gris", style: "margin-top:8px" },
           t("srv_no_marco")),
     dinero_,
