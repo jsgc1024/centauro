@@ -691,12 +691,31 @@ dejar el hueco callado: es el paso lento del proceso.
 
 ---
 
-## 13. Lo que falta
+## 13. Quién ve qué
+
+La cartera está abierta a propósito. Cualquier consultor puede trabajar
+los servicios de otro para cubrir enfermedades o ausencias, y la apertura
+no quita trazabilidad: `auditoria.py` marca como **cobertura** toda acción
+sobre un servicio ajeno y le avisa al titular por correo.
+
+Panorama nació con un filtro por consultor, en contra de esa regla, y se
+le quitó. En una pantalla que contesta *¿hay alguien en problemas ahora
+mismo?*, esconderle a un consultor que el equipo de otro lleva dos horas
+callado no protege nada: lo deja sin ver justo cuando está cubriendo a
+quien faltó.
+
+**El bloque de dinero de Panorama también lo ve todo el que entre**, con
+la nómina de la semana y los nombres de quién trae dinero sin comprobar.
+Se preguntó y se decidió así: dentro de la empresa no se esconde. No es
+un descuido, y no hay que "arreglarlo".
+
+Lo que sí es de cada quien es la comisión: `comisiones.py` filtra por
+consultor, y ahí sí, cada uno ve la suya.
+
+## 14. Lo que falta
 
 ### Abierto
 
-- Las dos fallas de seguridad de `REVISION.md`: el sembrado sin
-  autenticación y la `secret_key` pública en `config.py`.
 - Restringir la llave de Google por IP del servidor.
 - Cargar los montos reales: tarifas, comisiones de los cuatro roles y
   tabuladores de viáticos por acuerdo.
