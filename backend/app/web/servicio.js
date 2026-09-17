@@ -682,6 +682,22 @@ async function abrirCambio(zona, servicio, equipo, cat, persona, datos) {
   }
 }
 
+/* Mismo criterio que botonAsignar: a quien no se puede poner, no se le
+   ofrece el boton. Antes salia con la etiqueta OCUPADO y el boton vivo,
+   y el consultor se enteraba hasta que el servidor le decia que no. */
+function botonElegir(est, alElegir) {
+  if (est.clave === "bloqueo") {
+    return h("button", { clase: "chico claro", type: "button",
+                         disabled: "disabled", title: est.motivos },
+             t("srv_no_se_puede"));
+  }
+  const forzar = est.clave === "riesgo";
+  return h("button", { clase: "chico" + (forzar ? " claro" : ""),
+                       type: "button", title: est.motivos,
+                       onclick: alElegir },
+           t("srv_elegir"));
+}
+
 function tablaCandidatos(bloque, sale, armar, previa) {
   const gente = ordenar(todos(bloque))
     .filter(x => x.persona_id !== sale.persona_id);
@@ -691,8 +707,7 @@ function tablaCandidatos(bloque, sale, armar, previa) {
     cuerpo.append(h("tr", {},
       h("td", {}, h("b", {}, p.nombre), lineaCiudad(p)),
       celdaEstado(est),
-      h("td", {}, h("button", { clase: "chico", type: "button",
-        onclick: (e) => verPrevia(e, previa, armar(), p) }, t("srv_elegir")))));
+      h("td", {}, botonElegir(est, (e) => verPrevia(e, previa, armar(), p)))));
   }
   return caja(t("srv_quien_entra").replace("{p}", sale.nombre), bloque, gente.length,
               [t("srv_persona"), t("srv_disponibilidad"), ""], cuerpo,

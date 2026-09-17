@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Banco de pruebas · Centauro</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;650;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/consola/estilo.css">
+<style>
+  .banco-barra { background:#1f2430; color:#fff; padding:8px 20px; font:13px Inter,system-ui; }
+  .banco-barra a { color:#9fd0ff; margin-right:14px; text-decoration:none; }
+  .banco-barra b { margin-right:10px; }
+</style>
+</head>
+<body>
+
+<!--
+  Banco de pruebas de la consola.
+
+  Sirve para mirar una pantalla sin levantar el sistema completo ni
+  capturar un servicio a mano: se cargan los MODULOS DE VERDAD y se les
+  contesta la API con datos de mentira, con la forma exacta que devuelve
+  el servidor.
+
+  No reemplaza probar con datos reales. Lo que atrapa es lo que ninguna
+  prueba automatica ve: que un boton quede donde debe, que una tabla no
+  se desborde, que una traduccion larga no parta el renglon.
+
+    /consola/banco.html?p=finanzas&i=es
+    /consola/banco.html?p=servicio&i=en
+
+  Las rutas que no esten aqui se contestan vacias y se anotan en la
+  consola del navegador, para saber que falta agregar.
+-->
+
+<div class="banco-barra">
+  <b>Banco de pruebas</b>
+  <a href="?p=finanzas&i=es">Finanzas</a>
+  <a href="?p=servicio&i=es">Servicio</a>
+  <span style="opacity:.6">|</span>
+  <a href="?p=finanzas&i=en">EN</a>
+  <a href="?p=finanzas&i=pt">PT</a>
+</div>
+<div id="app"></div>
+
+<script type="module">
+const params = new URLSearchParams(location.search);
+const PANTALLA = params.get("p") || "finanzas";
+const IDIOMA = params.get("i") || "es";
+try { sessionStorage.setItem("centauro_idioma", IDIOMA); } catch {}
+
+const HOY = new Date();
+const dia = (n) => new Date(HOY.getTime() + n * 86400000)
+  .toISOString().slice(0, 10);
+
+/* ------------------------------------------------ datos de mentira */
+
+const PAISES = [{ id: 1, codigo: "MX", nombre: "Mexico",
+                  moneda_local: "MXN", zona_horaria: "America/Mexico_City",
+                  activo: true }];
+const PLAZAS = [{ id: 1, pais_id: 1, nombre: "Ciudad de Mexico" },
+                { id: 2, pais_id: 1, nombre: "Monterrey" }];
+const MODALIDADES = [
+  { id: 1, pais_id: 1, codigo: "full_day", horas: 12, aplica_horas_extra: true },
+  { id: 2, pais_id: 1, codigo: "medio_dia", horas: 6, aplica_horas_extra: false }];
+const PERFILES = [
+  { id: 1, codigo: "conductor_seguridad", nombre: "Conductor de seguridad" },
+  { id: 2, codigo: "agente_seguridad", nombre: "Agente de seguridad" },
+  { id: 3, codigo: "coordinador_seguridad", nombre: "Coordinador de seguridad" }];
+const CATEGORIAS = [{ id: 1, codigo: "suv_blindada", nombre: "SUV blindada",
+                      blindado: true }];
+const CLIENTES = [{ id: 1, nombre: "Grupo Salinas" }];
+const PERSONAL = [
+  { id: 1, nombre: "Juan Ramirez", telefono: "+52 55 1234 5678",
+    plaza_id: 1, activo: true },
+  { id: 2, nombre: "Luis Mendoza", telefono: "+52 55 2345 6789",
+    plaza_id: 1, activo: true },
+  { id: 3, nombre: "Marta Solis", telefono: "+52 55 3456 7890",
+    plaza_id: 1, activo: true }];
+const VEHICULOS = [{ id: 1, placa: "ABC-1234", categoria_id: 1,
+                     marca_modelo: "Suburban", color: "Negro",
+                     modelo_anio: 2024, rentado: false }];
+
+const JORNADAS = [0, 1, 2, 3].map((i) => ({
+  id: 10 + i, fecha: dia(i), modalidad_id: 1,
+  inicio_programado: `${dia(i)}T07:00:00`,
+  fin_programado: `${dia(i)}T19:00:00`,
+  hora_confirmada: i === 0,
+  estatus: i === 0 ? "terminada" : "programada",
+}));
+
+const SERVICIO = {
+  id: 1, folio: "CN-2026-0142", tipo: "eventual", estatus: "confirmado",
+  cliente_id: 1, plaza_id: 1, pais_id: 1, consultor_id: 3,
+  solicitante_completo: "Patricia Lundgren",
+  solicitante_correo: "patricia@cliente.com",
+  ejecutivo_completo: "Ingrid Halvorsen",
+  asignacion_confirmada_en: null,
+  equipos: [{ id: 1, alias: "Alfa", clave: "EQ-1", plaza_id: 1,
+              ejecutivo_completo: "Ingrid Halvorsen",
+              ejecutivo_telefono: "+52 55 9876 5432",
+              jornadas: JORNADAS }],
+};
+
+const ASIGNACIONES_EQUIPO = {
+  equipo: "Alfa", dias: 4,
+  personal: [
+    { persona_id: 1, nombre: "Juan Ramirez", puesto: "Conductor de seguridad",
+      rol_id: 1, telefono: "+52 55 1234 5678", foto: null,
+      ciudad: "Ciudad de Mexico", vehiculo_id: 1, abordo: "ABC-1234",
+      relevado_en: `${dia(0)}T11:00:00`, reemplaza_a: null, dias: 1 },
+    { persona_id: 2, nombre: "Luis Mendoza", puesto: "Conductor de seguridad",
+      rol_id: 1, telefono: "+52 55 2345 6789", foto: null,
+      ciudad: "Ciudad de Mexico", vehiculo_id: 1, abordo: "ABC-1234",
+      relevado_en: null, reemplaza_a: "Juan Ramirez", dias: 4 },
+    { persona_id: 3, nombre: "Marta Solis", puesto: "Agente de seguridad",
+      rol_id: 2, telefono: "+52 55 3456 7890", foto: null,
+      ciudad: "Ciudad de Mexico", vehiculo_id: 1, abordo: "ABC-1234",
+      relevado_en: null, reemplaza_a: null, dias: 4 }],
+  vehiculos: [{ vehiculo_id: 1, placa: "ABC-1234", unidad: "SUV blindada",
+                blindada: true, color: "Negro", anio: 2024,
+                marca_modelo: "Suburban", rentado: false, foto: null,
+                dias: 4 }],
+};
+
+const REEMPLAZOS = [{
+  id: 1, tipo: "personal", sale: "Juan Ramirez", entra: "Luis Mendoza",
+  motivo: "Se sintio mal y la central lo relevo a las 11:00",
+  motivo_tipo: "contingencia", jornadas_afectadas: 4,
+  desde: dia(0), hasta: null, formalizo: "Ana Solis",
+  alerta_id: null, creado_en: `${dia(0)}T11:05:00`,
+}];
+
+const DESGLOSE = (base) => [
+  { concepto: "alimentos", descripcion: null, monto: 450, origen: "tabulador",
+    adicional: false },
+  { concepto: "combustible", descripcion: "120 km", monto: 680,
+    origen: "estimado", adicional: false },
+  { concepto: "casetas", descripcion: null, monto: base, origen: "manual",
+    adicional: false }];
+
+const BANDEJA = {
+  paises: [{
+    pais_id: 1, codigo: "MX", pais: "Mexico", moneda: "MXN",
+    total_depositos: 7460,
+    depositos: [
+      { pais_id: 1, equipo_id: 1, equipo: "Alfa", servicio_id: 1,
+        folio: "CN-2026-0142", cliente: "Grupo Salinas", persona_id: 2,
+        persona: "Luis Mendoza", moneda: "MXN", monto: 4460, dias: 3,
+        primera_jornada: dia(1), solicitudes: [1, 2, 3],
+        solicito: "Ana Solis", solicitada_en: `${dia(0)}T18:40:00`,
+        banco: "BBVA", clabe: "012180001234567895",
+        titular_cuenta: "Luis Mendoza Garcia",
+        detalle: [
+          { solicitud_id: 1, fecha: dia(1), monto: 1450,
+            conceptos: DESGLOSE(320) },
+          { solicitud_id: 2, fecha: dia(2), monto: 1580,
+            conceptos: DESGLOSE(450) },
+          { solicitud_id: 3, fecha: dia(3), monto: 1430,
+            conceptos: DESGLOSE(300) }] },
+      { pais_id: 1, equipo_id: 1, equipo: "Alfa", servicio_id: 1,
+        folio: "CN-2026-0142", cliente: "Grupo Salinas", persona_id: 3,
+        persona: "Marta Solis", moneda: "MXN", monto: 3000, dias: 2,
+        primera_jornada: dia(1), solicitudes: [4, 5],
+        solicito: "Ana Solis", solicitada_en: `${dia(0)}T18:40:00`,
+        banco: null, clabe: null, titular_cuenta: null,
+        detalle: [
+          { solicitud_id: 4, fecha: dia(1), monto: 1500,
+            conceptos: DESGLOSE(370) },
+          { solicitud_id: 5, fecha: dia(2), monto: 1500,
+            conceptos: DESGLOSE(370) }] }],
+    compras: [{
+      id: 1, tipo: "vuelo", estatus: "solicitada", equipo: "Alfa",
+      servicio_id: 1, folio: "CN-2026-0142", cliente: "Grupo Salinas",
+      solicitud: "Dos boletos Mexico - Monterrey el 16 de septiembre, "
+        + "saliendo antes de las 8 am, a nombre de Ramiro Sandoval y "
+        + "Luis Ontiveros.",
+      monto_estimado: 8400, moneda: "MXN", confirmacion: null,
+      comprobante: null, respuesta: null }],
+    rentas: [],
+  }],
+};
+
+const CORTE = {
+  paises: [{ pais_id: 1, codigo: "MX", pais: "Mexico", moneda: "MXN",
+             depositado_mes: 214800, comprometido: 7460, afuera: 12300,
+             vencido: 1152, compras_abiertas: 1 }],
+};
+
+const RUTAS = {
+  "/catalogos/paises": PAISES,
+  "/catalogos/plazas": PLAZAS,
+  "/catalogos/modalidades": MODALIDADES,
+  "/catalogos/perfiles": PERFILES,
+  "/catalogos/categorias-vehiculo": CATEGORIAS,
+  "/catalogos/clientes": CLIENTES,
+  "/catalogos/personal": PERSONAL,
+  "/catalogos/vehiculos": VEHICULOS,
+  "/catalogos/hoteles": [],
+  "/catalogos/consultores": [{ persona_id: 3, nombre: "Ana Solis" }],
+  "/servicios/1": SERVICIO,
+  "/servicios/equipos/1/asignaciones": ASIGNACIONES_EQUIPO,
+  "/contingencia/reemplazos/servicio/1": REEMPLAZOS,
+  "/servicios/equipos/1/recomendaciones": {
+    personal: {
+      disponibles: [
+        { persona_id: 4, nombre: "Miguel Torres", telefono: "+52 55 4567 8901",
+          ciudad: "Ciudad de Mexico", local: true, calificacion: 4.6,
+          confianza: "alta", horas_en_centauro: 1840, es_freelance: false,
+          bloqueado: false, alertas: [] },
+        { persona_id: 5, nombre: "Hector Palacios", telefono: "+52 55 5678 9012",
+          ciudad: "Ciudad de Mexico", local: true, calificacion: 4.2,
+          confianza: "media", horas_en_centauro: 920, es_freelance: false,
+          bloqueado: false, alertas: [] }],
+      con_alerta: [
+        { persona_id: 6, nombre: "Raul Ortiz", telefono: "+52 33 1122 3344",
+          ciudad: "Guadalajara", local: false, calificacion: 4.0,
+          confianza: "media", horas_en_centauro: 410, es_freelance: true,
+          bloqueado: false,
+          alertas: [{ tipo: "traslado", mensaje: "Viene de otra ciudad" }] }],
+      no_disponibles: [
+        { persona_id: 7, nombre: "Carlos Vega", telefono: "+52 33 2233 4455",
+          ciudad: "Guadalajara", local: false, calificacion: 4.8,
+          confianza: "alta", horas_en_centauro: 2600, es_freelance: false,
+          bloqueado: true,
+          alertas: [{ tipo: "ocupado", mensaje: "Ocupado el 19 y 20 de sep" }] }],
+      de_otras_ciudades: [], aviso: null },
+    vehiculos: { disponibles: [], con_alerta: [], no_disponibles: [],
+                 de_otras_ciudades: [], aviso: null },
+  },
+  "/viaticos/equipos/1": {
+    equipo: "Alfa", moneda: "MXN", dias: 4,
+    total_asignado: 7460, total_depositado: 4460,
+    total_en_camino: 0, total_por_solicitar: 3000,
+    personal: [
+      { persona_id: 2, nombre: "Luis Mendoza", dias: 3, estatus: "depositado",
+        asignado: 4460, propuesto: 4460, depositado: 4460, en_camino: 0,
+        por_solicitar: 0, comprobado: 1200, solicitud_id: null,
+        conceptos: [] },
+      { persona_id: 3, nombre: "Marta Solis", dias: 2, estatus: "asignado",
+        asignado: 3000, propuesto: 3000, depositado: 0, en_camino: 0,
+        por_solicitar: 3000, comprobado: 0, solicitud_id: null,
+        conceptos: [] }],
+    compras: [],
+  },
+  "/servicios/1/revisiones": { unidades: [] },
+  "/viaticos/finanzas/bandeja": BANDEJA,
+  "/viaticos/finanzas/corte": CORTE,
+};
+
+const faltantes = new Set();
+
+window.fetch = async (ruta) => {
+  const limpia = String(ruta).split("?")[0];
+  let datos = RUTAS[limpia];
+  if (datos === undefined) {
+    faltantes.add(limpia);
+    console.warn("[banco] sin datos para", limpia);
+    datos = limpia.match(/asignaciones|recomendaciones|revisiones|reemplazos/)
+      ? [] : {};
+  }
+  return new Response(JSON.stringify(datos),
+    { status: 200, headers: { "Content-Type": "application/json" } });
+};
+
+/* ---------------------------------------------------- a pintar */
+
+const { sesion } = await import("/consola/api.js");
+sesion.token = "banco";
+sesion.usuario = { rol: "finanzas", nombre: "Laura Mendez", persona_id: 9 };
+
+const main = document.createElement("main");
+document.getElementById("app").append(main);
+
+try {
+  if (PANTALLA === "servicio") {
+    const { pantallaServicio } = await import("/consola/servicio.js");
+    await pantallaServicio(main, 1);
+  } else {
+    const { bandejaFinanzas } = await import("/consola/finanzas.js");
+    await bandejaFinanzas(main);
+  }
+} catch (err) {
+  main.innerHTML = `<pre style="color:#b00;padding:20px">${err.stack}</pre>`;
+}
+console.log("[banco] rutas sin datos:", [...faltantes]);
+</script>
+</body>
+</html>
