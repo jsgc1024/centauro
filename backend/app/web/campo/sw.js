@@ -13,7 +13,11 @@
       Sin esto, ahi abajo el telefono enseña la pantalla de "sin
       conexion" del navegador y todo lo demas no sirve de nada. */
 
-const CACHE = "centauro-campo-v1";
+/* La version del cache se sube a mano cuando cambia el armazon: al
+   activarse, el trabajador nuevo borra los caches con otro nombre. Sin
+   subirla, el telefono que ya tenia la app instalada seguiria sirviendo
+   el armazon viejo del cache. */
+const CACHE = "centauro-campo-v2";
 const ARMAZON = [
   "/app/",
   "/app/index.html",
@@ -23,6 +27,10 @@ const ARMAZON = [
   "/app/memoria.js",
   "/app/foto.js",
   "/consola/api.js",
+  /* El icono del aviso se guarda tambien: si no, el aviso que llega en
+     el estacionamiento sale sin icono, que es como se ven los avisos de
+     una app que no se reconoce. */
+  "/app/icono-192.png",
 ];
 
 self.addEventListener("install", (e) => {
@@ -71,8 +79,8 @@ self.addEventListener("push", (e) => {
     tag: d.etiqueta || "centauro",
     renotify: true,
     data: { url: d.url || "/app/" },
-    icon: "/app/icono.png",
-    badge: "/app/icono.png",
+    icon: "/app/icono-192.png",
+    badge: "/app/icono-192.png",
   }));
 });
 

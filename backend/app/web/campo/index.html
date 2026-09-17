@@ -10,6 +10,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;650;700&display=swap" rel="stylesheet">
 <link rel="manifest" href="/app/manifiesto.json">
+<!-- iOS no lee los iconos del manifiesto: los toma de aqui. Y sin
+     icono no hay "Agregar a inicio", sin eso no hay app instalada,
+     y sin app instalada el iPhone no recibe un solo aviso. -->
+<link rel="apple-touch-icon" href="/app/icono-apple-180.png">
+<link rel="icon" href="/app/icono-192.png">
 <link rel="stylesheet" href="/app/estilo.css">
 </head>
 <body>
