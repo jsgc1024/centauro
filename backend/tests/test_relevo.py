@@ -393,3 +393,92 @@ def test_lo_ya_depositado_sigue_siendo_de_quien_lo_recibio(cliente, sesion,
     despues = cliente.get(f"/viaticos/{viatico['id']}", headers=h).json()
     assert despues["estatus"] == "en_comprobacion"
     assert despues["persona_id"] == datos["personal"]["Juan Ramirez"]["id"]
+
+
+# ==================================================================
+# La hora que parte el dia
+# ==================================================================
+
+def test_la_hora_sale_de_la_ultima_marca_y_no_del_reloj(cliente, sesion, datos):
+    """El consultor captura el relevo cuando puede, no cuando pasa.
+
+    Antes la hora era la del momento de capturar: un relevo de las 11:00
+    registrado a las seis de la tarde le pagaba siete horas de mas a
+    quien ya se habia ido, y se las quitaba a quien las trabajo. Ahora
+    sale de la ultima vez que el sistema supo de quien salio.
+    """
+    servicio = _montado(cliente, sesion, datos)
+    j = servicio["equipos"][0]["jornadas"][0]
+    inicio = datetime.fromisoformat(j["inicio_programado"])
+
+    marcar(cliente, sesion("juan"), j["id"], "llegada_origen",
+           inicio - timedelta(minutes=10))
+    marcar(cliente, sesion("juan"), j["id"], "contacto_ejecutivo", inicio)
+    # Su ultima senal de vida: llego al destino a las cuatro horas.
+    ultima = inicio + timedelta(hours=4)
+    marcar(cliente, sesion("juan"), j["id"], "llegada_destino", ultima)
+
+    r = _relevo(cliente, sesion, datos, j)
+    assert r.status_code == 200, r.text
+    cuerpo = r.json()
+
+    assert cuerpo["hora_propuesta"] == ultima.isoformat()
+    assert cuerpo["relevado_en"] == ultima.isoformat(), \
+        "sin hora capturada, se usa la que propuso el sistema"
+
+
+def test_el_consultor_puede_corregir_la_hora_y_se_nota(cliente, sesion, datos):
+    """Un dia estatico puede no tener marcas desde la manana. El sistema
+    propone lo que sabe; el consultor pone lo que fue, y la propuesta
+    queda al lado para que se vea que la movio."""
+    from app import models as m
+    from app.db import SessionLocal
+
+    servicio = _montado(cliente, sesion, datos)
+    j = servicio["equipos"][0]["jornadas"][0]
+    inicio = datetime.fromisoformat(j["inicio_programado"])
+
+    marcar(cliente, sesion("juan"), j["id"], "llegada_origen",
+           inicio - timedelta(minutes=10))
+    marcar(cliente, sesion("juan"), j["id"], "contacto_ejecutivo", inicio)
+
+    # El sistema propondria las 07:00; el consultor sabe que fue a las 11.
+    de_verdad = inicio + timedelta(hours=4)
+    r = _relevo(cliente, sesion, datos, j, relevado_en=de_verdad.isoformat())
+    assert r.status_code == 200, r.text
+    cuerpo = r.json()
+
+    assert cuerpo["relevado_en"] == de_verdad.isoformat()
+    assert cuerpo["hora_propuesta"] == inicio.isoformat()
+    assert cuerpo["hora_propuesta"] != cuerpo["relevado_en"], \
+        "si difieren, alguien la corrigio"
+
+    db = SessionLocal()
+    try:
+        movimiento = db.get(m.ReemplazoRecurso, cuerpo["reemplazo_id"])
+        assert movimiento.hora_propuesta == inicio
+        assert movimiento.hecho_por_id, "y queda quien la movio"
+    finally:
+        db.close()
+
+
+def test_quien_no_se_presento_no_deja_hora_propuesta(cliente, sesion, datos):
+    """Sin dia partido no hay nada que repartir, asi que no hay hora que
+    proponer ni que guardar."""
+    from app import models as m
+    from app.db import SessionLocal
+
+    servicio = _montado(cliente, sesion, datos)
+    j = servicio["equipos"][0]["jornadas"][0]
+
+    r = _relevo(cliente, sesion, datos, j)
+    assert r.status_code == 200, r.text
+    cuerpo = r.json()
+    assert cuerpo["jornadas_partidas"] == []
+
+    db = SessionLocal()
+    try:
+        movimiento = db.get(m.ReemplazoRecurso, cuerpo["reemplazo_id"])
+        assert movimiento.hora_propuesta is None
+    finally:
+        db.close()

@@ -2252,6 +2252,12 @@ class ReemplazoRecurso(Base):
         ForeignKey("vehiculo.id"), nullable=True)
 
     motivo: Mapped[str] = mapped_column(String(600))
+    # La hora que el sistema propuso para partir el dia: la ultima marca
+    # de quien salio. Si no coincide con la que quedo en la asignacion,
+    # alguien la corrigio, y ese alguien es `hecho_por_id`. Va vacia
+    # cuando el cambio no partio ningun dia.
+    hora_propuesta: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True)
     jornadas_afectadas: Mapped[int] = mapped_column(Integer, default=0)
     hecho_por_id: Mapped[int | None] = mapped_column(
         ForeignKey("persona.id"), nullable=True)

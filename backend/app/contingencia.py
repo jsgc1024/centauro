@@ -77,6 +77,23 @@ def se_presento(db: Session, jornada: m.Jornada, persona_id: int) -> bool:
             .first()) is not None
 
 
+def hora_del_relevo(db: Session, jornada: m.Jornada,
+                    persona_id: int) -> datetime | None:
+    """La ultima marca de quien sale, que es la hora que se propone para
+    partir el dia.
+
+    Sale del telefono y no de la memoria de nadie: es la ultima vez que
+    el sistema supo de esa persona ese dia. Tiene un limite conocido --un
+    dia estatico, con el ejecutivo en su oficina, puede no tener marcas
+    desde el contacto de la manana-- y por eso se propone en vez de
+    imponerse: el consultor la confirma o la corrige.
+    """
+    ultimo = (db.query(m.Hito)
+              .filter_by(jornada_id=jornada.id, persona_id=persona_id)
+              .order_by(m.Hito.marcado_en.desc()).first())
+    return ultimo.marcado_en if ultimo else None
+
+
 def reemplazar_personal(db: Session, desde_jornada_id: int, sale_persona_id: int,
                         entra_persona_id: int, motivo: str,
                         hecho_por_id: int | None = None,
@@ -117,7 +134,13 @@ def reemplazar_personal(db: Session, desde_jornada_id: int, sale_persona_id: int
     if hasta and hasta.fecha < desde.fecha:
         raise HTTPException(409, "El ultimo dia del cambio es anterior al primero")
 
-    momento = reloj.ahora_de_la_jornada(db, desde, relevado_en)
+    # La hora que parte el dia. Si el consultor no dijo cual, se propone
+    # la ultima marca de quien sale; si tampoco hay marcas, la de ahora.
+    # Antes era siempre la de ahora, asi que un relevo de las 11:00
+    # capturado a las 18:00 le pagaba siete horas de mas a quien ya se
+    # habia ido, y se las quitaba a quien las trabajo.
+    propuesta = hora_del_relevo(db, desde, sale_persona_id)
+    momento = reloj.ahora_de_la_jornada(db, desde, relevado_en or propuesta)
     jornadas = jornadas_afectadas(db, desde, hasta)
     cambiadas, partidas, choques = [], [], []
 
@@ -137,7 +160,14 @@ def reemplazar_personal(db: Session, desde_jornada_id: int, sale_persona_id: int
 
         if se_presento(db, j, sale_persona_id):
             # Trabajo parte del dia: su asignacion se queda y cobra.
-            asignacion.relevado_en = momento
+            # La hora es la del dia que se esta partiendo. Para el dia en
+            # que arranca el cambio es la que el consultor confirmo; si
+            # llegara a partirse otro --raro, pero posible si quedo una
+            # jornada vieja sin cerrar-- ese dia usa su propia ultima
+            # marca, porque una hora del jueves no parte el viernes.
+            asignacion.relevado_en = (
+                momento if j.id == desde.id
+                else (hora_del_relevo(db, j, sale_persona_id) or momento))
             asignacion.relevado_por_id = entra_persona_id
             # El que entra hereda el rol y la unidad. El rol no se cambia
             # aqui: de el salen el precio al cliente y la comision, y
@@ -172,6 +202,7 @@ def reemplazar_personal(db: Session, desde_jornada_id: int, sale_persona_id: int
         tipo=m.TipoRecurso.PERSONAL, motivo_tipo=motivo_tipo,
         sale_persona_id=sale_persona_id, entra_persona_id=entra_persona_id,
         motivo=motivo, jornadas_afectadas=len(cambiadas),
+        hora_propuesta=propuesta if partidas else None,
         hecho_por_id=hecho_por_id)
     db.add(reemplazo)
     db.flush()
@@ -184,6 +215,10 @@ def reemplazar_personal(db: Session, desde_jornada_id: int, sale_persona_id: int
         "jornadas_partidas": partidas,
         "jornadas_con_choque": choques,
         "relevado_en": momento.isoformat(),
+        # Lo que el sistema habria puesto solo. La vista previa lo trae
+        # para que el consultor vea de donde sale la hora antes de
+        # confirmarla, y para que se note cuando la corrigio.
+        "hora_propuesta": propuesta.isoformat() if propuesta else None,
         "viaticos": viaticos,
     }
 

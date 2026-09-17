@@ -919,6 +919,11 @@ class ReemplazoPersonalIn(Base):
     # Hasta cuando dura. Vacio es "de ahi en adelante", que es como se
     # resuelve una contingencia. Lo planeado si tiene fin.
     hasta_jornada_id: int | None = None
+    # La hora en que ocurrio el relevo, que es la que parte el dia y
+    # reparte el pago. Vacia: el sistema propone la ultima marca de quien
+    # sale. El consultor la manda cuando sabe que fue otra --un dia
+    # estatico puede no tener marcas desde la manana--.
+    relevado_en: datetime | None = None
 
 
 class ReemplazoVehiculoIn(Base):

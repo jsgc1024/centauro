@@ -195,7 +195,8 @@ def reemplazo_personal(datos: s.ReemplazoPersonalIn,
         db, datos.desde_jornada_id, datos.sale_persona_id,
         datos.entra_persona_id, datos.motivo,
         hecho_por_id=usuario.persona_id, alerta_id=datos.alerta_id,
-        motivo_tipo=datos.motivo_tipo, hasta_jornada_id=datos.hasta_jornada_id)
+        motivo_tipo=datos.motivo_tipo, hasta_jornada_id=datos.hasta_jornada_id,
+        relevado_en=datos.relevado_en)
 
     jornada = db.get(m.Jornada, datos.desde_jornada_id)
     sale = db.get(m.Persona, datos.sale_persona_id)
@@ -250,7 +251,8 @@ def vista_previa(datos: s.ReemplazoPersonalIn, db: Session = Depends(get_db),
         db, desde_jornada_id=datos.desde_jornada_id,
         sale_persona_id=datos.sale_persona_id,
         entra_persona_id=datos.entra_persona_id, motivo=datos.motivo,
-        motivo_tipo=datos.motivo_tipo, hasta_jornada_id=datos.hasta_jornada_id)
+        motivo_tipo=datos.motivo_tipo, hasta_jornada_id=datos.hasta_jornada_id,
+        relevado_en=datos.relevado_en)
 
 
 @router.post("/reemplazos/{reemplazo_id}/deshacer",
