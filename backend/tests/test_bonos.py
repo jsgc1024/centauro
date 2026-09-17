@@ -1,8 +1,8 @@
 """Estrellas del personal, sancion por incidencia e implantados."""
-from datetime import date
+from datetime import date, datetime, timedelta
 
-from ayudas import (asignar, configurar_origen, crear_servicio,
-                    ejecutar_jornada, jornada)
+from ayudas import (asignar, configurar_origen, cotizar_y_autorizar,
+                    crear_servicio, ejecutar_jornada, jornada, marcar)
 
 
 def _mes_trabajado(cliente, sesion, datos, persona_nombre="Luis Mendoza",
@@ -138,3 +138,96 @@ def test_el_personal_solo_ve_su_evaluacion(cliente, sesion, datos):
     ruta = f"/evaluaciones/{persona}/{hoy.year}/{hoy.month}"
     assert cliente.get(ruta, headers=sesion("juan")).status_code == 403
     assert cliente.get(ruta, headers=sesion("luis")).status_code == 200
+
+
+# ==================================================================
+# El dia del relevo es de quien lo empezo
+# ==================================================================
+
+def _dia_de_este_mes():
+    """Un dia del mes en curso que siempre existe, hoy o antes."""
+    hoy = date.today()
+    return date(hoy.year, hoy.month, min(hoy.day, 28))
+
+
+def _con_relevo(cliente, sesion, datos, se_presenta=True):
+    """Juan toma el dia; si se presenta, Luis lo releva a media jornada.
+
+    Devuelve la jornada y las dos personas.
+    """
+    h = sesion("consultor")
+    servicio = crear_servicio(
+        cliente, h, datos,
+        [jornada(_dia_de_este_mes(), datos["modalidades"]["full_day"]["id"])],
+        consultor_id=datos["personal"]["Ana Solis"]["id"])
+    cotizar_y_autorizar(
+        cliente, h, servicio, datos["perfiles"]["conductor_seguridad"]["id"],
+        datos["categorias"]["suv_blindada"]["id"])
+
+    j = servicio["equipos"][0]["jornadas"][0]
+    juan = datos["personal"]["Juan Ramirez"]["id"]
+    luis = datos["personal"]["Luis Mendoza"]["id"]
+    asignar(cliente, h, j["id"], persona_id=juan,
+            vehiculo_id=datos["suburban"]["id"])
+    configurar_origen(cliente, h, j["id"])
+
+    if se_presenta:
+        inicio = datetime.fromisoformat(j["inicio_programado"])
+        marcar(cliente, sesion("juan"), j["id"], "llegada_origen",
+               inicio - timedelta(minutes=10))
+        marcar(cliente, sesion("juan"), j["id"], "contacto_ejecutivo", inicio)
+
+    r = cliente.post("/contingencia/reemplazos/personal", headers=h,
+                     json={"desde_jornada_id": j["id"],
+                           "sale_persona_id": juan, "entra_persona_id": luis,
+                           "motivo": "Se sintio mal"})
+    assert r.status_code == 200, r.text
+    return j, juan, luis
+
+
+def test_el_dia_partido_no_cuenta_para_quien_entro(cliente, sesion, datos):
+    """Luis llego a media manana: no tuvo hora de presentacion contra la
+    cual medirse, ni marco la secuencia del dia.
+
+    Antes ese dia entraba a su evaluacion y le hacia las dos cosas mal a
+    la vez: le regalaba una puntualidad que no trabajo --la jornada
+    arranco a tiempo, pero la arranco Juan-- y le cobraba un seguimiento
+    incompleto por unas marcas que tampoco eran suyas.
+    """
+    from app import bonos
+    from app.db import SessionLocal
+
+    j, juan, luis = _con_relevo(cliente, sesion, datos, se_presenta=True)
+    hoy = date.today()
+
+    db = SessionLocal()
+    try:
+        de_luis = bonos.jornadas_del_mes(db, luis, hoy.year, hoy.month)
+        de_juan = bonos.jornadas_del_mes(db, juan, hoy.year, hoy.month)
+        assert j["id"] not in [x.id for x in de_luis], \
+            "el dia del relevo no es de quien entro a media jornada"
+        assert j["id"] in [x.id for x in de_juan], \
+            "el dia si es de quien lo empezo y marco su llegada"
+    finally:
+        db.close()
+
+
+def test_el_dia_que_cambio_limpio_si_es_de_quien_entro(cliente, sesion, datos):
+    """Si Juan nunca se presento, el dia no se partio: cambio de dueno.
+    Luis lo trabaja entero desde su hora, asi que se le mide como
+    cualquier otro dia suyo."""
+    from app import bonos
+    from app.db import SessionLocal
+
+    j, juan, luis = _con_relevo(cliente, sesion, datos, se_presenta=False)
+    hoy = date.today()
+
+    db = SessionLocal()
+    try:
+        de_luis = bonos.jornadas_del_mes(db, luis, hoy.year, hoy.month)
+        de_juan = bonos.jornadas_del_mes(db, juan, hoy.year, hoy.month)
+        assert j["id"] in [x.id for x in de_luis]
+        assert j["id"] not in [x.id for x in de_juan], \
+            "quien no se presento no deja rastro en el dia"
+    finally:
+        db.close()

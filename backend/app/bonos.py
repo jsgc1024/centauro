@@ -27,12 +27,35 @@ def _rango(anio: int, mes: int) -> tuple[date, date]:
 
 
 def jornadas_del_mes(db: Session, persona_id: int, anio: int, mes: int) -> list[m.Jornada]:
+    """Las jornadas que se le miden a esta persona este mes.
+
+    El dia en que alguien entra a media jornada, relevando a otro, no es
+    suyo: no tuvo hora de presentacion contra la cual medirse y no marco
+    la secuencia del dia porque empezo a la mitad. Hasta hoy ese dia le
+    regalaba una puntualidad que no trabajo --la jornada arranco a tiempo,
+    pero la arranco el otro-- y de paso le cobraba un seguimiento
+    incompleto por las marcas de la manana, que tampoco eran suyas.
+
+    El dia del relevo es de quien lo empezo. A el si se le mide, con su
+    asignacion marcada con la hora en que lo relevaron.
+
+    Ojo con la prueba: lo que distingue al que entro a media jornada no
+    es `reemplaza_a_id` --eso lo traen tambien los dias que cambiaron de
+    dueno limpio, y esos si son suyos--, sino que en esa misma jornada
+    haya una asignacion ajena marcada como relevada POR el.
+    """
     desde, hasta = _rango(anio, mes)
+
+    entro_a_media = (db.query(m.AsignacionPersonal.jornada_id)
+                     .filter(m.AsignacionPersonal.relevado_por_id == persona_id,
+                             m.AsignacionPersonal.relevado_en.isnot(None)))
+
     return (db.query(m.Jornada)
             .join(m.AsignacionPersonal, m.AsignacionPersonal.jornada_id == m.Jornada.id)
             .filter(m.AsignacionPersonal.persona_id == persona_id,
                     m.Jornada.fecha >= desde, m.Jornada.fecha <= hasta,
-                    m.Jornada.estatus != m.EstatusJornada.CANCELADA)
+                    m.Jornada.estatus != m.EstatusJornada.CANCELADA,
+                    m.Jornada.id.notin_(entro_a_media))
             .all())
 
 
