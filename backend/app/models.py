@@ -1127,7 +1127,9 @@ class Alerta(Base):
     resolucion: Mapped[str | None] = mapped_column(String(400), nullable=True)
 
     jornada: Mapped[Jornada] = relationship()
-    persona: Mapped["Persona | None"] = relationship()
+    # Hay dos llaves a persona --esta y atendida_por_id-- asi que hay que
+    # decir cual: sin esto el modelo entero no se puede armar.
+    persona: Mapped["Persona | None"] = relationship(foreign_keys=[persona_id])
 
 
 class Notificacion(Base):
