@@ -1,6 +1,8 @@
 /* Ayudas de pintado. Nada de librerias: el objetivo es que esto se
    entienda y se pueda cambiar sin saber de frameworks. */
 
+import { t } from "./idioma.js";
+
 export function h(etiqueta, atributos = {}, ...hijos) {
   const nodo = document.createElement(etiqueta);
   for (const [k, v] of Object.entries(atributos || {})) {
@@ -88,17 +90,17 @@ export function aviso(texto, tono = "") {
   return h("div", { clase: `aviso ${tono}`.trim() }, texto);
 }
 
-const MESES = ["ene", "feb", "mar", "abr", "may", "jun",
-               "jul", "ago", "sep", "oct", "nov", "dic"];
-const DIAS = ["Dom", "Lun", "Mar", "Mie", "Jue", "Vie", "Sab"];
-
 /* Mismo formato de fecha del task sheet: sin ambiguedad entre
-   dia/mes y mes/dia, que con clientes extranjeros importa. */
+   dia/mes y mes/dia, que con clientes extranjeros importa. El nombre
+   del dia y el del mes salen del idioma de la consola: en portugues un
+   viernes es "Sex", no "Vie". */
 export function fecha(iso) {
   if (!iso) return "—";
   const f = new Date(iso + (iso.length === 10 ? "T00:00:00" : ""));
-  return `${DIAS[f.getDay()]} ${String(f.getDate()).padStart(2, "0")} ` +
-         `${MESES[f.getMonth()]} ${f.getFullYear()}`;
+  const dias = t("f_dias").split(",");
+  const meses = t("f_meses").split(",");
+  return `${dias[f.getDay()]} ${String(f.getDate()).padStart(2, "0")} ` +
+         `${meses[f.getMonth()]} ${f.getFullYear()}`;
 }
 
 export function hora(iso) {

@@ -498,7 +498,7 @@ def test_la_hoja_va_en_ingles_y_se_puede_pedir_en_espanol(cliente, sesion, datos
 
     portugues = cliente.get(f"/task-sheets/servicio/{servicio['id']}/hoja?idioma=pt",
                             headers=h).text
-    assert "Equipe de seguranca" in portugues
+    assert "Equipe de segurança" in portugues
 
 
 def test_la_hoja_dice_a_que_linea_de_operacion_pertenece(cliente, sesion, datos):
@@ -519,7 +519,7 @@ def test_la_hoja_dice_a_que_linea_de_operacion_pertenece(cliente, sesion, datos)
     espanol = cliente.get(
         f"/task-sheets/servicio/{servicio['id']}/hoja?idioma=es",
         headers=h).text
-    assert "Proteccion Ejecutiva" in espanol
+    assert "Protección Ejecutiva" in espanol
 
 
 def test_el_hospedaje_no_necesita_fechas(cliente, sesion, datos):
