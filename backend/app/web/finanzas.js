@@ -18,24 +18,25 @@
 import { api } from "./api.js";
 import { aviso, campo, dinero, entrada, etiqueta, fecha, h,
          mensaje } from "./util.js";
+import { t } from "./idioma.js";
 
-const TIPOS = { vuelo: "Vuelo", hospedaje: "Hospedaje",
-                transporte: "Transporte", otro: "Otro" };
+const TIPOS = { vuelo: t("fin_tipo_vuelo"), hospedaje: t("fin_tipo_hospedaje"),
+                transporte: t("fin_tipo_transporte"), otro: t("fin_tipo_otro") };
 
 const VISTAS = [
-  { clave: "pagar", texto: "Por pagar" },
-  { clave: "depositado", texto: "Depositado" },
-  { clave: "comprobar", texto: "Por comprobar" },
-  { clave: "devoluciones", texto: "Devoluciones" },
+  { clave: "pagar", texto: t("fin_v_pagar") },
+  { clave: "depositado", texto: t("fin_v_depositado") },
+  { clave: "comprobar", texto: t("fin_v_comprobar") },
+  { clave: "devoluciones", texto: t("fin_v_devoluciones") },
 ];
 
 let vistaActual = "pagar";
 
 export async function bandejaFinanzas(main) {
   main.append(
-    h("h1", {}, "Gastos del servicio"),
+    h("h1", {}, t("fin_titulo")),
     h("p", { clase: "sub" },
-      "Viaticos y compras. Las comisiones del personal van aparte."));
+      t("fin_sub")));
 
   const encabezado = h("div");
   const pestanas = h("div", { clase: "acciones", style: "margin:0 0 16px" });
@@ -72,14 +73,14 @@ async function pintarCorte(zona) {
       h("h2", { style: "margin:0" }, p.pais),
       h("span", { clase: "etiqueta" }, p.moneda || p.codigo)),
     h("div", { clase: "rejilla cuatro" },
-      numero("Depositado este mes", dinero(p.depositado_mes, p.moneda)),
-      numero("Comprometido", dinero(p.comprometido, p.moneda),
-             "pedido y todavia sin salir"),
-      numero("Afuera sin comprobar", dinero(p.afuera, p.moneda),
+      numero(t("fin_mes"), dinero(p.depositado_mes, p.moneda)),
+      numero(t("fin_comprometido"), dinero(p.comprometido, p.moneda),
+             t("fin_comprometido_pie")),
+      numero(t("fin_afuera"), dinero(p.afuera, p.moneda),
              Number(p.vencido) > 0
-               ? `${dinero(p.vencido, p.moneda)} vencido` : null,
+               ? t("fin_vencido_pie").replace("{m}", dinero(p.vencido, p.moneda)) : null,
              Number(p.vencido) > 0),
-      numero("Compras abiertas", String(p.compras_abiertas))))));
+      numero(t("fin_compras_abiertas"), String(p.compras_abiertas))))));
 }
 
 function numero(titulo, valor, nota = null, alarma = false) {
@@ -98,7 +99,7 @@ async function pintar(zona) {
 }
 
 async function pintarPorPagar(zona) {
-  zona.replaceChildren(h("div", { clase: "gris chico" }, "Cargando…"));
+  zona.replaceChildren(h("div", { clase: "gris chico" }, t("fin_cargando")));
   let datos;
   try { datos = await api.get("/viaticos/finanzas/bandeja"); }
   catch (err) { return zona.replaceChildren(aviso(err.message, "grave")); }
@@ -106,7 +107,7 @@ async function pintarPorPagar(zona) {
   const repintar = () => pintarPorPagar(zona);
   if (!datos.paises.length) {
     return zona.replaceChildren(h("div", { clase: "tarjeta" },
-      h("span", { clase: "gris" }, "Nada pendiente.")));
+      h("span", { clase: "gris" }, t("fin_nada"))));
   }
 
   /* Un apartado por pais. Cada pais lleva su propia caja, su propia
@@ -119,7 +120,7 @@ async function pintarPorPagar(zona) {
       h("span", { clase: "etiqueta" }, pais.moneda || pais.codigo),
       pais.depositos.length
         ? h("span", { clase: "gris chico" },
-            `Por depositar: ${dinero(pais.total_depositos, pais.moneda)}`)
+            t("fin_por_depositar").replace("{m}", dinero(pais.total_depositos, pais.moneda)))
         : ""),
     bloqueDepositos(pais.depositos, pais.moneda, repintar),
     bloqueCompras(pais.compras, repintar),
@@ -130,12 +131,12 @@ async function pintarPorPagar(zona) {
 
 function bloqueDepositos(filas, moneda, repintar) {
   const caja = h("div", { clase: "tarjeta" },
-    h("h3", { style: "margin:0 0 2px" }, `Depositos (${filas.length})`),
+    h("h3", { style: "margin:0 0 2px" }, t("fin_depositos").replace("{n}", filas.length)),
     h("p", { clase: "gris chico", style: "margin:0 0 12px" },
-      "Un renglon por persona, por todos sus dias del equipo."));
+      t("fin_depositos_pie")));
 
   if (!filas.length) {
-    caja.append(h("span", { clase: "gris" }, "Nada pendiente."));
+    caja.append(h("span", { clase: "gris" }, t("fin_nada")));
     return caja;
   }
 
@@ -144,11 +145,11 @@ function bloqueDepositos(filas, moneda, repintar) {
     renglonDeposito(f, f.moneda || moneda, repintar));
   caja.append(h("table", {},
     h("thead", {}, h("tr", {},
-      h("th", {}, "Persona"),
-      h("th", {}, "Servicio"),
-      h("th", {}, "Arranca"),
-      h("th", { style: "text-align:right" }, "Monto"),
-      h("th", {}, "Referencia"),
+      h("th", {}, t("fin_persona")),
+      h("th", {}, t("fin_servicio")),
+      h("th", {}, t("fin_arranca")),
+      h("th", { style: "text-align:right" }, t("fin_monto")),
+      h("th", {}, t("fin_referencia")),
       h("th", {}, ""))),
     cuerpo));
   return caja;
@@ -158,7 +159,7 @@ function renglonDeposito(f, moneda, repintar) {
   /* La referencia es opcional pero se pide en el mismo renglon: pedirla
      en una segunda pantalla termina en depositos sin rastro. */
   const referencia = entrada("referencia", {
-    placeholder: "Folio o referencia", style: "max-width:180px" });
+    placeholder: t("fin_folio_ref"), style: "max-width:180px" });
 
   const confirmar = h("button", { clase: "chico", type: "button",
     onclick: async (e) => {
@@ -168,17 +169,17 @@ function renglonDeposito(f, moneda, repintar) {
           equipo_id: f.equipo_id, persona_id: f.persona_id,
           referencia: referencia.value.trim() || null,
         });
-        mensaje(`Deposito confirmado a ${f.persona}`);
+        mensaje(t("fin_confirmado").replace("{p}", f.persona));
         await repintar();
       } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
-    } }, "Confirmar deposito");
+    } }, t("fin_confirmar"));
 
   return h("tr", {},
     h("td", {}, h("b", {}, f.persona),
-      h("div", { clase: "chico gris" }, `${f.dias} dia(s)`)),
+      h("div", { clase: "chico gris" }, t("fin_dias").replace("{n}", f.dias))),
     h("td", {}, h("a", { href: `#/servicio/${f.servicio_id}` }, f.folio),
       h("div", { clase: "chico gris" },
-        [f.cliente, `Equipo ${f.equipo}`].filter(Boolean).join(" · "))),
+        [f.cliente, t("fin_equipo").replace("{e}", f.equipo)].filter(Boolean).join(" · "))),
     h("td", {}, fecha(f.primera_jornada)),
     h("td", { style: "text-align:right" },
       h("b", { clase: "num" }, dinero(f.monto, moneda))),
@@ -190,13 +191,12 @@ function renglonDeposito(f, moneda, repintar) {
 
 function bloqueCompras(compras, repintar) {
   const caja = h("div", { clase: "tarjeta" },
-    h("h3", { style: "margin:0 0 2px" }, `Compras (${compras.length})`),
+    h("h3", { style: "margin:0 0 2px" }, t("fin_compras").replace("{n}", compras.length)),
     h("p", { clase: "gris chico", style: "margin:0 0 12px" },
-      "Vuelos, hospedaje y demas. Se busca, se compra y se contesta con "
-      + "el numero de reserva o la imagen de la compra."));
+      t("fin_compras_pie")));
 
   if (!compras.length) {
-    caja.append(h("span", { clase: "gris" }, "Nada pendiente."));
+    caja.append(h("span", { clase: "gris" }, t("fin_nada")));
     return caja;
   }
   for (const c of compras) caja.append(tarjetaCompra(c, repintar));
@@ -214,13 +214,13 @@ function tarjetaCompra(c, repintar) {
         await api.post(`/viaticos/compras/${c.id}/tomar`);
         await repintar();
       } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
-    } }, "La estoy viendo");
+    } }, t("fin_viendo"));
 
   const contestar = h("button", { clase: "chico", type: "button",
     onclick: () => {
       if (zona.firstChild) return zona.replaceChildren();
       zona.replaceChildren(formularioRespuesta(c, repintar));
-    } }, "Contestar");
+    } }, t("fin_contestar"));
 
   return h("div", { clase: "tarjeta lisa", style: "margin:0 0 10px" },
     h("div", { clase: "acciones", style: "justify-content:space-between" },
@@ -228,14 +228,14 @@ function tarjetaCompra(c, repintar) {
         h("b", {}, TIPOS[c.tipo] || c.tipo),
         h("span", { clase: "gris chico" },
           ` · ${c.folio || ""} ${c.cliente ? "· " + c.cliente : ""} `
-          + `· Equipo ${c.equipo}`)),
-      etiqueta(enGestion ? "En gestion" : "Nueva",
+          + t("fin_equipo").replace("{e}", c.equipo))),
+      etiqueta(enGestion ? t("fin_en_gestion") : t("fin_nueva"),
                enGestion ? "alerta" : "info")),
     h("div", { clase: "chico", style: "white-space:pre-wrap; margin-top:6px" },
       c.solicitud),
     c.monto_estimado
       ? h("div", { clase: "chico gris", style: "margin-top:4px" },
-          `Estimado: ${dinero(c.monto_estimado, c.moneda)}`)
+          t("fin_estimado").replace("{m}", dinero(c.monto_estimado, c.moneda)))
       : "",
     h("div", { clase: "acciones", style: "margin-top:8px" },
       enGestion ? "" : tomar, contestar),
@@ -244,12 +244,11 @@ function tarjetaCompra(c, repintar) {
 
 function formularioRespuesta(c, repintar) {
   const confirmacion = entrada("confirmacion", {
-    placeholder: "Numero de reserva o clave del boleto" });
+    placeholder: t("fin_reserva") });
   const montoReal = entrada("monto_real", {
-    type: "number", step: "0.01", min: "0", placeholder: "Lo que costo" });
+    type: "number", step: "0.01", min: "0", placeholder: t("fin_costo") });
   const nota = h("textarea", { name: "respuesta", rows: "3",
-    placeholder: "Aerolinea, horario, hotel, lo que el equipo tiene que "
-      + "saber para presentarse." });
+    placeholder: t("fin_detalle_compra") });
   const archivo = h("input", { type: "file", accept: "image/*" });
 
   const zonaError = h("div");
@@ -258,9 +257,7 @@ function formularioRespuesta(c, repintar) {
     onclick: async (e) => {
       if (!confirmacion.value.trim() && !archivo.files.length) {
         return zonaError.replaceChildren(aviso(
-          "Falta el numero de reserva o la imagen de la compra. El equipo "
-          + "no se puede presentar en un mostrador con la palabra de que "
-          + "ya se compro.", "alerta"));
+          t("fin_falta_reserva"), "alerta"));
       }
       zonaError.replaceChildren();
       e.target.disabled = true;
@@ -275,20 +272,19 @@ function formularioRespuesta(c, repintar) {
           monto_real: montoReal.value ? Number(montoReal.value) : null,
           respuesta: nota.value.trim() || null,
         });
-        mensaje("Compra confirmada");
+        mensaje(t("fin_compra_confirmada"));
         await repintar();
       } catch (err) {
         zonaError.replaceChildren(aviso(err.message, "grave"));
         e.target.disabled = false;
       }
-    } }, "Confirmar compra");
+    } }, t("fin_confirmar_compra"));
 
   const rechazar = h("button", { clase: "claro chico", type: "button",
     onclick: async (e) => {
       if (!nota.value.trim()) {
         return zonaError.replaceChildren(aviso(
-          "Diga por que no se puede: el consultor tiene que resolverlo de "
-          + "otra forma y necesita saber que paso.", "alerta"));
+          t("fin_diga_por_que"), "alerta"));
       }
       e.target.disabled = true;
       try {
@@ -299,14 +295,14 @@ function formularioRespuesta(c, repintar) {
         zonaError.replaceChildren(aviso(err.message, "grave"));
         e.target.disabled = false;
       }
-    } }, "No se puede");
+    } }, t("fin_no_se_puede"));
 
   return h("div", { clase: "tarjeta lisa", style: "margin-top:8px" },
     h("div", { clase: "rejilla dos" },
-      campo("Numero de reserva", confirmacion),
-      campo("Lo que costo", montoReal)),
-    campo("Nota para el equipo", nota),
-    campo("Imagen de la compra", archivo),
+      campo(t("fin_num_reserva"), confirmacion),
+      campo(t("fin_costo"), montoReal)),
+    campo(t("fin_nota_equipo"), nota),
+    campo(t("fin_imagen_compra"), archivo),
     zonaError,
     h("div", { clase: "acciones", style: "margin-top:8px" },
       enviar, rechazar));
@@ -329,33 +325,32 @@ function bloqueRentas(rentas, moneda, repintar) {
       h("div", { clase: "chico gris" },
         [r.unidad, r.marca_modelo, r.color].filter(Boolean).join(" · "))),
     h("td", {}, h("b", {}, r.arrendadora || "—"),
-      h("div", { clase: "chico num" }, r.telefono || "Sin telefono")),
+      h("div", { clase: "chico num" }, r.telefono || t("fin_sin_telefono"))),
     h("td", {}, r.folio || "—",
       h("div", { clase: "chico gris" }, r.ciudad || "")),
     h("td", { style: "text-align:right" },
       h("span", { clase: "num" }, dinero(r.costo_diario, moneda)),
-      h("div", { clase: "chico gris" }, "por dia")),
+      h("div", { clase: "chico gris" }, t("fin_por_dia"))),
     h("td", {}, h("button", { clase: "chico", type: "button",
       onclick: async (e) => {
         e.target.disabled = true;
         try {
           await api.post(`/viaticos/finanzas/rentas/${r.vehiculo_id}/cancelada`);
-          mensaje(`Renta de ${r.placa} cancelada`);
+          mensaje(t("fin_renta_cancelada").replace("{p}", r.placa));
           await repintar();
         } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
-      } }, "Ya la cancele"))));
+      } }, t("fin_ya_cancele")))));
 
   return h("div", { clase: "tarjeta" },
-    h("h3", { style: "margin:0 0 2px" }, `Rentas por cancelar (${rentas.length})`),
+    h("h3", { style: "margin:0 0 2px" }, t("fin_rentas").replace("{n}", rentas.length)),
     h("p", { clase: "gris chico", style: "margin:0 0 12px" },
-      "El servicio ya no va y el auto no se usa, pero la arrendadora lo "
-      + "sigue cobrando hasta que alguien le hable."),
+      t("fin_rentas_pie")),
     h("table", {},
       h("thead", {}, h("tr", {},
-        h("th", {}, "Unidad"),
-        h("th", {}, "Arrendadora"),
-        h("th", {}, "Servicio"),
-        h("th", { style: "text-align:right" }, "Renta"),
+        h("th", {}, t("fin_unidad")),
+        h("th", {}, t("fin_arrendadora")),
+        h("th", {}, t("fin_servicio")),
+        h("th", { style: "text-align:right" }, t("fin_renta")),
         h("th", {}, ""))),
       cuerpo));
 }
@@ -368,14 +363,14 @@ function bloqueRentas(rentas, moneda, repintar) {
    alguien ya se le habia pagado era preguntarle. */
 
 async function pintarDepositado(zona) {
-  const persona = entrada("busca", { placeholder: "Folio del servicio",
+  const persona = entrada("busca", { placeholder: t("fin_folio_servicio"),
                                      style: "max-width:220px" });
   const desde = h("input", { type: "date" });
   const hasta = h("input", { type: "date" });
   const lista = h("div");
 
   const buscar = async () => {
-    lista.replaceChildren(h("div", { clase: "gris chico" }, "Cargando…"));
+    lista.replaceChildren(h("div", { clase: "gris chico" }, t("fin_cargando")));
     const p = new URLSearchParams();
     if (desde.value) p.set("desde", desde.value);
     if (hasta.value) p.set("hasta", hasta.value);
@@ -386,23 +381,23 @@ async function pintarDepositado(zona) {
 
     if (!datos.paises.length) {
       return lista.replaceChildren(h("div", { clase: "vacio" },
-        "No hay depositos en ese periodo."));
+        t("fin_sin_depositos")));
     }
     lista.replaceChildren(...datos.paises.map(p_ => h("section", {},
       h("div", { clase: "cabeza-pais" },
         h("h2", { style: "margin:0" }, p_.pais),
         h("span", { clase: "etiqueta" }, p_.moneda || p_.codigo),
         h("span", { clase: "gris chico" },
-          `${p_.cuantos} depositos · ${dinero(p_.total, p_.moneda)}`)),
+          t("fin_resumen_dep").replace("{n}", p_.cuantos).replace("{m}", dinero(p_.total, p_.moneda)))),
       h("div", { clase: "tarjeta" },
         h("table", {},
           h("thead", {}, h("tr", {},
-            h("th", {}, "Cuando"),
-            h("th", {}, "Persona"),
-            h("th", {}, "Servicio"),
-            h("th", { style: "text-align:right" }, "Monto"),
-            h("th", {}, "Referencia"),
-            h("th", {}, "Lo despacho"))),
+            h("th", {}, t("fin_cuando")),
+            h("th", {}, t("fin_persona")),
+            h("th", {}, t("fin_servicio")),
+            h("th", { style: "text-align:right" }, t("fin_monto")),
+            h("th", {}, t("fin_referencia")),
+            h("th", {}, t("fin_despacho")))),
           h("tbody", {}, ...p_.depositos.map(d => h("tr", {},
             h("td", {}, fecha(d.confirmada_en)),
             h("td", {}, h("b", {}, d.persona)),
@@ -416,18 +411,18 @@ async function pintarDepositado(zona) {
                tienen quien. Se dice, en vez de dejar un hueco que
                parece un error. */
             h("td", { clase: "chico gris" },
-              d.confirmada_por || "sin registro")))))))));
+              d.confirmada_por || t("fin_sin_registro"))))))))));
   };
 
   zona.replaceChildren(
     h("div", { clase: "tarjeta lisa" },
       h("div", { clase: "rejilla cuatro" },
-        campo("Desde", desde), campo("Hasta", hasta),
-        campo("Servicio", persona),
+        campo(t("fin_desde"), desde), campo(t("fin_hasta"), hasta),
+        campo(t("fin_servicio"), persona),
         h("div", { clase: "campo" },
           h("label", {}, "\u00a0"),
           h("button", { clase: "chico", type: "button",
-            onclick: () => buscar() }, "Buscar")))),
+            onclick: () => buscar() }, t("fin_buscar"))))),
     lista);
   await buscar();
 }
@@ -447,14 +442,14 @@ function rutaServicio(f) {
    afuera es finanzas. */
 
 async function pintarPorComprobar(zona) {
-  zona.replaceChildren(h("div", { clase: "gris chico" }, "Cargando…"));
+  zona.replaceChildren(h("div", { clase: "gris chico" }, t("fin_cargando")));
   let datos;
   try { datos = await api.get("/viaticos/finanzas/por-comprobar"); }
   catch (err) { return zona.replaceChildren(aviso(err.message, "grave")); }
 
   if (!datos.paises.length) {
     return zona.replaceChildren(h("div", { clase: "tarjeta" },
-      h("span", { clase: "gris" }, "No hay dinero afuera sin comprobar.")));
+      h("span", { clase: "gris" }, t("fin_sin_afuera"))));
   }
 
   zona.replaceChildren(...datos.paises.map(p => h("section", {},
@@ -462,25 +457,25 @@ async function pintarPorComprobar(zona) {
       h("h2", { style: "margin:0" }, p.pais),
       h("span", { clase: "etiqueta" }, p.moneda || p.codigo),
       h("span", { clase: "gris chico" },
-        `${dinero(p.total, p.moneda)} afuera`),
+        t("fin_total_afuera").replace("{m}", dinero(p.total, p.moneda))),
       p.cuantos_vencidos
         ? h("span", { clase: "etiqueta grave" },
-            `${p.cuantos_vencidos} vencidos · ${dinero(p.vencido, p.moneda)}`)
+            t("fin_vencidos").replace("{n}", p.cuantos_vencidos).replace("{m}", dinero(p.vencido, p.moneda)))
         : null),
     h("div", { clase: "tarjeta" },
       h("table", {},
         h("thead", {}, h("tr", {},
-          h("th", {}, "Persona"),
-          h("th", {}, "Servicio"),
-          h("th", { style: "text-align:right" }, "Entregado"),
-          h("th", { style: "text-align:right" }, "Comprobado"),
-          h("th", { style: "text-align:right" }, "Falta"),
-          h("th", {}, "Limite"))),
+          h("th", {}, t("fin_persona")),
+          h("th", {}, t("fin_servicio")),
+          h("th", { style: "text-align:right" }, t("fin_entregado")),
+          h("th", { style: "text-align:right" }, t("fin_comprobado")),
+          h("th", { style: "text-align:right" }, t("fin_falta")),
+          h("th", {}, t("fin_limite")))),
         h("tbody", {}, ...p.personas.map(x => h("tr", {},
           h("td", {}, h("b", {}, x.persona),
             x.sin_validar
               ? h("div", { clase: "chico ambar" },
-                  `${x.sin_validar} comprobante(s) sin validar`)
+                  t("fin_sin_validar").replace("{n}", x.sin_validar))
               : null),
           h("td", {},
             h("a", { href: rutaServicio(x) }, x.folio || "—"),
@@ -494,9 +489,9 @@ async function pintarPorComprobar(zona) {
             h("b", {}, dinero(x.pendiente, x.moneda))),
           h("td", {},
             x.vencido
-              ? etiqueta(`vencido ${x.dias_vencido} d`, "grave")
+              ? etiqueta(t("fin_vencido_dias").replace("{n}", x.dias_vencido), "grave")
               : h("span", { clase: "chico gris" },
-                  x.limite ? fecha(x.limite) : "sin limite"))))))))));
+                  x.limite ? fecha(x.limite) : t("fin_sin_limite")))))))))));
 }
 
 /* ---------------------------------------------------- devoluciones
@@ -506,14 +501,14 @@ async function pintarPorComprobar(zona) {
    mandando a descuento lo que nadie comprobo. */
 
 async function pintarDevoluciones(zona) {
-  zona.replaceChildren(h("div", { clase: "gris chico" }, "Cargando…"));
+  zona.replaceChildren(h("div", { clase: "gris chico" }, t("fin_cargando")));
   let datos;
   try { datos = await api.get("/viaticos/finanzas/devoluciones"); }
   catch (err) { return zona.replaceChildren(aviso(err.message, "grave")); }
 
   if (!datos.paises.length) {
     return zona.replaceChildren(h("div", { clase: "tarjeta" },
-      h("span", { clase: "gris" }, "Nada por regresar.")));
+      h("span", { clase: "gris" }, t("fin_nada_regresar"))));
   }
 
   zona.replaceChildren(...datos.paises.map(p => h("section", {},
@@ -524,9 +519,9 @@ async function pintarDevoluciones(zona) {
     p.devueltos.length
       ? h("div", { clase: "tarjeta" },
           h("h3", { style: "margin:0 0 2px" },
-            `Devuelto en efectivo (${p.devueltos.length})`),
+            t("fin_devuelto").replace("{n}", p.devueltos.length)),
           h("p", { clase: "gris chico", style: "margin:0 0 12px" },
-            `Total ${dinero(p.total_devuelto, p.moneda)}`),
+            t("fin_total").replace("{m}", dinero(p.total_devuelto, p.moneda))),
           h("table", {},
             h("tbody", {}, ...p.devueltos.map(x => h("tr", {},
               h("td", {}, h("b", {}, x.persona)),
@@ -539,13 +534,13 @@ async function pintarDevoluciones(zona) {
     p.descuentos.length
       ? h("div", { clase: "tarjeta" },
           h("h3", { style: "margin:0 0 2px" },
-            `Mandado a descuento (${p.descuentos.length})`),
+            t("fin_descuento").replace("{n}", p.descuentos.length)),
           /* Este dinero no vuelve como efectivo: se descuenta en
              nomina, que es otra pantalla. Aqui se ve para que finanzas
              no lo siga esperando en la caja. */
           h("p", { clase: "gris chico", style: "margin:0 0 12px" },
-            `Total ${dinero(p.total_descuento, p.moneda)}. No regresa como `
-            + "efectivo: se descuenta en nomina."),
+            t("fin_descuento_pie")
+              .replace("{m}", dinero(p.total_descuento, p.moneda))),
           h("table", {},
             h("tbody", {}, ...p.descuentos.map(x => h("tr", {},
               h("td", {}, h("b", {}, x.persona),
@@ -555,6 +550,6 @@ async function pintarDevoluciones(zona) {
               h("td", { clase: "num", style: "text-align:right" },
                 dinero(x.monto, x.moneda)),
               h("td", { clase: "chico gris" },
-                x.cerrado_por ? `cerro ${x.cerrado_por}` : ""))))))
+                x.cerrado_por ? t("fin_cerro").replace("{p}", x.cerrado_por) : ""))))))
       : null)));
 }

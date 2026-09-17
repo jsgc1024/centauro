@@ -636,7 +636,6 @@ viáticos de un solo clic. Su reemplazo va día por día, en
 - Cargar los montos reales: tarifas, comisiones de los cuatro roles y
   tabuladores de viáticos por acuerdo.
 - HTTPS para probar la app en un teléfono real.
-- Traducir `servicio.js` y `finanzas.js`.
 - **Generar las llaves de push.** `.env` todavía no tiene `VAPID_PUBLIC`
   ni `VAPID_PRIVATE`, así que los avisos al teléfono no salen:
   `docker compose exec -T api python generar_llaves_push.py`.

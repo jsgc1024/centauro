@@ -49,22 +49,21 @@ function encabezado(servicio, cliente, plaza) {
             ? h("button", { clase: "claro chico", type: "button",
                 onclick: () => borrar(
                   `/servicios/${servicio.id}`,
-                  `Eliminar el servicio ${servicio.folio} completo, con sus `
-                  + `${servicio.equipos.length} equipo(s). Esto no se puede `
-                  + "deshacer.",
-                  "Servicio eliminado", "#/servicios") }, "Eliminar")
+                  t("srv_eliminar_srv").replace("{f}", servicio.folio)
+                    .replace("{n}", servicio.equipos.length),
+                  t("srv_servicio_eliminado"), "#/servicios") }, t("srv_eliminar"))
             : "",
           !["cancelado", "cerrado"].includes(servicio.estatus)
             ? h("button", { clase: "claro chico", type: "button",
-                onclick: () => cancelar(servicio) }, "Cancelar")
+                onclick: () => cancelar(servicio) }, t("srv_cancelar"))
             : ""))),
     h("div", { clase: "rejilla dos", style: "margin-top:14px" },
       h("div", {},
-        h("h4", {}, "Ejecutivo principal"),
-        h("div", {}, servicio.ejecutivo_completo || h("span", { clase: "gris" }, "Por definir")),
+        h("h4", {}, t("srv_ejecutivo")),
+        h("div", {}, servicio.ejecutivo_completo || h("span", { clase: "gris" }, t("srv_por_definir"))),
         h("div", { clase: "gris num" }, servicio.ejecutivo_telefono || "")),
       h("div", {},
-        h("h4", {}, "Solicita"),
+        h("h4", {}, t("srv_solicita")),
         h("div", {}, servicio.solicitante_completo || h("span", { clase: "gris" }, "—")))));
 }
 
@@ -77,17 +76,16 @@ const ANTES_DE_ARRANCAR = ["borrador", "cotizado", "autorizado", "planeado",
    que la central necesita para saber por que se cayo el servicio. */
 async function cancelar(servicio) {
   const motivo = prompt(
-    `Cancelar el servicio ${servicio.folio}. Sus dias se cancelan y la `
-    + "gente y las unidades quedan libres.\n\nMotivo de la cancelacion:");
+    t("srv_cancelar_prompt").replace("{f}", servicio.folio));
   if (motivo === null) return;
-  if (!motivo.trim()) return mensaje("La cancelacion necesita un motivo", "alerta");
+  if (!motivo.trim()) return mensaje(t("srv_falta_motivo"), "alerta");
   try {
     const r = await api.post(`/servicios/${servicio.id}/cancelar`,
                              { motivo: motivo.trim() });
-    mensaje(`${r.folio} cancelado`);
+    mensaje(t("srv_cancelado").replace("{f}", r.folio));
     for (const v of r.viaticos_por_devolver || []) {
-      mensaje(`Pendiente de devolver: ${v.persona} · ${v.monto} ${v.moneda}`,
-              "alerta");
+      mensaje(t("srv_por_devolver").replace("{p}", v.persona)
+                .replace("{m}", v.monto).replace("{c}", v.moneda), "alerta");
     }
     setTimeout(() => location.reload(), 1200);
   } catch (err) { mensaje(err.message, "grave"); }
@@ -96,7 +94,7 @@ async function cancelar(servicio) {
 /* Borrar pide el motivo: no es un tramite, es la unica huella que queda
    de un servicio que dejo de existir. */
 async function borrar(ruta, advertencia, listo, destino = null) {
-  const motivo = prompt(`${advertencia}\n\nPor que se elimina?`);
+  const motivo = prompt(t("srv_borrar_prompt").replace("{a}", advertencia));
   if (motivo === null) return;
   try {
     await api.borrar(ruta, { motivo: motivo.trim() || null });
@@ -115,7 +113,7 @@ async function bloqueEquipo(servicio, equipo, cat, cambios) {
   const caja = h("div", { clase: "tarjeta" },
     h("div", { clase: "cabeza-equipo" },
         h("div", {},
-        h("h3", { style: "margin:0" }, `Equipo ${equipo.alias}`),
+        h("h3", { style: "margin:0" }, t("srv_equipo").replace("{a}", equipo.alias)),
         /* Donde opera este equipo: un mismo proyecto puede tener a Alfa
            en Ciudad de Mexico y a Beta en Monterrey. */
         h("div", { clase: "chico gris" }, ciudadDe(equipo, cat))),
@@ -125,18 +123,18 @@ async function bloqueEquipo(servicio, equipo, cat, cambios) {
         ? h("button", { clase: "claro chico", type: "button",
             onclick: () => borrar(
               `/servicios/equipos/${equipo.id}`,
-              `Eliminar el equipo ${equipo.alias} con sus `
-              + `${equipo.jornadas.length} dia(s). Esto no se puede deshacer.`,
-              "Equipo eliminado") }, "Eliminar equipo")
+              t("srv_eliminar_eq").replace("{a}", equipo.alias)
+                .replace("{n}", equipo.jornadas.length),
+              t("srv_equipo_eliminado")) }, t("srv_eliminar_equipo"))
         : ""),
     h("p", { clase: "gris chico", style: "margin:-6px 0 14px" },
-      "Cada equipo lleva su propio task sheet, sus horas extra y su cierre."),
+      t("srv_equipo_pie")),
     /* A quien cuida este equipo. Con un solo equipo es el del servicio,
        que ya sale arriba; con dos o mas, cada hoja lleva el suyo. */
     h("div", { clase: "chico", style: "margin:-8px 0 14px" },
-      h("span", { clase: "gris" }, "Ejecutivo principal: "),
+      h("span", { clase: "gris" }, t("srv_ejecutivo_dp")),
       equipo.ejecutivo_completo
-        || h("span", { clase: "gris" }, "Por definir"),
+        || h("span", { clase: "gris" }, t("srv_por_definir")),
       equipo.ejecutivo_telefono
         ? h("span", { clase: "gris num" }, ` · ${equipo.ejecutivo_telefono}`)
         : ""));
@@ -154,7 +152,7 @@ async function bloqueEquipo(servicio, equipo, cat, cambios) {
 /* Un boton que abre tambien tiene que cerrar. Si no, la unica salida es
    recargar la pantalla, y el consultor termina con tres formularios
    abiertos uno debajo del otro sin saber cual estaba llenando. */
-function alternador(boton, zona, abrir, textoCerrar = "Cerrar") {
+function alternador(boton, zona, abrir, textoCerrar = t("srv_cerrar")) {
   const textoAbrir = boton.textContent;
   boton.addEventListener("click", async () => {
     if (zona.firstChild) {
@@ -186,7 +184,7 @@ async function bloqueRecursos(servicio, equipo, cat) {
   const quitar = (ruta, que) => h("button", {
     clase: "claro chico", type: "button", style: "margin-top:6px",
     onclick: async (e) => {
-      if (!confirm(`Quitar a ${que} de los ${datos.dias} dias del equipo.`)) {
+      if (!confirm(t("srv_quitar_a").replace("{q}", que).replace("{n}", datos.dias))) {
         return;
       }
       e.target.disabled = true;
@@ -194,7 +192,7 @@ async function bloqueRecursos(servicio, equipo, cat) {
         await api.borrar(ruta);
         location.reload();
       } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
-    } }, "Quitar");
+    } }, t("srv_quitar"));
 
   const ficha = (x, titulo, cuerpo, boton) => h("div", { clase: "persona" },
     x.foto ? h("img", { clase: "foto", src: x.foto, alt: "" })
@@ -204,7 +202,7 @@ async function bloqueRecursos(servicio, equipo, cat) {
          cambio a media semana y eso hay que verlo. */
       x.dias < datos.dias
         ? h("div", { clase: "chico", style: "color:#b8860b" },
-            `Solo ${x.dias} de ${datos.dias} dias`)
+            t("srv_solo_dias").replace("{n}", x.dias).replace("{t}", datos.dias))
         : "",
       boton || ""));
 
@@ -217,10 +215,10 @@ async function bloqueRecursos(servicio, equipo, cat) {
   function botonCambiar(servicio_, equipo_, cat_, persona, datos_) {
     return h("button", { clase: "claro chico", type: "button",
       onclick: () => abrirCambio(zonaCambio, servicio_, equipo_, cat_,
-                                 persona, datos_) }, "Cambiar");
+                                 persona, datos_) }, t("srv_cambiar"));
   }
 
-  const gente = h("div", {}, h("h4", {}, "Equipo de seguridad"));
+  const gente = h("div", {}, h("h4", {}, t("srv_equipo_seguridad")));
   if (datos.personal.length) {
     for (const p of datos.personal) {
       /* La zona del cambio vive debajo de la tarjeta de recursos, igual
@@ -232,39 +230,39 @@ async function bloqueRecursos(servicio, equipo, cat) {
           : botonCambiar(servicio, equipo, cat, p, datos),
         quitar(`/servicios/equipos/${equipo.id}/personal/${p.persona_id}`,
                p.nombre));
-      gente.append(ficha(p, p.puesto || "Personal", [
+      gente.append(ficha(p, p.puesto || t("srv_personal"), [
         h("b", {}, p.nombre),
         h("div", { clase: "chico" },
-          p.telefono || h("span", { clase: "gris" }, "Sin telefono")),
+          p.telefono || h("span", { clase: "gris" }, t("srv_sin_telefono"))),
         h("div", { clase: "chico gris" }, p.ciudad || ""),
         /* Un cambio a media semana rompe la premisa de que el equipo es
            el mismo todos los dias. La ficha tiene que decirlo o el
            consultor lee un equipo que no existe. */
         p.relevado_en
           ? h("div", { clase: "chico", style: "color:#b8860b" },
-              `Relevado el ${fecha(p.relevado_en.slice(0, 10))} `
-              + `a las ${p.relevado_en.slice(11, 16)}`)
+              t("srv_relevado").replace("{d}", fecha(p.relevado_en.slice(0, 10)))
+              .replace("{h}", p.relevado_en.slice(11, 16)))
           : "",
         p.reemplaza_a
           ? h("div", { clase: "chico", style: "color:#b8860b" },
-              `Reemplaza a ${p.reemplaza_a}`)
+              t("srv_reemplaza_a").replace("{p}", p.reemplaza_a))
           : "",
         variasUnidades ? selectorAbordo(equipo, p, datos.vehiculos) : "",
       ], acciones));
     }
   } else {
-    gente.append(h("span", { clase: "gris" }, "Por asignar"));
+    gente.append(h("span", { clase: "gris" }, t("srv_por_asignar")));
   }
 
-  const flota = h("div", {}, h("h4", {}, "Unidad"));
+  const flota = h("div", {}, h("h4", {}, t("srv_unidad")));
   if (datos.vehiculos.length) {
     for (const v of datos.vehiculos) {
-      flota.append(ficha(v, "Vehiculo de seguridad", [
-        h("b", {}, v.unidad || "Unidad"), " ",
+      flota.append(ficha(v, t("srv_vehiculo_seguridad"), [
+        h("b", {}, v.unidad || t("srv_unidad")), " ",
         h("span", { clase: "etiqueta" },
-          v.blindada ? "Blindada" : "Sin blindar"),
+          v.blindada ? t("srv_blindada") : t("srv_sin_blindar")),
         v.rentado ? " " : "", v.rentado ? etiqueta("rentada", "alerta") : "",
-        h("div", {}, h("span", { clase: "placas" }, v.placa)),
+        h("div", {}, h("span", { clase: t("srv_f_placas") }, v.placa)),
         h("div", { clase: "chico gris" },
           [v.marca_modelo, v.color, v.anio].filter(Boolean).join(" · ")),
         /* A quien se le llama si la unidad falla a media jornada: en la
@@ -278,19 +276,17 @@ async function bloqueRecursos(servicio, equipo, cat) {
                 v.placa)));
     }
   } else {
-    flota.append(h("span", { clase: "gris" }, "Por asignar"));
+    flota.append(h("span", { clase: "gris" }, t("srv_por_asignar")));
   }
 
   const zona = h("div", { style: "margin-top:12px" });
   caja.append(
     h("div", { clase: "rejilla dos" }, gente, flota),
     h("p", { clase: "gris chico", style: "margin:12px 0 0" },
-      `Los recursos son los mismos los ${datos.dias} dias del equipo. `
-      + "Un cambio a media semana se hace por contingencia, en el dia que "
-      + "aplique."),
+      t("srv_recursos_pie").replace("{n}", datos.dias)),
     h("div", { clase: "acciones", style: "margin-top:8px" },
       alternador(h("button", { clase: "claro chico", type: "button" },
-                   "Asignar recursos"),
+                   t("srv_asignar_recursos")),
                  zona, () => abrirAsignacion(zona, equipo, cat))),
     zona, zonaCambio);
   return caja;
@@ -306,7 +302,7 @@ async function bloqueRecursos(servicio, equipo, cat) {
    que rol va, que es de donde salen el precio al cliente y la comision
    que se le paga. */
 async function abrirAsignacion(zona, equipo, cat) {
-  zona.replaceChildren(h("div", { clase: "gris chico" }, "Buscando recursos…"));
+  zona.replaceChildren(h("div", { clase: "gris chico" }, t("srv_buscando_recursos")));
   const perfil = cat.perfiles.find(p => p.codigo === "conductor_seguridad");
   const categoria = cat.categorias.find(c => c.codigo === "suv_blindada");
 
@@ -319,7 +315,7 @@ async function abrirAsignacion(zona, equipo, cat) {
 
   const resultados = h("div");
   const buscar = async () => {
-    resultados.replaceChildren(h("div", { clase: "gris chico" }, "Buscando…"));
+    resultados.replaceChildren(h("div", { clase: "gris chico" }, t("srv_buscando")));
     try {
       const r = await api.get(
         `/servicios/equipos/${equipo.id}/recomendaciones` +
@@ -334,8 +330,8 @@ async function abrirAsignacion(zona, equipo, cat) {
 
   zona.replaceChildren(h("div", { clase: "tarjeta lisa" },
     h("div", { clase: "rejilla dos" },
-      campo("Rol con el que va", selPerfil),
-      campo("Categoria de unidad", selCategoria)),
+      campo(t("srv_rol"), selPerfil),
+      campo(t("srv_categoria"), selCategoria)),
     resultados));
   buscar();
 }
@@ -353,9 +349,9 @@ function pintarRecomendaciones(r, equipo, cat, categoriaId, rolId) {
    decidir si algo se puede asignar, solo lo pinta. */
 function estadoDe(f) {
   const motivos = (f.alertas || []).map(a => a.mensaje || a.tipo).join(" · ");
-  if (f.bloqueado) return { clave: "bloqueo", texto: "Ocupado", motivos };
-  if (motivos) return { clave: "riesgo", texto: "Con riesgo", motivos };
-  return { clave: "libre", texto: "Disponible", motivos: "" };
+  if (f.bloqueado) return { clave: "bloqueo", texto: t("srv_ocupado"), motivos };
+  if (motivos) return { clave: "riesgo", texto: t("srv_riesgo"), motivos };
+  return { clave: "libre", texto: t("srv_disponible"), motivos: "" };
 }
 
 /* Locales primero y, dentro de cada ciudad, quien se puede asignar sin
@@ -382,7 +378,7 @@ function lineaCiudad(f) {
   return f.local
     ? h("div", { clase: "chico gris" }, f.ciudad || "—")
     : h("div", { clase: "chico", style: "color:#b8860b" },
-        `${f.ciudad || "otra ciudad"} · traslado`);
+        t("srv_otra_ciudad").replace("{c}", f.ciudad || t("srv_otra")));
 }
 
 function celdaEstado(est) {
@@ -397,7 +393,7 @@ function celdaEstado(est) {
 function botonAsignar(est, hacer) {
   if (est.clave === "bloqueo") {
     return h("button", { clase: "chico claro", disabled: "disabled",
-                         title: est.motivos }, "No se puede");
+                         title: est.motivos }, t("srv_no_se_puede"));
   }
   const forzar = est.clave === "riesgo";
   return h("button", { clase: "chico" + (forzar ? " claro" : ""),
@@ -407,12 +403,12 @@ function botonAsignar(est, hacer) {
         await hacer(forzar);
         location.reload();
       } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
-    } }, forzar ? "Asignar igual" : "Asignar");
+    } }, forzar ? t("srv_asignar_igual") : t("srv_asignar"));
 }
 
 function caja(titulo, bloque, cuantos, encabezados, cuerpo, vacio) {
   return h("div", {},
-    h("h4", {}, `${titulo} (${cuantos})`),
+    h("h4", {}, t("srv_titulo_n").replace("{t}", titulo).replace("{n}", cuantos)),
     bloque.aviso ? aviso(bloque.aviso, "alerta") : "",
     cuantos
       ? h("table", {},
@@ -444,9 +440,9 @@ function tablaPersonal(bloque, equipo, rolId = () => null) {
         api.post(`/servicios/equipos/${equipo.id}/asignar-personal`,
                  { persona_id: p.persona_id, rol_id: rolId(), forzar })))));
   }
-  return caja("Personal de seguridad", bloque, gente.length,
-              ["Persona", "Estado", "Calificacion", ""], cuerpo,
-              "No hay nadie libre para esos dias.");
+  return caja(t("srv_personal_seguridad"), bloque, gente.length,
+              [t("srv_persona"), t("srv_estado"), t("srv_calificacion"), ""], cuerpo,
+              t("srv_nadie_libre"));
 }
 
 function tablaUnidades(bloque, equipo, cat, categoriaId) {
@@ -455,7 +451,7 @@ function tablaUnidades(bloque, equipo, cat, categoriaId) {
   for (const v of flota) {
     const est = estadoDe(v);
     cuerpo.append(h("tr", {},
-      h("td", {}, h("span", { clase: "placas" }, v.placa || v.placas),
+      h("td", {}, h("span", { clase: t("srv_f_placas") }, v.placa || v.placas),
         v.blindada ? " " : "", v.blindada ? etiqueta("blindada") : "",
         /* Que sea de renta se dice aqui y no en el task sheet: al
            consultor le cambia la decision —esa unidad cuesta aparte y
@@ -480,12 +476,12 @@ function tablaUnidades(bloque, equipo, cat, categoriaId) {
      otro dia y un servicio detenido mientras tanto. */
   const zona = h("div");
   return h("div", {},
-    caja("Unidades", bloque, flota.length,
-         ["Unidad", "Estado", ""], cuerpo,
-         "No hay unidades de esa categoria en la flota."),
+    caja(t("srv_unidades"), bloque, flota.length,
+         [t("srv_unidad"), t("srv_estado"), ""], cuerpo,
+         t("srv_sin_unidades")),
     h("div", { clase: "acciones", style: "margin-top:8px" },
       alternador(h("button", { clase: "claro chico", type: "button" },
-                   "Subir auto rentado"),
+                   t("srv_subir_renta")),
                  zona,
                  () => zona.replaceChildren(
                    formularioRenta(equipo, cat, categoriaId)))),
@@ -498,9 +494,9 @@ function tablaUnidades(bloque, equipo, cat, categoriaId) {
    se sabe nada si no queda escrito hoy. */
 const MOTIVOS_RENTA = [
   { valor: "categoria_no_disponible",
-    texto: "No hay esa categoria en la flota" },
-  { valor: "saturacion", texto: "Flota saturada" },
-  { valor: "pedido_especial", texto: "Pedido especial del cliente" },
+    texto: t("srv_motivo_categoria") },
+  { valor: "saturacion", texto: t("srv_motivo_saturacion") },
+  { valor: "pedido_especial", texto: t("srv_motivo_especial") },
 ];
 
 function formularioRenta(equipo, cat, categoriaId) {
@@ -512,32 +508,31 @@ function formularioRenta(equipo, cat, categoriaId) {
   const placa = entrada("placa", { placeholder: "ABC-123-D",
                                    maxlength: "20", autocomplete: "off" });
   const marca = entrada("marca_modelo", { placeholder: "Suburban" });
-  const color = entrada("color", { placeholder: "Negro" });
+  const color = entrada("color", { placeholder: t("srv_color_ej") });
   const anio = entrada("anio", { type: "number", min: "1990", max: "2100",
                                  value: String(new Date().getFullYear()) });
   const costo = entrada("costo", { type: "number", step: "0.01", min: "1",
                                    placeholder: "0.00" });
-  const arrendadora = entrada("arrendadora", { placeholder: "Nombre de la arrendadora" });
+  const arrendadora = entrada(t("srv_f_arrendadora"), { placeholder: t("srv_nombre_arrendadora") });
   const tel = telefono("arrendadora_telefono");
   const selMotivo = lista("motivo", MOTIVOS_RENTA);
 
   const guardar = h("button", { clase: "chico", type: "button" },
-                    "Guardar y asignar");
+                    t("srv_guardar_asignar"));
   const zonaError = h("div");
 
   guardar.addEventListener("click", async () => {
     const faltan = [];
-    if (placa.value.trim().length < 3) faltan.push("placas");
-    if (marca.value.trim().length < 2) faltan.push("marca y modelo");
-    if (color.value.trim().length < 2) faltan.push("color");
-    if (!Number(anio.value)) faltan.push("año");
-    if (!(Number(costo.value) > 0)) faltan.push("costo diario");
-    if (arrendadora.value.trim().length < 2) faltan.push("arrendadora");
-    if (!tel.valor()) faltan.push("telefono del proveedor");
+    if (placa.value.trim().length < 3) faltan.push(t("srv_f_placas"));
+    if (marca.value.trim().length < 2) faltan.push(t("srv_f_marca"));
+    if (color.value.trim().length < 2) faltan.push(t("srv_f_color"));
+    if (!Number(anio.value)) faltan.push(t("srv_f_anio"));
+    if (!(Number(costo.value) > 0)) faltan.push(t("srv_f_costo"));
+    if (arrendadora.value.trim().length < 2) faltan.push(t("srv_f_arrendadora"));
+    if (!tel.valor()) faltan.push(t("srv_f_telefono"));
     if (faltan.length) {
       zonaError.replaceChildren(aviso(
-        "Falta " + faltan.join(", ") + ". De un auto de renta no se sabe "
-        + "nada despues: lo que no quede escrito hoy se pierde.", "alerta"));
+        t("srv_falta_renta").replace("{x}", faltan.join(", ")), "alerta"));
       return;
     }
     zonaError.replaceChildren();
@@ -562,21 +557,19 @@ function formularioRenta(equipo, cat, categoriaId) {
   });
 
   return h("div", { clase: "tarjeta lisa", style: "margin-top:8px" },
-    h("h4", { style: "margin:0 0 2px" }, "Auto rentado"),
+    h("h4", { style: "margin:0 0 2px" }, t("srv_auto_rentado")),
     h("p", { clase: "gris chico", style: "margin:0 0 12px" },
-      "Se renta para este servicio y se devuelve al terminarlo. Queda "
-      + "marcado como rentado y no se le ofrece a ningun otro servicio. "
-      + "El costo diario entra a la rentabilidad."),
+      t("srv_renta_pie")),
     h("div", { clase: "rejilla dos" },
-      campo("Placas", placa),
-      campo("Categoria de unidad", selCategoria),
-      campo("Marca y modelo", marca),
-      campo("Color", color),
+      campo(t("srv_placas"), placa),
+      campo(t("srv_categoria"), selCategoria),
+      campo(t("srv_marca"), marca),
+      campo(t("srv_color"), color),
       campo("Año", anio),
-      campo("Costo diario de la renta", costo),
-      campo("Arrendadora", arrendadora),
-      campo("Telefono del proveedor", tel),
-      campo("Motivo del subarrendo", selMotivo)),
+      campo(t("srv_costo_renta"), costo),
+      campo(t("srv_arrendadora"), arrendadora),
+      campo(t("srv_tel_proveedor"), tel),
+      campo(t("srv_motivo_subarrendo"), selMotivo)),
     zonaError,
     h("div", { clase: "acciones", style: "margin-top:10px" }, guardar));
 }
@@ -595,12 +588,12 @@ function formularioRenta(equipo, cat, categoriaId) {
    la direccion va a pedir —cuanto ausentismo hay y cuanto tiempo pasan
    las unidades en el taller— y escrito a mano no se puede contar. */
 const MOTIVOS = [
-  { valor: "contingencia", texto: "Contingencia" },
-  { valor: "enfermedad", texto: "Enfermedad" },
-  { valor: "vacaciones", texto: "Vacaciones" },
-  { valor: "descanso", texto: "Descanso" },
-  { valor: "baja", texto: "Baja" },
-  { valor: "otro", texto: "Otro" },
+  { valor: "contingencia", texto: t("srv_m_contingencia") },
+  { valor: "enfermedad", texto: t("srv_m_enfermedad") },
+  { valor: "vacaciones", texto: t("srv_m_vacaciones") },
+  { valor: "descanso", texto: t("srv_m_descanso") },
+  { valor: "baja", texto: t("srv_m_baja") },
+  { valor: "otro", texto: t("srv_m_otro") },
 ];
 
 const CERRADOS = ["cancelada", "terminada"];
@@ -615,7 +608,7 @@ async function abrirCambio(zona, servicio, equipo, cat, persona, datos) {
   const dias = diasPendientes(equipo);
   if (!dias.length) {
     return zona.replaceChildren(aviso(
-      "Este equipo ya no tiene dias pendientes: no hay nada que cambiar.",
+      t("srv_sin_pendientes"),
       "alerta"));
   }
 
@@ -640,10 +633,10 @@ async function abrirCambio(zona, servicio, equipo, cat, persona, datos) {
   adelante.addEventListener("change", marcar_);
 
   const motivo = lista("motivo", MOTIVOS);
-  const nota = entrada("nota", { placeholder: "Que paso, en una linea" });
+  const nota = entrada("nota", { placeholder: t("srv_que_paso") });
 
   const candidatos = h("div", { style: "margin-top:12px" },
-    h("div", { clase: "gris chico" }, "Buscando quien puede entrar…"));
+    h("div", { clase: "gris chico" }, t("srv_buscando_entra")));
   const previa = h("div", { style: "margin-top:12px" });
 
   const armar = () => ({
@@ -655,24 +648,22 @@ async function abrirCambio(zona, servicio, equipo, cat, persona, datos) {
   });
 
   zona.replaceChildren(h("div", { clase: "tarjeta lisa" },
-    h("h4", { style: "margin:0 0 2px" }, `Cambiar a ${persona.nombre}`),
+    h("h4", { style: "margin:0 0 2px" }, t("srv_cambiar_a").replace("{p}", persona.nombre)),
     h("p", { clase: "gris chico", style: "margin:0 0 12px" },
-      "El cambio aplica del dia que elijas en adelante. Los dias ya "
-      + "terminados no se tocan."),
+      t("srv_cambio_pie")),
     h("div", { clase: "rejilla dos" },
-      campo("Desde que dia", desde),
-      campo("Hasta cuando", h("div", {},
-        h("label", { clase: "chico" }, adelante, " De aqui en adelante"),
+      campo(t("srv_desde_dia"), desde),
+      campo(t("srv_hasta_cuando"), h("div", {},
+        h("label", { clase: "chico" }, adelante, t("srv_adelante")),
         h("label", { clase: "chico", style: "margin-left:12px" },
-          conFin, " Hasta el dia "), hasta,
+          conFin, t("srv_hasta_el_dia")), hasta,
         h("div", { clase: "gris chico", style: "margin-top:4px" },
-          "Una contingencia no tiene fin: nadie sabe cuando vuelve el "
-          + "que salio. Unas vacaciones si.")))),
+          t("srv_alcance_pie"))))),
     h("div", { clase: "rejilla dos" },
-      campo("Por que", motivo), campo("Nota", nota)),
+      campo("Por que", motivo), campo(t("srv_nota"), nota)),
     candidatos, previa));
 
-  /* La misma lista de recomendaciones que usa "Asignar recursos", con
+  /* La misma lista de recomendaciones que usa t("srv_asignar_recursos"), con
      su disponibilidad y sus choques ya resueltos. Filtrada al rol que
      traia el que sale: un conductor se reemplaza con un conductor. */
   try {
@@ -701,11 +692,11 @@ function tablaCandidatos(bloque, sale, armar, previa) {
       h("td", {}, h("b", {}, p.nombre), lineaCiudad(p)),
       celdaEstado(est),
       h("td", {}, h("button", { clase: "chico", type: "button",
-        onclick: (e) => verPrevia(e, previa, armar(), p) }, "Elegir"))));
+        onclick: (e) => verPrevia(e, previa, armar(), p) }, t("srv_elegir")))));
   }
-  return caja(`Quien entra en lugar de ${sale.nombre}`, bloque, gente.length,
-              ["Persona", "Disponibilidad", ""], cuerpo,
-              "No hay nadie con ese rol");
+  return caja(t("srv_quien_entra").replace("{p}", sale.nombre), bloque, gente.length,
+              [t("srv_persona"), t("srv_disponibilidad"), ""], cuerpo,
+              t("srv_nadie_rol"));
 }
 
 /* Nada se guarda hasta aqui. Lo que se pinta es el cambio de verdad,
@@ -713,7 +704,7 @@ function tablaCandidatos(bloque, sale, armar, previa) {
    calcule "lo que pasaria" y se separe de la primera. */
 async function verPrevia(e, zona, cambio, entra) {
   e.target.disabled = true;
-  zona.replaceChildren(h("div", { clase: "gris chico" }, "Calculando…"));
+  zona.replaceChildren(h("div", { clase: "gris chico" }, t("srv_calculando")));
   const cuerpo = { ...cambio, entra_persona_id: entra.persona_id };
   try {
     const r = await api.post("/contingencia/reemplazos/personal/vista-previa",
@@ -733,15 +724,15 @@ function recuadroPrevia(r, cuerpo, entra) {
       tono ? h("b", {}, texto) : texto);
 
   const dinero_ = h("div", { style: "margin-top:8px" },
-    h("h4", { style: "margin:0 0 2px" }, "Viaticos"));
+    h("h4", { style: "margin:0 0 2px" }, t("srv_viaticos")));
   for (const x of v.a_comprobar || []) {
     dinero_.append(linea(
-      `Comprueba ${dinero(x.monto)} que ya recibio · vence `
-      + `${fecha((x.limite || "").slice(0, 10))}`, true));
+      t("srv_comprueba").replace("{m}", dinero(x.monto))
+        .replace("{f}", fecha((x.limite || "").slice(0, 10))), true));
   }
   if ((v.cancelados || []).length) {
     dinero_.append(linea(
-      `Se cancelan ${v.cancelados.length} dia(s) que no habian salido`));
+      t("srv_se_cancelan").replace("{n}", v.cancelados.length)));
   }
   /* Propuesta, no asignacion: el sistema saca la cuenta del tabulador
      para que el consultor no tenga que ir a buscarla, pero la solicitud
@@ -749,12 +740,13 @@ function recuadroPrevia(r, cuerpo, entra) {
   const propuesto = (v.propuestos || []).reduce((a, x) => a + x.monto, 0);
   if (propuesto) {
     dinero_.append(linea(
-      `A ${entra.nombre} le tocarian ${dinero(propuesto)} por tabulador `
-      + `(${v.propuestos.length} dia(s)). Se los asignas tu.`, true));
+      t("srv_le_tocarian").replace("{p}", entra.nombre)
+        .replace("{m}", dinero(propuesto))
+        .replace("{n}", v.propuestos.length), true));
   }
   if (!(v.a_comprobar || []).length && !propuesto
       && !(v.cancelados || []).length) {
-    dinero_.append(linea("Nada que mover: todavia no hay viaticos asignados"));
+    dinero_.append(linea(t("srv_nada_mover")));
   }
 
   const confirmar = h("button", { clase: "chico", type: "button",
@@ -762,42 +754,43 @@ function recuadroPrevia(r, cuerpo, entra) {
       ev.target.disabled = true;
       try {
         await api.post("/contingencia/reemplazos/personal", cuerpo);
-        mensaje("Cambio formalizado");
+        mensaje(t("srv_cambio_hecho"));
         location.reload();
       } catch (err) {
         mensaje(err.message, "grave");
         ev.target.disabled = false;
       }
-    } }, "Confirmar el cambio");
+    } }, t("srv_confirmar_cambio"));
 
   return h("div", { clase: "tarjeta lisa" },
     h("h4", { style: "margin:0 0 6px" },
       dias.length === 1
         ? fecha(dias[0])
-        : `Del ${fecha(dias[0])} al ${fecha(dias[dias.length - 1])}`
-          + ` · ${dias.length} dias`),
+        : t("srv_del_al").replace("{a}", fecha(dias[0]))
+            .replace("{b}", fecha(dias[dias.length - 1]))
+            .replace("{n}", dias.length)),
     h("div", { clase: "chico" },
-      "Entra ", h("b", {}, entra.nombre), " con el mismo rol"),
+      t("srv_entra"), h("b", {}, entra.nombre), t("srv_mismo_rol")),
     /* Lo que hasta hoy se perdia: el que se presento esa manana cobra su
        dia. Decirlo aqui es lo que evita el reclamo de la semana que
        viene. */
     (r.jornadas_partidas || []).length
       ? h("div", { style: "margin-top:8px" },
-          h("h4", { style: "margin:0 0 2px" }, "Nomina"),
-          linea(`Se presento: cobra el ${fecha(r.jornadas_partidas[0])} `
-                + "completo", true),
-          linea(`${entra.nombre} cobra sus dias`))
+          h("h4", { style: "margin:0 0 2px" }, t("srv_nomina")),
+          linea(t("srv_se_presento")
+                  .replace("{f}", fecha(r.jornadas_partidas[0])), true),
+          linea(t("srv_cobra_dias").replace("{p}", entra.nombre)))
       : h("div", { clase: "chico gris", style: "margin-top:8px" },
-          "No alcanzo a marcar su llegada, asi que ese dia no se le paga."),
+          t("srv_no_marco")),
     dinero_,
     (r.jornadas_con_choque || []).length
-      ? aviso(`${entra.nombre} ya esta en este equipo el `
-              + r.jornadas_con_choque.map(fecha).join(", ")
-              + ". Esos dias no se cambian.", "alerta")
+      ? aviso(t("srv_choque").replace("{p}", entra.nombre)
+                .replace("{d}", r.jornadas_con_choque.map(fecha).join(", ")),
+              "alerta")
       : "",
     h("div", { clase: "acciones", style: "margin-top:10px" },
       h("button", { clase: "claro chico", type: "button",
-        onclick: (ev) => ev.target.closest(".tarjeta").remove() }, "Cancelar"),
+        onclick: (ev) => ev.target.closest(".tarjeta").remove() }, t("srv_cancelar")),
       confirmar));
 }
 
@@ -817,9 +810,9 @@ function bloqueCambios(filas) {
   const caja = h("div", { clase: "tarjeta" });
   if (!filas || !filas.length) return h("div");
 
-  caja.append(h("h3", { style: "margin:0 0 2px" }, "Cambios de recurso"),
+  caja.append(h("h3", { style: "margin:0 0 2px" }, t("srv_cambios")),
     h("p", { clase: "gris chico", style: "margin:0 0 12px" },
-      "Quien entro en lugar de quien, desde cuando y por que."));
+      t("srv_cambios_pie")));
 
   for (const r of filas) {
     caja.append(h("div", { clase: "tarjeta lisa", style: "margin:0 0 10px" },
@@ -827,14 +820,15 @@ function bloqueCambios(filas) {
         etiqueta(r.motivo_tipo || r.tipo, "alerta"), " ",
         h("b", {}, `${r.sale || "?"} → ${r.entra || "?"}`),
         h("span", { clase: "gris chico" },
-          ` · ${r.jornadas_afectadas} dia(s)`)),
+          t("srv_dias_n").replace("{n}", r.jornadas_afectadas))),
       h("div", { clase: "chico gris" },
-        `Desde ${fecha(r.desde)}`
-        + (r.hasta ? ` hasta ${fecha(r.hasta)}` : " en adelante")),
+        t("srv_desde_f").replace("{f}", fecha(r.desde))
+        + (r.hasta ? t("srv_hasta_f").replace("{f}", fecha(r.hasta))
+                 : t("srv_en_adelante"))),
       r.motivo ? h("p", { clase: "chico", style: "margin:6px 0 0" },
                    `"${r.motivo}"`) : "",
       h("div", { clase: "chico gris", style: "margin-top:4px" },
-        r.formalizo ? `Formalizo: ${r.formalizo}` : "")));
+        r.formalizo ? t("srv_formalizo").replace("{p}", r.formalizo) : "")));
   }
   return caja;
 }
@@ -845,7 +839,7 @@ function bloqueCambios(filas) {
    misma informacion —la actividad de ese dia— y verla partida en dos
    botones obligaba a abrir y cerrar para armar una idea completa. */
 async function abrirDia(zona, jornada, cual = {}) {
-  zona.replaceChildren(h("div", { clase: "gris chico" }, "Abriendo el dia…"));
+  zona.replaceChildren(h("div", { clase: "gris chico" }, t("srv_abriendo")));
 
   /* El dia se lee en el orden en que ocurre: donde arranca y a que hora,
      luego lo que se hace, y al final el vuelo con el que se va. Por eso
@@ -885,7 +879,7 @@ function bloqueOrigen(jornada, cual = {}) {
       if (puedeVolar && !enAeropuerto.checked) {
         enAeropuerto.checked = true;
         verVuelo();
-        mensaje("Es un aeropuerto: captura el vuelo");
+        mensaje(t("srv_es_aeropuerto"));
       }
     },
     valores: { direccion: jornada.origen_direccion,
@@ -906,11 +900,7 @@ function bloqueOrigen(jornada, cual = {}) {
     onchange: () => {
       if (enAeropuerto.checked && lugar.segunGoogle() === false) {
         const ok = confirm(
-          "Google dice que ese lugar no es un aeropuerto.\n\n"
-          + "Marcarlo como tal abre la geocerca de 500 m a 2 km, y el "
-          + "conductor podria marcar su llegada desde lejos.\n\n"
-          + "Confirma solo si de verdad es un aeropuerto: una terminal "
-          + "privada o una pista chica que Google no reconoce.");
+          t("srv_google_no_aeropuerto") + t("srv_aeropuerto_confirmar"));
         if (!ok) { enAeropuerto.checked = false; return; }
         forzadoAeropuerto = true;
       }
@@ -929,18 +919,17 @@ function bloqueOrigen(jornada, cual = {}) {
 
   const bloqueVuelo = h("div", { hidden: !traeVuelo },
     h("h4", { style: "margin-top:10px" },
-      cual.primero ? "Vuelo de llegada del ejecutivo principal"
-                   : "Vuelo de salida del ejecutivo principal"),
+      cual.primero ? t("srv_vuelo_llegada")
+                   : t("srv_vuelo_salida")),
     h("p", { clase: "gris chico", style: "margin:0 0 10px" },
       cual.primero
-        ? "El equipo se presenta 45 minutos antes de que aterrice, y esa "
-          + "hora queda como su presentacion."
-        : "El ultimo dia termina cuando el ejecutivo aborda."),
+        ? t("srv_vuelo_llegada_pie")
+        : t("srv_vuelo_salida_pie")),
     h("div", { clase: "rejilla tres" },
-      campo("Aerolinea", aerolinea),
-      campo("Numero de vuelo", numero),
-      campo("Hora", horaVuelo)),
-    campo(cual.primero ? "Procedencia" : "Destino", procedencia));
+      campo(t("srv_aerolinea"), aerolinea),
+      campo(t("srv_num_vuelo"), numero),
+      campo(t("srv_hora"), horaVuelo)),
+    campo(cual.primero ? t("srv_procedencia") : t("srv_destino"), procedencia));
 
   /* La hora a la que el equipo se presenta ese dia. Vive aqui, junto al
      punto: son la misma pregunta —donde y a que hora arranca— y de ella
@@ -957,11 +946,10 @@ function bloqueOrigen(jornada, cual = {}) {
                           && !!horaVuelo.value;
     presentacion.disabled = laPoneElVuelo;
     notaHora.textContent = laPoneElVuelo
-      ? "La fija el vuelo al guardar: 45 minutos antes de que aterrice."
+      ? t("srv_hora_vuelo")
       : (jornada.hora_confirmada
           ? ""
-          : `Desconocida. Mientras tanto el dia arranca a las ${heredada}, `
-            + "heredada del dia 1.");
+          : t("srv_hora_desconocida").replace("{h}", heredada));
   }
   horaVuelo.addEventListener("input", verHora);
 
@@ -971,17 +959,17 @@ function bloqueOrigen(jornada, cual = {}) {
   const casillaAeropuerto = puedeVolar
     ? h("label", { clase: "casilla", style: "margin-top:12px" }, enAeropuerto,
         h("span", {}, cual.primero
-          ? "El servicio arranca en un aeropuerto"
-          : "El servicio termina en un aeropuerto"))
+          ? t("srv_arranca_aeropuerto")
+          : t("srv_termina_aeropuerto")))
     : "";
 
   const guardar = h("button", { type: "button", onclick: async (e) => {
     const punto = lugar.valor();
     if (!punto.direccion) {
-      return mensaje("Escribe donde arranca el dia", "alerta");
+      return mensaje(t("srv_donde_arranca"), "alerta");
     }
     if ((punto.lat || punto.lon) && !(punto.lat && punto.lon)) {
-      return mensaje("El pin necesita latitud y longitud, o ninguna de las dos",
+      return mensaje(t("srv_pin"),
                      "alerta");
     }
     e.target.disabled = true;
@@ -1020,8 +1008,8 @@ function bloqueOrigen(jornada, cual = {}) {
                         { hora_presentacion: `${presentacion.value}:00` });
       }
 
-      mensaje(cual.primero ? "Meet and greet guardado"
-                           : "Punto de origen guardado");
+      mensaje(cual.primero ? t("srv_mg_guardado")
+                           : t("srv_origen_guardado"));
       // Se recarga para que la pantalla y el task sheet muestren lo
       // guardado, y no lo que se traia de antes.
       setTimeout(() => location.reload(), 700);
@@ -1029,7 +1017,7 @@ function bloqueOrigen(jornada, cual = {}) {
       mensaje(err.message, "grave");
       e.target.disabled = false;
     }
-  } }, "Guardar");
+  } }, t("srv_guardar"));
 
   /* El vuelo de salida se entrega aparte: lo coloca el dia, despues de
      la agenda, porque es con lo que el dia termina. */
@@ -1039,53 +1027,43 @@ function bloqueOrigen(jornada, cual = {}) {
   const nodo = h("div", {},
     cual.primero
       ? h("div", { clase: "destacado" },
-          h("h4", {}, "Meet and greet"),
+          h("h4", {}, t("srv_meet_greet")),
           h("div", { clase: "nota" },
-            "El primer contacto con el ejecutivo principal y el dato mas "
-            + "importante del task sheet: donde arranca el servicio. Es uno "
-            + "solo por equipo."))
+            t("srv_mg_pie")))
       : h("p", { clase: "gris chico", style: "margin:0 0 12px" },
-          "Donde se recoge al ejecutivo este dia: casi siempre el hotel. "
-          + "De aqui salen la geocerca del conductor y los hospitales "
-          + "cercanos de la hoja."),
+          t("srv_origen_pie")),
 
     h("div", { clase: "punto-inicio" },
       h("div", {},
-        campo(cual.primero ? "Lugar exacto del encuentro"
-                           : "Punto de origen del dia", lugar.direccion),
+        campo(cual.primero ? t("srv_lugar_encuentro")
+                           : t("srv_punto_origen"), lugar.direccion),
         lugar.resultados,
         /* Escribir la direccion no fija el punto: hay que elegirla de la
            lista para que Google devuelva sus coordenadas. Sin ellas no
            hay geocerca ni hospitales, y el task sheet no se publica. */
         jornada.origen_direccion && !jornada.origen_lat
-          ? aviso("Esta direccion no tiene pin. Eligela de la lista del "
-                  + "buscador, o escribe las coordenadas abajo: sin ellas "
-                  + "no hay geocerca ni hospitales cercanos.", "alerta")
+          ? aviso(t("srv_sin_pin"), "alerta")
           : ""),
       lugar.cajaMapa),
 
     // Solo el de llegada va aqui: abre el dia. El de salida lo cierra.
     cual.primero ? h("div", {}, casillaAeropuerto, bloqueVuelo) : "",
 
-    h("h4", { clase: "grupo" }, "Hora de presentacion"),
+    h("h4", { clase: "grupo" }, t("srv_hora_presentacion")),
     h("p", { clase: "gris chico", style: "margin:0 0 10px" },
-      "A que hora tiene que estar el equipo en ese punto. Es la hora con "
-      + "la que se revisan empalmes y horas extra, y la que sale en la "
-      + "tabla de dias."),
+      t("srv_hora_pie")),
     h("div", { clase: "rejilla tres" },
       h("div", { clase: "campo" },
-        h("label", {}, "Presentacion"), presentacion, notaHora)),
+        h("label", {}, t("srv_presentacion")), presentacion, notaHora)),
 
     h("details", { clase: "plegable" },
-      h("summary", {}, "Ajustar el pin y el radio de la geocerca"),
+      h("summary", {}, t("srv_ajustar_pin")),
       h("p", { clase: "gris chico" },
-        "El pin se llena solo al elegir el lugar en el buscador. El radio "
-        + "es el circulo alrededor de ese mismo pin que el conductor tiene "
-        + "que pisar para marcar su llegada."),
+        t("srv_pin_pie2")),
       h("div", { clase: "rejilla tres" },
-        campo("Latitud", lugar.lat),
-        campo("Longitud", lugar.lon),
-        campo("Radio en metros", lugar.metros))),
+        campo(t("srv_latitud"), lugar.lat),
+        campo(t("srv_longitud"), lugar.lon),
+        campo(t("srv_radio"), lugar.metros))),
 
     "");
 
@@ -1117,8 +1095,7 @@ async function bloqueAgenda(jornada) {
     cuerpo.replaceChildren();
     if (!paradas.length) {
       cuerpo.append(h("tr", {}, h("td", { colspan: "3", clase: "gris chico" },
-        "Sin paradas capturadas. La agenda es opcional: hay clientes que no "
-        + "la comparten y el dia se va armando sobre la marcha.")));
+        t("srv_sin_paradas"))));
     }
     for (const parada of paradas) cuerpo.append(renglon(parada));
   };
@@ -1129,10 +1106,10 @@ async function bloqueAgenda(jornada) {
   function renglon(parada) {
     const hora_ = h("input", { type: "time", value: parada.hora || "" });
     const lugar = entrada("lugar", { value: comoTexto(parada),
-      placeholder: "Oficinas corporativas, Reforma 250 piso 12" });
+      placeholder: t("srv_parada_ej") });
 
     const guardar = async () => {
-      if (!lugar.value.trim()) return mensaje("La parada necesita un lugar",
+      if (!lugar.value.trim()) return mensaje(t("srv_parada_lugar"),
                                               "alerta");
       try {
         const r = await api.patch(`/operacion/paradas/${parada.id}`, {
@@ -1141,7 +1118,7 @@ async function bloqueAgenda(jornada) {
           direccion: null,
         });
         Object.assign(parada, r);
-        mensaje("Parada actualizada");
+        mensaje(t("srv_parada_actualizada"));
       } catch (err) { mensaje(err.message, "grave"); }
     };
     hora_.addEventListener("change", guardar);
@@ -1154,9 +1131,9 @@ async function bloqueAgenda(jornada) {
           await api.borrar(`/operacion/paradas/${parada.id}`);
           paradas = paradas.filter(p => p.id !== parada.id);
           pintar();
-          mensaje("Parada quitada");
+          mensaje(t("srv_parada_quitada"));
         } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
-      } }, "Quitar");
+      } }, t("srv_quitar"));
 
     return h("tr", {},
       h("td", { clase: "col-hora" }, hora_),
@@ -1167,11 +1144,11 @@ async function bloqueAgenda(jornada) {
   /* --- la parada nueva */
   const nuevaHora = h("input", { type: "time" });
   const nuevoLugar = entrada("lugar", {
-    placeholder: "Oficinas corporativas, Reforma 250 piso 12" });
+    placeholder: t("srv_parada_ej") });
 
   const agregar = h("button", { type: "button", onclick: async (e) => {
     if (!nuevoLugar.value.trim()) {
-      return mensaje("Escribe a donde va esa parada", "alerta");
+      return mensaje(t("srv_parada_donde"), "alerta");
     }
     e.target.disabled = true;
     try {
@@ -1187,29 +1164,27 @@ async function bloqueAgenda(jornada) {
       nuevaHora.value = "";
       nuevoLugar.value = "";
       nuevoLugar.focus();
-      mensaje("Parada agregada");
+      mensaje(t("srv_parada_agregada"));
     } catch (err) { mensaje(err.message, "grave"); }
     e.target.disabled = false;
-  } }, "Agregar parada");
+  } }, t("srv_agregar_parada"));
 
   pintar();
 
   return h("div", {},
-    h("h4", { clase: "grupo" }, "Agenda del dia"),
+    h("h4", { clase: "grupo" }, t("srv_agenda")),
     h("p", { clase: "gris chico", style: "margin:0 0 12px" },
-      "Cada parada se guarda sola: se corrige o se quita sin tocar las "
-      + "demas, porque la agenda se mueve durante el dia. Las paradas sin "
-      + "hora se imprimen al final, como pendientes de confirmar."),
+      t("srv_agenda_pie")),
 
     h("table", {},
       h("thead", {}, h("tr", {},
-        h("th", { clase: "col-hora" }, "Hora"),
-        h("th", {}, "Lugar y direccion"), h("th", {}, ""))),
+        h("th", { clase: "col-hora" }, t("srv_hora")),
+        h("th", {}, t("srv_lugar_direccion")), h("th", {}, ""))),
       cuerpo),
 
     h("div", { clase: "rejilla dos", style: "margin-top:14px" },
-      campo("Hora", nuevaHora),
-      campo("Lugar y direccion", nuevoLugar)),
+      campo(t("srv_hora"), nuevaHora),
+      campo(t("srv_lugar_direccion"), nuevoLugar)),
     h("div", { clase: "acciones", style: "margin-top:10px" }, agregar));
 }
 
@@ -1242,18 +1217,16 @@ async function pintarHotel(caja, servicio, equipo, cat) {
   const repintar = () => pintarHotel(caja, servicio, equipo, cat);
 
   const cabeza = h("div", {},
-    h("h4", { style: "margin:0 0 2px" }, "Hotel del ejecutivo"),
+    h("h4", { style: "margin:0 0 2px" }, t("srv_hotel_ejecutivo")),
     h("p", { clase: "gris chico", style: "margin:0 0 12px" },
-      "Informativo: Centauro no reserva. Se captura para que el equipo "
-      + "sepa a donde llegar y a que numero llamar, y sale al final de la "
-      + "hoja con los hospitales mas cercanos. Es opcional, y es uno solo."));
+      t("srv_hotel_pie")));
 
   const ficha = h("div");
   if (actual) {
     ficha.append(h("div", { clase: "aviso", style: "margin:0 0 10px" },
       h("b", {}, actual.hotel),
-      h("div", { clase: "gris chico" }, actual.direccion || "Sin direccion"),
-      h("div", { clase: "chico num" }, actual.telefono || "Sin telefono"),
+      h("div", { clase: "gris chico" }, actual.direccion || t("srv_sin_direccion")),
+      h("div", { clase: "chico num" }, actual.telefono || t("srv_sin_telefono")),
       h("div", { clase: "acciones", style: "margin-top:8px" },
         h("button", { clase: "claro chico", type: "button",
           onclick: async (e) => {
@@ -1264,7 +1237,7 @@ async function pintarHotel(caja, servicio, equipo, cat) {
             } catch (err) {
               mensaje(err.message, "grave"); e.target.disabled = false;
             }
-          } }, "Quitar"))));
+          } }, t("srv_quitar")))));
   }
 
   const nombreLibre = entrada("nombre_libre");
@@ -1294,22 +1267,22 @@ async function pintarHotel(caja, servicio, equipo, cat) {
       telefonoLibre.value = lugar.telefono || "";
       revisar();
       if (!lugar.telefono) {
-        mensaje("Google no trae telefono de ese hotel. Capturalo a mano.",
+        mensaje(t("srv_hotel_sin_tel"),
                 "alerta");
       }
     },
   });
 
   const selHotel = lista("hotel_id",
-    [{ valor: "", texto: hoteles.length ? "Del catalogo…"
-                                        : "Sin hoteles usados en esta ciudad" },
+    [{ valor: "", texto: hoteles.length ? t("srv_del_catalogo")
+                                        : t("srv_sin_hoteles") },
      ...hoteles.map(x => ({ valor: x.id, texto: x.nombre }))]);
 
   /* El boton no existe hasta que hay un hotel que guardar. Un boton que
      esta ahi desde el principio y contesta "elige un hotel" es un viaje
      en falso: mas claro es que aparezca cuando ya hay algo que guardar. */
   const guardar = h("button", { clase: "chico", type: "submit" },
-                    actual ? "Cambiar el hotel" : "Guardar hotel");
+                    actual ? t("srv_cambiar_hotel") : t("srv_guardar_hotel"));
   const revisar = () => {
     guardar.hidden = !(selHotel.value || nombreLibre.value.trim());
   };
@@ -1323,7 +1296,7 @@ async function pintarHotel(caja, servicio, equipo, cat) {
     ev.preventDefault();
     const libre = nombreLibre.value.trim();
     if (!selHotel.value && !libre) {
-      return mensaje("Elige un hotel del catalogo o busca el suyo en Google",
+      return mensaje(t("srv_elige_hotel"),
                      "alerta");
     }
     guardar.disabled = true;
@@ -1342,23 +1315,23 @@ async function pintarHotel(caja, servicio, equipo, cat) {
         hotel_lat: selHotel.value ? null : punto.lat,
         hotel_lon: selHotel.value ? null : punto.lon,
       });
-      mensaje(actual ? "Hotel corregido" : "Hotel registrado");
+      mensaje(actual ? t("srv_hotel_corregido") : t("srv_hotel_registrado"));
       await repintar();
     } catch (err) { mensaje(err.message, "grave"); guardar.disabled = false; }
   }});
 
-  f.append(campo("Hotel", selHotel),
+  f.append(campo(t("srv_hotel"), selHotel),
     h("details", { clase: "plegable", open: actual ? null : "" },
-      h("summary", {}, "Buscar el hotel en Google"),
+      h("summary", {}, t("srv_buscar_hotel")),
       h("div", { clase: "punto-inicio" },
         h("div", {},
           campo(t("buscar_hotel"), buscadorHotel.direccion),
           buscadorHotel.resultados),
         buscadorHotel.cajaMapa),
       h("div", { clase: "rejilla tres" },
-        campo("Nombre del hotel", nombreLibre),
-        campo("Direccion", direccionLibre),
-        campo("Telefono", telefonoLibre))),
+        campo(t("srv_nombre_hotel"), nombreLibre),
+        campo(t("srv_direccion"), direccionLibre),
+        campo(t("srv_telefono"), telefonoLibre))),
     h("div", { clase: "acciones", style: "margin-top:10px" }, guardar));
 
   caja.replaceChildren(cabeza, ficha, f);
@@ -1367,7 +1340,7 @@ async function pintarHotel(caja, servicio, equipo, cat) {
 /* ------------------------------------------------------------ task sheet */
 
 async function bloqueTaskSheet(servicio) {
-  const caja = h("div", { clase: "tarjeta" }, h("h3", {}, "Task sheet"));
+  const caja = h("div", { clase: "tarjeta" }, h("h3", {}, t("srv_task_sheet")));
   let vista;
   try {
     vista = await api.get(`/task-sheets/servicio/${servicio.id}/vista-previa`);
@@ -1377,11 +1350,11 @@ async function bloqueTaskSheet(servicio) {
   }
 
   if (vista.faltantes && vista.faltantes.length) {
-    caja.append(aviso("Falta esto para poder publicarlo:", "alerta"));
+    caja.append(aviso(t("srv_falta_publicar"), "alerta"));
     caja.append(h("ul", { clase: "chico" },
       ...vista.faltantes.map(x => h("li", {}, x))));
   } else {
-    caja.append(aviso("Listo para publicar.", "ok"));
+    caja.append(aviso(t("srv_listo_publicar"), "ok"));
   }
 
   caja.append(bloqueSenal(servicio, vista));
@@ -1446,9 +1419,9 @@ async function bloqueTaskSheet(servicio) {
    quedaria en el historial y en cualquier bitacora por donde pase. */
 async function abrirHoja(servicio, idioma, imprimir = false) {
   const w = window.open("", "_blank");
-  if (!w) return mensaje("El navegador bloqueo la ventana de la hoja", "alerta");
+  if (!w) return mensaje(t("srv_bloqueo_ventana"), "alerta");
   w.document.write('<p style="font:14px system-ui;padding:20px">'
-                   + "Preparando la hoja…</p>");
+                   + t("srv_preparando") + "</p>");
   try {
     const html = await api.get(
       `/task-sheets/servicio/${servicio.id}/hoja?idioma=${idioma}`,
@@ -1495,12 +1468,11 @@ function bloqueSenal(servicio, vista) {
     previa.hidden = false;
   });
 
-  const cajaTexto = h("div", {}, campo("Palabra o apellido", texto));
+  const cajaTexto = h("div", {}, campo(t("srv_palabra_senal"), texto));
   const cajaImagen = h("div", {},
-    campo("Archivo", archivo),
+    campo(t("srv_archivo"), archivo),
     h("div", { clase: "chico gris" },
-      "PNG, JPG, WebP o SVG, hasta 3 MB. Se guarda dentro de la hoja, "
-      + "asi que se imprime y se manda sin depender de internet."),
+      t("srv_senal_formatos")),
     previa);
 
   const acomodar = () => {
@@ -1515,9 +1487,9 @@ function bloqueSenal(servicio, vista) {
     e.preventDefault();
     const f = archivo.files && archivo.files[0];
     if (comoTexto.checked && !texto.value.trim())
-      return mensaje("Escribe la palabra de la senal", "alerta");
+      return mensaje(t("srv_escribe_senal"), "alerta");
     if (comoImagen.checked && !f && !actual.imagen)
-      return mensaje("Elige la imagen de la senal", "alerta");
+      return mensaje(t("srv_elige_senal"), "alerta");
 
     e.target.disabled = true;
     try {
@@ -1532,10 +1504,10 @@ function bloqueSenal(servicio, vista) {
         await api.put(`/servicios/${servicio.id}/senal`,
                       { imagen: actual.imagen });
       }
-      mensaje("Senal guardada. Vuelve a publicar el task sheet para que salga.");
+      mensaje(t("srv_senal_guardada"));
     } catch (err) { mensaje(err.message, "grave"); }
     e.target.disabled = false;
-  } }, "Guardar senal");
+  } }, t("srv_guardar_senal"));
 
   const quitar = h("button", { clase: "claro chico", onclick: async (e) => {
     e.preventDefault();
@@ -1544,19 +1516,18 @@ function bloqueSenal(servicio, vista) {
       await api.borrar(`/servicios/${servicio.id}/senal`);
       texto.value = "";
       previa.hidden = true;
-      mensaje("Senal quitada");
+      mensaje(t("srv_senal_quitada"));
     } catch (err) { mensaje(err.message, "grave"); }
     e.target.disabled = false;
-  } }, "Quitar senal");
+  } }, t("srv_quitar_senal"));
 
   zona.append(
-    h("h4", { clase: "grupo" }, "Senal de identificacion"),
+    h("h4", { clase: "grupo" }, t("srv_senal")),
     h("div", { clase: "chico gris", style: "margin-bottom:8px" },
-      "Se imprime en una hoja aparte para que el equipo la muestre en el "
-      + "filtro o en el lobby. Es una palabra o una imagen, no las dos."),
+      t("srv_senal_pie")),
     h("div", { clase: "acciones", style: "margin-bottom:6px" },
-      h("label", { clase: "casilla" }, comoTexto, "Texto"),
-      h("label", { clase: "casilla" }, comoImagen, "Imagen")),
+      h("label", { clase: "casilla" }, comoTexto, t("srv_texto")),
+      h("label", { clase: "casilla" }, comoImagen, t("srv_imagen"))),
     cajaTexto, cajaImagen,
     h("div", { clase: "acciones", style: "margin-top:10px" },
       guardar,
@@ -1570,7 +1541,7 @@ function bloqueSenal(servicio, vista) {
    y nadie va a buscar un boton de guardar. */
 function selectorAbordo(equipo, persona, vehiculos) {
   const sel = lista("abordo", [
-    { valor: "", texto: "¿En que unidad va?" },
+    { valor: "", texto: t("srv_en_que_unidad") },
     ...vehiculos.map(v => ({
       valor: v.vehiculo_id,
       texto: `${v.placa} · ${v.unidad || "unidad"}`,
@@ -1584,8 +1555,8 @@ function selectorAbordo(equipo, persona, vehiculos) {
       const r = await api.patch(
         `/servicios/equipos/${equipo.id}/personal/${persona.persona_id}/unidad`,
         { vehiculo_id: sel.value ? Number(sel.value) : null });
-      mensaje(r.placa ? `${persona.nombre} va en ${r.placa}`
-                      : `${persona.nombre} sin unidad`);
+      mensaje(r.placa ? t("srv_va_en").replace("{p}", persona.nombre).replace("{v}", r.placa)
+                      : t("srv_sin_unidad").replace("{p}", persona.nombre));
     } catch (err) {
       mensaje(err.message, "grave");
       sel.value = persona.vehiculo_id || "";
@@ -1594,7 +1565,7 @@ function selectorAbordo(equipo, persona, vehiculos) {
   });
 
   return h("div", { clase: "abordo" },
-    h("span", { clase: "chico gris" }, "Aborda"), sel);
+    h("span", { clase: "chico gris" }, t("srv_aborda")), sel);
 }
 /* La ciudad del equipo, ya resuelta por el servidor: la suya o la del
    servicio. */
@@ -1623,14 +1594,14 @@ function tablaDias(servicio, equipo, cat, cambios = []) {
     const heredada = (jornada.inicio_programado || "").slice(11, 16);
     const hora_ = jornada.hora_confirmada
       ? h("div", { clase: "num", style: "font-weight:600" }, heredada)
-      : h("div", { clase: "chico", style: "color:#b8860b" }, "Desconocida");
+      : h("div", { clase: "chico", style: "color:#b8860b" }, t("srv_desconocida"));
     const nota = h("div", { clase: "chico gris" },
-      jornada.hora_confirmada ? "" : `arranca ${heredada}`);
+      jornada.hora_confirmada ? "" : t("srv_arranca_h").replace("{h}", heredada));
 
     const guardar = async (cambios) => {
       try {
         const r = await api.patch(`/servicios/jornadas/${jornada.id}`, cambios);
-        mensaje(`Dia ${fecha(r.fecha)} actualizado`);
+        mensaje(t("srv_dia_actualizado").replace("{f}", fecha(r.fecha)));
         if (r.estatus_servicio) setTimeout(() => location.reload(), 600);
       } catch (err) { mensaje(err.message, "grave"); }
     };
@@ -1651,14 +1622,14 @@ function tablaDias(servicio, equipo, cat, cambios = []) {
     const filaDia = h("tr", { hidden: true }, zonaDia);
 
     const esUltimo = i === dias.length - 1;
-    const nombreDia = i === 0 ? "Meet and greet y agenda"
-                              : "Punto de origen y agenda";
+    const nombreDia = i === 0 ? t("srv_mg_agenda")
+                              : t("srv_origen_agenda");
     const botonDia = h("button", { clase: "claro chico", type: "button",
       onclick: () => {
         const abierta = !filaDia.hidden;
         filaDia.hidden = abierta;
         zonaDia.hidden = abierta;
-        botonDia.textContent = abierta ? nombreDia : "Cerrar el dia";
+        botonDia.textContent = abierta ? nombreDia : t("srv_cerrar_dia");
         if (!abierta) {
           abrirDia(zonaDia, jornada, { primero: i === 0, ultimo: esUltimo,
                                        paisId: servicio.pais_id });
@@ -1670,15 +1641,15 @@ function tablaDias(servicio, equipo, cat, cambios = []) {
         e.target.disabled = true;
         try {
           await api.borrar(`/servicios/jornadas/${jornada.id}`);
-          mensaje("Dia quitado");
+          mensaje(t("srv_dia_quitado"));
           location.reload();
         } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
-      } }, "Quitar");
+      } }, t("srv_quitar"));
 
     cuerpo.append(
       h("tr", {},
         h("td", { clase: "gris chico" },
-          i === 0 ? "Dia 1 · inicio" : `Dia ${i + 1}`),
+          i === 0 ? t("srv_dia_uno") : t("srv_dia_n").replace("{n}", i + 1)),
         h("td", {}, fechaDia),
         h("td", {}, modalidad),
         h("td", { clase: "col-hora" }, hora_, nota, botonDia),
@@ -1686,7 +1657,7 @@ function tablaDias(servicio, equipo, cat, cambios = []) {
           /* Un dia que cambio de gente no se lee igual que uno normal:
              puede traer dos personas en la nomina. */
           huboCambio(cambios, jornada.fecha)
-            ? h("span", {}, " ", etiqueta("cambio", "alerta")) : ""),
+            ? h("span", {}, " ", etiqueta(t("srv_cambio"), "alerta")) : ""),
         h("td", {}, quitar)),
       filaDia);
   });
@@ -1703,27 +1674,26 @@ function tablaDias(servicio, equipo, cat, cambios = []) {
   const nuevaModalidad = lista("modalidad", opcionesModalidad(cat));
   const agregar = h("button", { clase: "claro chico", type: "button",
     onclick: async (e) => {
-      if (!nuevaFecha.value) return mensaje("Elige la fecha del dia", "alerta");
+      if (!nuevaFecha.value) return mensaje(t("srv_elige_fecha"), "alerta");
       e.target.disabled = true;
       try {
         await api.post(`/servicios/equipos/${equipo.id}/jornadas`, {
           fecha: nuevaFecha.value,
           modalidad_id: Number(nuevaModalidad.value),
         });
-        mensaje("Dia agregado");
+        mensaje(t("srv_dia_agregado"));
         location.reload();
       } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
-    } }, "Agregar dia");
+    } }, t("srv_agregar_dia"));
 
   return h("div", { clase: "tarjeta lisa", style: "margin:0 0 14px" },
-    h("h4", { style: "margin:0 0 2px" }, "Dias de servicio"),
+    h("h4", { style: "margin:0 0 2px" }, t("srv_dias_servicio")),
     h("p", { clase: "gris chico", style: "margin:0 0 10px" },
-      "Se siguen moviendo mientras el servicio se arma. La hora de "
-      + "presentacion es la del dia 1; los demas dias arrancan con su agenda."),
+      t("srv_dias_pie")),
     h("table", {},
       h("thead", {}, h("tr", {},
-        h("th", {}, ""), h("th", {}, "Fecha"), h("th", {}, "Modalidad"),
-        h("th", {}, "Presentacion y actividad"), h("th", {}, "Estatus"),
+        h("th", {}, ""), h("th", {}, t("srv_fecha")), h("th", {}, t("srv_modalidad")),
+        h("th", {}, t("srv_pres_actividad")), h("th", {}, t("srv_estatus")),
         h("th", {}, ""))),
       cuerpo),
     h("div", { clase: "acciones", style: "margin-top:12px" },
@@ -1736,12 +1706,13 @@ function opcionesModalidad(cat, jornada = null) {
   const suya = jornada
     ? cat.modalidades.find(m => m.id === jornada.modalidad_id) : null;
   const pais = suya ? suya.pais_id : (cat.modalidades[0] || {}).pais_id;
-  const NOMBRE = { full_day: "Dia completo", medio_dia: "Medio dia",
-                   transfer: "Transfer" };
+  const NOMBRE = { full_day: t("srv_dia_completo"), medio_dia: t("srv_medio_dia"),
+                   transfer: t("srv_transfer") };
   return cat.modalidades
     .filter(m => m.pais_id === pais)
     .map(m => ({ valor: m.id,
-                 texto: `${NOMBRE[m.codigo] || m.codigo} · ${Number(m.horas)} h` }));
+                 texto: t("srv_modalidad_h").replace("{m}", NOMBRE[m.codigo] || m.codigo)
+        .replace("{h}", Number(m.horas)) }));
 }
 
 /* ----------------------------------------------------- viaticos */
@@ -1756,25 +1727,25 @@ function opcionesModalidad(cat, jornada = null) {
    ambar finanzas lo tiene, verde el dinero ya esta con la persona. */
 
 const SEMAFORO = {
-  por_asignar: { texto: "Por asignar", tono: "" },
-  asignado: { texto: "Listo para solicitar", tono: "info" },
-  solicitado: { texto: "Con finanzas", tono: "alerta" },
-  depositado: { texto: "Depositado", tono: "ok" },
+  por_asignar: { texto: t("srv_por_asignar"), tono: "" },
+  asignado: { texto: t("srv_listo_solicitar"), tono: "info" },
+  solicitado: { texto: t("srv_con_finanzas"), tono: "alerta" },
+  depositado: { texto: t("srv_depositado"), tono: "ok" },
 };
 
 const ESTADO_COMPRA = {
-  solicitada: { texto: "Solicitada", tono: "info" },
-  en_gestion: { texto: "Finanzas la esta gestionando", tono: "alerta" },
-  confirmada: { texto: "Confirmada", tono: "ok" },
-  rechazada: { texto: "No se pudo", tono: "grave" },
-  cancelada: { texto: "Cancelada", tono: "" },
+  solicitada: { texto: t("srv_solicitada"), tono: "info" },
+  en_gestion: { texto: t("srv_gestionando"), tono: "alerta" },
+  confirmada: { texto: t("srv_confirmada"), tono: "ok" },
+  rechazada: { texto: t("srv_no_se_pudo"), tono: "grave" },
+  cancelada: { texto: t("srv_cancelada"), tono: "" },
 };
 
 const TIPOS_COMPRA = [
-  { valor: "vuelo", texto: "Vuelo" },
-  { valor: "hospedaje", texto: "Hospedaje" },
-  { valor: "transporte", texto: "Transporte (tren, autobus, renta)" },
-  { valor: "otro", texto: "Otro" },
+  { valor: "vuelo", texto: t("srv_c_vuelo") },
+  { valor: "hospedaje", texto: t("srv_c_hospedaje") },
+  { valor: "transporte", texto: t("srv_c_transporte") },
+  { valor: "otro", texto: t("srv_m_otro") },
 ];
 
 async function bloqueViaticos(equipo) {
@@ -1784,7 +1755,7 @@ async function bloqueViaticos(equipo) {
 }
 
 async function pintarViaticos(caja, equipo) {
-  caja.replaceChildren(h("div", { clase: "gris chico" }, "Viaticos…"));
+  caja.replaceChildren(h("div", { clase: "gris chico" }, t("srv_viaticos_cargando")));
   let datos;
   try {
     datos = await api.get(`/viaticos/equipos/${equipo.id}`);
@@ -1810,40 +1781,39 @@ async function pintarViaticos(caja, equipo) {
       e.target.disabled = true;
       try {
         await api.post(`/viaticos/equipos/${equipo.id}/solicitar`, {});
-        mensaje("Deposito solicitado a finanzas");
+        mensaje(t("srv_dep_solicitado"));
         await repintar();
       } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
     } },
-    porSolicitar ? `Solicitar deposito (${porSolicitar})`
-                 : "Solicitar deposito");
+    porSolicitar ? t("srv_solicitar_n").replace("{n}", porSolicitar)
+                 : t("srv_solicitar"));
 
   caja.replaceChildren(h("div", { clase: "tarjeta lisa", style: "margin:0 0 14px" },
-    h("h4", { style: "margin:0 0 2px" }, "Viaticos"),
+    h("h4", { style: "margin:0 0 2px" }, t("srv_viaticos")),
     h("p", { clase: "gris chico", style: "margin:0 0 12px" },
-      "Un deposito por persona, por todos sus dias en el equipo. El "
-      + "sistema propone segun el tabulador; el monto lo decide usted."),
+      t("srv_dep_pie")),
     h("table", {},
       h("thead", {}, h("tr", {},
-        h("th", {}, "Persona"),
-        h("th", { style: "text-align:right" }, "Propone el sistema"),
-        h("th", { style: "text-align:right" }, "Se deposita"),
-        h("th", {}, "Estado"))),
+        h("th", {}, t("srv_persona")),
+        h("th", { style: "text-align:right" }, t("srv_propone")),
+        h("th", { style: "text-align:right" }, t("srv_se_deposita")),
+        h("th", {}, t("srv_estado")))),
       cuerpo),
     h("div", { clase: "acciones", style: "margin-top:10px" },
       pedirTodo,
       h("span", { clase: "chico" },
-        h("b", {}, `Total ${dinero(datos.total_asignado, moneda)}`),
+        h("b", {}, t("srv_total_m").replace("{m}", dinero(datos.total_asignado, moneda))),
         Number(datos.total_depositado) > 0
           ? h("span", { clase: "verde" },
-              ` · depositado ${dinero(datos.total_depositado, moneda)}`)
+              t("srv_dep_m").replace("{m}", dinero(datos.total_depositado, moneda)))
           : "",
         Number(datos.total_en_camino) > 0
           ? h("span", { clase: "ambar" },
-              ` · con finanzas ${dinero(datos.total_en_camino, moneda)}`)
+              t("srv_fin_m").replace("{m}", dinero(datos.total_en_camino, moneda)))
           : "",
         Number(datos.total_por_solicitar) > 0
           ? h("span", { clase: "gris" },
-              ` · por solicitar ${dinero(datos.total_por_solicitar, moneda)}`)
+              t("srv_sol_m").replace("{m}", dinero(datos.total_por_solicitar, moneda)))
           : "")),
     bloqueCompras(datos, equipo, moneda, repintar)));
 }
@@ -1865,7 +1835,7 @@ function renglonViatico(p, equipo, moneda, repintar) {
     style: "text-align:right; max-width:130px",
     value: !yaSalio && Number(p.asignado)
              ? String(Math.round(Number(p.asignado))) : "",
-    placeholder: yaSalio ? "Otro deposito"
+    placeholder: yaSalio ? t("srv_otro_deposito")
                          : String(Math.ceil(Number(p.propuesto))),
   });
 
@@ -1888,9 +1858,9 @@ function renglonViatico(p, equipo, moneda, repintar) {
   const propuesto = Math.ceil(Number(p.propuesto));
   const usar = (yaSalio || !propuesto) ? "" : h("button", {
     clase: "claro chico", type: "button",
-    title: "Deposita lo que propone el tabulador para sus dias",
+    title: t("srv_usar_propuesto"),
     onclick: () => { monto.value = String(propuesto); guardar(); } },
-    `Usar ${dinero(propuesto, moneda)}`);
+    t("srv_usar_m").replace("{m}", dinero(propuesto, moneda)));
 
   /* Debajo de la cantidad, en que va el dinero. Con dos o tres depositos
      encima, "asignado 2,900" solo no dice si ya salio o falta pedirlo, y
@@ -1898,15 +1868,16 @@ function renglonViatico(p, equipo, moneda, repintar) {
   const linea = (texto, valor, clase = "gris") =>
     Number(valor) > 0
       ? h("div", { clase: `chico ${clase}` },
-          `${texto} ${dinero(valor, moneda)}`)
+          t("srv_etiqueta_m").replace("{t}", texto)
+      .replace("{m}", dinero(valor, moneda)))
       : "";
   const desglose = h("div", { style: "margin-top:4px; text-align:right" },
-    linea("Depositado", p.depositado, "verde"),
-    linea("Con finanzas", p.en_camino, "ambar"),
-    linea("Por solicitar", p.por_solicitar),
+    linea(t("srv_depositado"), p.depositado, "verde"),
+    linea(t("srv_con_finanzas"), p.en_camino, "ambar"),
+    linea(t("srv_por_solicitar"), p.por_solicitar),
     Number(p.asignado) > 0
       ? h("div", { clase: "chico" },
-          h("b", {}, `Total ${dinero(p.asignado, moneda)}`))
+          h("b", {}, t("srv_total_m").replace("{m}", dinero(p.asignado, moneda))))
       : "");
 
   /* Mientras el dinero no salga, el consultor puede echarse para atras:
@@ -1921,15 +1892,15 @@ function renglonViatico(p, equipo, moneda, repintar) {
         try {
           await api.post(`/viaticos/equipos/${equipo.id}/cancelar-solicitud`,
                          { persona_id: p.persona_id });
-          mensaje("Solicitud cancelada. El monto se puede corregir.");
+          mensaje(t("srv_sol_cancelada"));
           await repintar();
         } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
-      } }, "Cancelar solicitud");
+      } }, t("srv_cancelar_sol"));
 
   return h("tr", {},
     h("td", {}, h("b", {}, p.nombre),
       h("div", { clase: "chico gris" },
-        [p.puesto, `${p.dias} dia(s)`].filter(Boolean).join(" · "))),
+        [p.puesto, t("srv_dias_p").replace("{n}", p.dias)].filter(Boolean).join(" · "))),
     h("td", { style: "text-align:right" },
       h("span", { clase: "num" }, dinero(p.propuesto, moneda))),
     h("td", { style: "text-align:right" },
@@ -1939,7 +1910,7 @@ function renglonViatico(p, equipo, moneda, repintar) {
     h("td", {}, etiqueta(est.texto, est.tono),
       Number(p.comprobado) > 0
         ? h("div", { clase: "chico gris" },
-            `Comprobado ${dinero(p.comprobado, moneda)}`)
+            t("srv_comprobado_m").replace("{m}", dinero(p.comprobado, moneda)))
         : "",
       cancelar ? h("div", { style: "margin-top:6px" }, cancelar) : ""));
 }
@@ -1957,19 +1928,18 @@ function bloqueCompras(datos, equipo, moneda, repintar) {
     tarjetaCompra(c, moneda, repintar));
   if (!datos.compras.length) {
     lista_.append(h("span", { clase: "gris chico" },
-      "Sin compras pedidas."));
+      t("srv_sin_compras")));
   }
 
   const zona = h("div");
   return h("div", { style: "margin-top:18px; border-top:1px solid var(--linea); padding-top:14px" },
-    h("h4", { style: "margin:0 0 2px" }, "Compras especiales"),
+    h("h4", { style: "margin:0 0 2px" }, t("srv_compras")),
     h("p", { clase: "gris chico", style: "margin:0 0 12px" },
-      "Vuelos, hospedaje y todo lo que finanzas compra o reserva por el "
-      + "equipo. Se piden aqui y finanzas contesta con la reserva."),
+      t("srv_compras_pie")),
     lista_,
     h("div", { clase: "acciones", style: "margin-top:10px" },
       alternador(h("button", { clase: "claro chico", type: "button" },
-                   "Pedir una compra"),
+                   t("srv_pedir_compra")),
                  zona,
                  () => zona.replaceChildren(
                    formularioCompra(equipo, zona, repintar)))),
@@ -1984,15 +1954,15 @@ function tarjetaCompra(c, moneda, repintar) {
   const respuesta = h("div");
   if (c.estatus === "confirmada") {
     respuesta.append(h("div", { clase: "aviso ok", style: "margin:8px 0 0" },
-      h("div", {}, h("b", {}, "Reserva: "),
+      h("div", {}, h("b", {}, t("srv_reserva")),
         h("span", { clase: "num" }, c.confirmacion || "—"),
         c.monto_real
-          ? h("span", { clase: "gris" }, ` · ${dinero(c.monto_real, moneda)}`)
+          ? h("span", { clase: "gris" }, t("srv_etiqueta_m").replace("{t}", " ·").replace("{m}", dinero(c.monto_real, moneda)))
           : ""),
       c.respuesta ? h("div", { clase: "chico" }, c.respuesta) : "",
       c.tiene_comprobante ? botonComprobante(c) : ""));
   } else if (c.estatus === "rechazada") {
-    respuesta.append(aviso(c.respuesta || "Finanzas no la pudo resolver",
+    respuesta.append(aviso(c.respuesta || t("srv_no_resolvio"),
                            "grave"));
   }
 
@@ -2004,7 +1974,7 @@ function tarjetaCompra(c, moneda, repintar) {
       h("div", {}, h("b", {}, tipo),
         c.monto_estimado
           ? h("span", { clase: "gris chico" },
-              ` · estimado ${dinero(c.monto_estimado, moneda)}`)
+              t("srv_estimado_m").replace("{m}", dinero(c.monto_estimado, moneda)))
           : ""),
       etiqueta(est.texto, est.tono)),
     h("div", { clase: "chico", style: "white-space:pre-wrap; margin-top:4px" },
@@ -2021,7 +1991,7 @@ function tarjetaCompra(c, moneda, repintar) {
               } catch (err) {
                 mensaje(err.message, "grave"); e.target.disabled = false;
               }
-            } }, "Cancelar"))
+            } }, t("srv_cancelar")))
       : "");
 }
 
@@ -2039,29 +2009,26 @@ function botonComprobante(c) {
             `<img src="${url}" style="max-width:100%">`);
         } catch (err) { mensaje(err.message, "grave"); }
         e.target.disabled = false;
-      } }, "Ver comprobante"));
+      } }, t("srv_ver_comprobante")));
 }
 
 function formularioCompra(equipo, zona, repintar) {
   const selTipo = lista("tipo", TIPOS_COMPRA);
   const solicitud = h("textarea", {
     name: "solicitud", rows: "4",
-    placeholder: "Dos boletos Mexico - Monterrey el 16 de septiembre, "
-      + "saliendo antes de las 8 am, a nombre de Ramiro Sandoval y "
-      + "Luis Ontiveros.",
+    placeholder: t("srv_compra_ej"),
   });
   const estimado = entrada("estimado", {
-    type: "number", step: "0.01", min: "0", placeholder: "Opcional" });
+    type: "number", step: "0.01", min: "0", placeholder: t("srv_opcional") });
 
   const guardar = h("button", { clase: "chico", type: "button" },
-                    "Enviar a finanzas");
+                    t("srv_enviar_finanzas"));
   const zonaError = h("div");
 
   guardar.addEventListener("click", async () => {
     if (solicitud.value.trim().length < 10) {
       return zonaError.replaceChildren(aviso(
-        "Escriba que necesita. Finanzas va a comprar con eso y nada mas: "
-        + "ruta, fechas, horarios y a nombre de quien.", "alerta"));
+        t("srv_compra_pie"), "alerta"));
     }
     zonaError.replaceChildren();
     guardar.disabled = true;
@@ -2081,9 +2048,9 @@ function formularioCompra(equipo, zona, repintar) {
 
   return h("div", { clase: "tarjeta lisa", style: "margin-top:8px" },
     h("div", { clase: "rejilla dos" },
-      campo("Que se compra", selTipo),
-      campo("Monto estimado", estimado)),
-    campo("Que necesita, con detalle", solicitud),
+      campo(t("srv_que_compra"), selTipo),
+      campo(t("srv_monto_estimado"), estimado)),
+    campo(t("srv_que_necesita"), solicitud),
     zonaError,
     h("div", { clase: "acciones", style: "margin-top:8px" }, guardar));
 }
@@ -2101,16 +2068,16 @@ function formularioCompra(equipo, zona, repintar) {
    Se llena desde la app de campo. La consola solo mira. */
 
 const ANGULOS_ES = {
-  frente: "Frente", atras: "Atrás", izquierdo: "Izquierdo",
-  derecho: "Derecho", dano: "Golpe",
+  frente: t("srv_frente"), atras: t("srv_atras"), izquierdo: t("srv_izquierdo"),
+  derecho: t("srv_derecho"), dano: t("srv_golpe"),
 };
 
-const OCTAVOS_ES = ["Vacío", "1/8", "1/4", "3/8", "1/2", "5/8", "3/4", "7/8",
-                    "Lleno"];
+const OCTAVOS_ES = [t("srv_vacio"), "1/8", "1/4", "3/8", "1/2", "5/8", "3/4", "7/8",
+                    t("srv_lleno")];
 
 async function bloqueRevisiones(servicio) {
   const caja = h("div", { clase: "tarjeta" },
-    h("h3", {}, "Revisión de la unidad"));
+    h("h3", {}, t("srv_revision")));
   let datos;
   try {
     datos = await api.get(`/servicios/${servicio.id}/revisiones`);
@@ -2121,8 +2088,7 @@ async function bloqueRevisiones(servicio) {
 
   if (!datos.unidades.length) {
     caja.append(h("p", { clase: "chico gris" },
-      "Todavía no hay ninguna revisión. La hace el equipo desde su app, "
-      + "cuando la unidad cambia de manos."));
+      t("srv_sin_revision")));
     return caja;
   }
 
@@ -2133,23 +2099,22 @@ async function bloqueRevisiones(servicio) {
 function tarjetaRevision(u, servicio) {
   const bloque = h("div", { clase: "tarjeta lisa", style: "margin:0 0 14px" },
     h("div", { clase: "fila separa" },
-      h("b", {}, u.placa || "Sin placa"),
+      h("b", {}, u.placa || t("srv_sin_placa")),
       u.completa
-        ? h("span", { clase: "pastilla ok" }, "Recibida y entregada")
+        ? h("span", { clase: "pastilla ok" }, t("srv_recibida_entregada"))
         : u.recibe
-          ? h("span", { clase: "pastilla alerta" }, "Todavía en manos del equipo")
-          : h("span", { clase: "pastilla alerta" }, "Sin revisar")));
+          ? h("span", { clase: "pastilla alerta" }, t("srv_en_manos"))
+          : h("span", { clase: "pastilla alerta" }, t("srv_sin_revisar"))));
 
   if (u.kilometros != null) {
     bloque.append(h("p", { clase: "chico" },
-      h("b", {}, `${u.kilometros.toLocaleString("es-MX")} km`),
+      h("b", {}, t("srv_km").replace("{n}", u.kilometros.toLocaleString())),
       " recorridos durante el servicio"));
   }
 
   if (!u.recibe) {
     bloque.append(h("p", { clase: "chico gris" },
-      "Nadie registró cómo se recibió esta unidad. Sin ese estado de "
-      + "entrada, un daño reclamado después no se puede atribuir."));
+      t("srv_sin_entrada")));
     return bloque;
   }
 
@@ -2160,23 +2125,23 @@ function tarjetaRevision(u, servicio) {
      verdad las va a ver, y se piden una sola vez. */
   const zona = h("div", {});
   const abrir = h("button", { clase: "claro chico", style: "margin-top:10px" },
-    "Ver las fotos lado a lado");
+    t("srv_ver_fotos"));
 
   abrir.addEventListener("click", async () => {
     if (zona.firstChild) {
       zona.replaceChildren();
-      abrir.textContent = "Ver las fotos lado a lado";
+      abrir.textContent = t("srv_ver_fotos");
       return;
     }
     abrir.disabled = true;
-    abrir.textContent = "Bajando las fotos…";
+    abrir.textContent = t("srv_bajando_fotos");
     try {
       const conFotos = await api.get(
         `/servicios/${servicio.id}/revisiones?fotos=true`);
       const suya = conFotos.unidades.find(
         x => x.vehiculo_id === u.vehiculo_id);
       zona.replaceChildren(ladoALado(suya.recibe, suya.entrega));
-      abrir.textContent = "Ocultar las fotos";
+      abrir.textContent = t("srv_ocultar_fotos");
     } catch (e) {
       zona.replaceChildren(aviso(e.message, "alerta"));
     }
@@ -2191,9 +2156,9 @@ function tarjetaRevision(u, servicio) {
    ven de entrada: pesan nada y son lo que se consulta a diario. */
 function columnas(entrada, salida) {
   return h("div", { clase: "rejilla-revision" },
-    columna("Al recibirla", entrada),
-    salida ? columna("Al entregarla", salida)
-           : h("div", { clase: "chico gris" }, "Todavía no se entrega."));
+    columna(t("srv_al_recibirla"), entrada),
+    salida ? columna(t("srv_al_entregarla"), salida)
+           : h("div", { clase: "chico gris" }, t("srv_no_se_entrega")));
 }
 
 /* Las dos revisiones, angulo por angulo, en el mismo renglon. Ver la
@@ -2216,7 +2181,7 @@ function ladoALado(entrada, salida) {
     .filter(f => f.angulo === "dano");
   if (golpes.length) {
     zona.append(h("p", { clase: "chico", style: "margin-top:10px" },
-      h("b", {}, "Golpes registrados")));
+      h("b", {}, t("srv_golpes"))));
     zona.append(h("div", { clase: "tira-fotos" },
       ...golpes.filter(f => f.imagen)
         .map(f => h("img", { clase: "mini", src: f.imagen,
@@ -2240,17 +2205,17 @@ function columna(titulo, r) {
         { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })),
     h("div", { clase: "chico" },
       [r.kilometraje != null
-         ? `${r.kilometraje.toLocaleString("es-MX")} km` : null,
+         ? t("srv_km").replace("{n}", r.kilometraje.toLocaleString()) : null,
        r.combustible_octavos != null
-         ? `Tanque ${OCTAVOS_ES[r.combustible_octavos]}` : null,
-       r.tiene_firma ? "Firmada" : "Sin firma",
+         ? t("srv_tanque").replace("{n}", OCTAVOS_ES[r.combustible_octavos]) : null,
+       r.tiene_firma ? t("srv_firmada") : t("srv_sin_firma"),
       ].filter(Boolean).join(" · ")),
     r.nota ? h("div", { clase: "chico gris" }, r.nota) : null);
 }
 
 function foto(f, etiqueta) {
   if (!f) {
-    return h("div", { clase: "sin-foto chico gris" }, `${etiqueta}: sin foto`);
+    return h("div", { clase: "sin-foto chico gris" }, t("srv_sin_foto").replace("{e}", etiqueta));
   }
   return h("a", { href: f.imagen, target: "_blank", clase: "marco-foto" },
     h("img", { src: f.imagen, alt: etiqueta }),
