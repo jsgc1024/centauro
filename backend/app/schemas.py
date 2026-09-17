@@ -934,6 +934,10 @@ class ReemplazoVehiculoIn(Base):
     alerta_id: int | None = None
     motivo_tipo: MotivoCambio | None = None
     hasta_jornada_id: int | None = None
+    # La hora en que la unidad cambio de manos. De ella cuelga la
+    # revision de entrega: quien la recibio y en que estado. Vacia es la
+    # de ahora, que es lo normal cuando se captura en el momento.
+    relevado_en: datetime | None = None
 
 
 # ================================================================ NOMINA

@@ -223,7 +223,8 @@ def reemplazo_vehiculo(datos: s.ReemplazoVehiculoIn,
         db, datos.desde_jornada_id, datos.sale_vehiculo_id,
         datos.entra_vehiculo_id, datos.motivo,
         hecho_por_id=usuario.persona_id, alerta_id=datos.alerta_id,
-        motivo_tipo=datos.motivo_tipo, hasta_jornada_id=datos.hasta_jornada_id)
+        motivo_tipo=datos.motivo_tipo, hasta_jornada_id=datos.hasta_jornada_id,
+        relevado_en=datos.relevado_en)
 
     jornada = db.get(m.Jornada, datos.desde_jornada_id)
     sale = db.get(m.Vehiculo, datos.sale_vehiculo_id)

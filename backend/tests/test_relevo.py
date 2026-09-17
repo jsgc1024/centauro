@@ -482,3 +482,25 @@ def test_quien_no_se_presento_no_deja_hora_propuesta(cliente, sesion, datos):
         assert movimiento.hora_propuesta is None
     finally:
         db.close()
+
+
+def test_la_unidad_tambien_acepta_la_hora_del_cambio(cliente, sesion, datos):
+    """Del lado de las unidades la hora importa por otra razon: es el
+    momento en que la camioneta cambia de manos, y de ahi cuelga la
+    revision de entrega. El esquema tampoco la aceptaba."""
+    servicio = _montado(cliente, sesion, datos)
+    j = servicio["equipos"][0]["jornadas"][0]
+    inicio = datetime.fromisoformat(j["inicio_programado"])
+    cuando = inicio + timedelta(hours=3)
+
+    otra = next(v for v in datos["vehiculos"]
+                if v["id"] != datos["suburban"]["id"])
+    r = cliente.post("/contingencia/reemplazos/vehiculo",
+                     headers=sesion("consultor"),
+                     json={"desde_jornada_id": j["id"],
+                           "sale_vehiculo_id": datos["suburban"]["id"],
+                           "entra_vehiculo_id": otra["id"],
+                           "motivo": "Se poncho",
+                           "relevado_en": cuando.isoformat()})
+    assert r.status_code == 200, r.text
+    assert r.json()["relevado_en"] == cuando.isoformat()
