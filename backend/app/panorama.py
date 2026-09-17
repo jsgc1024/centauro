@@ -48,7 +48,11 @@ def panorama(db: Session, ahora: datetime | None = None,
     mios = _cartera(db, consultor_id)
 
     en_curso = _jornadas(db, m.EstatusJornada.EN_CURSO, mios)
-    fichas = [_ficha(db, j, relojes) for j in en_curso]
+    # El equipo guarda plaza_id pero no tiene relacion con Plaza, y el
+    # servicio guarda pais_id sin relacion con Pais: los nombres se
+    # buscan aparte, una sola vez.
+    plazas = {p.id: p.nombre for p in db.query(m.Plaza).all()}
+    fichas = [_ficha(db, j, relojes, plazas) for j in en_curso]
     sin_listo = _sin_listo(db, ahora, relojes, mios)
     alertas = _alertas(db, mios)
     atender = _que_atender(alertas, fichas, sin_listo)
@@ -102,7 +106,8 @@ def _jornadas(db: Session, estatus, mios: set[int] | None) -> list[m.Jornada]:
 # Lo que esta corriendo
 # ==================================================================
 
-def _ficha(db: Session, j: m.Jornada, relojes: reloj.Relojes) -> dict:
+def _ficha(db: Session, j: m.Jornada, relojes: reloj.Relojes,
+           plazas: dict[int, str]) -> dict:
     """Todo lo que hay que saber de una jornada en curso, ya medido con
     la hora del pais donde esta el equipo."""
     suyo = relojes.de_la_jornada(j)
@@ -111,6 +116,7 @@ def _ficha(db: Session, j: m.Jornada, relojes: reloj.Relojes) -> dict:
               .order_by(m.Hito.marcado_en.desc()).first())
     callado = silencio(ultimo, suyo)
     servicio = j.equipo.servicio
+    pais = relojes.pais(servicio.pais_id)
     falta_extra = (int((j.fin_programado - suyo).total_seconds() / 60)
                    if j.fin_programado else None)
 
@@ -124,8 +130,8 @@ def _ficha(db: Session, j: m.Jornada, relojes: reloj.Relojes) -> dict:
         "ejecutivo": " ".join(filter(None, [j.equipo.ejecutivo_nombre,
                                             j.equipo.ejecutivo_apellidos])).strip(),
         "pais_id": servicio.pais_id,
-        "pais": servicio.pais.nombre if servicio.pais else None,
-        "plaza": j.equipo.plaza.nombre if j.equipo.plaza else None,
+        "pais": pais.nombre if pais else None,
+        "plaza": plazas.get(j.equipo.plaza_id),
         "personas": [a.persona.nombre for a in j.personal],
         "personas_ids": [a.persona_id for a in j.personal],
         "placas": [a.vehiculo.placa for a in j.vehiculos],
