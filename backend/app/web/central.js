@@ -14,7 +14,7 @@
      4. la semana   para ver venir el lunes de seis servicios
 */
 import { api } from "./api.js";
-import { aviso, entrada, etiqueta, h, hora, mensaje } from "./util.js";
+import { aviso, entrada, estatus, etiqueta, h, hora, mensaje } from "./util.js";
 import { t } from "./idioma.js";
 
 const REFRESCO_SEGUNDOS = 45;
@@ -163,7 +163,7 @@ function fichaPanico(a, zona) {
         h("b", {}, canal),
         h("div", { clase: "gris chico" },
           `${t("central_reportada")} ${hora(a.reportada_en)}`)),
-      etiqueta(a.estatus, urgente ? "grave" : "alerta")),
+      etiqueta(estatus(a.estatus), urgente ? "grave" : "alerta")),
     a.descripcion ? h("p", { style: "margin:8px 0 0" }, a.descripcion) : null,
     /* La central estabiliza y el consultor formaliza. Verlo aqui ahorra
        la llamada de "oye, ¿ya lo cambiaste?". */

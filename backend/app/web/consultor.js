@@ -6,8 +6,7 @@
    hospedaje. Quien arma el documento lo ve igual que quien lo recibe. */
 import { api, sesion } from "./api.js";
 import { catalogos } from "./catalogos.js";
-import { aviso, campo, datosDeFormulario, dinero, entrada, etiqueta,
-         fecha, h, hora, lista, mensaje, telefono, vaciar } from "./util.js";
+import { aviso, campo, datosDeFormulario, dinero, entrada, estatus, etiqueta, fecha, h, hora, lista, mensaje, telefono, vaciar } from "./util.js";
 import { t } from "./idioma.js";
 
 /* Google cobra por sesion: todas las teclas de una misma busqueda mas el
@@ -55,7 +54,7 @@ export async function cartera(main) {
       h("td", {}, s.ejecutivo_completo
         || h("span", { clase: "gris" }, t("sin_ejecutivo"))),
       h("td", {}, s.tipo),
-      h("td", {}, etiqueta(s.estatus, TONO_ESTATUS[s.estatus] || "")),
+      h("td", {}, etiqueta(estatus(s.estatus), TONO_ESTATUS[s.estatus] || "")),
       h("td", { clase: "num" }, s.equipos ? s.equipos.length : 1),
     ));
   }

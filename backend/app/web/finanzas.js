@@ -16,8 +16,7 @@
    dias: confirmar cinco veces al mismo agente es como se paga dos veces
    la misma cosa. */
 import { api } from "./api.js";
-import { aviso, campo, dinero, entrada, etiqueta, fecha, h,
-         mensaje, reducirImagen } from "./util.js";
+import { aviso, campo, dinero, entrada, estatus, etiqueta, fecha, h, mensaje, reducirImagen } from "./util.js";
 import { t } from "./idioma.js";
 
 const TIPOS = { vuelo: t("fin_tipo_vuelo"), hospedaje: t("fin_tipo_hospedaje"),
@@ -667,7 +666,7 @@ async function pintarDevoluciones(zona) {
               h("td", {}, h("a", { href: rutaServicio(x) }, x.folio || "—")),
               h("td", { clase: "num", style: "text-align:right" },
                 dinero(x.monto, x.moneda)),
-              h("td", {}, etiqueta(x.estatus)))))))
+              h("td", {}, etiqueta(estatus(x.estatus))))))))
       : null,
 
     p.descuentos.length

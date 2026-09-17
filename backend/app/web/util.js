@@ -86,6 +86,37 @@ export function etiqueta(texto, tono = "") {
   return h("span", { clase: `etiqueta ${tono}`.trim() }, texto);
 }
 
+/* Los estatus llegan del servidor en su clave: "en_comprobacion",
+   "pagada". Antes se pintaban tal cual, asi que la consola en ingles
+   decia "calculada" y la portuguesa "cancelado". El mapa va escrito
+   entero a proposito: una clave armada al vuelo no se puede revisar. */
+const ESTATUS = {
+  borrador: "est_borrador",
+  solicitado: "est_solicitado",
+  cotizado: "est_cotizado",
+  autorizado: "est_autorizado",
+  planeado: "est_planeado",
+  asignado: "est_asignado",
+  en_curso: "est_en_curso",
+  terminado: "est_terminado",
+  cerrado: "est_cerrado",
+  cancelado: "est_cancelado",
+  abierta: "est_abierta",
+  en_atencion: "est_en_atencion",
+  cerrada: "est_cerrada",
+  calculada: "est_calculada",
+  pagada: "est_pagada",
+  transferido: "est_transferido",
+  en_comprobacion: "est_en_comprobacion",
+  devuelto: "est_devuelto",
+};
+
+export function estatus(codigo) {
+  if (!codigo) return "—";
+  const clave = ESTATUS[codigo];
+  return clave ? t(clave) : String(codigo).replace(/_/g, " ");
+}
+
 export function aviso(texto, tono = "") {
   return h("div", { clase: `aviso ${tono}`.trim() }, texto);
 }
@@ -109,6 +140,21 @@ export function hora(iso) {
   return `${String(f.getHours()).padStart(2, "0")}:${String(f.getMinutes()).padStart(2, "0")}`;
 }
 
+/* Cada moneda se escribe como se escribe en su pais. Con el formato de
+   Mexico fijo, R$ 1.234,56 salia "R$ 1,234.56": los separadores al
+   reves, que en un monto es justo lo que se lee mal. El formato es de
+   la moneda, no de quien mira: un monto en reales se ve igual en la
+   consola en ingles, que es como sale del banco brasileno. */
+const COMO_SE_ESCRIBE = {
+  MXN: "es-MX",
+  BRL: "pt-BR",
+  // El dolar NO va en en-US: ahi sale "$1,234.56", identico a como sale
+  // un peso. En una empresa que cobra en las dos monedas, ese signo
+  // suelto es un malentendido de 17 a 1. Con es-MX sale "USD 1,234.56".
+  USD: "es-MX",
+  VES: "es-VE",
+};
+
 export function dinero(valor, moneda = "MXN") {
   if (valor === null || valor === undefined) return "—";
   const numero = Number(valor);
@@ -117,7 +163,7 @@ export function dinero(valor, moneda = "MXN") {
      que "$550" y "$1,200". Lo que si trae centavos —la factura de un
      boleto— los conserva. */
   const cerrado = Number.isInteger(numero);
-  return new Intl.NumberFormat("es-MX", {
+  return new Intl.NumberFormat(COMO_SE_ESCRIBE[moneda] || "es-MX", {
     style: "currency", currency: moneda,
     minimumFractionDigits: cerrado ? 0 : 2,
     maximumFractionDigits: 2,

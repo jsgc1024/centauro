@@ -9,8 +9,7 @@
    lo que cambie despues viaja hacia adelante como ajuste. Eso no es una
    limitacion del sistema: es que el dinero ya salio. */
 import { api } from "./api.js";
-import { aviso, campo, dinero, entrada, etiqueta, fecha, h, lista,
-         mensaje } from "./util.js";
+import { aviso, campo, dinero, entrada, estatus, etiqueta, fecha, h, lista, mensaje } from "./util.js";
 import { catalogos } from "./catalogos.js";
 
 let paisActual = null;
@@ -126,7 +125,7 @@ async function pintarHistorial(zona, zonaCorte) {
         h("td", {}, String(c.personas)),
         h("td", { clase: "num", style: "text-align:right" },
           dinero(c.total, c.moneda)),
-        h("td", {}, etiqueta(c.estatus,
+        h("td", {}, etiqueta(estatus(c.estatus),
                              c.estatus === "pagada" ? "ok" : "alerta")),
         h("td", {},
           h("button", { clase: "claro chico", type: "button",
@@ -155,7 +154,7 @@ async function pintarCorte(zona, nominaId) {
       h("div", { style: "text-align:right" },
         h("div", { style: "font-size:22px;font-weight:650" },
           dinero(n.total, n.moneda)),
-        etiqueta(n.estatus, pagada ? "ok" : "alerta"),
+        etiqueta(estatus(n.estatus), pagada ? "ok" : "alerta"),
         pagada && n.pagada_en
           ? h("div", { clase: "gris chico" }, fecha(n.pagada_en)) : null)));
 

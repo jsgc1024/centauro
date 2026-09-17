@@ -9,8 +9,7 @@
    el trato, que no cambia, y la plantilla del primer mes. */
 import { api, sesion } from "./api.js";
 import { catalogos } from "./catalogos.js";
-import { campo, dinero, entrada, etiqueta, h, lista, mensaje, telefono,
-         vaciar } from "./util.js";
+import { campo, dinero, entrada, estatus, etiqueta, h, lista, mensaje, telefono, vaciar } from "./util.js";
 import { buscadorDeLugar } from "./mapa.js";
 import { IDIOMAS, idioma, t } from "./idioma.js";
 
@@ -512,7 +511,7 @@ export async function carteraImplantados(main) {
       h("td", {}, s.titular || vacio()),
       h("td", {}, s.unidad || vacio()),
       h("td", {}, s.ultimo_mes || vacio()),
-      h("td", {}, etiqueta(s.estatus, TONO_ESTATUS[s.estatus] || ""))));
+      h("td", {}, etiqueta(estatus(s.estatus), TONO_ESTATUS[s.estatus] || ""))));
   }
 
   main.append(h("table", { clase: "lista" },
