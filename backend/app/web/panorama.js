@@ -52,7 +52,7 @@ function estado(p) {
 
   caja.append(h("div", { clase: "estado_fila" },
     h("h3", { style: "margin:0" },
-      h("span", { clase: "punto " + e.nivel }), " ", titulo(e)),
+      h("span", { clase: "punto " + e.nivel }), " ", tituloDelEstado(e)),
     h("span", { clase: "gris chico" }, fecha(p.momento) + " · " + hora(p.momento))));
 
   caja.append(h("div", { clase: "estado_conteo" }, ...conteo(p.en_la_calle)));
@@ -69,7 +69,7 @@ function estado(p) {
   return caja;
 }
 
-function titulo(e) {
+function tituloDelEstado(e) {
   if (!e.atender.length) return t("pan_normal");
   const n = e.atender.length + e.mas;
   return n === 1 ? t("pan_una_cosa") : t("pan_n_cosas").replace("{n}", n);
