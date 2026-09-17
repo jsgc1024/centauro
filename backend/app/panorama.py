@@ -39,22 +39,27 @@ def _d(valor) -> Decimal:
     return Decimal(str(valor or 0))
 
 
-def panorama(db: Session, ahora: datetime | None = None,
-             consultor_id: int | None = None) -> dict:
-    """El estado de la operacion. Con `consultor_id` se recorta a su
-    cartera: la misma pantalla, solo sus servicios."""
+def panorama(db: Session, ahora: datetime | None = None) -> dict:
+    """El estado de la operacion, completo para quien la abra.
+
+    No se recorta por consultor a proposito. Cualquier consultor puede
+    trabajar la cartera de otro para cubrir una ausencia --asi esta
+    hecho el sistema, y cada accion sobre un servicio ajeno queda
+    marcada como cobertura-- y esconderle que el equipo de otro lleva
+    dos horas callado es lo contrario de para lo que sirve esta
+    pantalla.
+    """
     ahora = ahora or datetime.now()
     relojes = reloj.Relojes(db, ahora)
-    mios = _cartera(db, consultor_id)
 
-    en_curso = _jornadas(db, m.EstatusJornada.EN_CURSO, mios)
+    en_curso = _jornadas(db, m.EstatusJornada.EN_CURSO)
     # El equipo guarda plaza_id pero no tiene relacion con Plaza, y el
     # servicio guarda pais_id sin relacion con Pais: los nombres se
     # buscan aparte, una sola vez.
     plazas = {p.id: p.nombre for p in db.query(m.Plaza).all()}
     fichas = [_ficha(db, j, relojes, plazas) for j in en_curso]
-    sin_listo = _sin_listo(db, ahora, relojes, mios)
-    alertas = _alertas(db, mios)
+    sin_listo = _sin_listo(db, ahora, relojes)
+    alertas = _alertas(db)
     atender = _que_atender(alertas, fichas, sin_listo)
 
     return {
@@ -69,9 +74,9 @@ def panorama(db: Session, ahora: datetime | None = None,
         },
         "en_la_calle": _en_la_calle(fichas),
         "paises": _paises(fichas, relojes),
-        "dia": _dia(db, relojes, mios),
-        "dinero": _dinero(db, ahora, relojes, mios),
-        "calidad": _calidad(db, relojes, mios, en_curso),
+        "dia": _dia(db, relojes),
+        "dinero": _dinero(db, ahora, relojes),
+        "calidad": _calidad(db, relojes, en_curso),
         "alertas": {"abiertas": len([a for a in alertas
                                      if a.estatus == m.EstatusAlerta.ABIERTA]),
                     "en_atencion": len([a for a in alertas
@@ -83,23 +88,8 @@ def panorama(db: Session, ahora: datetime | None = None,
 # La cartera: quien ve que
 # ==================================================================
 
-def _cartera(db: Session, consultor_id: int | None) -> set[int] | None:
-    """Los servicios que puede ver quien abrio la pantalla. None es
-    direccion: lo ve todo."""
-    if consultor_id is None:
-        return None
-    filas = (db.query(m.Servicio.id)
-             .filter(m.Servicio.consultor_id == consultor_id).all())
-    return {f[0] for f in filas}
-
-
-def _es_mio(jornada: m.Jornada, mios: set[int] | None) -> bool:
-    return mios is None or jornada.equipo.servicio_id in mios
-
-
-def _jornadas(db: Session, estatus, mios: set[int] | None) -> list[m.Jornada]:
-    filas = db.query(m.Jornada).filter(m.Jornada.estatus == estatus).all()
-    return [j for j in filas if _es_mio(j, mios)]
+def _jornadas(db: Session, estatus) -> list[m.Jornada]:
+    return db.query(m.Jornada).filter(m.Jornada.estatus == estatus).all()
 
 
 # ==================================================================
@@ -208,17 +198,15 @@ def _paises(fichas: list[dict], relojes: reloj.Relojes) -> list[dict]:
 # Lo que hay que atender, en orden de consecuencia
 # ==================================================================
 
-def _alertas(db: Session, mios: set[int] | None) -> list[m.AlertaIncidencia]:
+def _alertas(db: Session) -> list[m.AlertaIncidencia]:
     filas = (db.query(m.AlertaIncidencia)
              .filter(m.AlertaIncidencia.estatus != m.EstatusAlerta.CERRADA)
              .order_by(m.AlertaIncidencia.reportada_en.desc()).all())
-    if mios is None:
-        return filas
-    return [a for a in filas if a.servicio_id in mios]
+    return filas
 
 
-def _sin_listo(db: Session, ahora: datetime, relojes: reloj.Relojes,
-               mios: set[int] | None) -> list[dict]:
+def _sin_listo(db: Session, ahora: datetime,
+               relojes: reloj.Relojes) -> list[dict]:
     """Lo que arranca dentro de la ventana y le falta algo. Las faltas
     van en clave, no en español: esta consola habla tres idiomas."""
     margen = reloj.margen_de_paises(db)
@@ -231,8 +219,6 @@ def _sin_listo(db: Session, ahora: datetime, relojes: reloj.Relojes,
                 .order_by(m.Jornada.inicio_programado).all())
     fuera = []
     for j in jornadas:
-        if not _es_mio(j, mios):
-            continue
         # Lo que entro por el margen y alla todavia no esta en ventana.
         suyo = relojes.de_la_jornada(j)
         if not (suyo <= j.inicio_programado
@@ -309,7 +295,7 @@ def _nivel(atender: list[dict]) -> str:
 # La tira del dia, un eje por pais
 # ==================================================================
 
-def _dia(db: Session, relojes: reloj.Relojes, mios: set[int] | None) -> list[dict]:
+def _dia(db: Session, relojes: reloj.Relojes) -> list[dict]:
     paises = db.query(m.Pais).filter_by(activo=True).all()
     tiras = []
     for pais in paises:
@@ -323,8 +309,6 @@ def _dia(db: Session, relojes: reloj.Relojes, mios: set[int] | None) -> list[dic
                     .order_by(m.Jornada.inicio_programado).all())
         barras = []
         for j in jornadas:
-            if not _es_mio(j, mios):
-                continue
             ultimo = (db.query(m.Hito)
                       .filter_by(jornada_id=j.id)
                       .order_by(m.Hito.marcado_en.desc()).first())
@@ -361,12 +345,8 @@ def _dia(db: Session, relojes: reloj.Relojes, mios: set[int] | None) -> list[dic
 # El dinero, cuatro cifras
 # ==================================================================
 
-def _dinero(db: Session, ahora: datetime, relojes: reloj.Relojes,
-            mios: set[int] | None) -> dict:
+def _dinero(db: Session, ahora: datetime, relojes: reloj.Relojes) -> dict:
     viaticos = db.query(m.AsignacionViatico).all()
-    if mios is not None:
-        viaticos = [v for v in viaticos
-                    if v.jornada and v.jornada.equipo.servicio_id in mios]
 
     por_transferir = [v for v in viaticos
                       if v.estatus in (m.EstatusViatico.ASIGNADO,
@@ -383,8 +363,6 @@ def _dinero(db: Session, ahora: datetime, relojes: reloj.Relojes,
     nomina = db.query(m.NominaSemanal).filter_by(fecha_corte=corte).first()
 
     cierres = db.query(m.Cierre).all()
-    if mios is not None:
-        cierres = [c for c in cierres if c.servicio_id in mios]
     abiertos = [c for c in cierres if c.estatus == m.EstatusCierre.ABIERTO]
     cierres_vencidos = [c for c in abiertos
                         if c.limite_consultor < relojes.ahora(
@@ -425,7 +403,7 @@ def _dinero(db: Session, ahora: datetime, relojes: reloj.Relojes,
 # La calidad del reporte: ¿nos estan reportando de verdad?
 # ==================================================================
 
-def _calidad(db: Session, relojes: reloj.Relojes, mios: set[int] | None,
+def _calidad(db: Session, relojes: reloj.Relojes,
              en_curso: list[m.Jornada]) -> dict:
     """Las tres cifras que no hablan de la operacion sino de si lo que
     nos reportan es cierto. Hoy solo se ven al cerrar cada servicio, una
@@ -438,8 +416,7 @@ def _calidad(db: Session, relojes: reloj.Relojes, mios: set[int] | None,
                .join(m.Servicio, m.Equipo.servicio_id == m.Servicio.id)
                .filter(m.Jornada.estatus != m.EstatusJornada.CANCELADA).all())
     del_dia = [j for j in del_dia
-               if _es_mio(j, mios)
-               and j.fecha == hoy_por_pais.get(j.equipo.servicio.pais_id)]
+               if j.fecha == hoy_por_pais.get(j.equipo.servicio.pais_id)]
     ids = [j.id for j in del_dia]
 
     # Una llegada marcada fuera de la geocerca no se guarda: operacion.py
@@ -452,13 +429,8 @@ def _calidad(db: Session, relojes: reloj.Relojes, mios: set[int] | None,
                     .filter(m.Alerta.jornada_id.in_(ids),
                             m.Alerta.tipo == m.TipoAlerta.FUERA_DE_GEOCERCA)
                     .count())
-    pendientes = db.query(m.Hito).filter(m.Hito.requiere_revision.is_(True))
-    if mios is not None:
-        pendientes = (pendientes
-                      .join(m.Jornada, m.Hito.jornada_id == m.Jornada.id)
-                      .join(m.Equipo, m.Jornada.equipo_id == m.Equipo.id)
-                      .filter(m.Equipo.servicio_id.in_(mios or {0})))
-    por_validar = pendientes.count()
+    por_validar = (db.query(m.Hito)
+                   .filter(m.Hito.requiere_revision.is_(True)).count())
 
     # Una unidad en la calle sin estado de entrada es un daño que despues
     # no se le puede atribuir a nadie.
@@ -485,19 +457,15 @@ def _calidad(db: Session, relojes: reloj.Relojes, mios: set[int] | None,
     }
 
 
-def marcas_raras(db: Session, consultor_id: int | None = None,
-                 ahora: datetime | None = None) -> dict:
+def marcas_raras(db: Session, ahora: datetime | None = None) -> dict:
     """El detalle detras de las dos cifras de calidad. Resolverlas sigue
     siendo de la central; esto es para poder verlas sin pedirlas."""
     ahora = ahora or datetime.now()
     relojes = reloj.Relojes(db, ahora)
-    mios = _cartera(db, consultor_id)
 
     consulta = (db.query(m.Hito)
                 .join(m.Jornada, m.Hito.jornada_id == m.Jornada.id)
                 .join(m.Equipo, m.Jornada.equipo_id == m.Equipo.id))
-    if mios is not None:
-        consulta = consulta.filter(m.Equipo.servicio_id.in_(mios or {0}))
 
     hoy_por_pais = {p.id: relojes.hoy(p.id)
                     for p in db.query(m.Pais).filter_by(activo=True).all()}
@@ -523,8 +491,6 @@ def marcas_raras(db: Session, consultor_id: int | None = None,
                .join(m.Jornada, m.Alerta.jornada_id == m.Jornada.id)
                .join(m.Equipo, m.Jornada.equipo_id == m.Equipo.id)
                .filter(m.Alerta.tipo == m.TipoAlerta.FUERA_DE_GEOCERCA))
-    if mios is not None:
-        alertas = alertas.filter(m.Equipo.servicio_id.in_(mios or {0}))
 
     intentos = []
     for a in alertas.order_by(m.Alerta.creada_en.desc()).all():

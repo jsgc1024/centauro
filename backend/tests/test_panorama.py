@@ -200,28 +200,34 @@ def test_un_intento_de_marcar_lejos_del_punto_queda_contado(cliente, sesion,
 # Quien ve que
 # ==================================================================
 
-def test_el_consultor_solo_ve_su_cartera(cliente, sesion, datos):
-    """La misma pantalla, recortada. La direccion ve las dos."""
+def test_el_consultor_ve_toda_la_operacion_no_solo_la_suya(cliente, sesion,
+                                                           datos):
+    """A proposito, y no por descuido.
+
+    Cualquier consultor puede trabajar la cartera de otro para cubrir una
+    ausencia --asi esta hecho el sistema, y cada accion sobre un servicio
+    ajeno queda marcada como cobertura--. Esconderle que el equipo de
+    otro lleva dos horas callado seria lo contrario de para lo que sirve
+    esta pantalla.
+    """
     h = sesion("consultor")
     hp = sesion("juan")
     personas = cliente.get("/catalogos/personal", headers=sesion("admin")).json()
     ana = next(p for p in personas if p["nombre"].startswith("Ana"))
     beatriz = next(p for p in personas if p["nombre"].startswith("Beatriz"))
 
-    mio = _servicio_hoy(cliente, h, datos, consultor_id=ana["id"])
-    ajeno = _servicio_hoy(cliente, h, datos, hora="08:00:00",
-                          consultor_id=beatriz["id"])
+    de_ana = _servicio_hoy(cliente, h, datos, consultor_id=ana["id"])
+    de_beatriz = _servicio_hoy(cliente, h, datos, hora="08:00:00",
+                               consultor_id=beatriz["id"])
     juan = datos["personal"]["Juan Ramirez"]["id"]
-    _arrancar(cliente, h, hp, datos, mio, juan, _momento(11, 40))
+    _arrancar(cliente, h, hp, datos, de_ana, juan, _momento(11, 40))
 
-    direccion = _panorama(cliente, sesion("dirgeneral"), _momento(12))
-    folios = {b["servicio"] for tira in direccion["dia"] for b in tira["barras"]}
-    assert {mio["folio"], ajeno["folio"]} <= folios
-
-    suyo = _panorama(cliente, sesion("consultor2"), _momento(12))
-    folios2 = {b["servicio"] for tira in suyo["dia"] for b in tira["barras"]}
-    assert mio["folio"] not in folios2
-    assert ajeno["folio"] in folios2
+    esperados = {de_ana["folio"], de_beatriz["folio"]}
+    for quien in ("dirgeneral", "consultor", "consultor2"):
+        p = _panorama(cliente, sesion(quien), _momento(12))
+        folios = {b["servicio"] for tira in p["dia"] for b in tira["barras"]}
+        assert esperados <= folios, quien
+        assert p["en_la_calle"]["personas"] == 1, quien
 
 
 # ==================================================================
