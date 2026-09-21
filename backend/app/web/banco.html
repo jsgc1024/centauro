@@ -40,6 +40,7 @@
   <a href="?p=servicio&i=es">Servicio</a>
   <a href="?p=panorama&i=es">Panorama</a>
   <a href="?p=panorama&i=es&d=roto">Panorama · mal día</a>
+  <a href="?p=accesos&i=es">Accesos</a>
   <span style="opacity:.6">|</span>
   <a href="?p=finanzas&i=en">EN</a>
   <a href="?p=finanzas&i=pt">PT</a>
@@ -126,12 +127,35 @@ const ASIGNACIONES_EQUIPO = {
                 dias: 4 }],
 };
 
+/* Los tres estados de un cambio, para verlos juntos: uno corriendo con
+   su dia partido, uno de implantado con tope de mes, y uno que ya cerro
+   porque el titular volvio. */
 const REEMPLAZOS = [{
   id: 1, tipo: "personal", sale: "Juan Ramirez", entra: "Luis Mendoza",
   motivo: "Se sintio mal y la central lo relevo a las 11:00",
   motivo_tipo: "contingencia", jornadas_afectadas: 4,
   desde: dia(0), hasta: null, formalizo: "Ana Solis",
   alerta_id: null, creado_en: `${dia(0)}T11:05:00`,
+  en_curso: true, se_vuelve_a_pedir: false,
+  partidos: [{ fecha: dia(0), hora: "11:05", quien: "Juan Ramirez" }],
+  regreso_en: null, regreso_por: null,
+}, {
+  id: 2, tipo: "personal", sale: "Marta Solis", entra: "Hector Palacios",
+  motivo: "Incapacidad", motivo_tipo: "enfermedad", jornadas_afectadas: 12,
+  desde: dia(-6), hasta: dia(8), formalizo: "Ana Solis",
+  alerta_id: null, creado_en: `${dia(-6)}T08:10:00`,
+  en_curso: true, se_vuelve_a_pedir: true, partidos: [],
+  regreso_en: null, regreso_por: null,
+}, {
+  id: 3, tipo: "personal", sale: "Ana Torres", entra: "Beatriz Roman",
+  motivo: "Vacaciones", motivo_tipo: "vacaciones", jornadas_afectadas: 5,
+  desde: dia(-14), hasta: dia(-10), formalizo: "Ana Solis",
+  alerta_id: null, creado_en: `${dia(-14)}T09:00:00`,
+  en_curso: false, se_vuelve_a_pedir: false,
+  /* El dia partido del regreso: aqui el que cobra hasta esa hora es el
+     que estaba cubriendo, no el titular. */
+  partidos: [{ fecha: dia(-10), hora: "09:40", quien: "Beatriz Roman" }],
+  regreso_en: `${dia(-11)}T17:30:00`, regreso_por: "Ana Solis",
 }];
 
 const DESGLOSE = (base) => [
@@ -319,6 +343,84 @@ const RUTAS = {
       propuestos: [{ persona_id: 2, monto: 1500 }, { persona_id: 2, monto: 1500 }],
     },
   },
+  /* La vista previa del regreso: hasta que dia se queda el que cubria,
+     el dia partido con su hora, y el dinero de los dos. */
+  "/contingencia/reemplazos/1/regreso/vista-previa": {
+    cerrado: 1, servicio_id: 1, regresa: "Juan Ramirez", sale: "Luis Mendoza",
+    desde: dia(0), hasta: dia(2), dias_cubiertos: 3,
+    jornadas_devueltas: [dia(3), dia(4)],
+    jornadas_partidas: [dia(2)],
+    jornadas_con_choque: [],
+    hora_propuesta: `${dia(2)}T10:40:00`,
+    viaticos: {
+      a_comprobar: [{ persona_id: 2, monto: 900, limite: `${dia(5)}T23:59:00` }],
+      cancelados: [],
+      propuestos: [{ persona_id: 1, monto: 1500 }],
+    },
+  },
+  /* Y la de un regreso que se atrasa: el que cubria recupera dias que
+     ya habian vuelto al titular. */
+  "/contingencia/reemplazos/3/regreso/vista-previa": {
+    cerrado: 3, servicio_id: 1, regresa: "Ana Torres", sale: "Beatriz Roman",
+    desde: dia(-14), hasta: dia(-8), dias_cubiertos: 7,
+    jornadas_devueltas: [],
+    jornadas_recuperadas: [dia(-10), dia(-9), dia(-8)],
+    jornadas_partidas: [],
+    jornadas_con_choque: [],
+    hora_propuesta: null,
+    viaticos: { a_comprobar: [], cancelados: [],
+                propuestos: [{ persona_id: 8, monto: 2100 }] },
+  },
+  /* Los cuatro casos del panel de accesos. El ultimo es el que duele:
+     dado de baja como empleado y con la puerta abierta. */
+  "/auth/usuarios": [
+    { usuario_id: 1, persona_id: 3, nombre: "Ana Solis",
+      correo: "ana.solis@centauro.lat", rol: "consultor", activo: true,
+      estrenado: true, ultimo_acceso: new Date(Date.now() - 12 * 60000).toISOString(),
+      persona_de_baja: false },
+    { usuario_id: 2, persona_id: 2, nombre: "Luis Mendoza",
+      correo: "luismendoza88@gmail.com", rol: "personal_seguridad",
+      activo: true, estrenado: false, ultimo_acceso: null,
+      persona_de_baja: false },
+    { usuario_id: 3, persona_id: 7, nombre: "Carlos Vega",
+      correo: "carlos.vega@centauro.lat", rol: "central", activo: true,
+      estrenado: true,
+      ultimo_acceso: new Date(Date.now() - 130 * 86400000).toISOString(),
+      persona_de_baja: false },
+    { usuario_id: 4, persona_id: 11, nombre: "Hector Palacios",
+      correo: "hector.palacios@centauro.lat", rol: "finanzas", activo: true,
+      estrenado: true,
+      ultimo_acceso: new Date(Date.now() - 40 * 86400000).toISOString(),
+      persona_de_baja: true },
+    { usuario_id: 5, persona_id: 12, nombre: "Raul Ortiz",
+      correo: "raul.ortiz@freelance.mx", rol: "personal_seguridad",
+      activo: false, estrenado: true,
+      ultimo_acceso: new Date(Date.now() - 200 * 86400000).toISOString(),
+      persona_de_baja: false },
+  ],
+  /* Para ver el aviso que de verdad importa: cerrar una puerta no saca a
+     nadie de la operacion, y esas jornadas se quedan sin el. */
+  "/auth/usuarios/3/desactivar": {
+    resultado: "desactivado", usuario_id: 3, nombre: "Carlos Vega",
+    correo: "carlos.vega@centauro.lat", rol: "central", activo: false,
+    sesion_cortada: true,
+    jornadas_por_cubrir: [
+      { servicio_id: 1, folio: "CN-2026-0151", desde: dia(1), hasta: dia(3),
+        dias: 3 },
+      { servicio_id: 2, folio: "CN-2026-0148", desde: dia(5), hasta: dia(6),
+        dias: 2 }],
+    aviso: "Sigue asignado a 5 dia(s) en 2 servicio(s). Hay que cubrirlos.",
+  },
+  "/auth/usuarios/1/historial": [
+    { accion: "rol cambiado", antes: "central", despues: "consultor",
+      detalle: "Cambio de area", quien: "Admin Sistema",
+      rol_de_quien: "admin",
+      cuando: new Date(Date.now() - 90 * 86400000).toISOString() },
+    { accion: "acceso creado", antes: null, despues: "central",
+      detalle: "ana.solis@centauro.lat", quien: "Admin Sistema",
+      rol_de_quien: "admin",
+      cuando: new Date(Date.now() - 400 * 86400000).toISOString() },
+  ],
   "/servicios/equipos/1/recomendaciones": {
     personal: {
       disponibles: [
@@ -387,7 +489,11 @@ window.fetch = async (ruta) => {
 
 const { sesion } = await import("/consola/api.js");
 sesion.token = "banco";
-sesion.usuario = { rol: "finanzas", nombre: "Laura Mendez", persona_id: 9 };
+/* El panel de accesos es de administracion, asi que el banco entra con
+   ese rol cuando se pide esa pantalla. Las demas siguen con finanzas. */
+sesion.usuario = PANTALLA === "accesos"
+  ? { rol: "admin", nombre: "Admin Sistema", persona_id: 1 }
+  : { rol: "finanzas", nombre: "Laura Mendez", persona_id: 9 };
 
 const main = document.createElement("main");
 document.getElementById("app").append(main);
@@ -396,6 +502,9 @@ try {
   if (PANTALLA === "panorama") {
     const { pantallaPanorama } = await import("/consola/panorama.js");
     await pantallaPanorama(main);
+  } else if (PANTALLA === "accesos") {
+    const { pantallaAccesos } = await import("/consola/accesos.js");
+    await pantallaAccesos(main);
   } else if (PANTALLA === "servicio") {
     const { pantallaServicio } = await import("/consola/servicio.js");
     await pantallaServicio(main, 1);

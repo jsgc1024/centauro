@@ -7,7 +7,7 @@ Durante un tiempo la central decia 60 minutos y esta pantalla 120, asi
 que un equipo podia estar en rojo para el operador y verse normal para
 la direccion.
 """
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 
 from ayudas import (LEJOS, asignar, configurar_origen, crear_servicio,
                     jornada, marcar)
@@ -119,14 +119,22 @@ def test_un_equipo_callado_sube_al_rengon_de_arriba(cliente, sesion, datos):
     hp = sesion("juan")
     servicio = _servicio_hoy(cliente, h, datos)
     juan = datos["personal"]["Juan Ramirez"]["id"]
-    _arrancar(cliente, h, hp, datos, servicio, juan, _momento(10, 0))
+    # La hora de la marca no puede estar en el futuro: el candado la
+    # cambiaria por la del servidor y el silencio medido despues saldria
+    # de horas. Las 10:00 cuando ya pasaron; cuando no, hace un minuto.
+    # Las distancias --treinta minutos y sesenta y uno-- son lo que esta
+    # prueba mide, y esas no cambian.
+    arranque = min(_momento(10, 0),
+                   datetime.now().replace(second=0, microsecond=0)
+                   - timedelta(minutes=1))
+    _arrancar(cliente, h, hp, datos, servicio, juan, arranque)
 
     hd = sesion("dirgeneral")
 
-    tranquilo = _panorama(cliente, hd, _momento(10, 30))
+    tranquilo = _panorama(cliente, hd, arranque + timedelta(minutes=30))
     assert tranquilo["estado"]["nivel"] == "normal", tranquilo["estado"]
 
-    callado = _panorama(cliente, hd, _momento(11, 1))
+    callado = _panorama(cliente, hd, arranque + timedelta(minutes=61))
     cosas = callado["estado"]["atender"]
     assert [c["tipo"] for c in cosas] == ["silencio"]
     assert cosas[0]["servicio"] == servicio["folio"]
@@ -152,6 +160,91 @@ def test_lo_que_falta_viaja_en_clave_y_no_en_espanol(cliente, sesion, datos):
     assert set(suyo["faltas"]) <= {"personal", "confirmar", "unidad",
                                    "meet_and_greet"}
     assert "personal" in suyo["faltas"]
+
+
+def test_quien_va_en_camino_ya_no_aparece_como_falta_de_confirmar(
+        cliente, sesion, datos):
+    """Ir manejando hacia el punto dice más que confirmar.
+
+    La dirección veía "le falta confirmar al equipo" mientras la persona
+    estaba en la carretera: la confirmación sólo se apagaba con el botón
+    de Confirmar, y quien ya iba en camino nunca volvía a tocarlo. Un
+    renglón rojo que miente enseña a ignorar los renglones rojos.
+    """
+    h = sesion("consultor")
+    hp = sesion("juan")
+    juan = datos["personal"]["Juan Ramirez"]["id"]
+    servicio = _servicio_hoy(cliente, h, datos, hora="13:00:00")
+    j = servicio["equipos"][0]["jornadas"][0]
+    asignar(cliente, h, j["id"], persona_id=juan)
+    configurar_origen(cliente, h, j["id"])
+
+    def faltas():
+        p = _panorama(cliente, sesion("dirgeneral"), _momento(12))
+        suyo = next((c for c in p["estado"]["atender"]
+                     if c.get("jornada_id") == j["id"]), None)
+        assert suyo is not None, p["estado"]
+        return suyo["faltas"]
+
+    assert "confirmar" in faltas()
+
+    r = cliente.post(f"/campo/jornadas/{j['id']}/en-camino",
+                     json=LEJOS, headers=hp)
+    assert r.status_code == 200, r.text
+
+    assert "confirmar" not in faltas()
+
+
+def test_quien_ya_marco_su_llegada_tampoco_aparece_sin_confirmar(
+        cliente, sesion, datos):
+    """El caso que de verdad se ve feo: la persona parada en el punto,
+    con su llegada marcada, y la dirección leyendo que falta confirmar.
+
+    Pasaba siempre en un servicio de hoy para hoy: el aviso de la
+    víspera nunca le tocó, así que nadie podía apagar ese renglón.
+    """
+    h = sesion("consultor")
+    hp = sesion("juan")
+    juan = datos["personal"]["Juan Ramirez"]["id"]
+
+    # Anclado al reloj real, no a una hora fija del dia.
+    #
+    # `registrar_hito` no acepta marcas del futuro: si la hora que manda
+    # el telefono va mas de dos minutos adelante de la del servidor, se
+    # guarda la del servidor. Con una llegada escrita a las 12:30 fijas,
+    # esta prueba pasaba por la tarde y fallaba por la manana --la marca
+    # quedaba a la hora real y el panorama, leido en su reloj falso de
+    # las 12:00, veia al equipo callado tres horas y sacaba la tarjeta de
+    # silencio en vez de la de "le falta algo"--. Una prueba que depende
+    # de la hora a la que se corre no prueba nada.
+    ahora = datetime.now().replace(second=0, microsecond=0)
+    llegada = ahora - timedelta(minutes=5)
+    arranca = ahora + timedelta(hours=1)
+
+    servicio = crear_servicio(
+        cliente, h, datos,
+        [jornada(arranca.date(), datos["modalidades"]["full_day"]["id"],
+                 hora=arranca.strftime("%H:%M:%S"))])
+    j = servicio["equipos"][0]["jornadas"][0]
+    asignar(cliente, h, j["id"], persona_id=juan)
+    configurar_origen(cliente, h, j["id"])
+
+    def faltas():
+        p = _panorama(cliente, sesion("dirgeneral"), ahora)
+        suyo = next((c for c in p["estado"]["atender"]
+                     if c.get("jornada_id") == j["id"]), None)
+        assert suyo is not None, p["estado"]
+        # Con la tarjeta entera en el mensaje: un KeyError suelto no dice
+        # cual de los tres tipos de tarjeta salio, que es justo el dato.
+        assert "faltas" in suyo, suyo
+        return suyo["faltas"]
+
+    assert "confirmar" in faltas()
+
+    r = marcar(cliente, hp, j["id"], "llegada_origen", llegada)
+    assert r.status_code in (200, 201), r.text
+
+    assert "confirmar" not in faltas()
 
 
 # ==================================================================

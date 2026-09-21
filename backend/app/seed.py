@@ -34,15 +34,19 @@ def sembrar() -> dict:
                                   "zona_horaria": "America/Mexico_City"})
         br, _ = _obtener_o_crear(db, m.Pais, {"codigo": "BR"},
                                  {"nombre": "Brasil", "moneda_local": m.Moneda.BRL,
-                                  "lada": "+55",
+                                  "lada": "+55", "idioma": "pt",
                                   "zona_horaria": "America/Sao_Paulo"})
-        # Por si la base ya existia antes de que hubiera lada o zona.
-        for pais, lada, zona in ((mx, "+52", "America/Mexico_City"),
-                                 (br, "+55", "America/Sao_Paulo")):
+        # Por si la base ya existia antes de que hubiera lada, zona o
+        # idioma. El idioma decide en que lengua ve la app el personal de
+        # campo de ese pais: no lo elige el agente, sale de su plaza.
+        for pais, lada, zona, lengua in ((mx, "+52", "America/Mexico_City", "es"),
+                                         (br, "+55", "America/Sao_Paulo", "pt")):
             if not pais.lada:
                 pais.lada = lada
             if not pais.zona_horaria:
                 pais.zona_horaria = zona
+            if not pais.idioma:
+                pais.idioma = lengua
 
         # ------------------------------------- plazas con recurso local
         # Estas cuatro son la operacion de todos los dias: van fijas en la
@@ -404,6 +408,7 @@ def sembrar_accesos() -> dict:
             ("Admin Sistema", "admin@centauro.lat"),
             ("Salvador Garcia Carrasco", "direccion@centauro.lat"),
             ("Jose Luis Pichardo", "operaciones@centauro.lat"),
+            ("Elena Vargas", "rrhh@centauro.lat"),
         ]:
             persona, creada = _obtener_o_crear(
                 db, m.Persona, {"correo": correo},
@@ -423,6 +428,7 @@ def sembrar_accesos() -> dict:
             "central2@centauro.lat": m.Rol.CENTRAL,
             "finanzas@centauro.lat": m.Rol.FINANZAS,
             "finanzas2@centauro.lat": m.Rol.FINANZAS,
+            "rrhh@centauro.lat": m.Rol.RECURSOS_HUMANOS,
             "beatriz.roman@centauro.lat": m.Rol.CONSULTOR,
             "juan.ramirez@centauro.lat": m.Rol.PERSONAL_SEGURIDAD,
             "luis.mendoza@centauro.lat": m.Rol.PERSONAL_SEGURIDAD,
@@ -510,17 +516,34 @@ def sembrar_bonos() -> dict:
         if not mx:
             return {"error": "Primero hay que sembrar los catalogos"}
 
+        # En el orden en que le importan al cliente, no en el que son
+        # faciles de medir: llegar y no callarse son mas de la mitad del
+        # bono, porque en proteccion ejecutiva ahi esta el riesgo.
+        # MONTOS DE EJEMPLO: se ajustan en la pantalla, por pais.
+        #     codigo, nombre, umbral, monto, minutos de margen, veces
         criterios = [
-            (m.CodigoCriterio.PUNTUALIDAD, "Puntualidad", "100", "800"),
-            (m.CodigoCriterio.SEGUIMIENTO_APP, "Seguimiento en la app", "90", "600"),
-            (m.CodigoCriterio.CAPACITACION, "Capacitacion del mes", "100", "500"),
-            (m.CodigoCriterio.CIERRE_VIATICOS, "Cierre de viaticos", "100", "700"),
+            (m.CodigoCriterio.PUNTUALIDAD, "Llegar al punto", "100", "780", 5, 1),
+            (m.CodigoCriterio.SEGUIMIENTO_APP, "No dejar callada a la central",
+             "90", "650", 0, 0),
+            (m.CodigoCriterio.ENTREGA_UNIDAD, "Entregar la unidad documentada",
+             "100", "390", 0, 0),
+            (m.CodigoCriterio.CIERRE_VIATICOS, "Comprobar el dinero a tiempo",
+             "100", "390", 0, 0),
+            (m.CodigoCriterio.CAPACITACION, "Capacitacion del mes",
+             "100", "260", 0, 0),
+            # En veces, no en porcentaje: el umbral es "al menos una".
+            # Y no reparte: es el unico que suma y no resta.
+            (m.CodigoCriterio.RECOMPRA, "Que el cliente lo vuelva a pedir",
+             "1", "130", 0, 0),
         ]
-        for codigo, nombre, umbral, monto in criterios:
+        for codigo, nombre, umbral, monto, minutos, veces in criterios:
             _obtener_o_crear(db, m.CriterioEstrella,
                              {"pais_id": mx.id, "codigo": codigo},
                              {"nombre": nombre, "umbral_pct": D(umbral),
-                              "monto_mensual": D(monto), "moneda": m.Moneda.MXN})
+                              "monto_mensual": D(monto), "moneda": m.Moneda.MXN,
+                              "tolerancia_minutos": minutos,
+                              "tolerancia_ocasiones": veces,
+                              "reparte": codigo != m.CodigoCriterio.RECOMPRA})
 
         for tipo, pct in [(m.TipoServicio.EVENTUAL, "3"),
                           (m.TipoServicio.IMPLANTADO, "1")]:

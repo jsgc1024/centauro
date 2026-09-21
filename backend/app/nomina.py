@@ -270,7 +270,8 @@ def calcular(db: Session, pais_id: int, fecha_corte: date | None = None) -> dict
         subtotal = CERO
         for c in conceptos:
             db.add(m.ConceptoNomina(
-                renglon_id=renglon.id, jornada_id=c.get("jornada_id"),
+                renglon_id=renglon.id, persona_id=persona_id,
+                jornada_id=c.get("jornada_id"),
                 ajuste_id=c.get("ajuste_id"), descripcion=c["descripcion"],
                 monto=c["monto"], factor_festivo=c["factor"],
                 horas_extra=c["horas_extra"], rol_id=c.get("rol_id")))

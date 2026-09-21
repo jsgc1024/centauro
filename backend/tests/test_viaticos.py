@@ -239,8 +239,9 @@ def test_se_cierra_cuando_se_devuelve_el_sobrante(cliente, sesion, datos):
                      headers=h)
 
     sobrante = float(estado["monto_total"]) - float(estado["monto_comprobado"])
-    cliente.post(f"/viaticos/{viatico['id']}/devolver?monto={sobrante:.2f}",
-                 headers=h)
+    # La devolucion la captura finanzas, que es quien mira la cuenta.
+    from ayudas import devolver
+    devolver(cliente, sesion("finanzas"), viatico["id"], f"{sobrante:.2f}")
 
     cierre = cliente.post(f"/viaticos/{viatico['id']}/cerrar", headers=h).json()
     assert cierre["resultado"] == "cerrado"
@@ -377,3 +378,60 @@ def test_si_todo_cuadra_no_aplica_el_cierre_con_descuento(cliente, sesion, datos
     r = cliente.post(f"/viaticos/{viatico['id']}/cerrar-con-descuento",
                      json={"motivo": "No aplica"}, headers=h)
     assert r.status_code == 409
+
+
+# ================== la app no dice "te depositaron" antes del deposito
+#
+# Encontrado en la calle el 21 de septiembre. La app sumaba el monto
+# AUTORIZADO y lo rotulaba "te depositaron": alguien leia que ya tenia el
+# dinero, salia a trabajar contando con el, y no estaba.
+#
+# Y pesaba mas de lo que parece: ese monto entraba a "te falta comprobar"
+# y le corria el plazo de 24 horas, asi que podia quedar vencido por un
+# dinero que nunca recibio.
+
+def _mis_viaticos(cliente, sesion, quien="carlos"):
+    r = cliente.get("/campo/mis-viaticos", headers=sesion(quien))
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_lo_autorizado_no_se_dice_depositado(cliente, sesion, datos):
+    """Autorizado y depositado son dos cosas, y entre una y otra pasa
+    finanzas. Hasta entonces el dinero existe en el sistema y no en su
+    cuenta."""
+    _, j, persona = _jornada_con_viaticos(cliente, sesion, datos, 44)
+    viatico = _asignar_viaticos(cliente, sesion, j, persona)
+    assert float(viatico["monto_total"]) > 0
+
+    d = _mis_viaticos(cliente, sesion)
+    suyo = next(s for s in d["servicios"]
+                if any(x["viatico_id"] == viatico["id"] for x in s["dias"]))
+
+    assert float(suyo["entregado"]) == 0, \
+        "todavia no sale del banco: no se le puede decir que ya lo tiene"
+    assert float(suyo["por_depositar"]) > 0, \
+        "y se dice aparte, con su nombre, en vez de esconderlo"
+
+    # Lo que de verdad importa: no se le pide comprobar lo que no recibio,
+    # ni le corre el plazo por ello.
+    assert float(suyo["por_comprobar"]) == 0
+    assert suyo["vencido"] is False
+
+
+def test_cuando_finanzas_deposita_la_app_lo_dice(cliente, sesion, datos):
+    """Y entonces si: el dinero esta con la persona, aparece como
+    entregado y empieza a correr su comprobacion."""
+    from ayudas import depositar_de_verdad
+
+    servicio, j, persona = _jornada_con_viaticos(cliente, sesion, datos, 45)
+    viatico = _asignar_viaticos(cliente, sesion, j, persona)
+
+    depositar_de_verdad(cliente, sesion, servicio["equipos"][0]["id"], persona)
+
+    d = _mis_viaticos(cliente, sesion)
+    suyo = next(s for s in d["servicios"]
+                if any(x["viatico_id"] == viatico["id"] for x in s["dias"]))
+    assert float(suyo["entregado"]) > 0
+    assert float(suyo["por_depositar"]) == 0
+    assert float(suyo["por_comprobar"]) > 0

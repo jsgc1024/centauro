@@ -63,7 +63,10 @@ def test_no_se_puede_iniciar_sin_haber_llegado(cliente, sesion, datos):
     r = marcar(cliente, sesion("juan"), j["id"], "contacto_ejecutivo", inicio)
 
     assert r.status_code == 409
-    assert "llegada" in r.json()["detail"].lower()
+    detalle = r.json()["detail"]
+    assert "llegada" in detalle["mensaje"].lower()
+    # Quien lee esto esta de pie en la calle: el error dice que hacer.
+    assert detalle["que_hacer"]
 
 
 def test_el_contacto_avisa_al_cliente_con_enlace_que_expira(cliente, sesion, datos):
@@ -120,9 +123,18 @@ def test_aviso_de_horas_extra_llega_a_los_dos_destinatarios(cliente, sesion, dat
     bitacora = cliente.get(f"/operacion/jornadas/{j['id']}/bitacora",
                            headers=sesion("central")).json()
     avisos = [n for n in bitacora["notificaciones"]
-              if "horas extra" in n["asunto"].lower()]
+              if "horas extra" in n["asunto"].lower()
+              or "overtime" in n["asunto"].lower()]
     destinatarios = {n["para"] for n in avisos}
     assert destinatarios == {"solicitante", "ejecutivo"}
+
+    # Y cada uno en su idioma (20 sep): el principal lee ingles porque
+    # suele ser extranjero, y quien pidio el servicio, el del pais. Antes
+    # este aviso salia en espanol para los dos y esta prueba lo buscaba
+    # por su texto en espanol, asi que el cambio la tumbo con razon.
+    por_quien = {n["para"]: n["asunto"].lower() for n in avisos}
+    assert "overtime" in por_quien["ejecutivo"]
+    assert "horas extra" in por_quien["solicitante"]
 
 
 def test_alerta_cuando_el_conductor_deja_de_reportar(cliente, sesion, datos):

@@ -190,6 +190,25 @@ def _experiencia(db: Session, persona_id: int,
 
 # ---------------------------------------------------------------- ficha
 
+def _usuario(db: Session, persona_id: int) -> dict | None:
+    """Con que correo entra al sistema, o nada si no tiene cuenta.
+
+    Va pegado a la ficha porque la pregunta se hace mirando esta
+    pantalla --"y este, ya puede abrir la app?"--: sin esto hay que
+    salir a Accesos y volver a buscar a la misma persona.
+
+    La contrasena no se puede enseñar aqui ni en ningun lado: se guarda
+    un hash, no la contrasena. Lo unico que se puede decir es si ya puso
+    una; quien no, entra con el codigo que le dicta su consultor.
+    """
+    u = (db.query(m.Usuario)
+         .filter(m.Usuario.persona_id == persona_id).first())
+    if not u:
+        return None
+    return {"correo": u.correo, "activo": u.activo,
+            "ya_puso_contrasena": u.hash_contrasena is not None}
+
+
 def ficha(db: Session, persona_id: int, hoy: date | None = None) -> dict:
     persona = db.get(m.Persona, persona_id)
     if not persona:
@@ -237,6 +256,7 @@ def ficha(db: Session, persona_id: int, hoy: date | None = None) -> dict:
     return {
         "persona_id": persona.id,
         "persona": persona.nombre,
+        "usuario": _usuario(db, persona.id),
         # Sin puesto: el rol es de la tarea, no de la persona.
         "plaza": persona.plaza.nombre,
         "es_freelance": persona.es_freelance,
@@ -267,12 +287,136 @@ def tabla(db: Session, pais_id: int, plaza_id: int | None = None,
         f = ficha(db, persona.id, hoy)
         if not f:
             continue
-        fichas.append({
-            "persona_id": f["persona_id"], "persona": f["persona"],
-            "plaza": f["plaza"],
-            "es_freelance": f["es_freelance"],
-            "calificacion": f["calificacion"],
-            "horas_en_centauro": f["horas_en_centauro"],
-            "confianza": f["confianza"],
-        })
+        fichas.append(_renglon(db, f, hoy))
     return sorted(fichas, key=lambda x: x["calificacion"], reverse=True)
+
+
+def _dimension(f: dict, cual) -> dict:
+    return next((d for d in f["dimensiones"]
+                 if d["dimension"] == cual.value), {})
+
+
+def _renglon(db: Session, f: dict, hoy: date | None) -> dict:
+    """El renglon de la lista, con lo que ya se calculo.
+
+    `ficha` calcula las cinco dimensiones --cada una con su valor, su
+    peso y una frase que la explica-- y esta tabla se quedaba con cuatro
+    campos y tiraba el resto. El calculo caro ya se hizo: lo que faltaba
+    no era motor, era enseñarlo.
+
+    Se le agregan dos cosas que no estaban en ninguna de las dos: el
+    semaforo del padron de certificados y el bono del mes vencido.
+    """
+    from app import bonos, capacitaciones
+
+    D = m.DimensionProfesionalismo
+    satisfaccion = _dimension(f, D.SATISFACCION)
+    incidencias = _dimension(f, D.INCIDENCIAS)
+
+    anio, mes = bonos.mes_anterior(hoy or date.today())
+    evaluacion = (db.query(m.EvaluacionMensual)
+                  .filter_by(persona_id=f["persona_id"], anio=anio, mes=mes)
+                  .first())
+
+    return {
+        "persona_id": f["persona_id"], "persona": f["persona"],
+        "usuario": f["usuario"],
+        "plaza": f["plaza"],
+        "es_freelance": f["es_freelance"],
+        "calificacion": f["calificacion"],
+        "horas_en_centauro": f["horas_en_centauro"],
+        "confianza": f["confianza"],
+        # "Confianza baja" se leia como desconfianza de la persona.
+        # Lo que dice es que al sistema le faltan datos sobre ella
+        # --justo lo que le pasa a quien lleva dos semanas--, asi que se
+        # dice como lo que es.
+        "medido_con": len(f["dimensiones"]) - len(f["sin_datos_para_medir"]),
+        "dimensiones_totales": len(f["dimensiones"]),
+        "sin_datos_para_medir": f["sin_datos_para_medir"],
+        "satisfaccion": ({"promedio": satisfaccion.get("promedio_1_a_5"),
+                          "detalle": satisfaccion.get("detalle")}
+                         if satisfaccion.get("aplica") else None),
+        "incidencias": incidencias.get("detalle"),
+        "capacitacion": capacitaciones.por_vencer(db, f["persona_id"], hoy),
+        "bono": ({"periodo": f"{mes:02d}/{anio}",
+                  "estrellas": evaluacion.estrellas,
+                  "posibles": sum(1 for r in evaluacion.detalle if r.aplica),
+                  "monto": evaluacion.monto_bono,
+                  "moneda": evaluacion.moneda.value,
+                  "estatus": evaluacion.estatus.value,
+                  "anulado": evaluacion.anulado_por_incidencia}
+                 if evaluacion else None),
+    }
+
+
+def expediente(db: Session, persona_id: int, meses: int = 6) -> dict:
+    """Lo que la ficha de la persona enseña debajo de las dimensiones.
+
+    Tres bloques que viven en tres tablas distintas y que hasta hoy no se
+    podian ver juntos: el bono de los ultimos meses, lo que dijeron los
+    clientes --con el texto, no solo el promedio-- y el padron de
+    certificados con sus fechas.
+    """
+    from app import bonos
+
+    persona = db.get(m.Persona, persona_id)
+    if not persona:
+        return {}
+
+    anio, mes = bonos.mes_anterior(date.today())
+    total = anio * 12 + (mes - 1)
+    periodos = [((total - i) // 12, (total - i) % 12 + 1) for i in range(meses)]
+    evaluaciones = [e for e in db.query(m.EvaluacionMensual)
+                    .filter_by(persona_id=persona_id).all()
+                    if (e.anio, e.mes) in periodos]
+    evaluaciones.sort(key=lambda e: (e.anio, e.mes), reverse=True)
+
+    servicios = {a.jornada.equipo.servicio_id
+                 for a in db.query(m.AsignacionPersonal)
+                 .filter_by(persona_id=persona_id).all()}
+    encuestas = []
+    if servicios:
+        encuestas = (db.query(m.Encuesta)
+                     .filter(m.Encuesta.servicio_id.in_(servicios),
+                             m.Encuesta.tipo == m.TipoEncuesta.EJECUTIVO,
+                             m.Encuesta.calificacion.isnot(None))
+                     .order_by(m.Encuesta.respondida_en.desc()).limit(8).all())
+
+    cursos = (db.query(m.Capacitacion)
+              .filter_by(persona_id=persona_id, activo=True)
+              .order_by(m.Capacitacion.nombre).all())
+    hoy = date.today()
+
+    return {
+        "persona_id": persona.id,
+        "persona": persona.nombre,
+        "bonos": [{"periodo": f"{e.mes:02d}/{e.anio}",
+                   "estrellas": e.estrellas,
+                   "posibles": sum(1 for r in e.detalle if r.aplica),
+                   "monto": e.monto_bono, "moneda": e.moneda.value,
+                   "estatus": e.estatus.value,
+                   "anulado": e.anulado_por_incidencia}
+                  for e in evaluaciones],
+        # Con el texto que escribieron. El promedio dice que tan bien
+        # salio; la frase dice que arreglar.
+        "clientes": [{"folio": e.servicio.folio if e.servicio else None,
+                      "servicio_id": e.servicio_id,
+                      "cliente": (e.servicio.cliente.nombre
+                                  if e.servicio and e.servicio.cliente
+                                  else None),
+                      "calificacion": e.calificacion,
+                      "cuando": (e.respondida_en.isoformat()
+                                 if e.respondida_en else None),
+                      "dijo": next((r.texto for r in e.respuestas if r.texto),
+                                   None)}
+                     for e in encuestas],
+        "certificados": [{"nombre": c.nombre,
+                          "institucion": c.institucion,
+                          "obtenida_en": (c.obtenida_en.isoformat()
+                                          if c.obtenida_en else None),
+                          "vigencia_hasta": (c.vigencia_hasta.isoformat()
+                                             if c.vigencia_hasta else None),
+                          "dias": ((c.vigencia_hasta - hoy).days
+                                   if c.vigencia_hasta else None)}
+                         for c in cursos],
+    }

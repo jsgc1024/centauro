@@ -70,13 +70,15 @@ def test_no_se_devuelve_mas_de_lo_que_queda(cliente, sesion, datos):
     """Mandar el POST dos veces dejaba el devuelto al doble, el pendiente
     en negativo, y a la persona fuera del tablero de dinero en la
     calle —que filtra por pendiente mayor a cero."""
-    v = _viatico(cliente, sesion, datos, monto="1500")
-    h = sesion("consultor")
+    from ayudas import devolver
 
-    r = cliente.post(f"/viaticos/{v['id']}/devolver?monto=1500", headers=h)
+    v = _viatico(cliente, sesion, datos, monto="1500")
+    hf = sesion("finanzas")
+
+    r = devolver(cliente, hf, v["id"], "1500")
     assert r.status_code == 200, r.text
 
-    r = cliente.post(f"/viaticos/{v['id']}/devolver?monto=1500", headers=h)
+    r = devolver(cliente, hf, v["id"], "1500")
     assert r.status_code == 409, r.text
     assert r.json()["detail"]["por_devolver"] == "0.00"
 
@@ -84,8 +86,63 @@ def test_no_se_devuelve_mas_de_lo_que_queda(cliente, sesion, datos):
 def test_una_devolucion_negativa_no_borra_una_real(cliente, sesion, datos):
     """Con un monto negativo se deshacia una devolucion de verdad sin
     dejar mas rastro que una nota."""
+    from ayudas import devolver
+
     v = _viatico(cliente, sesion, datos, monto="1500")
-    h = sesion("consultor")
-    cliente.post(f"/viaticos/{v['id']}/devolver?monto=500", headers=h)
-    r = cliente.post(f"/viaticos/{v['id']}/devolver?monto=-500", headers=h)
+    hf = sesion("finanzas")
+    devolver(cliente, hf, v["id"], "500")
+    r = devolver(cliente, hf, v["id"], "-500")
     assert r.status_code == 400, r.text
+
+
+def test_el_tope_es_el_viatico_del_servicio_no_el_del_dia(cliente, sesion,
+                                                          datos):
+    """Un dia se gasta mas y otro menos; lo que cuadra es el total.
+
+    El deposito es uno solo por persona por todos sus dias, y el agente
+    lo gasta como cae. Topando contra el reparto del dia, alguien que
+    iba bien en su cuenta quedaba bloqueado a media jornada —y la salida
+    facil era repartir el mismo ticket entre dias, que es peor que el
+    problema—.
+    """
+    from decimal import Decimal
+
+    from ayudas import (asignar, crear_servicio, depositar_de_verdad,
+                        jornada, manana)
+
+    h = sesion("consultor")
+    juan = datos["personal"]["Juan Ramirez"]["id"]
+    servicio = crear_servicio(
+        cliente, h, datos,
+        [jornada(manana(920 + i), datos["modalidades"]["full_day"]["id"])
+         for i in range(2)])
+    for j in servicio["equipos"][0]["jornadas"]:
+        asignar(cliente, h, j["id"], persona_id=juan)
+
+    equipo_id = servicio["equipos"][0]["id"]
+    # Mil por todo su paso por el equipo, repartidos por dentro entre
+    # sus dos dias, en un solo deposito.
+    cliente.post(f"/viaticos/equipos/{equipo_id}/persona",
+                 json={"persona_id": juan, "monto": "1000"}, headers=h)
+    depositar_de_verdad(cliente, sesion, equipo_id, juan)
+
+    mios = cliente.get("/campo/mis-viaticos", headers=sesion("juan")).json()
+    fila = next(s for s in mios["servicios"]
+                if s["folio"] == servicio["folio"])
+    assert Decimal(str(fila["entregado"])) == Decimal("1000")
+    dia1 = fila["dias"][0]["viatico_id"]
+
+    # 800 en el dia 1: mas de lo que le tocaba ese dia, menos de los
+    # 1000 del servicio. Antes esto se rechazaba.
+    r = cliente.post(f"/campo/viaticos/{dia1}/comprobante",
+                     json={"concepto": "combustible", "tipo": "nota",
+                           "monto": "800"}, headers=sesion("juan"))
+    assert r.status_code == 200, r.text
+
+    # Y el tope del servicio si muerde: 800 + 500 pasa de los 1000 con
+    # su tolerancia.
+    r = cliente.post(f"/campo/viaticos/{dia1}/comprobante",
+                     json={"concepto": "alimentos", "tipo": "nota",
+                           "monto": "500"}, headers=sesion("juan"))
+    assert r.status_code == 409, r.text
+    assert "todo el servicio" in r.json()["detail"]["que_hacer"]

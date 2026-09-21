@@ -12,8 +12,11 @@ PIXEL = ("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAEBAQEB"
          "AQEBAQEBAQH/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQ"
          "AQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==")
 FIRMA = "data:image/png;base64," + ("A" * 200)
-CUATRO = [{"angulo": a, "imagen": PIXEL}
-          for a in ("frente", "atras", "izquierdo", "derecho")]
+# Los cuatro lados y el tablero. El odometro se pide desde el 18 de
+# septiembre: sin el, el kilometraje era un numero tecleado y la cuenta
+# que sale al entregar no tenia con que comprobarse.
+COMPLETAS = [{"angulo": a, "imagen": PIXEL}
+             for a in ("frente", "atras", "izquierdo", "derecho", "odometro")]
 
 
 def _servicio(cliente, sesion, datos, dias_atras=0):
@@ -33,7 +36,8 @@ def _cuerpo(servicio, datos, tipo, km=42_000, **extra):
     cuerpo = {"servicio_id": servicio["id"],
               "vehiculo_id": datos["suburban"]["id"],
               "tipo": tipo, "kilometraje": km,
-              "combustible_octavos": 8, "firma": FIRMA, "fotos": CUATRO}
+              "combustible_octavos": 8, "firma": FIRMA,
+              "hubo_dano": False, "fotos": COMPLETAS}
     cuerpo.update(extra)
     return cuerpo
 
@@ -106,7 +110,7 @@ def test_la_consola_no_baja_las_fotos_si_no_se_las_piden(cliente, sesion,
     ligero = cliente.get(f"/servicios/{servicio['id']}/revisiones",
                          headers=h).json()
     fotos = ligero["unidades"][0]["recibe"]["fotos"]
-    assert len(fotos) == 4
+    assert len(fotos) == 5
     assert "imagen" not in fotos[0], "la foto viajo sin que nadie la pidiera"
 
     completo = cliente.get(f"/servicios/{servicio['id']}/revisiones?fotos=true",

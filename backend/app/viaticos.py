@@ -27,7 +27,41 @@ TOLERANCIA_COMPROBADO = Decimal("1.20")
 MINUTOS_DOBLE_TOQUE = 3
 
 
-def revisar_comprobante(viatico, monto, concepto, descripcion, ahora=None):
+def bolson_del_servicio(db: Session, viatico) -> list:
+    """Todos los viaticos de esa persona en ese servicio.
+
+    El dinero se deposita junto --un movimiento por persona, por todos
+    sus dias-- y se gasta junto. El reparto por dia es como el consultor
+    calculo el monto, no un sobre por dia que la persona tenga que
+    respetar.
+    """
+    jornada = getattr(viatico, "jornada", None)
+    equipo = getattr(jornada, "equipo", None)
+    if db is None or equipo is None:
+        return [viatico]
+    hermanos = (db.query(m.AsignacionViatico)
+                .join(m.Jornada,
+                      m.AsignacionViatico.jornada_id == m.Jornada.id)
+                .join(m.Equipo, m.Jornada.equipo_id == m.Equipo.id)
+                .filter(m.Equipo.servicio_id == equipo.servicio_id,
+                        m.AsignacionViatico.persona_id == viatico.persona_id,
+                        m.AsignacionViatico.estatus
+                        != m.EstatusViatico.CANCELADO)
+                .all())
+    # El bolson es lo que se deposito junto. En el eventual eso es el
+    # servicio; en el implantado es el mes, porque el equipo abarca
+    # meses enteros y cada uno se deposita por separado.
+    servicio = getattr(equipo, "servicio", None)
+    if servicio is not None and servicio.tipo == m.TipoServicio.IMPLANTADO:
+        suyo = jornada.fecha
+        hermanos = [v for v in hermanos
+                    if v.jornada and v.jornada.fecha.year == suyo.year
+                    and v.jornada.fecha.month == suyo.month]
+    return hermanos
+
+
+def revisar_comprobante(viatico, monto, concepto, descripcion, ahora=None,
+                        db: Session | None = None):
     """Las reglas de un ticket, en un solo lugar.
 
     Hay dos endpoints que escriben la misma tabla —el de la consola y el
@@ -43,20 +77,34 @@ def revisar_comprobante(viatico, monto, concepto, descripcion, ahora=None):
                 "mensaje": "El monto del ticket tiene que ser mayor a cero",
                 "que_hacer": "Escribe lo que dice el ticket."}
 
-    entregado = Decimal(str(viatico.monto_total or 0))
-    ya = sum((Decimal(str(c.monto)) for c in viatico.comprobantes
-              if not c.rechazado), Decimal("0"))
+    # El tope es lo que trae para TODO el servicio, no lo que le tocaba
+    # ese dia. Un dia se gasta mas y otro menos; lo que tiene que cuadrar
+    # es el total. Topar por dia bloqueaba a alguien que iba bien en su
+    # cuenta y lo empujaba a repartir el mismo ticket entre dias.
+    hermanos = bolson_del_servicio(db, viatico)
+    # Se cuenta lo asignado, no solo lo ya depositado: el tope existe
+    # para que nadie comprobe de mas, y un dia que todavia no sale del
+    # banco sigue siendo dinero autorizado de ese servicio. Quien mira
+    # si el dinero ya salio es la tarjeta de la app, que lo dice aparte.
+    entregado = sum((Decimal(str(v.monto_total or 0)) for v in hermanos),
+                    Decimal("0"))
+    devuelto = sum((Decimal(str(v.monto_devuelto or 0)) for v in hermanos),
+                   Decimal("0"))
+    ya = sum((Decimal(str(c.monto)) for v in hermanos
+              for c in v.comprobantes if not c.rechazado), Decimal("0"))
+    disponible = entregado - devuelto
 
     # Con cero entregado no hay contra que topar: puede ser un dia que el
     # tabulador dejo en cero y el gasto salio igual. Se deja pasar y lo
     # revisa el consultor, que es quien puede decidirlo.
-    if entregado > 0 and ya + monto > entregado * TOLERANCIA_COMPROBADO:
+    if disponible > 0 and ya + monto > disponible * TOLERANCIA_COMPROBADO:
         return {"codigo": 409,
                 "mensaje": "Ese ticket pasa de lo que se entrego",
-                "que_hacer": (f"Lleva comprobado {ya} de {entregado}. Si de "
-                              f"verdad se gasto mas, eso se resuelve con "
-                              f"viaticos adicionales, no con un comprobante."),
-                "entregado": str(entregado), "comprobado": str(ya)}
+                "que_hacer": (f"Llevas comprobado {ya} de {disponible} de "
+                              f"todo el servicio. Si de verdad se gasto mas, "
+                              f"eso se resuelve con viaticos adicionales, no "
+                              f"con un comprobante."),
+                "entregado": str(disponible), "comprobado": str(ya)}
 
     # El mismo ticket dos veces seguidas: un doble toque con media barra
     # de senal, que es la situacion normal en una gasolinera.

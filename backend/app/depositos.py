@@ -39,11 +39,16 @@ def _d(valor) -> Decimal:
     return Decimal(str(valor or 0))
 
 
-def por_pagar(db: Session, solicitud_ids: list[int]) -> list:
+def por_pagar(db: Session, solicitud_ids: list[int],
+              tardias: bool = False) -> list:
     """Las solicitudes de un deposito, validadas como grupo.
 
     Tienen que ser de la misma persona y del mismo equipo: eso es lo que
     hace que la transferencia quede amarrada a un servicio.
+
+    `tardias` abre la puerta a las canceladas, y solo la abre quien ya
+    tiene el dinero fuera del banco: el deposito que llego despues de
+    que alguien cancelo la solicitud. Ver `registrar`.
     """
     if not solicitud_ids:
         raise HTTPException(400, "Un deposito necesita al menos una solicitud")
@@ -63,7 +68,9 @@ def por_pagar(db: Session, solicitud_ids: list[int]) -> list:
             "que_hacer": "Recarga la bandeja: alguien mas las pago.",
             "solicitudes": ya})
 
-    fuera = [f.id for f in filas if f.estatus not in PAGABLES]
+    pagables = (PAGABLES + (m.EstatusTransferencia.CANCELADA,)
+                if tardias else PAGABLES)
+    fuera = [f.id for f in filas if f.estatus not in pagables]
     if fuera:
         raise HTTPException(409, {
             "mensaje": "Hay solicitudes que ya no se pueden pagar",
@@ -84,7 +91,8 @@ def registrar(db: Session, solicitud_ids: list[int], referencia: str | None,
               comprobante: str | None = None,
               despachado_por_id: int | None = None,
               cuando: datetime | None = None,
-              exige_evidencia: bool = True) -> m.DepositoBancario:
+              exige_evidencia: bool = True,
+              sobre_cancelada: bool = False) -> m.DepositoBancario:
     """Finanzas ya transfirio. Aqui queda el hecho y su evidencia.
 
     `exige_evidencia` es falso en un solo caso: lo que llega ya
@@ -96,6 +104,13 @@ def registrar(db: Session, solicitud_ids: list[int], referencia: str | None,
     Desde la pantalla siempre se exige: ahi si hay quien la suba, y sin
     evidencia la unica prueba de que se pago es la palabra de quien dice
     que pago.
+
+    `sobre_cancelada` es la puerta de atras: el consultor cancelo el
+    deposito mientras finanzas estaba en el banco. El dinero salio, y un
+    deposito real siempre tiene donde registrarse --lo que no se puede
+    registrar se arregla por fuera, y lo que se arregla por fuera no se
+    audita--. Se acepta, se marca, y el consultor lo ve para aplicarlo o
+    pedirlo de vuelta.
     """
     if exige_evidencia:
         if not (referencia or "").strip():
@@ -110,7 +125,7 @@ def registrar(db: Session, solicitud_ids: list[int], referencia: str | None,
                               "unica prueba de que se pago es la palabra de "
                               "quien lo hizo.")})
 
-    filas = por_pagar(db, solicitud_ids)
+    filas = por_pagar(db, solicitud_ids, tardias=sobre_cancelada)
     primera = filas[0]
     jornada = primera.asignacion.jornada
 
@@ -123,6 +138,10 @@ def registrar(db: Session, solicitud_ids: list[int], referencia: str | None,
         comprobante=comprobante,
         # En hora del pais del servicio, como el resto de la operacion.
         depositado_en=reloj.ahora_de_la_jornada(db, jornada, cuando),
+        # El dinero salio despues de que alguien cancelo la solicitud.
+        # Queda marcado: no es un deposito normal, es dinero que hay que
+        # aplicar o pedir de vuelta.
+        sobre_cancelada=sobre_cancelada,
         despachado_por_id=despachado_por_id)
     db.add(deposito)
     db.flush()
@@ -137,7 +156,8 @@ def registrar(db: Session, solicitud_ids: list[int], referencia: str | None,
         # Un segundo deposito no la regresa al principio: si ya estaba
         # comprobando o cerrada, ahi se queda.
         if fila.asignacion.estatus in (m.EstatusViatico.ASIGNADO,
-                                       m.EstatusViatico.SOLICITADO):
+                                       m.EstatusViatico.SOLICITADO,
+                                       m.EstatusViatico.CANCELADO):
             fila.asignacion.estatus = m.EstatusViatico.TRANSFERIDO
 
     db.flush()

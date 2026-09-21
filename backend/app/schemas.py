@@ -7,8 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app import texto
 
-from app.models import (CodigoModalidad, ConceptoViatico, EscenarioViatico,
-                        Moneda, MotivoRenta, NivelHospital,
+from app.models import (CodigoModalidad, CodigoVestimenta, ConceptoViatico,
+                        EscenarioViatico, Moneda, MotivoRenta, NivelHospital,
                         TipoServicio)
 
 
@@ -48,6 +48,9 @@ class PaisIn(Base):
     # ese pais: la ventana de marcado, el silencio de un servicio en
     # curso, el plazo del consultor para cerrar.
     zona_horaria: str = "America/Mexico_City"
+    # En que lengua ve la app el personal de campo de este pais. No lo
+    # elige el agente: sale de su plaza.
+    idioma: str = "es"
 
 
 class PaisOut(PaisIn):
@@ -261,7 +264,21 @@ class VehiculoIn(Base):
     marca_modelo: str | None = None
     foto_url: str | None = None     # viene de Odoo
 
-    _capturado = capturado("color", "marca_modelo")
+    # La marca, el modelo y el color NO pasan por la regla de captura, y
+    # es por dos razones que apuntan al mismo lado.
+    #
+    # La primera: la unidad ya no se teclea. La manda Odoo, que es la
+    # fuente de verdad de la flota.
+    #
+    # La segunda es la que mordia. Estos validadores corren en `before`,
+    # o sea tambien al SALIR hacia la pantalla: el dato entraba bien,
+    # se guardaba bien, y la consola lo enseñaba mal. "Chevrolet
+    # Suburban LT" salia "Chevrolet Suburban Lt", y con el se perdian
+    # AMG, GLS, 4x4 y cualquier placa de version. La regla es una ayuda
+    # para quien teclea, no una correccion para quien ya escribio bien.
+    #
+    # El auto subarrendado si se captura a mano y si la conserva: vive
+    # en `VehiculoSubarrendadoIn`, aqui abajo.
     _mayusculas = en_mayusculas("placa")
 
 
@@ -387,11 +404,22 @@ class ServicioIn(Base):
     ejecutivo_apellidos: str | None = None
     ejecutivo_correo: str | None = None
     ejecutivo_telefono: str | None = None
+    # Vacio en el solicitante: el idioma de su pais. Ver models.Servicio.
+    idioma_ejecutivo: str = "en"
+    idioma_solicitante: str | None = None
+    # Casual, semiformal o formal. Solo el eventual la lleva.
+    vestimenta: CodigoVestimenta | None = None
     servicio_origen_id: int | None = None
     equipos: list[EquipoIn] = []
 
     _capturado = capturado("solicitante_nombre", "solicitante_apellidos",
                            "ejecutivo_nombre", "ejecutivo_apellidos")
+
+
+class VestimentaIn(Base):
+    """Vacio la quita: un servicio sin codigo no dice nada, que no es lo
+    mismo que decir "casual"."""
+    vestimenta: CodigoVestimenta | None = None
 
 
 class JornadaOut(Base):
@@ -458,6 +486,7 @@ class ServicioOut(Base):
     ejecutivo_apellidos: str | None
     ejecutivo_completo: str | None = None
     ejecutivo_telefono: str | None
+    vestimenta: CodigoVestimenta | None = None
     servicio_origen_id: int | None
     equipos: list[EquipoOut] = []
 
@@ -551,6 +580,16 @@ class ComprobanteIn(Base):
     monto: Decimal
     archivo_url: str | None = None
     descripcion: str | None = None
+
+
+class RechazoDevolucionIn(Base):
+    """Por que no se acepto.
+
+    Se exige: una devolucion rechazada sin motivo deja a la persona sin
+    saber que arreglar, y a quien la revise en dos meses sin saber que
+    paso.
+    """
+    motivo: str = Field(min_length=5, max_length=300)
 
 
 class ComprobanteOut(ComprobanteIn):
@@ -710,6 +749,64 @@ class CierreAManoIn(Base):
     fin_real: datetime | None = None
 
 
+class HitoAManoIn(Base):
+    """La central registra el contacto que nadie marco desde la app.
+
+    Los tres campos se exigen. La hora, porque de ahi sale `inicio_real`
+    y de `inicio_real` las horas que se le facturan al cliente: no puede
+    valer una por omision. La persona, porque el meet and greet se le
+    acredita a quien iba. Y el motivo, porque esto crea una marca que no
+    ocurrio en la app y dentro de seis meses alguien va a querer saber
+    quien la puso y por que.
+    """
+    tipo: Literal["llegada_origen", "contacto_ejecutivo"]
+    persona_id: int
+    momento: datetime
+    justificacion: str = Field(min_length=5, max_length=400)
+
+
+class ConfirmarAManoIn(Base):
+    """La central registra que esa persona confirmo por telefono.
+
+    La nota es opcional y corta: aqui no hay una hora que fije horas
+    extra ni dinero que se mueva --lo unico que hay es la palabra de
+    quien lo registro, y esa ya queda sellada con su nombre--. Pedir un
+    motivo de cinco lineas para esto solo lograria que nadie lo use y
+    que el renglon se quede rojo, que es justo lo que se quiere evitar.
+    """
+    persona_id: int
+    nota: str | None = Field(default=None, max_length=200)
+
+
+class PorTelefonoIn(Base):
+    """La central hablo con el y dijo que ya va en camino.
+
+    La nota es opcional y corta --"va en Periferico", "sale en diez"--
+    porque lo que importa ya queda sellado sin escribir nada: quien lo
+    registro y a que hora. Pedir un motivo largo para esto solo
+    lograria que nadie lo use y que el renglon se quede rojo, que es lo
+    que se quiere evitar.
+    """
+    persona_id: int
+    nota: str | None = Field(default=None, max_length=200)
+
+
+class NotaBitacoraIn(Base):
+    """Lo que se supo, en las palabras de quien lo supo.
+
+    Un minimo bajo a proposito: "ok" no es una nota, pero "llame a Juan"
+    si. El tope de 600 caracteres es el de la tabla; lo que no cabe ahi
+    son dos notas, y dos notas se leen mejor que un parrafo.
+    """
+    texto: str = Field(min_length=3, max_length=600)
+
+
+class HoraDeManianaIn(Base):
+    """A que hora arranca el dia siguiente, dicho al cerrar el de hoy."""
+    hora: time
+    nota: str | None = Field(default=None, max_length=600)
+
+
 class ReabrirDiaIn(Base):
     justificacion: str
 
@@ -814,6 +911,9 @@ class ParadaOut(Base):
 class PublicarTaskSheetIn(Base):
     motivo: str | None = None
     forzar: bool = False
+    # Apagado por omision: publicar y avisarle al cliente son dos actos
+    # distintos. Ver el docstring de tasksheet.publicar.
+    avisar: bool = False
 
 
 class SenalIn(Base):
@@ -837,11 +937,32 @@ from app.models import MotivoCambio  # noqa: E402
 
 
 class VehiculoOdoo(Base):
-    """Lo que Odoo manda de cada unidad. La placa es la llave."""
+    """Lo que Odoo manda de cada unidad. La placa es la llave.
+
+    La marca y el modelo entran por aqui --Suburban, Tahoe, Sprinter--
+    porque la flota vive en Odoo: aqui no se capturan, se reciben.
+    """
     placa: str
+    marca_modelo: str | None = None
     color: str | None = None
     modelo_anio: int | None = None
     foto_url: str | None = None
+
+
+class CapacitacionOdoo(Base):
+    """Un certificado del personal, como lo manda Odoo.
+
+    La llave es el correo mas el nombre del curso. `vigencia_hasta` es
+    lo que decide si cuenta: una certificacion vencida no es una
+    certificacion, y el dia que importa nadie va a revisar la fecha.
+    """
+    correo: str
+    nombre: str
+    institucion: str | None = None
+    obtenida_en: date | None = None
+    vigencia_hasta: date | None = None
+    # Para retirar un curso. No se retira solo por dejar de mandarlo.
+    activo: bool | None = None
 
 
 class TallerOdoo(Base):
@@ -923,6 +1044,16 @@ class ReemplazoPersonalIn(Base):
     # reparte el pago. Vacia: el sistema propone la ultima marca de quien
     # sale. El consultor la manda cuando sabe que fue otra --un dia
     # estatico puede no tener marcas desde la manana--.
+    relevado_en: datetime | None = None
+
+
+class RegresoIn(Base):
+    """El titular vuelve. No pide motivo: el motivo es el del cambio que
+    cierra."""
+    # El primer dia que vuelve a ser suyo.
+    desde: date
+    # Si el que cubria alcanzo a trabajar la manana de ese dia, la hora
+    # en que lo relevaron. Vacia: el sistema propone su ultima marca.
     relevado_en: datetime | None = None
 
 

@@ -10,6 +10,8 @@
    muestra la ultima con su edad escrita. Un dato viejo que se sabe
    viejo sirve; uno viejo que se ve nuevo es peor que no tener nada. */
 
+import { t } from "/consola/idioma.js";
+
 const PREFIJO = "centauro_memoria_";
 
 export function guardar(llave, datos) {
@@ -59,9 +61,9 @@ export async function traer(llave, pedir) {
 export function hace(iso) {
   if (!iso) return "";
   const minutos = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
-  if (minutos < 1) return "hace un momento";
-  if (minutos < 60) return `hace ${minutos} min`;
+  if (minutos < 1) return t("cmp_hace_momento");
+  if (minutos < 60) return t("cmp_hace_min").replace("{n}", minutos);
   const horas = Math.round(minutos / 60);
-  if (horas < 24) return `hace ${horas} h`;
-  return `hace ${Math.round(horas / 24)} d`;
+  if (horas < 24) return t("cmp_hace_h").replace("{n}", horas);
+  return t("cmp_hace_d").replace("{n}", Math.round(horas / 24));
 }

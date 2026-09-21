@@ -1,5 +1,5 @@
 """Comparativo, revision antes de facturar, rentabilidad y comision."""
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from ayudas import (asignar, configurar_origen, cotizar_y_autorizar,
                     crear_servicio, ejecutar_jornada, jornada, manana)
@@ -146,10 +146,20 @@ def test_comision_perdida_si_se_cierra_fuera_de_plazo(cliente, sesion, datos):
     servicio, _ = _servicio_ejecutado(cliente, sesion, datos, offset=66)
     h = sesion("consultor")
 
-    hace_dos_dias = (datetime.now() - timedelta(days=2)).isoformat()
-    cierre = cliente.post(
-        f"/cierre/servicio/{servicio['id']}/abrir?abierto_en={hace_dos_dias}",
-        headers=h).json()
+    # El cierre ya nacio solo al terminar el ultimo dia, asi que su
+    # reloj se atrasa aqui en vez de pedirlo con una fecha: en la calle
+    # nadie elige cuando arranca su plazo, y una ruta que dejara
+    # moverlo seria una ruta para regalar o quitar comisiones.
+    from app import models as mo
+    from app.db import SessionLocal
+
+    cierre = cliente.post(f"/cierre/servicio/{servicio['id']}/abrir",
+                          headers=h).json()
+    with SessionLocal() as db:
+        fila = db.get(mo.Cierre, cierre["cierre_id"])
+        fila.abierto_en = fila.abierto_en - timedelta(days=2)
+        fila.limite_consultor = fila.limite_consultor - timedelta(days=2)
+        db.commit()
 
     envio = cliente.post(f"/cierre/{cierre['cierre_id']}/enviar-finanzas", headers=h)
     assert envio.status_code == 200
@@ -190,3 +200,101 @@ def test_viaticos_incluidos_no_se_suman_a_la_factura(cliente, sesion, datos):
                               headers=sesion("consultor")).json()
     assert comparativo["viaticos"]["modo_cobro"] == "incluidos_en_cotizacion"
     assert comparativo["viaticos"]["facturable_al_cliente"] == 0
+
+
+def test_autorizar_tarde_no_regresa_el_servicio_al_principio(cliente, sesion,
+                                                             datos):
+    """La cotización se puede capturar después, con el servicio ya
+    trabajado. Eso no puede regresarlo a "autorizado": un servicio
+    cerrado volvería a verse como uno que todavía no sale."""
+    from app import models as mo
+    from app.db import SessionLocal
+
+    servicio, cotizacion = _servicio_ejecutado(cliente, sesion, datos,
+                                               offset=71)
+    h = sesion("consultor")
+    # Trabajado y cerrado. Esto se rompio una vez: con la cotizacion ya
+    # autorizada, el contacto con el principal no encendia el servicio
+    # --la lista que lo enciende no miraba `autorizado`-- y el servicio
+    # se quedaba ahi para siempre aunque el dia se hubiera trabajado.
+    antes = cliente.get(f"/servicios/{servicio['id']}",
+                        headers=h).json()["estatus"]
+    assert antes == "terminado", antes
+
+    r = cliente.post(f"/cotizaciones/{cotizacion['cotizacion_id']}/autorizar",
+                     json={"autorizada_por": "Compras del cliente"},
+                     headers=h)
+    assert r.status_code == 200, r.text
+
+    with SessionLocal() as db:
+        s = db.get(mo.Servicio, servicio["id"])
+        assert s.estatus == mo.EstatusServicio.TERMINADO
+
+
+def test_no_se_manda_a_finanzas_con_viaticos_abiertos(cliente, sesion, datos):
+    """Dos razones, y la segunda es la que pesa.
+
+    El comparativo cuenta como facturable lo comprobado, así que enviar
+    con comprobaciones abiertas es facturar sobre una cifra que todavía
+    se mueve. Y con el visto bueno dado, el gasto desaparece de la app
+    del agente: un viático abierto en ese momento se vuelve un descuento
+    a su nómina que él no vio venir.
+    """
+    servicio, _ = _servicio_ejecutado(cliente, sesion, datos, offset=73)
+    h = sesion("consultor")
+    equipo_id = servicio["equipos"][0]["id"]
+    r = cliente.post(f"/viaticos/equipos/{equipo_id}/persona",
+                     json={"persona_id": datos["personal"]["Juan Ramirez"]["id"],
+                           "monto": "800"}, headers=h)
+    assert r.status_code in (200, 201), r.text
+
+    cierre = cliente.post(f"/cierre/servicio/{servicio['id']}/abrir",
+                          headers=h).json()
+    envio = cliente.post(f"/cierre/{cierre['cierre_id']}/enviar-finanzas",
+                         headers=h)
+    assert envio.status_code == 409, envio.text
+    asuntos = {o["asunto"] for o in envio.json()["detail"]["observaciones"]}
+    assert "Viaticos sin cerrar" in asuntos, envio.json()
+
+
+def test_la_revision_sin_cotizacion_informa_en_vez_de_caerse(cliente, sesion,
+                                                             datos):
+    """Una lectura no contesta con un conflicto.
+
+    La pantalla del servicio pide la revision sola al abrir. Sin
+    cotizacion autorizada el GET devolvia 409: en la consola del
+    navegador quedaba un error rojo y el servicio se veia roto donde
+    solo faltaba un dato. Y el plazo de 24 horas corre igual, asi que
+    ese es justamente el momento en que mas falta hace verlo.
+    """
+    from ayudas import (asignar, configurar_origen, crear_servicio,
+                        ejecutar_jornada, jornada, manana)
+
+    h = sesion("consultor")
+    servicio = crear_servicio(
+        cliente, h, datos,
+        [jornada(manana(915), datos["modalidades"]["full_day"]["id"])])
+    j = servicio["equipos"][0]["jornadas"][0]
+    asignar(cliente, h, j["id"],
+            persona_id=datos["personal"]["Juan Ramirez"]["id"],
+            vehiculo_id=datos["suburban"]["id"])
+    configurar_origen(cliente, h, j["id"])
+    ejecutar_jornada(cliente, sesion("juan"), j)
+
+    r = cliente.get(f"/cierre/servicio/{servicio['id']}/revision",
+                    headers=h)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["listo_para_finanzas"] is False
+    assert d["comparativo"] is None
+    # El reloj sigue viniendo: es lo que la pantalla tenia que pedir
+    # aparte para no quedarse sin nada.
+    assert d["cierre"]["limite"]
+    graves = [o for o in d["observaciones"] if o["nivel"] == "corregir"]
+    assert len(graves) == 1
+    assert "cotizacion" in graves[0]["mensaje"]
+    # El contrato que la pantalla pinta: asunto, que pasa y que hacer.
+    # Se pintaba `detalle`, que el revisor nunca ha mandado, y toda
+    # observacion salia como "Asunto:" y nada mas.
+    for o in d["observaciones"]:
+        assert o["asunto"] and o["mensaje"] and o["accion"], o

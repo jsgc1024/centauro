@@ -9,7 +9,8 @@ con media barra de senal.
 Cada quien ve solo lo suyo. Eso no es una comodidad: la ficha del dia
 trae el nombre del ejecutivo al que se protege.
 """
-from datetime import date, datetime, timedelta
+import logging
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -19,7 +20,11 @@ from sqlalchemy.orm import Session
 from app import auth
 from app import models as m
 from app import reloj
+from app import revision as revision_unidad
+from app import trayecto
 from app import tasksheet
+from app import devoluciones as devoluciones_motor
+from app import push
 from app import viaticos as viaticos_motor
 from app.config import settings
 from app.db import get_db
@@ -28,7 +33,14 @@ from app.presentacion import llegada_del_equipo
 
 router = APIRouter(prefix="/campo", tags=["App del personal"])
 
+registro = logging.getLogger("centauro.campo")
+
 CAMPO = auth.requiere(m.Rol.PERSONAL_SEGURIDAD)
+
+# Cuanto tiempo se queda a la vista un viatico ya cerrado, plegado abajo.
+# Medio ano: alcanza para el "¿cuanto me depositaron en marzo?" sin
+# arrastrar toda la vida laboral de la persona en cada carga de la app.
+DIAS_DE_VIATICOS_CERRADOS = 180
 
 # El orden en que pasan las cosas en un dia. La app ofrece el siguiente,
 # no los seis: un boton por hito es como se marca "fin de servicio" a
@@ -64,7 +76,12 @@ def _ficha(db: Session, jornada: m.Jornada, persona_id: int,
     servicio = jornada.equipo.servicio
     asignacion = next((a for a in jornada.personal
                        if a.persona_id == persona_id), None)
-    marcados = (db.query(m.Hito).filter_by(jornada_id=jornada.id)
+    # Una marca anulada no cuenta. Si contara, el dia que la central
+    # reabre quedaria con su fin de servicio ya hecho: la app no
+    # volveria a ofrecer ese paso y el equipo no podria cerrar otra vez.
+    marcados = (db.query(m.Hito)
+                .filter(m.Hito.jornada_id == jornada.id,
+                        m.Hito.anulado_en.is_(None))
                 .order_by(m.Hito.marcado_en).all())
     hechos = {h.tipo for h in marcados}
 
@@ -88,7 +105,12 @@ def _ficha(db: Session, jornada: m.Jornada, persona_id: int,
     # camioneta veintidos dias no se revisa veintidos veces. Lo que se
     # revisa es el cambio de manos, y por eso lo que se pregunta aqui es
     # si a este servicio ya se le hizo, no a este dia.
-    mias = {a.vehiculo_id for a in jornada.vehiculos if a.vehiculo}
+    #
+    # Y solo las suyas: al escolta que va de copiloto no se le ofrece
+    # revisar una unidad que despues no va a poder firmar. Es la misma
+    # regla que usa el candado del fin de servicio, traida del mismo
+    # lugar para que no se puedan contradecir.
+    mias = set(revision_unidad.mis_unidades(jornada, persona_id))
     revision = None
     if mias:
         hechas = (db.query(m.RevisionUnidad)
@@ -100,7 +122,22 @@ def _ficha(db: Session, jornada: m.Jornada, persona_id: int,
             "unidades": len(mias),
             "por_recibir": len(mias - recibidas),
             "por_entregar": len(recibidas - entregadas),
+            # Las que hoy dejan el servicio. Con el candado duro en el fin
+            # de servicio, esto tiene que verse ANTES de que lo intente:
+            # descubrir que no puede cerrar su dia, a las ocho de la noche
+            # y con el cliente en el coche, es el peor momento posible.
+            "entregar_hoy": revision_unidad.falta_entregar(db, jornada,
+                                                           persona_id),
         }
+
+    # Las paradas se ordenan por hora, y las que no la traen van al
+    # final: una parada sin hora es "cuando se pueda", no "a primera
+    # hora".
+    agenda = (db.query(m.AgendaJornada)
+              .filter_by(jornada_id=jornada.id).first())
+    paradas = sorted(
+        db.query(m.ParadaAgenda).filter_by(jornada_id=jornada.id).all(),
+        key=lambda p: (p.hora is None, p.hora or time.min))
 
     return {
         "jornada_id": jornada.id,
@@ -110,6 +147,11 @@ def _ficha(db: Session, jornada: m.Jornada, persona_id: int,
         "folio": servicio.folio,
         "cliente": servicio.cliente.nombre if servicio.cliente else None,
         "ejecutivo": servicio.ejecutivo_completo,
+        # Como hay que ir vestido. Se manda tambien en la tarjeta de
+        # manana a proposito: cuando de verdad sirve es la noche
+        # anterior, que es cuando se decide que ponerse.
+        "vestimenta": (servicio.vestimenta
+                       if servicio.tipo == m.TipoServicio.EVENTUAL else None),
         "equipo": jornada.equipo.alias,
         "equipo_id": jornada.equipo_id,
         "estatus": jornada.estatus.value,
@@ -127,6 +169,8 @@ def _ficha(db: Session, jornada: m.Jornada, persona_id: int,
                      for a in jornada.vehiculos if a.vehiculo],
         # La hora que importa: a la que hay que estar parado en el punto.
         "presentacion": jornada.inicio_programado.isoformat(),
+        # Ver el comentario de `proximos`: la heredada no es un dato.
+        "hora_confirmada": bool(jornada.hora_confirmada),
         "llegar_a_las": llega.isoformat(),
         "anticipacion_minutos": minutos,
         "contra_vuelo": contra_vuelo,
@@ -154,6 +198,21 @@ def _ficha(db: Session, jornada: m.Jornada, persona_id: int,
                      for h in marcados],
         "hospitales": tasksheet.hospitales_cercanos(
             db, servicio.plaza_id, jornada.origen_lat, jornada.origen_lon),
+        # La agenda del dia, parada por parada. Viaja DENTRO de la ficha
+        # y no en una consulta aparte a proposito: el dia se guarda en el
+        # telefono para leerse sin senal, y una agenda que solo existe
+        # con red es una agenda que no esta cuando hace falta --en un
+        # estacionamiento, antes de arrancar--. Son cuatro o cinco
+        # renglones; no pesa.
+        "agenda": {
+            "resumen": agenda.resumen if agenda else None,
+            "puntos": agenda.puntos if agenda else None,
+            "paradas": [{"hora": p.hora.strftime("%H:%M") if p.hora else None,
+                         "lugar": p.lugar,
+                         "direccion": p.direccion,
+                         "notas": p.notas}
+                        for p in paradas],
+        },
     }
 
 
@@ -181,17 +240,37 @@ def mi_dia(db: Session = Depends(get_db), ahora: datetime | None = None,
     return {
         "momento": ahora.isoformat(),
         "persona": usuario.persona.nombre if usuario.persona else None,
-        "hoy": [f for f in fichas if f["fecha"] == hoy.isoformat()],
+        # Un dia cerrado sale de la pantalla. No queda nada que tocar
+        # --el fin de servicio es el ultimo paso y exige la entrega de
+        # la unidad-- y dejarlo puesto invita a marcar de mas sobre un
+        # dia que ya se cobro. Se cuenta aparte para que el hueco diga
+        # "ya cerraste" y no "no tienes servicios", que se leeria como
+        # que el dia nunca existio.
+        "hoy": [f for f in fichas
+                if f["fecha"] == hoy.isoformat()
+                and f["estatus"] != m.EstatusJornada.TERMINADA.value],
+        "cerrados_hoy": len([f for f in fichas
+                             if f["fecha"] == hoy.isoformat()
+                             and f["estatus"]
+                             == m.EstatusJornada.TERMINADA.value]),
         "manana": [f for f in fichas if f["fecha"] != hoy.isoformat()],
         "proximos": [{
             "jornada_id": j.id,
             "fecha": j.fecha.isoformat(),
             "folio": j.equipo.servicio.folio,
+            "equipo": j.equipo.alias,
             "cliente": (j.equipo.servicio.cliente.nombre
                         if j.equipo.servicio.cliente else None),
             "llegar_a_las": llegada_del_equipo(
                 j.inicio_programado, j.vuelo_hora, j.vuelo_tipo)[0].isoformat(),
             "punto": j.origen_direccion,
+            # Solo el dia 1 trae hora capturada. Los demas la heredan del
+            # primero mientras su agenda no diga otra cosa: sirve para
+            # calcular --sin hora no hay ventana ni geocerca-- pero es
+            # una hora SUPUESTA. La app lo dice en vez de aparentar que
+            # alguien la confirmo; si no, el agente planea su noche
+            # alrededor de una hora que nadie dijo.
+            "hora_confirmada": bool(j.hora_confirmada),
         } for j in proximas],
         # El telefono al que se llama cuando algo se rompe: la app, la
         # senal, o el servicio. Decir "llama a la central" sin dar el
@@ -263,39 +342,104 @@ def mis_viaticos(db: Session = Depends(get_db),
         servicio = jornada.equipo.servicio if jornada and jornada.equipo else None
         if not servicio:
             continue
-        fila = por_servicio.setdefault(servicio.id, {
+        # En el implantado la tarjeta es del mes, no del servicio: el
+        # deposito se hace por mes y una tarjeta con treinta dias de dos
+        # meses le muestra a la persona un total que no corresponde a
+        # ningun deposito que le hayan hecho.
+        por_mes = servicio.tipo == m.TipoServicio.IMPLANTADO
+        periodo = (f"{jornada.fecha.month:02d}/{jornada.fecha.year}"
+                   if por_mes else None)
+        clave = (servicio.id, periodo)
+        fila = por_servicio.setdefault(clave, {
             "servicio_id": servicio.id, "folio": servicio.folio,
+            "periodo": periodo,
             "cliente": servicio.cliente.nombre if servicio.cliente else None,
             "moneda": v.moneda.value,
             "entregado": Decimal("0"), "comprobado": Decimal("0"),
             "por_comprobar": Decimal("0"),
+            # Autorizado pero todavia en finanzas. Se dice aparte y NUNCA
+            # se suma a lo entregado: la app le decia a la gente "te
+            # depositaron" con dinero que seguia sin salir del banco.
+            "por_depositar": Decimal("0"),
             "dias": [], "limite": None, "vencido": False,
             # Los depositos con los que le llego ese dinero. Contesta la
             # pregunta que hoy termina en una llamada al consultor
             # —"¿ya me depositaron?"— y le da con que reclamarle al
             # banco si el dinero no aparece.
             "depositos": [],
+            "por_devolver": Decimal("0"),
+            # Lo que ya regreso y finanzas confirmo. Sin este renglon la
+            # cuenta de la pantalla no cierra: entregado 285, comprobado
+            # 270 y "te falta comprobar 0" solo cuadra si en algun lado
+            # dice que 15 volvieron.
+            "devuelto": Decimal("0"),
+            "devolucion_en_revision": Decimal("0"),
+            # El consultor ya reviso el servicio y lo mando a facturar.
+            # Desde ahi, esto es historia para el agente.
+            "visto_bueno": _con_visto_bueno(db, servicio.id),
         })
-        entregado = Decimal(str(v.monto_total or 0))
+        monto = Decimal(str(v.monto_total or 0))
         comprobado = Decimal(str(v.monto_comprobado or 0))
+
+        # El dinero esta con la persona solo cuando finanzas lo
+        # deposito: eso es lo que marca TRANSFERIDO, y de ahi en
+        # adelante. Mientras esta ASIGNADO o SOLICITADO el monto existe
+        # en el sistema y NO en su cuenta.
+        #
+        # La app sumaba todo y lo rotulaba "te depositaron". Alguien leia
+        # que ya tenia el dinero, salia a trabajar contando con el, y no
+        # estaba. Y lo que pesaba mas: ese monto entraba a "te falta
+        # comprobar" y corria su plazo de 24 horas, asi que podia quedar
+        # vencido por un dinero que nunca recibio.
+        llego = v.estatus in (m.EstatusViatico.TRANSFERIDO,
+                              m.EstatusViatico.EN_COMPROBACION,
+                              m.EstatusViatico.CERRADO)
+        if not llego:
+            fila["por_depositar"] += monto
+            fila["dias"].append({
+                "viatico_id": v.id,
+                "fecha": jornada.fecha.isoformat(),
+                "estatus": v.estatus.value,
+                "entregado": Decimal("0"), "comprobado": Decimal("0"),
+                "por_devolver": Decimal("0"), "devuelto": Decimal("0"),
+                "devolucion_en_revision": Decimal("0"),
+                "comprobantes": 0, "rechazados": 0,
+            })
+            continue
+
+        entregado = monto
         # Lo que todavia no sale como comprobado es lo que se le va a
         # pedir. Se dice por dia para que sepa cual le falta.
         fila["entregado"] += entregado
         fila["comprobado"] += comprobado
-        fila["por_comprobar"] += max(
-            entregado - comprobado - Decimal(str(v.monto_devuelto or 0)),
-            Decimal("0"))
+        # Lo que falta NO se cuenta aqui: se cuenta del servicio entero,
+        # abajo. Topar cada dia en cero por separado hacia que un gasto
+        # cargado en un dia no descontara de los otros, y la resta de la
+        # pantalla dejaba de cuadrar.
         if v.limite_comprobacion:
             actual = v.limite_comprobacion.isoformat()
             fila["limite"] = min(fila["limite"] or actual, actual)
             if v.limite_comprobacion < relojes.de_la_jornada(jornada):
                 fila["vencido"] = True
+        # Lo que puede regresar de este dia, y lo que ya dijo que
+        # transfirio y nadie ha confirmado. Lo segundo se dice aparte:
+        # descontarselo de una vez seria apagarle la deuda por un dinero
+        # que la empresa todavia no ha visto.
+        puede_devolver = devoluciones_motor.por_devolver(v)
+        en_revision = devoluciones_motor.declarado_pendiente(v)
+        devuelto = Decimal(str(v.monto_devuelto or 0))
+        fila["por_devolver"] += puede_devolver
+        fila["devuelto"] += devuelto
+        fila["devolucion_en_revision"] += en_revision
         fila["dias"].append({
             "viatico_id": v.id,
             "fecha": jornada.fecha.isoformat(),
             "estatus": v.estatus.value,
             "entregado": entregado,
             "comprobado": comprobado,
+            "por_devolver": puede_devolver,
+            "devuelto": devuelto,
+            "devolucion_en_revision": en_revision,
             "comprobantes": len(v.comprobantes),
             "rechazados": len([c for c in v.comprobantes if c.rechazado]),
         })
@@ -320,8 +464,65 @@ def mis_viaticos(db: Session = Depends(get_db),
     for f in filas:
         f["dias"].sort(key=lambda d: d["fecha"])
         f["depositos"].sort(key=lambda d: d["cuando"] or "", reverse=True)
-    return {"servicios": filas,
-            "total_por_comprobar": sum(f["por_comprobar"] for f in filas)}
+        # Un solo deposito, un solo bolson, una sola resta. El dia en el
+        # que se cargo el gasto es como el consultor repartio el monto,
+        # no un sobre que la persona tenga que respetar.
+        f["por_comprobar"] = max(
+            f["entregado"] - f["comprobado"] - f["devuelto"], Decimal("0"))
+
+    # Lo cerrado se va abajo. La pantalla mostraba TODO lo que esa
+    # persona ha recibido en su vida, sin corte: al ano son doscientos
+    # servicios y el unico que importa --el que todavia le corre el
+    # plazo-- queda enterrado entre los que ya no.
+    #
+    # No se borra: es su dinero y tiene derecho a consultarlo. Se pliega,
+    # y se guardan los ultimos meses, que es hasta donde alguien
+    # pregunta "¿cuanto me depositaron?".
+    hoy = date.today()
+    viejo = hoy - timedelta(days=DIAS_DE_VIATICOS_CERRADOS)
+    pendientes, cerrados = [], []
+    for f in filas:
+        ultimo = max((d["fecha"] for d in f["dias"]), default=None)
+        f["ultimo_dia"] = ultimo
+        if _sigue_abierto(f):
+            pendientes.append(f)
+        elif ultimo and date.fromisoformat(ultimo) >= viejo:
+            cerrados.append(f)
+    cerrados.sort(key=lambda x: x["ultimo_dia"] or "", reverse=True)
+
+    return {"servicios": pendientes,
+            "cerrados": cerrados,
+            "total_por_comprobar": sum(f["por_comprobar"] for f in pendientes)}
+
+
+def _con_visto_bueno(db: Session, servicio_id: int) -> bool:
+    """Si el consultor ya cerro ese servicio y lo mando a facturar."""
+    cierre = db.query(m.Cierre).filter_by(servicio_id=servicio_id).first()
+    return bool(cierre and cierre.estatus != m.EstatusCierre.ABIERTO)
+
+
+def _sigue_abierto(fila: dict) -> bool:
+    """Si todavia hay algo que resolver con ese dinero.
+
+    Basta una de las tres: le falta comprobar, le falta que le
+    depositen, o dijo que devolvio y finanzas no lo ha confirmado.
+    Ademas, un dia que no esta cerrado ni devuelto sigue vivo aunque las
+    cuentas den cero: el consultor todavia no lo ha revisado.
+
+    Salvo que el servicio ya tenga el visto bueno. Decision de Salvador,
+    20 sep: a partir de ahi el gasto desaparece de la app. Y es cierto
+    --ya no hay nada que el agente pueda hacer, el cierre se fue a
+    finanzas-- por eso el revisor no deja dar el visto bueno con
+    viaticos abiertos: si no, esto le quitaria la pantalla a alguien que
+    todavia debe comprobar.
+    """
+    if fila["visto_bueno"]:
+        return False
+    if (fila["por_comprobar"] or fila["por_depositar"]
+            or fila["devolucion_en_revision"]):
+        return True
+    return any(d["estatus"] not in ("cerrado", "devuelto")
+               for d in fila["dias"])
 
 
 @router.get("/mis-comisiones", summary="Lo que lleva ganado y lo que ya cobro")
@@ -444,6 +645,39 @@ def mi_calificacion(db: Session = Depends(get_db),
     return profesionalismo.ficha(db, usuario.persona_id)
 
 
+@router.get("/mi-bono", summary="Su bono del mes vencido")
+def mi_bono(db: Session = Depends(get_db),
+            usuario: m.Usuario = Depends(CAMPO)):
+    """Lo que gano el mes pasado y por que.
+
+    Enterarse de que no hay bono por un deposito que no llego es la peor
+    forma de enterarse. Aqui lo ve el dia 3, con la frase que explica
+    cada punto perdido y su fecha, y entonces el dia 5 no hay pleito con
+    nadie: ya lo sabia.
+
+    Lo que NO se le ensena: el bono de nadie mas, la comparacion contra
+    sus companeros, y la referencia bancaria del deposito --esa es de
+    finanzas, y en la app solo sirve para que alguien la fotografie--.
+    """
+    from datetime import date
+
+    from app import bonos
+
+    anio, mes = bonos.mes_anterior(date.today())
+    evaluacion = (db.query(m.EvaluacionMensual)
+                  .filter_by(persona_id=usuario.persona_id, anio=anio, mes=mes)
+                  .first())
+    if not evaluacion:
+        # Sin calcular todavia no es un error: es el dia 1 o el dia 2.
+        return {"hay": False, "periodo": f"{mes:02d}/{anio}"}
+
+    ficha = bonos.ficha(db, evaluacion)
+    ficha["hay"] = True
+    ficha["pagado_en"] = (evaluacion.pago.pagado_en.isoformat()
+                          if evaluacion.pago else None)
+    return ficha
+
+
 # ==================================================================
 # Comprobar desde la calle
 # ==================================================================
@@ -463,6 +697,114 @@ class ComprobanteDeCampoIn(BaseModel):
     # La foto ya viene reducida por la app: un telefono saca fotos de
     # cuatro megas y subirlas con media barra de senal no termina nunca.
     imagen: str | None = None
+
+
+class DevolucionDeCampoIn(BaseModel):
+    """Ya transferi lo que sobro.
+
+    La referencia es la del banco: es lo que finanzas busca en el estado
+    de cuenta para encontrar ese movimiento. La foto es el comprobante
+    de la transferencia.
+
+    Ninguna de las dos se exige aqui --un agente en la carretera con
+    media barra de senal puede no tener la captura a la mano-- pero
+    finanzas ve lo que falta antes de confirmar, y una devolucion sin
+    referencia ni imagen es una que alguien va a tener que perseguir.
+    """
+    monto: Decimal
+    referencia: str | None = Field(default=None, max_length=120)
+    imagen: str | None = None
+
+
+class ManianaDeCampoIn(BaseModel):
+    """A que hora y donde se presenta el equipo manana.
+
+    El punto viaja con su lat/lon porque quien lo captura esta parado en
+    el: acaba de dejar al principal en la puerta del hotel y ahi mismo
+    le dijeron la hora. Sin coordenadas no hay geocerca, y sin geocerca
+    ese equipo no puede marcar su llegada manana.
+    """
+    hora: time
+    direccion: str | None = Field(default=None, max_length=300)
+    lat: Decimal | None = None
+    lon: Decimal | None = None
+    nota: str | None = Field(default=None, max_length=300)
+
+
+@router.post("/jornadas/{jornada_id}/manana",
+             summary="A que hora y donde nos vemos manana")
+def hora_de_manana_campo(jornada_id: int, datos: ManianaDeCampoIn,
+                         db: Session = Depends(get_db),
+                         usuario: m.Usuario = Depends(CAMPO)):
+    """Lo captura quien lo escucho, cuando lo escucho.
+
+    El principal dice "manana a las siete" al bajarse del coche, a las
+    diez de la noche. Antes ese dato iba por telefono a la central y se
+    quedaba en la cabeza de alguien hasta el dia siguiente; mientras
+    tanto, el dia de manana vivia con la hora heredada del primero.
+
+    Solo sobre un dia suyo, y solo hacia el dia siguiente de SU equipo.
+    """
+    if not auth.es_su_propia_jornada(db, usuario, jornada_id):
+        raise HTTPException(403, "No estas asignado a esa jornada")
+    jornada = db.get(m.Jornada, jornada_id)
+
+    from app import operacion as motor_operacion
+
+    hecho = motor_operacion.fijar_hora_de_manana(
+        db, jornada, datos.hora, usuario.persona_id, datos.nota,
+        datos.direccion, datos.lat, datos.lon)
+    siguiente, antes = hecho["siguiente"], hecho["antes"]
+    db.commit()
+
+    # A los demas del equipo que ya confirmaron. Su confirmacion era
+    # sobre otra hora.
+    if siguiente.inicio_programado != antes:
+        try:
+            push.avisar_cambio_de_hora(db, siguiente, antes)
+            db.commit()
+        except Exception:                     # noqa: BLE001
+            # Un aviso que no sale no puede tumbar una hora ya guardada.
+            registro.exception("no se pudo avisar el cambio de hora")
+
+    return {"resultado": "listo",
+            "jornada_id": siguiente.id,
+            "fecha": siguiente.fecha.isoformat(),
+            "inicio": siguiente.inicio_programado.isoformat(),
+            "punto": siguiente.origen_direccion,
+            "con_geocerca": siguiente.origen_lat is not None}
+
+
+@router.post("/viaticos/{viatico_id}/devolucion",
+             summary="Devolver lo que sobro")
+def devolver_lo_que_sobro(viatico_id: int, datos: DevolucionDeCampoIn,
+                          db: Session = Depends(get_db),
+                          usuario: m.Usuario = Depends(CAMPO)):
+    """Queda anotado que ese dinero viene de regreso, no que ya volvio.
+
+    Hasta que finanzas lo vea entrar a la cuenta, lo declarado no baja
+    lo que esta persona debe comprobar: decirle que ya devolvio --y
+    apagarle el plazo-- por un dinero que la empresa no ha visto seria
+    el mismo defecto que tenia la app cuando decia "te depositaron" con
+    dinero que seguia en el banco.
+    """
+    viatico = db.get(m.AsignacionViatico, viatico_id)
+    if not viatico:
+        raise HTTPException(404, f"No existe el viatico {viatico_id}")
+    if viatico.persona_id != usuario.persona_id:
+        raise HTTPException(403, "Solo puedes devolver de tus propios viaticos")
+    if datos.imagen and len(datos.imagen) > 4_000_000:
+        raise HTTPException(400, "La foto pesa demasiado. Vuelve a tomarla.")
+
+    fila = devoluciones_motor.declarar(
+        db, viatico, datos.monto, datos.referencia, datos.imagen,
+        usuario.persona_id, reloj.ahora_de_la_jornada(db, viatico.jornada))
+    db.commit()
+    return {"resultado": "declarada", "devolucion_id": fila.id,
+            "monto": float(fila.monto),
+            "por_devolver": float(devoluciones_motor.por_devolver(viatico)),
+            "nota": ("Queda anotada. Finanzas la confirma cuando la vea "
+                     "entrar a la cuenta.")}
 
 
 @router.post("/viaticos/{viatico_id}/comprobante",
@@ -488,7 +830,7 @@ def comprobar(viatico_id: int, datos: ComprobanteDeCampoIn,
         raise HTTPException(400, "La foto pesa demasiado. Vuelve a tomarla.")
 
     mal = viaticos_motor.revisar_comprobante(
-        viatico, datos.monto, datos.concepto, datos.descripcion)
+        viatico, datos.monto, datos.concepto, datos.descripcion, db=db)
     if mal:
         raise HTTPException(mal.pop("codigo"), mal)
 
@@ -509,11 +851,19 @@ def comprobar(viatico_id: int, datos: ComprobanteDeCampoIn,
         viatico.estatus = m.EstatusViatico.EN_COMPROBACION
     db.commit()
 
+    # Lo que falta es del servicio entero, no del dia del ticket: es la
+    # misma cuenta que ve en su tarjeta, y tiene que decir lo mismo.
+    hermanos = viaticos_motor.bolson_del_servicio(db, viatico)
+    entregado = sum((Decimal(str(v.monto_total or 0)) for v in hermanos),
+                    Decimal("0"))
+    comprobado = sum((Decimal(str(v.monto_comprobado or 0))
+                      for v in hermanos), Decimal("0"))
+    devuelto = sum((Decimal(str(v.monto_devuelto or 0)) for v in hermanos),
+                   Decimal("0"))
     return {"resultado": "comprobante registrado",
-            "comprobado": str(viatico.monto_comprobado),
-            "entregado": str(viatico.monto_total),
-            "falta": str(max(Decimal(str(viatico.monto_total))
-                             - Decimal(str(viatico.monto_comprobado)),
+            "comprobado": str(comprobado),
+            "entregado": str(entregado),
+            "falta": str(max(entregado - comprobado - devuelto,
                              Decimal("0")))}
 
 
@@ -620,7 +970,11 @@ def probar(db: Session = Depends(get_db),
 # veces. Lo que se revisa es el cambio, no el dia.
 # ==================================================================
 
-ANGULOS_MINIMOS = ("frente", "atras", "izquierdo", "derecho")
+# Los cuatro lados y el tablero. El odometro se pide desde el 18 de
+# septiembre: sin el, el kilometraje era un numero tecleado, y la cuenta
+# que sale al entregar --la que nadie apunta y de la que despues todos se
+# acuerdan distinto-- no tenia con que comprobarse.
+ANGULOS_MINIMOS = ("frente", "atras", "izquierdo", "derecho", "odometro")
 
 
 class FotoIn(BaseModel):
@@ -645,30 +999,31 @@ class RevisionIn(BaseModel):
     # litros es pedir que alguien invente un numero.
     combustible_octavos: int | None = Field(default=None, ge=0, le=8)
     nota: str | None = None
+    # La declaracion de dano. Va como opcional en el esquema y se exige
+    # abajo, para poder decir por que falta: un 422 de validacion es una
+    # pantalla en blanco con un renglon rojo, y del otro lado hay alguien
+    # con una mano y media barra de senal.
+    hubo_dano: bool | None = None
+    dano_tipo: m.TipoDano | None = None
+    dano_nota: str | None = None
     firma: str | None = None
     lat: Decimal | None = None
     lon: Decimal | None = None
     fotos: list[FotoIn] = []
 
 
-def _suya(db: Session, servicio_id: int, vehiculo_id: int,
-          persona_id: int) -> m.Servicio:
-    """Que esa persona traiga de verdad esa unidad en ese servicio."""
-    servicio = db.get(m.Servicio, servicio_id)
-    if not servicio:
-        raise HTTPException(404, f"No existe el servicio {servicio_id}")
-    suyo = (db.query(m.AsignacionPersonal)
-            .join(m.Jornada, m.AsignacionPersonal.jornada_id == m.Jornada.id)
-            .join(m.Equipo, m.Jornada.equipo_id == m.Equipo.id)
-            .filter(m.Equipo.servicio_id == servicio_id,
-                    m.AsignacionPersonal.persona_id == persona_id)
-            .first())
-    if not suyo:
-        raise HTTPException(403, "No estas asignado a ese servicio")
-    return servicio
+def _revision(r: m.RevisionUnidad, con_fotos: bool = True) -> dict:
+    """Una revision, con o sin sus fotos.
 
+    Las fotos son medio mega cada una y viven dentro de la base. La
+    lista de unidades las mandaba TODAS --recepcion y entrega, de todas
+    las unidades del servicio-- en cada consulta: megabytes a un
+    telefono con mala senal cada vez que abre la pantalla, y revisiones
+    de companeros que no tenia por que traer.
 
-def _revision(r: m.RevisionUnidad) -> dict:
+    Ahora la lista manda cuantas hay y las fotos se piden de una
+    revision a la vez, cuando se van a ver.
+    """
     return {
         "id": r.id,
         "tipo": r.tipo.value if hasattr(r.tipo, "value") else r.tipo,
@@ -678,11 +1033,15 @@ def _revision(r: m.RevisionUnidad) -> dict:
         "kilometraje": r.kilometraje,
         "combustible_octavos": r.combustible_octavos,
         "nota": r.nota,
+        "hubo_dano": r.hubo_dano,
+        "dano_tipo": r.dano_tipo,
+        "dano_nota": r.dano_nota,
         "momento": r.momento.isoformat(),
-        "fotos": [{"angulo": f.angulo.value if hasattr(f.angulo, "value")
-                              else f.angulo,
-                   "imagen": f.imagen, "nota": f.nota}
-                  for f in r.fotos],
+        "cuantas_fotos": len(r.fotos),
+        "fotos": ([{"angulo": f.angulo.value if hasattr(f.angulo, "value")
+                               else f.angulo,
+                    "imagen": f.imagen, "nota": f.nota}
+                   for f in r.fotos] if con_fotos else None),
     }
 
 
@@ -732,12 +1091,53 @@ def unidades_del_servicio(servicio_id: int, db: Session = Depends(get_db),
             "unidad": unidad.categoria.nombre if unidad.categoria else None,
             "color": unidad.color,
             "marca_modelo": unidad.marca_modelo,
-            "recibida": _revision(suyas["recibe"]) if "recibe" in suyas else None,
-            "entregada": (_revision(suyas["entrega"])
+            "recibida": (_revision(suyas["recibe"], con_fotos=False)
+                         if "recibe" in suyas else None),
+            "entregada": (_revision(suyas["entrega"], con_fotos=False)
                           if "entrega" in suyas else None),
         })
     return {"servicio_id": servicio.id, "folio": servicio.folio,
             "unidades": salida}
+
+
+class EnCaminoIn(BaseModel):
+    """Donde esta quien va al punto. Nada mas."""
+    lat: Decimal
+    lon: Decimal
+
+
+@router.post("/jornadas/{jornada_id}/en-camino",
+             summary="Voy en camino al punto")
+def voy_en_camino(jornada_id: int, datos: EnCaminoIn,
+                  db: Session = Depends(get_db),
+                  usuario: m.Usuario = Depends(CAMPO)):
+    """Un toque desde el aviso, o desde la app abierta.
+
+    La ventana se abre aqui y se cierra al marcar la llegada o al
+    acercarse al punto. Fuera de ella no se toma nada: esto es el tiempo
+    de la persona, no el del servicio.
+    """
+    if not auth.es_su_propia_jornada(db, usuario, jornada_id):
+        raise HTTPException(403, "No estas asignado a esa jornada")
+    return trayecto.registrar(db, jornada_id, usuario.persona_id,
+                              datos.lat, datos.lon)
+
+
+@router.get("/revisiones/{revision_id}",
+            summary="Una revision con sus fotos")
+def una_revision(revision_id: int, db: Session = Depends(get_db),
+                 usuario: m.Usuario = Depends(CAMPO)):
+    """Las fotos, de una revision a la vez y solo cuando se van a ver.
+
+    El candado es el mismo que para guardarla: tiene que ser una unidad
+    de un servicio suyo.
+    """
+    r = db.get(m.RevisionUnidad, revision_id)
+    if not r:
+        raise HTTPException(404, f"No existe la revision {revision_id}")
+    revision_unidad.es_suya(db, r.servicio_id, r.vehiculo_id,
+                            usuario.persona_id)
+    return _revision(r)
 
 
 @router.post("/revisiones", status_code=201,
@@ -751,8 +1151,8 @@ def revisar(datos: RevisionIn, db: Session = Depends(get_db),
     que existe. Si falta un angulo, mas vale decirlo ahora que
     descubrirlo cuando ya no se puede volver a tomar.
     """
-    servicio = _suya(db, datos.servicio_id, datos.vehiculo_id,
-                     usuario.persona_id)
+    servicio = revision_unidad.es_suya(
+        db, datos.servicio_id, datos.vehiculo_id, usuario.persona_id)
     if not db.get(m.Vehiculo, datos.vehiculo_id):
         raise HTTPException(404, f"No existe la unidad {datos.vehiculo_id}")
 
@@ -783,6 +1183,67 @@ def revisar(datos: RevisionIn, db: Session = Depends(get_db),
     # fotos y una firma"— vivia en el JavaScript del telefono: cualquier
     # peticion directa guardaba una revision sin firmar y nadie se
     # enteraba hasta que habia un reclamo.
+    # ---- La declaracion de dano
+    #
+    # La pregunta no se puede saltar. Contestar "no" es un clic, asi que
+    # declarar no cuesta mas que no declarar: esa es la unica forma de
+    # que el dato sirva. Si declarar saliera caro, la casilla diria "no"
+    # siempre y tendriamos una falsa sensacion de estar documentando.
+    if datos.hubo_dano is None:
+        raise HTTPException(409, {
+            "mensaje": ("Falta decir si la recibes con algun dano"
+                        if tipo == "recibe" else
+                        "Falta decir si la unidad se dano durante tu servicio"),
+            "que_hacer": ("Contesta si o no. Si la recibes golpeada, "
+                          "declararlo es lo que te protege: queda como el "
+                          "estado en que te la dieron."
+                          if tipo == "recibe" else
+                          "Contesta si o no. Declarar un golpe no es una "
+                          "falta; lo revisa tu consultor."),
+        })
+
+    if datos.hubo_dano:
+        if not datos.dano_tipo:
+            raise HTTPException(409, {
+                "mensaje": "Falta decir de que fue el dano",
+                "que_hacer": "Elige rayon, golpe, cristal, llanta, mecanico "
+                             "u otro.",
+                "opciones": [t.value for t in m.TipoDano]})
+
+        if not datos.dano_nota or len(datos.dano_nota.strip()) < 10:
+            raise HTTPException(409, {
+                "mensaje": ("Falta describir el dano"
+                            if tipo == "recibe" else
+                            "Falta explicar que paso"),
+                "que_hacer": ("Escribe donde esta y como se ve. Quien lea "
+                              "esto dentro de un mes no estuvo ahi."
+                              if tipo == "recibe" else
+                              "Escribe que paso, con tus palabras. Quien lo "
+                              "lea dentro de un mes no estuvo ahi."),
+            })
+
+        # Un dano declarado sin foto es media declaracion: el texto dice
+        # que paso y la foto dice como se ve. Sin la segunda, tres
+        # semanas despues no hay contra que comparar.
+        if not any(f.angulo == m.AnguloFoto.DANO for f in datos.fotos):
+            raise HTTPException(409, {
+                "mensaje": "Falta la foto del dano",
+                "que_hacer": "Toma un acercamiento del golpe, aparte de las "
+                             "cinco de la unidad. Es la que de verdad sirve "
+                             "para discutirlo despues."})
+
+    # El numero del tablero, ahora que su foto es obligatoria. Tener la
+    # prueba y no el dato deja la cuenta que sale al entregar --"recorrio
+    # 1,800 km"-- sin poder salir, que es justo para lo que se pidio la
+    # foto. Se exige aqui y no en el esquema para poder decir por que: un
+    # 422 de validacion es una pantalla en blanco con un renglon rojo.
+    if datos.kilometraje is None:
+        raise HTTPException(409, {
+            "mensaje": "Falta el kilometraje",
+            "que_hacer": "Escribe el numero que marca el tablero, el mismo "
+                         "de la foto. Sin el, al entregar no se puede decir "
+                         "cuanto se recorrio."})
+
     if not datos.firma or len(datos.firma) < 100:
         raise HTTPException(409, {
             "mensaje": "Falta la firma",
@@ -797,8 +1258,8 @@ def revisar(datos: RevisionIn, db: Session = Depends(get_db),
         raise HTTPException(413, {
             "mensaje": "Las fotos pesan demasiado juntas",
             "que_hacer": "Quita algunas fotos de golpes y vuelve a "
-                         "intentarlo. Los cuatro lados son los que "
-                         "importan."})
+                         "intentarlo. Los cuatro lados y el odometro son "
+                         "los que importan."})
     for f in datos.fotos:
         if len(f.imagen) > 3_000_000:
             raise HTTPException(413, {
@@ -824,8 +1285,10 @@ def revisar(datos: RevisionIn, db: Session = Depends(get_db),
     if faltan:
         raise HTTPException(409, {
             "mensaje": "Faltan fotos de la unidad",
-            "que_hacer": "Se necesitan los cuatro lados. Una revision a "
-                         "medias no sirve para discutir un golpe despues.",
+            "que_hacer": "Se necesitan los cuatro lados y el odometro. Una "
+                         "revision a medias no sirve para discutir un golpe "
+                         "despues, y sin el tablero el kilometraje es solo "
+                         "un numero que alguien escribio.",
             "faltan": faltan})
 
     ahora = reloj.ahora_del_servicio(db, servicio)
@@ -835,6 +1298,9 @@ def revisar(datos: RevisionIn, db: Session = Depends(get_db),
         kilometraje=datos.kilometraje,
         combustible_octavos=datos.combustible_octavos,
         nota=datos.nota, firma=datos.firma,
+        hubo_dano=bool(datos.hubo_dano),
+        dano_tipo=datos.dano_tipo.value if datos.dano_tipo else None,
+        dano_nota=(datos.dano_nota or "").strip() or None,
         lat=datos.lat, lon=datos.lon, momento=ahora)
     db.add(revision)
     db.flush()
@@ -850,6 +1316,23 @@ def revisar(datos: RevisionIn, db: Session = Depends(get_db),
 
     salida = {"resultado": "revision guardada", "revision_id": revision.id,
               "fotos": len(datos.fotos)}
+
+    # Decision de Salvador (19 sep): un dano nuevo avisa al consultor y
+    # nada mas. Ni alerta que cerrar, ni incidencia automatica --ni
+    # siquiera de las que no quitan estrellas--: el sistema no clasifica
+    # solo, eso es del consultor con visto bueno de direccion, y un
+    # renglon que nadie juzgo en el expediente de alguien es algo que
+    # despues hay que explicar.
+    #
+    # Y el dano que YA venia no avisa a nadie: quien lo declara no hizo
+    # nada, se esta protegiendo. Frenarlo o alertarlo seria castigar
+    # justo lo que queremos que haga.
+    if revision.hubo_dano:
+        salida["declaracion"] = {
+            "tipo": revision.dano_tipo,
+            "nota": revision.dano_nota,
+            "lo_revisa_tu_consultor": tipo == "entrega",
+        }
 
     # Al entregar, la diferencia de kilometraje sale sola: es el numero
     # que nadie apunta y del que despues todos se acuerdan distinto.

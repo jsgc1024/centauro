@@ -368,6 +368,43 @@ def rentabilidad(db: Session, servicio_id: int) -> dict:
 
 # ---------------------------------------------------------------- flujo
 
+def estado(db: Session, servicio_id: int,
+           ahora: datetime | None = None) -> dict:
+    """El reloj del consultor, solo.
+
+    Vive aparte de la revision a proposito: **el plazo corre igual**
+    --arranca cuando el servicio termina, tenga cotizacion o no-- y hay
+    pantallas que solo necesitan el reloj, sin cargar el comparativo
+    entero para pintarlo.
+
+    Se manda el limite Y el momento, los dos en hora del pais del
+    servicio: la cuenta regresiva sale de la resta entre ellos y no del
+    reloj de la maquina donde este abierta la consola. De este plazo
+    depende que el consultor cobre su comision; no puede depender de la
+    hora de una laptop.
+    """
+    servicio = db.get(m.Servicio, servicio_id)
+    if not servicio:
+        raise HTTPException(404, f"No existe el servicio {servicio_id}")
+
+    ahora = reloj.ahora_del_servicio(db, servicio, ahora)
+    registro = db.query(m.Cierre).filter_by(servicio_id=servicio_id).first()
+    return {
+        "momento": ahora.isoformat(),
+        "existe": bool(registro),
+        "cierre_id": registro.id if registro else None,
+        "estatus": registro.estatus.value if registro else None,
+        "abierto_en": registro.abierto_en.isoformat() if registro else None,
+        "limite": (registro.limite_consultor.isoformat()
+                   if registro else None),
+        "minutos_restantes": (
+            int((registro.limite_consultor - ahora).total_seconds() / 60)
+            if registro else None),
+        "factura": registro.factura_odoo if registro else None,
+        "factura_error": registro.factura_error if registro else None,
+    }
+
+
 def abrir(db: Session, servicio_id: int, abierto_en: datetime | None = None) -> m.Cierre:
     """Arranca el reloj de las 24 horas del consultor."""
     servicio = db.get(m.Servicio, servicio_id)
@@ -385,6 +422,9 @@ def abrir(db: Session, servicio_id: int, abierto_en: datetime | None = None) -> 
     cierre = m.Cierre(servicio_id=servicio_id, abierto_en=momento,
                       limite_consultor=momento + timedelta(hours=HORAS_CONSULTOR))
     db.add(cierre)
-    db.commit()
-    db.refresh(cierre)
+    # `flush` y no `commit`: esto se llama tambien desde adentro del
+    # cierre del ultimo dia, y ahi commitear a media transaccion partiria
+    # en dos una operacion que tiene que ser una sola --la marca de fin y
+    # el arranque del reloj--. Quien llama decide cuando guardar.
+    db.flush()
     return cierre

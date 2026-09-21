@@ -18,9 +18,13 @@ from app.db import get_db
 
 router = APIRouter(prefix="/nomina", tags=["Nomina del personal"])
 
-FINANZAS = auth.requiere(m.Rol.FINANZAS, m.Rol.DIRECTOR_OPERACIONES)
-LECTURA = auth.requiere(m.Rol.FINANZAS, m.Rol.CONSULTOR, m.Rol.CENTRAL,
-                        m.Rol.DIRECTOR_OPERACIONES)
+# Armar el corte no es marcarlo pagado: lo segundo es el momento en que
+# sale el dinero. Y el tabulador --lo que se paga por dia-- se cambia muy
+# de vez en cuando y lo cambia otra gente.
+FINANZAS = auth.puede("nomina.calcular")
+PAGAR = auth.puede("nomina.pagar")
+TABULADOR = auth.puede("nomina.tabulador")
+LECTURA = auth.puede("nomina.ver")
 
 
 # --------------------------------------------------------- el tabulador

@@ -35,9 +35,72 @@ def sincronizar_personal(db: Session, empleados: list[dict]) -> dict:
 
 
 def sincronizar_flota(db: Session, vehiculos: list[dict]) -> dict:
-    """Cada vehiculo: {placa, color?, modelo_anio?, foto_url?}."""
+    """Cada vehiculo: {placa, marca_modelo?, color?, modelo_anio?,
+    foto_url?}.
+
+    `marca_modelo` faltaba en la lista. El documento que le pedimos a
+    Odoo lo pide con todas sus letras --"marca y modelo"-- y aqui se
+    recibia y se tiraba: la unidad entraba sin decir si era una Suburban
+    o una Sprinter, y eso es lo primero que pregunta quien la va a
+    recibir en un estacionamiento. Tambien sale en el task sheet.
+    """
     return _sincronizar(db, m.Vehiculo, "placa", vehiculos,
-                        ("color", "modelo_anio", "foto_url"))
+                        ("marca_modelo", "color", "modelo_anio", "foto_url"))
+
+
+def sincronizar_capacitaciones(db: Session, filas: list[dict]) -> dict:
+    """Cada certificado: {correo, nombre, institucion?, obtenida_en?,
+    vigencia_hasta?, activo?}.
+
+    La llave es la persona mas el nombre del curso: una persona tiene un
+    "Manejo defensivo", y cuando lo revalida no se crea otro renglon, se
+    le mueve la vigencia. Asi el padron dice cuantos cursos tiene y no
+    cuantas veces los ha tomado.
+
+    `vigencia_hasta` es el campo que importa. De el sale ahora si la
+    persona esta al corriente --el criterio del bono y la dimension de
+    la calificacion lo leen de aqui, no de una casilla que alguien
+    marca-- y de el salen los avisos de por vencer. Un certificado sin
+    vigencia se toma como permanente.
+
+    Para retirar uno, Odoo manda `activo: false`. No se retira solo por
+    dejar de mandarlo: la regla de la casa es que lo que no viene no
+    borra lo que hay, porque un envio parcial no es una baja.
+    """
+    creadas, actualizadas, sin_encontrar = 0, 0, []
+    for fila in filas:
+        correo = (fila.get("correo") or "").strip().lower()
+        nombre = (fila.get("nombre") or "").strip()
+        if not correo or not nombre:
+            continue
+        persona = db.query(m.Persona).filter(
+            m.Persona.correo.ilike(correo)).first()
+        if not persona:
+            sin_encontrar.append(correo)
+            continue
+
+        curso = (db.query(m.Capacitacion)
+                 .filter(m.Capacitacion.persona_id == persona.id,
+                         m.Capacitacion.nombre.ilike(nombre)).first())
+        if not curso:
+            curso = m.Capacitacion(persona_id=persona.id, nombre=nombre)
+            db.add(curso)
+            creadas += 1
+        else:
+            actualizadas += 1
+
+        for campo in ("institucion", "obtenida_en", "vigencia_hasta"):
+            valor = fila.get(campo)
+            if valor not in (None, ""):
+                setattr(curso, campo, valor)
+        # `activo` si viaja aunque sea falso: es la unica forma de
+        # retirar un curso desde Odoo, y false no es "campo vacio".
+        if "activo" in fila and fila["activo"] is not None:
+            curso.activo = bool(fila["activo"])
+
+    db.commit()
+    return {"creadas": creadas, "actualizadas": actualizadas,
+            "sin_encontrar": sin_encontrar}
 
 
 def sincronizar_taller(db: Session, entradas: list[dict]) -> dict:

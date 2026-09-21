@@ -148,9 +148,10 @@ otra moneda, duele de inmediato.
 
 ### Cosas menores, anotadas para no perderlas
 
-- `ConceptoNomina` no tiene restricción única en la base: el candado
-  contra pagar dos veces vive en Python. Dos cortes calculados en
-  paralelo podrían colarse.
+- ~~`ConceptoNomina` no tiene restricción única en la base.~~
+  **Resuelto** (migración `d1a73f5b0e62`, bitácora §24). No era
+  `UNIQUE(jornada_id)` —una jornada de equipo tiene varias personas—
+  sino el par jornada+persona, y para eso `persona_id` bajó al concepto.
 - `_puede_ver` del task sheet da acceso **por equipo**, no por jornada:
   quien cubrió un día de un servicio de cinco lee el itinerario de los
   cinco. Puede ser correcto —el equipo es la misma gente todos los
@@ -162,9 +163,16 @@ otra moneda, duele de inmediato.
   Pydantic, pero es una excepción al patrón.
 - ~~Al reemplazar personal por contingencia, **quien sale pierde el día
   completo**~~. **Resuelto** (ver `BITACORA.md`, sección 11): el día del
-  cambio ya no se muta, se parte. Queda abierto lo mismo en el
-  implantado, que tiene su propio reemplazo en `implantado.py`.
+  cambio ya no se muta, se parte. **También en el implantado**, contra lo
+  que decía esta nota: `implantado.cambiar_recurso` ya no tiene copia
+  propia de la regla —traduce el tramo de fechas a jornadas y llama al
+  mismo motor que el eventual—. La nota se quedó vieja después de esa
+  unificación. Desde el 20 de septiembre hay una prueba que lo sostiene
+  por la puerta del implantado
+  (`test_en_el_implantado_el_dia_tambien_se_parte`), que es lo que
+  faltaba: el motor era uno solo, pero nada avisaba si alguien le
+  devolvía el suyo.
 - ~~Cualquier sobrecosto se etiqueta "horas extra" si hubo una sola hora extra en cualquier día del servicio.~~ **Resuelto**: ahora solo se etiqueta así si las horas extra de *ese renglón* explican el sobrecosto completo. Lo que no, es un día de más y hay que corregirlo antes de enviar a finanzas.
 - ~~La manifiesto de la PWA no trae iconos.~~ **Resuelto**: cuatro tamaños sacados del emblema del logo, más el maskable de Android y el plano de iOS.
 - ~~`POST /auth/token` no tiene límite de intentos.~~ **Resuelto**: `app/intentos.py`, ocho fallos por correo y cuarenta por IP en quince minutos, con contadores en Redis y abierto si Redis no contesta.
-- `/docs` y `/openapi.json` son públicos.
+- ~~`/docs` y `/openapi.json` son públicos.~~ **Resuelto**: solo existen en desarrollo (bitácora §24).

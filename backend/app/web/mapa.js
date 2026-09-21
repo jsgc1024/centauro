@@ -10,6 +10,7 @@
    igual: la misma busqueda, el mismo mapa y el mismo cobro. */
 import { api } from "./api.js";
 import { aviso, h, mensaje, vaciar } from "./util.js";
+import { t } from "./idioma.js";
 
 export function buscadorDeLugar({
   paisId = () => "", alCambiar = () => {}, alDetectarAeropuerto = () => {},
@@ -22,7 +23,7 @@ export function buscadorDeLugar({
      momento en que se quiere verificar que es el hotel correcto. */
   const direccion = h("textarea", {
     rows: filas,
-    placeholder: "Hotel, terminal o direccion. Ej: Las Alcobas Polanco",
+    placeholder: t("mapa_ph_direccion"),
     oninput: () => { crecer(); sugerir(); alCambiar(); } });
   direccion.value = valores.direccion || "";
 
@@ -64,10 +65,10 @@ export function buscadorDeLugar({
 
   const mapaImagen = h("img", { clase: "mapa-vista", alt: "" });
   const mapaEnlace = h("a", { target: "_blank", rel: "noopener" },
-                       "Abrir en Google Maps");
+                       t("mapa_abrir"));
   const mapaPie = h("div", { clase: "mapa-pie" }, mapaEnlace);
   const mapaVacio = h("div", { clase: "mapa-vacio" },
-    "Busca la direccion para fijar el punto y su geocerca.");
+    t("mapa_vacio"));
   const cajaMapa = h("div", { clase: "mapa-caja" }, mapaVacio);
   const resultados = h("div", { clase: "resultados" });
 
@@ -148,8 +149,7 @@ export function buscadorDeLugar({
            intento —ni el aviso rojo— en cada tecla. */
         apagado = true;
         resultados.append(h("div", { clase: "gris chico" },
-          "La busqueda en Google no esta configurada. Escribe la direccion "
-          + "y fija el pin a mano en el apartado de abajo."));
+          t("mapa_sin_llave")));
       } else {
         resultados.append(aviso(err.message, "grave"));
       }
@@ -172,7 +172,7 @@ export function buscadorDeLugar({
      texto, el punto ya quedo. */
   async function tomar(sugerencia) {
     vaciar(resultados);
-    resultados.append(h("div", { clase: "gris chico" }, "Buscando el punto…"));
+    resultados.append(h("div", { clase: "gris chico" }, t("mapa_buscando")));
     try {
       const lugar = await api.get(
         `/mapas/lugar/${sugerencia.id}?sesion=${sesion}`);

@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app import auditoria, auth
+from app import facturacion
 from app import encuestas as motor_encuestas
 from app import nomina
 from app import cierre as motor
@@ -19,11 +20,13 @@ from app.db import get_db
 
 router = APIRouter(tags=["Cierre y cotizacion"])
 
-CONSULTOR = auth.requiere(m.Rol.CONSULTOR, m.Rol.DIRECTOR_OPERACIONES)
-FINANZAS = auth.requiere(m.Rol.FINANZAS)
-DIRECCION = auth.requiere(m.Rol.DIRECTOR_OPERACIONES, m.Rol.DIRECTOR_GENERAL)
-LECTURA = auth.requiere(m.Rol.CONSULTOR, m.Rol.DIRECTOR_OPERACIONES,
-                        m.Rol.FINANZAS, m.Rol.CENTRAL)
+# Cotizar no es cerrar: lo primero le pone precio al servicio y lo
+# segundo lo manda a facturar. `DIRECCION` se fue porque no la usaba
+# ningun endpoint: era un alias muerto.
+COTIZA = auth.puede("cierre.cotizar")
+CONSULTOR = auth.puede("cierre.cerrar")
+FINANZAS = auth.puede("cierre.facturar")
+LECTURA = auth.puede("cierre.ver")
 
 
 class LineaIn(BaseModel):
@@ -115,17 +118,32 @@ def ver_cotizaciones(servicio_id: int, db: Session = Depends(get_db),
 @router.post("/cierre/servicio/{servicio_id}/abrir",
              summary="Arrancar las 24 horas del consultor")
 def abrir(servicio_id: int, db: Session = Depends(get_db),
-          abierto_en: datetime | None = None, idioma: str = "en",
+          abierto_en: datetime | None = None,
           usuario: m.Usuario = Depends(CONSULTOR)):
+    """Devuelve el cierre del servicio, abriendolo si hiciera falta.
+
+    Desde que el cierre se abre solo al terminar el ultimo dia, esto casi
+    siempre devuelve el que ya existe. Se deja porque hay dos casos que
+    no pasan por ahi: el dia que se cierra a mano y el servicio que
+    quedo abierto de antes.
+
+    Ya no recibe `idioma`. Las encuestas salen al terminar el servicio,
+    cada una en el idioma de quien la va a contestar --el principal en
+    el suyo, el solicitante en el del pais--, y cuando esto corre ya
+    estan creadas: el parametro no cambiaba nada y decia que si.
+    """
     c = motor.abrir(db, servicio_id, abierto_en)
-    # El servicio termino: es el momento de preguntar, mientras el
-    # ejecutivo todavia lo tiene fresco.
-    enviadas = motor_encuestas.generar(db, servicio_id, idioma)
+    # Por si el servicio se cerro a mano y nunca paso por el motor.
+    motor_encuestas.generar(db, servicio_id)
     db.commit()
+    # Las del servicio, no solo las que se acaban de crear: quien abre
+    # esta pantalla quiere saber si el cliente ya tiene su encuesta, no
+    # si nacio en este segundo.
+    suyas = db.query(m.Encuesta).filter_by(servicio_id=servicio_id).all()
     return {"cierre_id": c.id, "abierto_en": c.abierto_en.isoformat(),
             "limite_consultor": c.limite_consultor.isoformat(),
             "estatus": c.estatus.value,
-            "encuestas_enviadas": [e.tipo.value for e in enviadas]}
+            "encuestas_enviadas": [e.tipo.value for e in suyas]}
 
 
 @router.get("/cierre/servicio/{servicio_id}/comparativo",
@@ -137,10 +155,18 @@ def comparativo(servicio_id: int, db: Session = Depends(get_db), _=Depends(LECTU
 @router.get("/cierre/servicio/{servicio_id}/rentabilidad",
             summary="Rentabilidad del servicio")
 def rentabilidad(servicio_id: int, db: Session = Depends(get_db),
-                 _=Depends(auth.requiere(m.Rol.CONSULTOR, m.Rol.FINANZAS,
-                                         m.Rol.DIRECTOR_OPERACIONES))):
+                 _=Depends(auth.puede("cierre.rentabilidad"))):
     """Facturacion, costo de personal y viaticos, y costo del vehiculo."""
     return motor.rentabilidad(db, servicio_id)
+
+
+@router.get("/cierre/servicio/{servicio_id}/estado",
+            summary="El reloj del consultor, sin el comparativo")
+def estado_del_cierre(servicio_id: int, db: Session = Depends(get_db),
+                      ahora: datetime | None = None, _=Depends(LECTURA)):
+    """La pantalla lo pide aparte porque la revision revienta cuando no
+    hay cotizacion autorizada, y el plazo corre igual."""
+    return motor.estado(db, servicio_id, ahora)
 
 
 @router.get("/cierre/servicio/{servicio_id}/revision",
@@ -274,6 +300,46 @@ def aprobar(cierre_id: int, db: Session = Depends(get_db),
                     "monto": c.monto, "estatus": c.estatus.value,
                     "motivo": c.motivo}
 
+    # Y a Odoo, que es el paso que faltaba: una factura por servicio, en
+    # cuanto finanzas aprueba.
+    #
+    # Va despues del commit a proposito. El cierre ya quedo aprobado y la
+    # comision ya se genero: si Odoo no contesta, eso no se puede
+    # deshacer. El servicio se queda en la bandeja de "por facturar" con
+    # el error a la vista y se reintenta desde ahi.
+    factura = facturacion.enviar(db, cierre)
+    db.commit()
+
     return {"resultado": "aprobado", "cierre_id": cierre.id,
             "comision_consultor": comision,
+            "factura": factura,
             "rentabilidad": motor.rentabilidad(db, cierre.servicio_id)}
+
+
+@router.get("/cierre/por-facturar",
+            summary="Lo aprobado que todavia no tiene factura")
+def pendientes_de_factura(db: Session = Depends(get_db), _=Depends(LECTURA)):
+    """Sin esta lista, un servicio aprobado cuyo envio fallo se queda
+    esperando para siempre y nadie se entera hasta que el cliente no
+    paga."""
+    return {"por_facturar": facturacion.por_facturar(db),
+            "odoo_configurado": facturacion.hay_conexion()}
+
+
+@router.post("/cierre/{cierre_id}/facturar",
+             summary="Reintentar el envio de la factura a Odoo")
+def facturar(cierre_id: int, db: Session = Depends(get_db),
+             usuario: m.Usuario = Depends(FINANZAS)):
+    """El mismo envio de la aprobacion, a mano. Sirve para el dia que
+    Odoo estaba caido, y para el primer envio cuando la conexion se
+    configura despues."""
+    cierre = db.get(m.Cierre, cierre_id)
+    if not cierre:
+        raise HTTPException(404, f"No existe el cierre {cierre_id}")
+
+    resultado = facturacion.enviar(db, cierre)
+    if resultado["resultado"] == "facturado":
+        auditoria.registrar(db, usuario, cierre.servicio, "facturar",
+                            f"factura {cierre.factura_odoo} en Odoo")
+    db.commit()
+    return resultado

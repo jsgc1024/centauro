@@ -17,7 +17,7 @@ def _servicio_planeado(cliente, sesion, datos, offset=80, con_agenda=True,
                 vehiculo_id=datos["suburban"]["id"])
         # Origen: el hotel sobre Reforma
         cliente.patch(f"/operacion/jornadas/{j['id']}/origen",
-                      json={"origen_lat": "19.4247", "origen_lon": "-99.1700",
+                      json={"origen_lat": "19.4270", "origen_lon": "-99.1677",
                             "geocerca_metros": 250,
                             "origen_direccion": "Paseo de la Reforma 500"},
                       headers=h)
@@ -136,7 +136,7 @@ def test_sin_unidad_asignada_no_se_publica(cliente, sesion, datos):
     asignar(cliente, h, j["id"],
             persona_id=datos["personal"]["Juan Ramirez"]["id"])
     cliente.patch(f"/operacion/jornadas/{j['id']}/origen",
-                  json={"origen_lat": "19.4247", "origen_lon": "-99.1700",
+                  json={"origen_lat": "19.4270", "origen_lon": "-99.1677",
                         "origen_direccion": "Reforma 500"}, headers=h)
 
     r = cliente.post(f"/task-sheets/servicio/{servicio['id']}/publicar",
@@ -153,7 +153,8 @@ def test_publicar_lo_comparte_y_cada_cambio_crea_version(cliente, sesion, datos)
                            json={}, headers=h)
     assert primera.status_code == 200
     assert primera.json()["version"] == 1
-    assert primera.json()["compartido_con"] == ["solicitante", "ejecutivo"]
+    # Publicar no avisa: el correo sale solo si se pide.
+    assert primera.json()["compartido_con"] == []
 
     segunda = cliente.post(f"/task-sheets/servicio/{servicio['id']}/publicar",
                            json={"motivo": "Cambio de hora de presentacion"},
@@ -167,6 +168,34 @@ def test_publicar_lo_comparte_y_cada_cambio_crea_version(cliente, sesion, datos)
 
     vigente = cliente.get(f"/task-sheets/servicio/{servicio['id']}", headers=h).json()
     assert vigente["version"] == 2
+
+
+def test_publicar_no_manda_correo_y_avisar_si(cliente, sesion, datos):
+    """El task sheet se corrige varias veces mientras se arma. Un correo
+    por version le ensena al cliente a no abrir ninguno, y el que
+    importaba era ese. Decision de Salvador (20 sep)."""
+    servicio = _servicio_planeado(cliente, sesion, datos, 96)
+    h = sesion("consultor")
+
+    from app import models as m
+    from app.db import SessionLocal
+
+    cliente.post(f"/task-sheets/servicio/{servicio['id']}/publicar",
+                 json={}, headers=h)
+    with SessionLocal() as db:
+        assert db.query(m.Notificacion).filter_by(
+            servicio_id=servicio["id"]).count() == 0
+
+    r = cliente.post(f"/task-sheets/servicio/{servicio['id']}/publicar",
+                     json={"motivo": "Cambio de hora", "avisar": True},
+                     headers=h)
+    assert r.json()["compartido_con"] == ["solicitante", "ejecutivo"]
+    with SessionLocal() as db:
+        avisos = (db.query(m.Notificacion)
+                  .filter_by(servicio_id=servicio["id"]).all())
+        assert len(avisos) == 2
+        # Lo que cambio va en la ficha, no perdido al final del parrafo.
+        assert any("Cambio de hora" in (a.datos or "") for a in avisos)
 
 
 def test_el_personal_ve_el_de_sus_servicios_y_no_otros(cliente, sesion, datos):
@@ -326,7 +355,7 @@ def test_el_telefono_del_ejecutivo_aparece_en_la_hoja(cliente, sesion, datos):
             persona_id=datos["personal"]["Juan Ramirez"]["id"],
             vehiculo_id=datos["suburban"]["id"])
     cliente.patch(f"/operacion/jornadas/{j['id']}/origen",
-                  json={"origen_lat": "19.4247", "origen_lon": "-99.1700",
+                  json={"origen_lat": "19.4270", "origen_lon": "-99.1677",
                         "origen_direccion": "Reforma 500"}, headers=h)
 
     cliente.post(f"/task-sheets/servicio/{servicio['id']}/publicar",
@@ -453,7 +482,7 @@ def test_un_task_sheet_por_equipo(cliente, sesion, datos):
         asignar(cliente, h, j["id"],
                 persona_id=datos["personal"][persona]["id"], vehiculo_id=unidad)
         cliente.patch(f"/operacion/jornadas/{j['id']}/origen",
-                      json={"origen_lat": "19.4247", "origen_lon": "-99.1700",
+                      json={"origen_lat": "19.4270", "origen_lon": "-99.1677",
                             "origen_direccion": "Reforma 500"}, headers=h)
 
     # Con dos equipos, el atajo por servicio avisa que hay que elegir
@@ -563,7 +592,7 @@ def test_los_hospitales_se_miden_desde_el_punto_que_si_tiene_pin(
     # quedan sin decir donde arrancan.
     cliente.patch(f"/operacion/jornadas/{jornadas[0]['id']}/origen",
                   json={"origen_direccion": "Paseo de la Reforma 500",
-                        "origen_lat": "19.4247", "origen_lon": "-99.1700"},
+                        "origen_lat": "19.4270", "origen_lon": "-99.1677"},
                   headers=h)
 
     ficha = cliente.get(f"/task-sheets/servicio/{servicio['id']}/vista-previa",

@@ -16,8 +16,11 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app import models as m
+from app import textos_aviso as ta
 
 DIAS_PARA_RESPONDER = 15
+# A los cinco dias, un recordatorio. Uno solo, y despues se deja en paz.
+DIAS_PARA_RECORDAR = 5
 # Con 3 o menos se considera que algo salio mal y se pregunta que fue.
 UMBRAL_MALA = 3
 
@@ -103,8 +106,18 @@ def _textos(idioma: str | None) -> dict:
 
 # ---------------------------------------------------------------- envio
 
-def generar(db: Session, servicio_id: int, idioma: str = "en") -> list[m.Encuesta]:
-    """Crea las dos encuestas del servicio. Se corre al cerrarlo."""
+def generar(db: Session, servicio_id: int,
+            idioma: str | None = None) -> list[m.Encuesta]:
+    """Crea las dos encuestas del servicio. Se corre al cerrarlo.
+
+    Sin `idioma`, cada una sale en el de quien la va a contestar: el
+    principal en el suyo --ingles por omision-- y el solicitante en el
+    del pais donde se ejecuto el servicio. Antes entraba "en" fijo y se
+    equivocaba sola cada vez que el ejecutivo era mexicano.
+
+    `idioma` sigue existiendo para el caso raro en que alguien quiera
+    mandarlas a proposito en otro.
+    """
     servicio = db.get(m.Servicio, servicio_id)
     if not servicio:
         raise HTTPException(404, f"No existe el servicio {servicio_id}")
@@ -119,6 +132,10 @@ def generar(db: Session, servicio_id: int, idioma: str = "en") -> list[m.Encuest
     for tipo, nombre, correo in destinos:
         if not correo:
             continue        # sin correo no hay a donde mandarla
+        destinatario = (m.Destinatario.EJECUTIVO
+                        if tipo == m.TipoEncuesta.EJECUTIVO
+                        else m.Destinatario.SOLICITANTE)
+        lengua = idioma or ta.idioma_de(db, servicio, destinatario)
         ya = (db.query(m.Encuesta)
               .filter_by(servicio_id=servicio_id, tipo=tipo).first())
         if ya:
@@ -128,7 +145,7 @@ def generar(db: Session, servicio_id: int, idioma: str = "en") -> list[m.Encuest
             consultor_id=(servicio.consultor_id
                           if tipo == m.TipoEncuesta.SOLICITANTE else None),
             destinatario_nombre=nombre, destinatario_correo=correo,
-            idioma=idioma,
+            idioma=lengua,
             token=secrets.token_urlsafe(24),
             expira_en=datetime.now() + timedelta(days=DIAS_PARA_RESPONDER))
         db.add(encuesta)
@@ -137,13 +154,17 @@ def generar(db: Session, servicio_id: int, idioma: str = "en") -> list[m.Encuest
 
         db.add(m.Notificacion(
             servicio_id=servicio_id,
-            destinatario=(m.Destinatario.EJECUTIVO
-                          if tipo == m.TipoEncuesta.EJECUTIVO
-                          else m.Destinatario.SOLICITANTE),
+            destinatario=destinatario,
             canal=m.Canal.CORREO, correo=correo,
-            asunto=f"{servicio.folio}: {_textos(idioma)[tipo.value]['general']}",
-            cuerpo=_textos(idioma)["gracias"],
+            idioma=lengua,
+            asunto=f"{servicio.folio}: {_textos(lengua)[tipo.value]['general']}",
+            cuerpo=_textos(lengua)["gracias"],
             enlace_seguimiento=f"/encuestas/pagina/{encuesta.token}",
+            # La encuesta tiene su propio correo escrito desde hace
+            # meses (encuestas_html.correo): las estrellas se pican
+            # desde el mensaje. La plantilla es lo que le dice al
+            # despachador que use ese y no el armazon general.
+            plantilla="encuesta",
             expira_en=encuesta.expira_en))
     return creadas
 
@@ -234,11 +255,168 @@ def responder(db: Session, token: str, calificacion: int,
                                        pregunta=pregunta,
                                        texto=str(valor)[:1000]))
     db.flush()
+    if encuesta.requiere_clasificacion:
+        avisar_mala_calificacion(db, encuesta, respuestas)
     return {
         "resultado": "recibida",
         "mensaje": _textos(encuesta.idioma)["gracias"],
         "abre_revision": encuesta.requiere_clasificacion,
     }
+
+
+def quien_la_revisa(db: Session, encuesta: m.Encuesta) -> m.Persona | None:
+    """A quien le toca clasificar esta mala calificacion.
+
+    La del ejecutivo califica el servicio y al equipo: es del consultor
+    que lo llevo. La del solicitante califica AL CONSULTOR, y ahi el
+    consultor no puede ser quien decide si eso amerita incidencia --seria
+    juez y parte--: esa sube a direccion de operaciones.
+    """
+    if encuesta.tipo == m.TipoEncuesta.SOLICITANTE:
+        usuario = (db.query(m.Usuario)
+                   .filter(m.Usuario.rol == m.Rol.DIRECTOR_OPERACIONES,
+                           m.Usuario.activo.is_(True))
+                   .order_by(m.Usuario.id).first())
+        return usuario.persona if usuario else None
+    # `Servicio` guarda el id del consultor, no la relacion.
+    return (db.get(m.Persona, encuesta.servicio.consultor_id)
+            if encuesta.servicio.consultor_id else None)
+
+
+def avisar_mala_calificacion(db: Session, encuesta: m.Encuesta,
+                             respuestas: dict) -> dict:
+    """Una calificacion baja tiene que llegarle a alguien HOY.
+
+    Un ejecutivo molesto el viernes es una cuenta en riesgo el lunes, y
+    hasta ahora la queja se quedaba en una bandeja que nadie abria. Va
+    por correo y por telefono: el correo lleva lo que dijo el cliente,
+    el aviso del telefono lleva lo suficiente para saber que hay que
+    abrirlo.
+
+    Lo que el aviso NO dice: que alguien la rego. Una calificacion baja
+    abre una revision, no un castigo, y decirlo al reves desde el
+    primer renglon predispone a quien va a clasificarla.
+    """
+    from app import correo_html, push
+
+    quien = quien_la_revisa(db, encuesta)
+    if quien is None:
+        return {"avisado": False, "motivo": "nadie a quien avisarle"}
+
+    servicio = encuesta.servicio
+    lengua = ta.idioma_de(db, servicio, m.Destinatario.CONSULTOR)
+    cliente = encuesta.destinatario_nombre or "El cliente"
+    nota = encuesta.calificacion
+
+    # Lo que dijo, tal cual. Las preguntas cerradas y el texto libre van
+    # con su pregunta al lado: "3" sin la pregunta no se puede leer.
+    #
+    # Las dos encuestas no se abren igual --la del ejecutivo en
+    # bien/mal, la del solicitante en siempre/abierta-- asi que el
+    # diccionario se arma junto en vez de ir a buscar una rama que en
+    # la otra no existe.
+    bloque = _textos(encuesta.idioma)[encuesta.tipo.value]
+    preguntas = {}
+    for rama in ("bien", "mal", "siempre", "abierta"):
+        preguntas.update(bloque.get(rama, {}))
+    dijo = [(preguntas.get(clave, clave), str(valor))
+            for clave, valor in respuestas.items()]
+
+    db.add(m.Notificacion(
+        servicio_id=servicio.id,
+        destinatario=m.Destinatario.CONSULTOR, canal=m.Canal.CORREO,
+        correo=quien.correo, idioma=lengua,
+        asunto=ta.t(lengua, "enc_mala_asunto", folio=servicio.folio,
+                    cliente=cliente, nota=nota),
+        cuerpo=ta.t(lengua, "enc_mala_cuerpo", quien=cliente, nota=nota),
+        datos=correo_html.guardar_datos(
+            [(ta.t(lengua, "enc_servicio"), servicio.folio),
+             (ta.t(lengua, "enc_cliente"), cliente),
+             (ta.t(lengua, "enc_nota"), f"{nota} / 5")]
+            + [(pregunta, respuesta) for pregunta, respuesta in dijo]),
+    ))
+
+    push.avisar(
+        db, quien.id,
+        titulo=f"{servicio.folio}: {nota} de 5",
+        cuerpo=f"{cliente} calificó el servicio con {nota}. "
+               f"Abre revisión: hay que clasificarla.",
+        # Quien revisa esto trabaja en la consola, no en la app de
+        # campo: mandarlo al telefono a una pantalla que no es la suya
+        # es mandarlo a ningun lado.
+        url=f"/consola/#/servicio/{servicio.id}",
+        etiqueta="encuesta", urgente=True)
+    return {"avisado": True, "persona_id": quien.id}
+
+
+# ---------------------------------------------------------------- el reloj
+
+def pasar_lista(db: Session, ahora: datetime | None = None) -> dict:
+    """Le recuerda a quien no ha contestado, y vence lo que ya paso.
+
+    Sin esto la encuesta se mandaba una vez, al cierre, y ahi se acababa:
+    la que nadie contesto se quedaba en "enviada" para siempre --porque
+    EXPIRADA solo se escribia si alguien abria el enlace caducado-- y no
+    habia forma de saber la tasa de respuesta ni de cerrar un mes.
+
+    Dos cosas, en este orden: primero se vence lo vencido, para no
+    mandarle un recordatorio a alguien cuyo enlace ya no sirve.
+    """
+    ahora = ahora or datetime.now()
+    vencidas, recordadas = 0, 0
+
+    abiertas = (db.query(m.Encuesta)
+                .filter(m.Encuesta.estatus == m.EstatusEncuesta.ENVIADA).all())
+    for encuesta in abiertas:
+        if encuesta.expira_en <= ahora:
+            encuesta.estatus = m.EstatusEncuesta.EXPIRADA
+            vencidas += 1
+            continue
+        if encuesta.recordada_en is not None:
+            continue
+        # El plazo se cuenta hacia atras desde la fecha de cierre, no
+        # hacia adelante desde el envio. Da el mismo dia --cierre menos
+        # diez es envio mas cinco-- y evita un choque real: `expira_en`
+        # esta sin zona horaria, igual que el reloj con el que se
+        # compara, mientras que `enviada_en` la escribe Postgres CON
+        # zona. Sumarle dias a esa y compararla con `ahora` truena.
+        aviso_desde = encuesta.expira_en - timedelta(
+            days=DIAS_PARA_RESPONDER - DIAS_PARA_RECORDAR)
+        if aviso_desde > ahora:
+            continue
+        if not encuesta.destinatario_correo:
+            continue
+        recordar(db, encuesta)
+        encuesta.recordada_en = ahora
+        recordadas += 1
+
+    db.commit()
+    return {"vencidas": vencidas, "recordadas": recordadas,
+            "abiertas": len(abiertas) - vencidas}
+
+
+def recordar(db: Session, encuesta: m.Encuesta) -> None:
+    """El segundo y ultimo correo. Mismo enlace, misma plantilla.
+
+    No se genera un token nuevo: es la misma encuesta, y dos enlaces
+    vivos para lo mismo es la forma mas facil de que alguien conteste
+    dos veces.
+    """
+    servicio = encuesta.servicio
+    lengua = encuesta.idioma
+    db.add(m.Notificacion(
+        servicio_id=servicio.id,
+        destinatario=(m.Destinatario.EJECUTIVO
+                      if encuesta.tipo == m.TipoEncuesta.EJECUTIVO
+                      else m.Destinatario.SOLICITANTE),
+        canal=m.Canal.CORREO, correo=encuesta.destinatario_correo,
+        idioma=lengua,
+        asunto=ta.t(lengua, "enc_rec_asunto", folio=servicio.folio),
+        cuerpo=ta.t(lengua, "enc_rec_cuerpo",
+                    fecha=f"{encuesta.expira_en:%d/%m}"),
+        enlace_seguimiento=f"/encuestas/pagina/{encuesta.token}",
+        plantilla="encuesta_recordatorio",
+        expira_en=encuesta.expira_en))
 
 
 # ---------------------------------------------------------------- resumen

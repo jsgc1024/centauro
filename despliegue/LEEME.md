@@ -93,14 +93,47 @@ Córrelo **a mano una vez** y lee la salida completa antes de confiar en
 
 ## El respaldo se verifica solo
 
-`respaldo.sh` no se limita a sacar el `pg_dump`: lo restaura en una base
-desechable dentro del mismo Postgres y **cuenta las filas** de las cuatro
-tablas que de verdad duelen —servicios, viáticos, fotos de revisión y
-nómina. Si algo no cuadra, **no borra ningún respaldo viejo** y sale con
-error.
+`respaldo.sh` no se limita a sacar el `pg_dump`. Hace tres cosas más, y
+son las que lo convierten en un respaldo:
+
+1. **Lo restaura** en una base desechable dentro del mismo Postgres.
+2. **Cuenta las filas** de las cuatro tablas que de verdad duelen
+   —servicios, viáticos, fotos de revisión y nómina—.
+3. **Compara el contenido de las fotos**, no solo cuántas son: un md5
+   por imagen y un md5 del conjunto. Es la diferencia entre *"llegaron
+   240 filas"* y *"llegaron las mismas 240 fotos"*. Las imágenes viven
+   dentro de la base y son lo que se usa para discutir un golpe tres
+   semanas después; una fila que llega con la imagen cortada cuenta
+   igual y no sirve de nada.
+
+Y comprueba que la copia traiga la versión de alembic: una base
+restaurada sin esa marca se abre, pero ya no se puede seguir migrando.
+
+Si algo no cuadra, **no borra ningún respaldo viejo** y sale con error.
 
 Un respaldo que nadie ha restaurado no es un respaldo, es un archivo
 grande.
+
+### Probarlo sin ser el servidor
+
+```bash
+./despliegue/respaldo.sh --probar
+```
+
+Saca el respaldo de la base que esté encendida —en la máquina de
+desarrollo, la de `docker-compose.yml`—, lo restaura en una base
+desechable, verifica las cuatro tablas y las fotos, y **borra todo al
+terminar**. No rota nada, no sube nada y no toca los respaldos de
+verdad.
+
+Es lectura: la base de trabajo no se modifica. Lo único que crea es una
+base temporal `verificacion_<fecha>` que se borra sola, pase lo que
+pase.
+
+Vale la pena correrlo **antes** de que haya datos reales, para ver con
+los propios ojos que el ciclo cierra. Un script de respaldo que solo
+corre en el servidor es un script que nadie prueba hasta el día que
+hace falta.
 
 ### La copia fuera del servidor
 

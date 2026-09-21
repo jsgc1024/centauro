@@ -285,3 +285,177 @@ def test_el_historial_guarda_el_motivo(cliente, sesion, datos):
     assert historial[0]["sale"] == "Juan Ramirez"
     assert historial[0]["entra"] == "Luis Mendoza"
     assert "Periferico" in historial[0]["motivo"]
+
+
+# ============================ el pánico sin servicio asignado
+#
+# Encontrado en la calle el 21 de septiembre, probando con una cuenta sin
+# jornada del día. La app de campo siempre dijo que el botón debía
+# mandarse igual —"manda la alerta sin jornada, que es mejor que no
+# mandarla"— y el servidor lo rechazaba: la intención estaba escrita y la
+# implementación hacía lo contrario.
+#
+# Exigir servicio en un botón de pánico es fallar exactamente cuando los
+# datos están incompletos, que es cuando las cosas salen mal de verdad.
+
+def test_el_panico_se_manda_aunque_no_haya_servicio(cliente, sesion, datos):
+    """El escolta que va en camino y todavía no tiene jornada, el
+    servicio que se canceló con la gente aún en la calle, el que va fuera
+    de turno en una unidad de la casa. La alerta sigue sirviendo: trae
+    quién, dónde y cuándo."""
+    r = cliente.post("/contingencia/alertas", headers=sesion("juan"),
+                     json={"canal": "boton_app",
+                           "lat": "19.4270", "lon": "-99.1677"})
+    assert r.status_code == 201, r.text
+    alerta = r.json()
+    assert alerta["jornada_id"] is None
+    assert alerta["servicio_id"] is None
+    assert alerta["estatus"] == "abierta"
+    # Se le acredita a quien tiene la sesión, no a lo que diga el cuerpo.
+    assert alerta["reporta_persona_id"] == datos["personal"]["Juan Ramirez"]["id"]
+
+
+def test_la_central_ve_el_panico_sin_servicio_y_sabe_de_quien_es(
+        cliente, sesion, datos):
+    """Sin servicio no hay folio del que deducir quién es, y lo primero
+    que hace quien lee un pánico es llamar a esa persona."""
+    from datetime import datetime
+
+    from app import central as motor
+    from app.db import SessionLocal
+
+    assert cliente.post("/contingencia/alertas", headers=sesion("juan"),
+                        json={"canal": "boton_app",
+                              "lat": "19.4270", "lon": "-99.1677"}
+                        ).status_code == 201
+
+    db = SessionLocal()
+    try:
+        d = motor.tablero(db, datetime.now())
+        panico = d["roto"]["panico"]
+        assert len(panico) == 1, panico
+        assert panico[0]["servicio_id"] is None
+        assert panico[0]["quien"] == "Juan Ramirez"
+        assert panico[0]["telefono"], "sin teléfono no se le puede llamar"
+    finally:
+        db.close()
+
+
+def test_un_reporte_normal_si_exige_servicio(cliente, sesion, datos):
+    """El candado no se aflojó para todos: una incidencia describe algo
+    que le pasó a un servicio, y sin servicio no se puede atender ni
+    cobrar ni analizar después. Solo el botón de pánico pasa."""
+    r = cliente.post("/contingencia/alertas", headers=sesion("central"),
+                     json={"canal": "llamada",
+                           "descripcion": "Llamó el cliente molesto"})
+    assert r.status_code == 400, r.text
+    assert "panico" in r.json()["detail"]["que_hacer"].lower() \
+        or "pánico" in r.json()["detail"]["que_hacer"].lower()
+
+
+def test_el_panico_sin_servicio_no_abre_la_puerta_del_servicio_ajeno(
+        cliente, sesion, datos):
+    """Lo que se soltó es el requisito de traer servicio, no el candado
+    de que sea el tuyo. Con jornada de otro, sigue siendo 403."""
+    h = sesion("consultor")
+    servicio = crear_servicio(
+        cliente, h, datos,
+        [jornada(manana(0), datos["modalidades"]["full_day"]["id"],
+                 origen_direccion="Las Alcobas, Polanco - lobby")])
+    j = servicio["equipos"][0]["jornadas"][0]
+    asignar(cliente, h, j["id"],
+            persona_id=datos["personal"]["Juan Ramirez"]["id"])
+
+    # Luis no va en esa jornada.
+    r = cliente.post("/contingencia/alertas", headers=sesion("luis"),
+                     json={"canal": "boton_app", "jornada_id": j["id"]})
+    assert r.status_code == 403, r.text
+
+
+def test_la_alerta_tomada_dice_quien_la_tiene(cliente, sesion, datos):
+    """En una central con turnos, una alerta tomada hace dos minutos por
+    otro no se toca; una en atención desde hace cuarenta minutos y sin
+    cerrar es una que se quedó sola. Sin decir quién la tomó y cuándo,
+    las dos se ven iguales."""
+    from datetime import datetime
+
+    from app import central as motor
+    from app.db import SessionLocal
+
+    alerta = cliente.post("/contingencia/alertas", headers=sesion("juan"),
+                          json={"canal": "boton_app",
+                                "lat": "19.4270", "lon": "-99.1677"}).json()
+    r = cliente.post(f"/contingencia/alertas/{alerta['id']}/tomar",
+                     headers=sesion("central"), json={})
+    assert r.status_code == 200, r.text
+
+    db = SessionLocal()
+    try:
+        suya = motor.tablero(db, datetime.now())["roto"]["panico"][0]
+        assert suya["estatus"] == "en_atencion"
+        assert suya["tomada_por"], "hay que decir quién la tiene"
+        assert suya["tomada_en"]
+    finally:
+        db.close()
+
+
+def test_el_panico_dice_en_que_servicio_va_y_si_lleva_al_principal(
+        cliente, sesion, datos):
+    """Las dos preguntas que siguen a "quién" cuando suena el botón.
+
+    No es lo mismo mandar apoyo a un conductor solo que a un conductor
+    con el ejecutivo del cliente adentro del coche: cambia cuánta gente
+    se manda, a quién se avisa y qué se le dice al cliente. Esa
+    respuesta ya estaba en el sistema y la central la buscaba abriendo
+    el folio en otra pantalla, con la alerta sonando.
+    """
+    from datetime import date, datetime, time
+
+    from ayudas import configurar_origen, marcar
+    from app import central as motor
+    from app.db import SessionLocal
+
+    h = sesion("consultor")
+    hp = sesion("juan")
+    servicio = crear_servicio(
+        cliente, h, datos,
+        [jornada(date.today(), datos["modalidades"]["full_day"]["id"],
+                 hora="07:00:00")])
+    j = servicio["equipos"][0]["jornadas"][0]
+    asignar(cliente, h, j["id"],
+            persona_id=datos["personal"]["Juan Ramirez"]["id"],
+            vehiculo_id=_placa(datos, "ABC-1234"))
+    configurar_origen(cliente, h, j["id"])
+
+    def panico():
+        db = SessionLocal()
+        try:
+            fichas = motor.tablero(db, datetime.now())["roto"]["panico"]
+            return next(x for x in fichas if x["jornada_id"] == j["id"])
+        finally:
+            db.close()
+
+    hoy = date.today()
+    marcar(cliente, hp, j["id"], "llegada_origen",
+           datetime.combine(hoy, time(7, 5)))
+    assert cliente.post("/contingencia/alertas", headers=hp,
+                        json={"canal": "boton_app", "jornada_id": j["id"],
+                              "lat": "19.4270", "lon": "-99.1677"}
+                        ).status_code == 201
+
+    # Llegó al punto y todavía no lo recoge: va solo.
+    ficha = panico()
+    assert ficha["servicio"] == servicio["folio"], ficha
+    assert ficha["principal"]["estado"] == "todavia_no", ficha["principal"]
+    assert ficha["principal"]["ultima_marca"] == "07:05"
+
+    # Con el ejecutivo a bordo, la misma alerta se lee distinto.
+    marcar(cliente, hp, j["id"], "contacto_ejecutivo",
+           datetime.combine(hoy, time(7, 20)))
+    ficha = panico()
+    assert ficha["principal"]["estado"] == "a_bordo", ficha["principal"]
+
+    # Lo dejó en su destino: sigue el servicio, pero él ya no va adentro.
+    marcar(cliente, hp, j["id"], "llegada_destino",
+           datetime.combine(hoy, time(8, 10)))
+    assert panico()["principal"]["estado"] == "en_espera"

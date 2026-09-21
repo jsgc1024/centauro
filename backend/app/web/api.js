@@ -30,16 +30,42 @@ export class ErrorApi extends Error {
   }
 }
 
+/* Cuanto se espera antes de darlo por perdido. Sin esto, media barra
+   de senal deja la app en "Un momento..." para siempre: el telefono no
+   corta solo. Lo que lleva fotos aguanta mas, porque subirlas con mala
+   senal tarda de verdad. */
+const SEGUNDOS = 25;
+const SEGUNDOS_PESADO = 120;
+const PESADO = 200000;
+
 async function pedir(metodo, ruta, cuerpo, opciones = {}) {
   const cab = {};
   if (sesion.token) cab["Authorization"] = `Bearer ${sesion.token}`;
   if (cuerpo !== undefined) cab["Content-Type"] = "application/json";
 
-  const r = await fetch(ruta, {
-    method: metodo,
-    headers: cab,
-    body: cuerpo !== undefined ? JSON.stringify(cuerpo) : undefined,
-  });
+  const texto_cuerpo = cuerpo !== undefined ? JSON.stringify(cuerpo) : undefined;
+  const limite = opciones.segundos
+    || (texto_cuerpo && texto_cuerpo.length > PESADO ? SEGUNDOS_PESADO : SEGUNDOS);
+  const control = new AbortController();
+  const reloj = setTimeout(() => control.abort(), limite * 1000);
+
+  let r;
+  try {
+    r = await fetch(ruta, {
+      method: metodo,
+      headers: cab,
+      body: texto_cuerpo,
+      signal: control.signal,
+    });
+  } catch (err) {
+    /* Se fue la senal o se acabo el tiempo. Se marca con codigo 0 para
+       que quien llama lo distinga de una respuesta del servidor: la
+       cola reintenta esto, y la pantalla lo dice en el idioma de quien
+       mira en vez de soltar el "Failed to fetch" del navegador. */
+    throw new ErrorApi(0, err && err.name === "AbortError" ? "tardo" : "sin_red");
+  } finally {
+    clearTimeout(reloj);
+  }
 
   if (r.status === 401) {
     sesion.token = null;
@@ -60,7 +86,12 @@ async function pedir(metodo, ruta, cuerpo, opciones = {}) {
        aqui y tapar el error de verdad. */
     const recorte = texto.trim().slice(0, 400);
     throw new ErrorApi(r.status,
-      `El servidor contesto ${r.status} en ${ruta}. ${recorte}`);
+      /* Sin `t()` a proposito: es el unico mensaje que tiene que salir
+         aunque `idioma.js` sea justo lo que no cargo. Un traductor que
+         depende de lo que se rompio no traduce nada. Y no hay que
+         traducir: "Error" se lee igual en los tres idiomas y lo demas
+         son datos. */
+      "Error " + r.status + " · " + ruta + " · " + recorte);
   }
   if (!r.ok) throw new ErrorApi(r.status, datos && datos.detail);
   return datos;

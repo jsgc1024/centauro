@@ -259,3 +259,33 @@ def test_una_nomina_pagada_no_se_tira(cliente, sesion, datos):
     pagada = next(c for c in cortes if c["estatus"] == "pagada")
     r = cliente.delete(f"/nomina/{pagada['id']}", headers=h)
     assert r.status_code == 409, r.text
+
+
+def test_la_hora_original_es_la_primera_no_la_anterior(cliente, sesion, datos):
+    """Encontrado en la calle: una jornada corregida dos veces.
+
+    `marcado_original` se sobrescribía en cada ajuste, así que a la
+    segunda corrección el campo dejaba de decir lo que dice su nombre
+    —guardaba la penúltima hora— y la de verdad original se perdía sin
+    dejar rastro. De ese dato salen las horas extra que se facturan y se
+    pagan: que quede a la vista para siempre es la única forma de
+    reconstruir un cobro que alguien discuta meses después.
+    """
+    h = sesion("central")
+    servicio, j, _, _pais = _dia_pagado(cliente, sesion, datos)
+    jornada_id = j["id"]
+
+    b = cliente.get(f"/operacion/jornadas/{jornada_id}/bitacora",
+                    headers=h).json()
+    fin = next(x for x in b["hitos"] if x["tipo"] == "fin_servicio")
+    primera = fin["marcado_en"]
+
+    for horas in (1, 2):
+        nuevo = datetime.fromisoformat(primera) + timedelta(hours=horas)
+        r = cliente.post(f"/operacion/hitos/{fin['id']}/ajustar", headers=h,
+                         json={"nuevo_momento": nuevo.isoformat(),
+                               "justificacion":
+                                   f"Correccion numero {horas} del corte"})
+        assert r.status_code == 200, r.text
+        assert r.json()["original"] == primera, \
+            "la original es la primera, no la de la corrección anterior"

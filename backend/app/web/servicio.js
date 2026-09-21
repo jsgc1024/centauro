@@ -4,8 +4,9 @@
 import { api } from "./api.js";
 import { catalogos } from "./catalogos.js";
 import { buscadorDeLugar } from "./mapa.js";
-import { aviso, campo, dinero, entrada, etiqueta, fecha, h, lista,
-         mensaje, telefono } from "./util.js";
+import { aviso, campo, conAyuda, dinero, entrada, estatus, etiqueta, fecha,
+         h, hora, lista, mensaje, plegable, sinTildes,
+         telefono } from "./util.js";
 import { IDIOMAS, idioma, t } from "./idioma.js";
 
 export async function pantallaServicio(main, servicioId) {
@@ -27,6 +28,162 @@ export async function pantallaServicio(main, servicioId) {
   main.append(await bloqueTaskSheet(servicio));
   main.append(bloqueCambios(cambios));
   main.append(await bloqueRevisiones(servicio));
+  main.append(await bloqueVistoBueno(servicio));
+}
+
+/* ------------------------------------------- el visto bueno del consultor
+
+   El ultimo paso del servicio y el unico con reloj: el consultor tiene
+   24 horas para revisar y mandar a facturar, y de ese plazo depende su
+   comision.
+
+   El reloj se pinta corriendo porque un plazo que no se ve no se
+   siente. Decirlo solo en horas --"te quedan 6"-- deja al que entra a
+   las 23:40 creyendo que tiene toda la noche.
+
+   La cuenta sale de la resta entre el limite y el momento, los dos en
+   hora del pais del servicio y los dos mandados por el servidor. Si
+   saliera del reloj de esta maquina, un consultor con la laptop en
+   otro huso --o simplemente mal puesta-- veria un plazo que no es el
+   suyo. */
+async function bloqueVistoBueno(servicio) {
+  /* Antes de que el servicio termine no hay nada que revisar, y despues
+     de cerrado ya no hay nada que hacer aqui. */
+  if (!["terminado", "cerrado"].includes(servicio.estatus)) {
+    return h("div", {});
+  }
+
+  /* El reloj se pide APARTE de la revision.
+
+     Hubo un tiempo en que la revision reventaba entera sin cotizacion
+     autorizada y el consultor se quedaba sin reloj justo cuando mas
+     falta hace. Hoy ya no: la revision lo reporta como observacion. El
+     reloj se sigue pidiendo aparte porque es lo unico que esta pantalla
+     no puede dejar de pintar --si manana la revision se cae por otra
+     razon, el plazo se ve igual--. */
+  const caja = h("div", { clase: "tarjeta" },
+    conAyuda("h3", t("srv_visto_bueno"), "ay_srv_visto_bueno"));
+
+  let c = {};
+  try {
+    c = await api.get(`/cierre/servicio/${servicio.id}/estado`);
+  } catch (err) {
+    caja.append(aviso(err.message, "alerta"));
+    return caja;
+  }
+
+  let r = null;
+  let fallo = null;
+  try {
+    r = await api.get(`/cierre/servicio/${servicio.id}/revision`);
+  } catch (err) { fallo = err.message; }
+
+  if (c.factura) {
+    caja.append(h("p", { clase: "verde" },
+      t("srv_ya_facturado").replace("{f}", c.factura)));
+    return caja;
+  }
+  if (c.estatus && c.estatus !== "abierto") {
+    caja.append(h("p", { clase: "gris" },
+      t("srv_cierre_en").replace("{e}", estatus(c.estatus))));
+    if (c.factura_error) {
+      caja.append(aviso(c.factura_error, "alerta"));
+    }
+    return caja;
+  }
+
+  const reloj = h("div", { clase: "reloj-cierre" });
+  pintarReloj(reloj, c.limite, c.momento);
+
+  const boton = h("button", { onclick: (e) => mandar(e) },
+    t("srv_dar_visto_bueno"));
+  const zona = h("div", { style: "margin-top:10px" });
+
+  async function mandar(e) {
+    if (!confirm(t("srv_confirmar_visto"))) return;
+    e.target.disabled = true;
+    try {
+      const envio = await api.post(`/cierre/${c.cierre_id}/enviar-finanzas`, {});
+      mensaje(t("srv_enviado_finanzas"));
+      zona.replaceChildren(h("div", { clase: "chico gris" },
+        envio.comision_consultor || ""));
+      setTimeout(() => location.reload(), 1200);
+    } catch (err) {
+      mensaje(err.message, "grave");
+      e.target.disabled = false;
+    }
+  }
+
+  const faltan = ((r && r.observaciones) || [])
+    .filter(o => o.nivel === "corregir");
+  caja.append(
+    reloj,
+    h("p", { clase: "gris chico" }, t("srv_visto_pie")),
+    /* Lo que impide revisar se dice con el reloj a la vista, no en su
+       lugar: son dos cosas distintas y las dos hacen falta. */
+    observaciones(fallo, faltan),
+    /* El boton se ofrece siempre que el cierre este abierto. Lo que
+       frena es el servidor, con la misma regla para todos: una pantalla
+       que esconde el boton deja al consultor sin saber que le falta. */
+    boton, zona);
+  return caja;
+}
+
+/* Lo que impide revisar, o lo que falta por corregir. Uno u otro: si no
+   se pudo revisar, la lista de observaciones no existe todavia. El
+   reloj se pinta igual, arriba, porque son dos cosas distintas y las
+   dos hacen falta. */
+function observaciones(fallo, faltan) {
+  if (fallo) return aviso(fallo, "alerta");
+  if (!faltan.length) {
+    return h("p", { clase: "verde chico" }, t("srv_sin_observaciones"));
+  }
+  return h("div", {},
+    aviso(t("srv_antes_de_enviar").replace("{n}", faltan.length), "alerta"),
+    h("ul", { clase: "minimo", style: "display:block;padding-left:18px" },
+      /* El texto sale de `mensaje`, que es la llave que manda el
+         revisor. La pantalla leia `detalle`, que no existe: toda
+         observacion grave se pintaba como "Asunto:" y nada mas, que es
+         justo lo que hay que saber para arreglarla. Y la accion debajo,
+         porque decir que algo esta mal sin decir que hacer obliga a
+         abrir otra pantalla para averiguarlo. */
+      ...faltan.map(o => h("li", { style: "margin-bottom:6px" },
+        h("b", {}, o.asunto), ": ",
+        h("span", { clase: "chico" }, o.mensaje || o.detalle || ""),
+        o.accion ? h("div", { clase: "chico gris" }, o.accion) : null))));
+}
+
+/* La cuenta regresiva, cada segundo. `desde` es el ahora del servidor:
+   el navegador solo mide cuanto ha pasado desde que llego la respuesta,
+   que es lo unico que su reloj puede saber bien. */
+function pintarReloj(nodo, limite, desde) {
+  if (!limite) {
+    nodo.replaceChildren(h("span", { clase: "gris" }, t("srv_sin_plazo")));
+    return;
+  }
+  const fin = new Date(limite).getTime();
+  const base = new Date(desde).getTime();
+  const arranque = Date.now();
+
+  const latir = () => {
+    if (!nodo.isConnected) return;          // la pantalla ya cambio
+    const ahora = base + (Date.now() - arranque);
+    const faltan = Math.floor((fin - ahora) / 1000);
+    if (faltan <= 0) {
+      nodo.className = "reloj-cierre vencido";
+      nodo.replaceChildren(h("span", {}, t("srv_plazo_vencido")));
+      return;
+    }
+    const hh = String(Math.floor(faltan / 3600)).padStart(2, "0");
+    const mm = String(Math.floor((faltan % 3600) / 60)).padStart(2, "0");
+    const ss = String(faltan % 60).padStart(2, "0");
+    nodo.className = "reloj-cierre" + (faltan < 3600 ? " apurado" : "");
+    nodo.replaceChildren(
+      h("span", { clase: "num" }, `${hh}:${mm}:${ss}`),
+      h("span", { clase: "chico gris" }, " " + t("srv_para_cerrar")));
+    setTimeout(latir, 1000);
+  };
+  latir();
 }
 
 /* ------------------------------------------------------------ encabezado */
@@ -45,6 +202,14 @@ function encabezado(servicio, cliente, plaza) {
       h("div", { clase: "sello" },
         etiqueta(servicio.estatus, servicio.estatus === "cancelado" ? "grave" : ""),
         h("div", { clase: "acciones bajo-sello" },
+          /* El otro lado del mismo servicio: el contrato del mes, la
+             plantilla, los viaticos y el taller. Solo en implantado,
+             porque un eventual no tiene contrato mensual. */
+          servicio.tipo === "implantado"
+            ? h("button", { clase: "claro chico", type: "button",
+                onclick: () => (location.hash = `#/implantado/${servicio.id}`) },
+                t("srv_ver_contrato"))
+            : "",
           ANTES_DE_ARRANCAR.includes(servicio.estatus)
             ? h("button", { clase: "claro chico", type: "button",
                 onclick: () => borrar(
@@ -174,10 +339,30 @@ function alternador(boton, zona, abrir, textoCerrar = t("srv_cerrar")) {
    en vez de repetir la misma decision dia por dia. */
 async function bloqueRecursos(servicio, equipo, cat) {
   const caja = h("div", { clase: "tarjeta lisa", style: "margin:0 0 14px" });
+  /* Las dos zonas se crean UNA vez y viven fuera del repintado.
+  
+     Antes se creaban dentro, y al repintar la ficha nacia una zona nueva
+     a la que habia que mudarle el panel abierto. La mudanza funcionaba
+     una vez: los botones del panel seguian apuntando a la zona vieja
+     --ya vacia-- asi que la SEGUNDA asignacion no encontraba nada que
+     reabrir y el panel se cerraba. Se asignaba al conductor y al
+     asignar al agente se caia todo.
+  
+     Con la zona estable no hay nada que mudar: el panel se queda donde
+     esta y lo unico que se repinta es el resumen de arriba. */
+  const zona = h("div", { style: "margin-top:12px" });
+  const zonaCambio = h("div", { style: "margin-top:12px" });
+  await pintarRecursos(caja, servicio, equipo, cat, zona, zonaCambio);
+  return caja;
+}
+
+async function pintarRecursos(caja, servicio, equipo, cat, zona, zonaCambio) {
   let datos;
   try {
     datos = await api.get(`/servicios/equipos/${equipo.id}/asignaciones`);
-  } catch (err) { return caja.appendChild(aviso(err.message, "grave")), caja; }
+  } catch (err) {
+    return caja.replaceChildren(aviso(err.message, "grave"));
+  }
 
   /* Asignar sin poder desasignar deja al consultor probando quien cabe
      sin marcha atras. Se quita de todos los dias, igual que se puso. */
@@ -207,15 +392,72 @@ async function bloqueRecursos(servicio, equipo, cat) {
       boton || ""));
 
   const variasUnidades = datos.vehiculos.length > 1;
-  const zonaCambio = h("div", { style: "margin-top:12px" });
 
   /* Un boton por persona, junto a Quitar: el consultor esta viendo a
      Juan Ramirez y lo que quiere es cambiar a Juan Ramirez. No hay que
-     ensenarle a nadie donde esta. */
+     ensenarle a nadie donde esta.
+
+     Y abre PERO TAMBIEN CIERRA. Abria y ya: quien lo picaba para ver de
+     que se trataba se quedaba con el formulario del cambio abierto sin
+     forma de arrepentirse, y volver a picar "Cambiar" lo reabria. Un
+     boton que no puede deshacer lo que hizo obliga a recargar la
+     pantalla para salir.
+
+     Los botones comparten UNA zona --hay uno por persona-- asi que hay
+     tres situaciones y no dos: si el panel ya es de esta persona, se
+     cierra; si es de otra, se cambia a esta; y el boton de aquella
+     vuelve a decir "Cambiar", porque dos botones diciendo "Cerrar" con
+     un solo panel abierto es mentira. */
+  const botonesCambiar = [];
+
   function botonCambiar(servicio_, equipo_, cat_, persona, datos_) {
-    return h("button", { clase: "claro chico", type: "button",
-      onclick: () => abrirCambio(zonaCambio, servicio_, equipo_, cat_,
-                                 persona, datos_) }, t("srv_cambiar"));
+    const boton = h("button", { clase: "claro chico", type: "button",
+      onclick: () => {
+        const suyo = zonaCambio.dataset.persona === String(persona.persona_id);
+        for (const otro of botonesCambiar) otro.textContent = t("srv_cambiar");
+        if (suyo) {
+          zonaCambio.replaceChildren();
+          delete zonaCambio.dataset.persona;
+          return;
+        }
+        zonaCambio.dataset.persona = String(persona.persona_id);
+        boton.textContent = t("srv_cerrar");
+        abrirCambio(zonaCambio, servicio_, equipo_, cat_, persona, datos_);
+      } },
+      zonaCambio.dataset.persona === String(persona.persona_id)
+        ? t("srv_cerrar") : t("srv_cambiar"));
+    botonesCambiar.push(boton);
+    return boton;
+  }
+
+  /* Si esa persona ya dijo que va, y quien lo dijo.
+
+     Se cuenta por dias porque la confirmacion es de cada dia: en un
+     servicio de cinco dias alguien puede haber confirmado tres, y un
+     si/no mentiria en los otros dos.
+
+     Y lo que registro la central por telefono lleva su nombre. La
+     central ya lo distinguia; aqui no, y esta es la pantalla donde el
+     consultor decide si su equipo esta armado. El dia que alguien no
+     llegue, la diferencia entre "confirmo el" y "lo confirmaron por
+     el" es la unica pregunta que importa. */
+  function confirmacion(p) {
+    const dias = p.dias || 0;
+    const cuantos = p.confirmados || 0;
+    if (!dias) return "";
+    if (!cuantos) {
+      return h("div", { clase: "chico gris" }, t("srv_sin_confirmar"));
+    }
+    const quien = (p.confirmado_por || []).join(", ");
+    const texto = cuantos >= dias
+      ? t("srv_confirmo")
+      : t("srv_confirmo_parcial").replace("{n}", cuantos).replace("{d}", dias);
+    return h("div", { clase: "chico" },
+      h("span", { clase: `marca ${cuantos >= dias ? "ok" : "alerta"}` }, texto),
+      quien
+        ? h("span", { clase: "gris chico" },
+            " " + t("srv_por_telefono").replace("{quien}", quien))
+        : null);
   }
 
   const gente = h("div", {}, h("h4", {}, t("srv_equipo_seguridad")));
@@ -247,6 +489,7 @@ async function bloqueRecursos(servicio, equipo, cat) {
           ? h("div", { clase: "chico", style: "color:#b8860b" },
               t("srv_reemplaza_a").replace("{p}", p.reemplaza_a))
           : "",
+        confirmacion(p),
         variasUnidades ? selectorAbordo(equipo, p, datos.vehiculos) : "",
       ], acciones));
     }
@@ -279,17 +522,29 @@ async function bloqueRecursos(servicio, equipo, cat) {
     flota.append(h("span", { clase: "gris" }, t("srv_por_asignar")));
   }
 
-  const zona = h("div", { style: "margin-top:12px" });
-  caja.append(
+  /* La ficha se repinta SIN recargar la pantalla, y el panel de asignar
+     se queda abierto donde estaba. Eso es lo que permite asignar al
+     conductor y a su unidad de corrido, que es como se hace de verdad:
+     son la misma decision tomada en el mismo minuto. */
+  const repintar = () =>
+    pintarRecursos(caja, servicio, equipo, cat, zona, zonaCambio);
+  const boton = h("button", { clase: "claro chico", type: "button" },
+                  t("srv_asignar_recursos"));
+
+  caja.replaceChildren(
     h("div", { clase: "rejilla dos" }, gente, flota),
     h("p", { clase: "gris chico", style: "margin:12px 0 0" },
       t("srv_recursos_pie").replace("{n}", datos.dias)),
     h("div", { clase: "acciones", style: "margin-top:8px" },
-      alternador(h("button", { clase: "claro chico", type: "button" },
-                   t("srv_asignar_recursos")),
-                 zona, () => abrirAsignacion(zona, equipo, cat))),
+      alternador(boton, zona,
+                 () => abrirAsignacion(zona, equipo, cat, repintar))),
     zona, zonaCambio);
-  return caja;
+
+  /* El boton se rehace en cada repintado; lo que no se rehace es la
+     zona. Si trae panel, el boton tiene que decir "Cerrar" --si dijera
+     "Asignar recursos" con el panel abierto, el siguiente clic pareceria
+     abrir y lo que haria es cerrar. */
+  if (zona.firstChild) boton.textContent = t("srv_cerrar");
 }
 
 /* ------------------------------------------------------------ asignar */
@@ -301,7 +556,7 @@ async function bloqueRecursos(servicio, equipo, cat) {
    —sale todo el que este libre— y lo que se elige aqui arriba es con
    que rol va, que es de donde salen el precio al cliente y la comision
    que se le paga. */
-async function abrirAsignacion(zona, equipo, cat) {
+async function abrirAsignacion(zona, equipo, cat, alAsignar = null) {
   zona.replaceChildren(h("div", { clase: "gris chico" }, t("srv_buscando_recursos")));
   const perfil = cat.perfiles.find(p => p.codigo === "conductor_seguridad");
   const categoria = cat.categorias.find(c => c.codigo === "suv_blindada");
@@ -314,6 +569,15 @@ async function abrirAsignacion(zona, equipo, cat) {
   if (categoria) selCategoria.value = categoria.id;
 
   const resultados = h("div");
+
+  /* Despues de asignar: la lista se vuelve a pedir --quien acaba de
+     entrar ya no esta libre-- y la ficha del equipo se repinta para que
+     la persona aparezca arriba al momento. Sin recargar nada. */
+  const hecho = async () => {
+    await buscar();
+    if (alAsignar) await alAsignar();
+  };
+
   const buscar = async () => {
     resultados.replaceChildren(h("div", { clase: "gris chico" }, t("srv_buscando")));
     try {
@@ -322,7 +586,8 @@ async function abrirAsignacion(zona, equipo, cat) {
         `?perfil_id=${selPerfil.value}&categoria_id=${selCategoria.value}`);
       resultados.replaceChildren(
         pintarRecomendaciones(r, equipo, cat, Number(selCategoria.value),
-                              () => Number(selPerfil.value) || null));
+                              () => Number(selPerfil.value) || null,
+                              hecho));
     } catch (e) { resultados.replaceChildren(aviso(e.message, "grave")); }
   };
   selPerfil.addEventListener("change", buscar);
@@ -336,13 +601,14 @@ async function abrirAsignacion(zona, equipo, cat) {
   buscar();
 }
 
-function pintarRecomendaciones(r, equipo, cat, categoriaId, rolId) {
+function pintarRecomendaciones(r, equipo, cat, categoriaId, rolId,
+                               hecho = null) {
   /* Cada lista debajo del selector que la arma: perfil a la izquierda,
      categoria de unidad a la derecha. En pantalla angosta la rejilla se
      vuelve una sola columna sola. */
   return h("div", { clase: "rejilla dos", style: "margin-top:14px" },
-    tablaPersonal(r.personal, equipo, rolId),
-    tablaUnidades(r.vehiculos, equipo, cat, categoriaId));
+    tablaPersonal(r.personal, equipo, rolId, hecho),
+    tablaUnidades(r.vehiculos, equipo, cat, categoriaId, hecho));
 }
 
 /* El estado de un recurso en un solo lugar: la pantalla no vuelve a
@@ -390,7 +656,7 @@ function celdaEstado(est) {
       : "");
 }
 
-function botonAsignar(est, hacer) {
+function botonAsignar(est, hacer, despues = null) {
   if (est.clave === "bloqueo") {
     return h("button", { clase: "chico claro", disabled: "disabled",
                          title: est.motivos }, t("srv_no_se_puede"));
@@ -401,7 +667,17 @@ function botonAsignar(est, hacer) {
       e.target.disabled = true;
       try {
         await hacer(forzar);
-        location.reload();
+        /* Recargar la pantalla cerraba el panel a media tarea: se
+           asignaba al conductor y habia que volver a buscar el equipo,
+           volver a abrir el panel y volver a elegir la categoria para
+           poder asignarle su unidad. Quien sabe repintarse lo hace en su
+           sitio; `location.reload` se queda solo para lo que todavia
+           no. */
+        if (despues) {
+          await despues();
+          // La hoja tambien cambia con esto, y nadie la recarga ya.
+          if (refrescarHoja) await refrescarHoja();
+        } else location.reload();
       } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
     } }, forzar ? t("srv_asignar_igual") : t("srv_asignar"));
 }
@@ -417,12 +693,46 @@ function caja(titulo, bloque, cuantos, encabezados, cuerpo, vacio) {
       : h("span", { clase: "gris" }, vacio));
 }
 
-function tablaPersonal(bloque, equipo, rolId = () => null) {
+function tablaPersonal(bloque, equipo, rolId = () => null, hecho = null) {
   const gente = ordenar(todos(bloque));
   const cuerpo = h("tbody");
+
+  /* Buscar por nombre. Con cuarenta y cuatro personas, encontrar a una
+     era bajar la pantalla leyendo; y quien asigna casi siempre YA SABE
+     a quien quiere --se lo acordo por telefono-- asi que la lista
+     completa solo estorba.
+  
+     Busca tambien por ciudad, que es la otra forma de preguntar lo
+     mismo: "a ver quien tengo en Monterrey". Y el filtro es sobre lo
+     que ya llego, no otra consulta: la lista esta completa en la
+     pantalla, asi que filtrar es instantaneo y funciona sin senal. */
+  const filas = new Map();
+  const buscar = entrada("buscar_persona", {
+    type: "search", placeholder: t("srv_buscar_persona"),
+    oninput: () => {
+      const q = sinTildes(buscar.value);
+      let visibles = 0;
+      for (const [clave, fila] of filas) {
+        const cabe = !q || clave.includes(q);
+        fila.hidden = !cabe;
+        if (cabe) visibles += 1;
+      }
+      cuenta.textContent = t("srv_titulo_n")
+        .replace("{t}", t("srv_personal_seguridad"))
+        .replace("{n}", visibles);
+      sinNadie.hidden = visibles > 0;
+    },
+  });
+  const sinNadie = h("div", { clase: "gris chico", hidden: true,
+                              style: "margin:8px 0" },
+                     t("srv_nadie_con_ese_nombre"));
+  const cuenta = h("h4", {}, t("srv_titulo_n")
+    .replace("{t}", t("srv_personal_seguridad"))
+    .replace("{n}", gente.length));
+
   for (const p of gente) {
     const est = estadoDe(p);
-    cuerpo.append(h("tr", {},
+    const fila = h("tr", {},
       h("td", {}, h("b", {}, p.nombre),
         p.es_freelance ? " " : "", p.es_freelance ? etiqueta("freelance") : "",
         p.telefono ? h("div", { clase: "chico gris" }, p.telefono) : "",
@@ -438,19 +748,67 @@ function tablaPersonal(bloque, equipo, rolId = () => null) {
           ? h("div", { clase: "chico gris" }, `${p.horas_en_centauro} h`) : ""),
       h("td", {}, botonAsignar(est, (forzar) =>
         api.post(`/servicios/equipos/${equipo.id}/asignar-personal`,
-                 { persona_id: p.persona_id, rol_id: rolId(), forzar })))));
+                 { persona_id: p.persona_id, rol_id: rolId(), forzar }),
+        hecho)));
+    filas.set(sinTildes(`${p.nombre} ${p.ciudad || ""}`), fila);
+    cuerpo.append(fila);
   }
-  return caja(t("srv_personal_seguridad"), bloque, gente.length,
-              [t("srv_persona"), t("srv_estado"), t("srv_calificacion"), ""], cuerpo,
-              t("srv_nadie_libre"));
+
+  if (!gente.length) {
+    return caja(t("srv_personal_seguridad"), bloque, 0,
+                [], cuerpo, t("srv_nadie_libre"));
+  }
+
+  return h("div", {},
+    cuenta,
+    bloque.aviso ? aviso(bloque.aviso, "alerta") : "",
+    /* El buscador va DEBAJO del titulo y encima de la tabla: es lo
+       primero que se toca al llegar aqui. */
+    h("div", { style: "margin:0 0 10px" }, buscar),
+    h("table", {},
+      h("thead", {}, h("tr", {},
+        ...[t("srv_persona"), t("srv_estado"), t("srv_calificacion"), ""]
+          .map(x => h("th", {}, x)))),
+      cuerpo),
+    sinNadie);
 }
 
-function tablaUnidades(bloque, equipo, cat, categoriaId) {
+function tablaUnidades(bloque, equipo, cat, categoriaId, hecho = null) {
   const flota = ordenar(todos(bloque));
   const cuerpo = h("tbody");
+
+  /* Buscar una unidad. Igual que con la gente, y por la misma razon:
+     quien asigna suele saber que unidad quiere.
+  
+     Aqui lo que se teclea es casi siempre la PLACA --es como se llama a
+     un coche por radio-- asi que se busca por placa, por numero de
+     unidad, por marca y modelo, y por ciudad. "abc" encuentra la
+     ABC-1234; "suburban" encuentra todas las Suburban. */
+  const filas = new Map();
+  const buscar = entrada("buscar_unidad", {
+    type: "search", placeholder: t("srv_buscar_unidad"),
+    oninput: () => {
+      const q = sinTildes(buscar.value);
+      let visibles = 0;
+      for (const [clave, fila] of filas) {
+        const cabe = !q || clave.includes(q);
+        fila.hidden = !cabe;
+        if (cabe) visibles += 1;
+      }
+      cuenta.textContent = t("srv_titulo_n")
+        .replace("{t}", t("srv_unidades")).replace("{n}", visibles);
+      sinNada.hidden = visibles > 0;
+    },
+  });
+  const sinNada = h("div", { clase: "gris chico", hidden: true,
+                             style: "margin:8px 0" },
+                    t("srv_ninguna_unidad_asi"));
+  const cuenta = h("h4", {}, t("srv_titulo_n")
+    .replace("{t}", t("srv_unidades")).replace("{n}", flota.length));
+
   for (const v of flota) {
     const est = estadoDe(v);
-    cuerpo.append(h("tr", {},
+    const fila = h("tr", {},
       h("td", {}, h("span", { clase: t("srv_f_placas") }, v.placa || v.placas),
         v.blindada ? " " : "", v.blindada ? etiqueta("blindada") : "",
         /* Que sea de renta se dice aqui y no en el task sheet: al
@@ -466,8 +824,25 @@ function tablaUnidades(bloque, equipo, cat, categoriaId) {
       celdaEstado(est),
       h("td", {}, botonAsignar(est, (forzar) =>
         api.post(`/servicios/equipos/${equipo.id}/asignar-vehiculo`,
-                 { vehiculo_id: v.vehiculo_id, forzar })))));
+                 { vehiculo_id: v.vehiculo_id, forzar }),
+        hecho)));
+    filas.set(sinTildes([v.placa || v.placas, v.unidad, v.marca_modelo,
+                         v.ciudad].filter(Boolean).join(" ")), fila);
+    cuerpo.append(fila);
   }
+
+  const tabla = flota.length
+    ? h("div", {},
+        cuenta,
+        bloque.aviso ? aviso(bloque.aviso, "alerta") : "",
+        h("div", { style: "margin:0 0 10px" }, buscar),
+        h("table", {},
+          h("thead", {}, h("tr", {},
+            ...[t("srv_unidad"), t("srv_estado"), ""]
+              .map(x => h("th", {}, x)))),
+          cuerpo),
+        sinNada)
+    : caja(t("srv_unidades"), bloque, 0, [], cuerpo, t("srv_sin_unidades"));
 
   /* La flota no siempre alcanza: el cliente pide una categoria que no
      tenemos o la semana viene saturada, y el auto se subarrienda. Se
@@ -476,9 +851,7 @@ function tablaUnidades(bloque, equipo, cat, categoriaId) {
      otro dia y un servicio detenido mientras tanto. */
   const zona = h("div");
   return h("div", {},
-    caja(t("srv_unidades"), bloque, flota.length,
-         [t("srv_unidad"), t("srv_estado"), ""], cuerpo,
-         t("srv_sin_unidades")),
+    tabla,
     h("div", { clase: "acciones", style: "margin-top:8px" },
       alternador(h("button", { clase: "claro chico", type: "button" },
                    t("srv_subir_renta")),
@@ -557,7 +930,8 @@ function formularioRenta(equipo, cat, categoriaId) {
   });
 
   return h("div", { clase: "tarjeta lisa", style: "margin-top:8px" },
-    h("h4", { style: "margin:0 0 2px" }, t("srv_auto_rentado")),
+    conAyuda("h4", t("srv_auto_rentado"), "ay_srv_renta",
+             { style: "margin:0 0 2px" }),
     h("p", { clase: "gris chico", style: "margin:0 0 12px" },
       t("srv_renta_pie")),
     h("div", { clase: "rejilla dos" },
@@ -565,7 +939,7 @@ function formularioRenta(equipo, cat, categoriaId) {
       campo(t("srv_categoria"), selCategoria),
       campo(t("srv_marca"), marca),
       campo(t("srv_color"), color),
-      campo("Año", anio),
+      campo(t("imp_anio"), anio),
       campo(t("srv_costo_renta"), costo),
       campo(t("srv_arrendadora"), arrendadora),
       campo(t("srv_tel_proveedor"), tel),
@@ -604,7 +978,22 @@ function diasPendientes(equipo) {
     .sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
 }
 
+/* Las dos puertas hacen el mismo cambio y por dentro es el mismo motor.
+   La del implantado ademas pone el tope: un cambio sin fecha de fin
+   llega al ultimo dia del mes en curso. Esa regla vive en el servidor y
+   no aqui: el navegador solo pregunta por cual puerta entra. */
+function puertaDe(servicio) {
+  return servicio.tipo === "implantado"
+    ? { previa: `/implantados/${servicio.id}/cambios/vista-previa`,
+        guardar: `/implantados/${servicio.id}/cambios`,
+        entra: "entra_id", implantado: true }
+    : { previa: "/contingencia/reemplazos/personal/vista-previa",
+        guardar: "/contingencia/reemplazos/personal",
+        entra: "entra_persona_id", implantado: false };
+}
+
 async function abrirCambio(zona, servicio, equipo, cat, persona, datos) {
+  const puerta = puertaDe(servicio);
   const dias = diasPendientes(equipo);
   if (!dias.length) {
     return zona.replaceChildren(aviso(
@@ -639,13 +1028,23 @@ async function abrirCambio(zona, servicio, equipo, cat, persona, datos) {
     h("div", { clase: "gris chico" }, t("srv_buscando_entra")));
   const previa = h("div", { style: "margin-top:12px" });
 
-  const armar = () => ({
-    desde_jornada_id: Number(desde.value),
-    hasta_jornada_id: conFin.checked ? Number(hasta.value) : null,
-    sale_persona_id: persona.persona_id,
-    motivo: nota.value.trim() || MOTIVOS.find(x => x.valor === motivo.value).texto,
-    motivo_tipo: motivo.value,
-  });
+  /* La puerta del implantado habla de fechas y la de eventual de
+     jornadas. Es la misma eleccion del consultor dicha de dos maneras. */
+  const fechaDe = new Map(dias.map(j => [String(j.id), j.fecha]));
+
+  const armar = () => (puerta.implantado
+    ? { tipo: "personal",
+        desde: fechaDe.get(desde.value),
+        hasta: conFin.checked ? fechaDe.get(hasta.value) : null,
+        sale_id: persona.persona_id,
+        motivo: motivo.value,
+        nota: nota.value.trim() || null }
+    : { desde_jornada_id: Number(desde.value),
+        hasta_jornada_id: conFin.checked ? Number(hasta.value) : null,
+        sale_persona_id: persona.persona_id,
+        motivo: nota.value.trim()
+                || MOTIVOS.find(x => x.valor === motivo.value).texto,
+        motivo_tipo: motivo.value });
 
   zona.replaceChildren(h("div", { clase: "tarjeta lisa" },
     h("h4", { style: "margin:0 0 2px" }, t("srv_cambiar_a").replace("{p}", persona.nombre)),
@@ -654,14 +1053,21 @@ async function abrirCambio(zona, servicio, equipo, cat, persona, datos) {
     h("div", { clase: "rejilla dos" },
       campo(t("srv_desde_dia"), desde),
       campo(t("srv_hasta_cuando"), h("div", {},
-        h("label", { clase: "chico" }, adelante, t("srv_adelante")),
+        h("label", { clase: "chico" }, adelante,
+          puerta.implantado ? t("srv_hasta_fin_mes") : t("srv_adelante")),
         h("label", { clase: "chico", style: "margin-left:12px" },
           conFin, t("srv_hasta_el_dia")), hasta,
         h("div", { clase: "gris chico", style: "margin-top:4px" },
-          t("srv_alcance_pie"))))),
+          puerta.implantado ? t("srv_alcance_imp_pie")
+                            : t("srv_alcance_pie"))))),
     h("div", { clase: "rejilla dos" },
       campo("Por que", motivo), campo(t("srv_nota"), nota)),
-    candidatos, previa));
+    /* La previa va ARRIBA de la lista, no debajo.
+    
+       Debajo, con cuarenta y tres candidatos de por medio, el consultor
+       picaba "Elegir" en el primero y el resultado caia mil pixeles mas
+       abajo: desde la silla, la pantalla no hacia nada. */
+    previa, candidatos));
 
   /* La misma lista de recomendaciones que usa t("srv_asignar_recursos"), con
      su disponibilidad y sus choques ya resueltos. Filtrada al rol que
@@ -676,7 +1082,7 @@ async function abrirCambio(zona, servicio, equipo, cat, persona, datos) {
       `/servicios/equipos/${equipo.id}/recomendaciones`
       + `?perfil_id=${rol}&categoria_id=${categoria.id}`);
     candidatos.replaceChildren(
-      tablaCandidatos(r.personal, persona, armar, previa));
+      tablaCandidatos(r.personal, persona, armar, previa, puerta));
   } catch (err) {
     candidatos.replaceChildren(aviso(err.message, "grave"));
   }
@@ -698,7 +1104,7 @@ function botonElegir(est, alElegir) {
            t("srv_elegir"));
 }
 
-function tablaCandidatos(bloque, sale, armar, previa) {
+function tablaCandidatos(bloque, sale, armar, previa, puerta) {
   const gente = ordenar(todos(bloque))
     .filter(x => x.persona_id !== sale.persona_id);
   const cuerpo = h("tbody");
@@ -707,7 +1113,8 @@ function tablaCandidatos(bloque, sale, armar, previa) {
     cuerpo.append(h("tr", {},
       h("td", {}, h("b", {}, p.nombre), lineaCiudad(p)),
       celdaEstado(est),
-      h("td", {}, botonElegir(est, (e) => verPrevia(e, previa, armar(), p)))));
+      h("td", {}, botonElegir(est,
+        (e) => verPrevia(e, previa, armar(), p, puerta)))));
   }
   return caja(t("srv_quien_entra").replace("{p}", sale.nombre), bloque, gente.length,
               [t("srv_persona"), t("srv_disponibilidad"), ""], cuerpo,
@@ -717,14 +1124,25 @@ function tablaCandidatos(bloque, sale, armar, previa) {
 /* Nada se guarda hasta aqui. Lo que se pinta es el cambio de verdad,
    ejecutado y deshecho en el servidor: no hay una segunda cuenta que
    calcule "lo que pasaria" y se separe de la primera. */
-async function verPrevia(e, zona, cambio, entra) {
+/* Deja el recuadro a la vista. Un panel que aparece fuera de la
+   pantalla es, para quien lo esta usando, un boton que no hizo nada. */
+function llevarLaVista(zona) {
+  try {
+    zona.scrollIntoView({ behavior: "smooth", block: "center" });
+  } catch { zona.scrollIntoView(); }
+}
+
+async function verPrevia(e, zona, cambio, entra, puerta) {
   e.target.disabled = true;
   zona.replaceChildren(h("div", { clase: "gris chico" }, t("srv_calculando")));
-  const cuerpo = { ...cambio, entra_persona_id: entra.persona_id };
+  /* Y se lleva la vista hasta ahi. Ponerla arriba no alcanza: si el
+     consultor bajo a buscar a alguien en la lista, el resultado le
+     queda igual de lejos, solo que del otro lado. */
+  llevarLaVista(zona);
+  const cuerpo = { ...cambio, [puerta.entra]: entra.persona_id };
   try {
-    const r = await api.post("/contingencia/reemplazos/personal/vista-previa",
-                             cuerpo);
-    zona.replaceChildren(recuadroPrevia(r, cuerpo, entra));
+    const r = await api.post(puerta.previa, cuerpo);
+    zona.replaceChildren(recuadroPrevia(r, cuerpo, entra, puerta));
   } catch (err) {
     zona.replaceChildren(aviso(err.message, "grave"));
   }
@@ -754,22 +1172,24 @@ function campoDeHora(r) {
   };
 }
 
-function recuadroPrevia(r, cuerpo, entra) {
-  const dias = r.jornadas_afectadas || [];
-  const v = r.viaticos || {};
+/* Lo delicado de un cambio no es el nombre de quien va: es que quien
+   sale se queda con dinero que tiene que comprobar y quien entra
+   necesita dinero nuevo. Lo dicen igual el cambio y el regreso, asi que
+   se dice en un solo lugar. */
+function bloqueDinero(v, entra) {
   const linea = (texto, tono) =>
     h("div", { clase: "chico" + (tono ? "" : " gris") },
       tono ? h("b", {}, texto) : texto);
 
-  const dinero_ = h("div", { style: "margin-top:8px" },
+  const caja = h("div", { style: "margin-top:8px" },
     h("h4", { style: "margin:0 0 2px" }, t("srv_viaticos")));
   for (const x of v.a_comprobar || []) {
-    dinero_.append(linea(
+    caja.append(linea(
       t("srv_comprueba").replace("{m}", dinero(x.monto))
         .replace("{f}", fecha((x.limite || "").slice(0, 10))), true));
   }
   if ((v.cancelados || []).length) {
-    dinero_.append(linea(
+    caja.append(linea(
       t("srv_se_cancelan").replace("{n}", v.cancelados.length)));
   }
   /* Propuesta, no asignacion: el sistema saca la cuenta del tabulador
@@ -777,15 +1197,165 @@ function recuadroPrevia(r, cuerpo, entra) {
      la hace el, como con cualquier otra. */
   const propuesto = (v.propuestos || []).reduce((a, x) => a + x.monto, 0);
   if (propuesto) {
-    dinero_.append(linea(
-      t("srv_le_tocarian").replace("{p}", entra.nombre)
+    caja.append(linea(
+      t("srv_le_tocarian").replace("{p}", entra)
         .replace("{m}", dinero(propuesto))
         .replace("{n}", v.propuestos.length), true));
   }
   if (!(v.a_comprobar || []).length && !propuesto
       && !(v.cancelados || []).length) {
-    dinero_.append(linea(t("srv_nada_mover")));
+    caja.append(linea(t("srv_nada_mover")));
   }
+  return caja;
+}
+
+/* ------------------------------------------- el regreso del titular */
+
+/* Una sola pregunta: que dia vuelve. El motivo no se pide --es el del
+   cambio que se cierra-- y el ultimo dia del que cubre sale solo, que
+   es como lo dice la operacion: "regresa el 25, entonces Luis trabaja
+   hasta el 24". */
+function abrirRegreso(zona, r) {
+  /* Corregir es capturar otra vez: el movimiento se recorre y se vuelve
+     a firmar. Lo unico distinto es el techo del calendario --un regreso
+     que se atrasa va mas alla del ultimo dia de hoy-- y lo que hay que
+     advertir, que es el candado del dinero. */
+  const corrige = Boolean(r.regreso_en);
+  const minimo = diaSiguiente(r.desde);
+  const hoy = new Date().toISOString().slice(0, 10);
+  let valor = hoy < minimo ? minimo : hoy;
+  if (!corrige && r.hasta && valor > r.hasta) valor = r.hasta;
+
+  const dia = h("input", { type: "date", value: valor, min: minimo });
+  if (!corrige && r.hasta) dia.max = r.hasta;
+
+  const previa = h("div", { style: "margin-top:12px" });
+  const ver = h("button", { clase: "chico", type: "button",
+    onclick: (e) => verPreviaRegreso(e, previa, r, dia.value) },
+    t("srv_r_ver"));
+
+  zona.replaceChildren(h("div", { clase: "tarjeta lisa" },
+    h("h4", { style: "margin:0 0 2px" },
+      (r.tipo === "vehiculo" ? t("srv_r_cuando_u") : t("srv_r_cuando"))
+        .replace("{p}", r.sale || "?")),
+    h("p", { clase: "gris chico", style: "margin:0 0 10px" },
+      corrige ? t("srv_r_corregir_pie") : t("srv_r_form_pie")),
+    h("div", { clase: "acciones" }, dia, ver),
+    previa));
+}
+
+function diaSiguiente(iso) {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+async function verPreviaRegreso(e, zona, r, desde) {
+  if (!desde) return;
+  e.target.disabled = true;
+  zona.replaceChildren(h("div", { clase: "gris chico" }, t("srv_calculando")));
+  llevarLaVista(zona);
+  try {
+    const previa = await api.post(
+      `/contingencia/reemplazos/${r.id}/regreso/vista-previa`, { desde });
+    zona.replaceChildren(recuadroRegreso(previa, r, desde));
+  } catch (err) {
+    zona.replaceChildren(aviso(err.message, "grave"));
+  }
+  e.target.disabled = false;
+}
+
+function recuadroRegreso(p, r, desde) {
+  const partido = (p.jornadas_partidas || []).length > 0;
+  const hora = partido ? campoDeHora(p) : null;
+  const devueltos = (p.jornadas_devueltas || []).length;
+  const recuperados = (p.jornadas_recuperadas || []).length;
+
+  const confirmar = h("button", { clase: "chico", type: "button",
+    onclick: async (ev) => {
+      ev.target.disabled = true;
+      try {
+        const corregida = hora && hora.leer();
+        await api.post(`/contingencia/reemplazos/${r.id}/regreso`,
+                       corregida ? { desde, relevado_en: corregida }
+                                 : { desde });
+        mensaje(t("srv_r_hecho"));
+        location.reload();
+      } catch (err) {
+        mensaje(err.message, "grave");
+        ev.target.disabled = false;
+      }
+    } }, t("srv_r_confirmar"));
+
+  return h("div", { clase: "tarjeta lisa" },
+    /* Las dos caras de la misma fecha. La operacion lo dice de las dos
+       maneras y confundirlas cuesta un dia de nomina. */
+    h("div", { clase: "chico" }, h("b", {},
+      t("srv_r_vuelve_el").replace("{p}", p.regresa || "?")
+        .replace("{f}", fecha(desde)))),
+    h("div", { clase: "chico" },
+      t("srv_r_trabaja_hasta").replace("{p}", p.sale || "?")
+        .replace("{f}", fecha(p.hasta))),
+    h("div", { clase: "chico gris", style: "margin-top:4px" },
+      recuperados
+        ? t("srv_r_recuperados").replace("{n}", recuperados)
+            .replace("{p}", p.sale || "?")
+        : t("srv_r_devueltos").replace("{n}", devueltos)
+            .replace("{p}", p.regresa || "?")),
+    partido
+      ? h("div", { style: "margin-top:8px" },
+          h("h4", { style: "margin:0 0 2px" }, t("srv_nomina")),
+          h("div", { clase: "chico" }, h("b", {},
+            t("srv_se_presento").replace("{f}",
+              fecha(p.jornadas_partidas[0])))),
+          h("div", { clase: "chico gris" },
+            t("srv_cobra_dias").replace("{p}", p.regresa || "?")),
+          hora.nodo)
+      : "",
+    p.tipo === "vehiculo" ? "" : bloqueDinero(p.viaticos || {}, p.regresa || "?"),
+    bloqueRevisionUnidad(p.revision_pendiente),
+    (p.jornadas_con_choque || []).length
+      ? aviso(t("srv_choque").replace("{p}", p.regresa || "?")
+                .replace("{d}", p.jornadas_con_choque.map(fecha).join(", ")),
+              "alerta")
+      : "",
+    h("div", { clase: "acciones", style: "margin-top:10px" },
+      h("button", { clase: "claro chico", type: "button",
+        onclick: (ev) => ev.target.closest(".tarjeta").remove() },
+        t("srv_cancelar")),
+      confirmar));
+}
+
+/* Lo que queda pendiente cuando una unidad cambia de manos.
+
+   El motor lo calcula desde hace meses y lo devuelve en la respuesta del
+   cambio y del regreso; ninguna pantalla lo pintaba, así que el
+   consultor hacía el cambio, el sistema le contestaba qué faltaba, y él
+   nunca lo veía.
+
+   Hoy no se pierde: el candado del fin de servicio no deja soltar una
+   unidad sin entregar. Lo que se perdía era encargarlo **en el
+   momento**, que es cuando la gente todavía está junto a las dos
+   camionetas. Ocho horas después ya se fue cada quien por su lado. */
+export function bloqueRevisionUnidad(pendiente) {
+  if (!pendiente) return "";
+  const sale = pendiente.entrega_de_la_que_sale;
+  const entra = pendiente.recepcion_de_la_que_entra;
+  if (!sale && !entra) return "";
+
+  return h("div", { clase: "aviso alerta", style: "margin-top:8px" },
+    h("b", {}, t("uni_rev_titulo")),
+    sale ? h("div", { clase: "chico" }, t("uni_rev_sale")) : "",
+    entra ? h("div", { clase: "chico" }, t("uni_rev_entra")) : "",
+    h("div", { clase: "chico gris", style: "margin-top:4px" },
+      t("uni_rev_pie")));
+}
+
+function recuadroPrevia(r, cuerpo, entra, puerta) {
+  const dias = r.jornadas_afectadas || [];
+  const v = r.viaticos || {};
+
+  const dinero_ = bloqueDinero(v, entra.nombre);
 
   const partido = (r.jornadas_partidas || []).length > 0;
   const hora = partido ? campoDeHora(r) : null;
@@ -795,11 +1365,19 @@ function recuadroPrevia(r, cuerpo, entra) {
       ev.target.disabled = true;
       try {
         const corregida = hora && hora.leer();
-        await api.post("/contingencia/reemplazos/personal",
-                       corregida ? { ...cuerpo, relevado_en: corregida }
-                                 : cuerpo);
-        mensaje(t("srv_cambio_hecho"));
-        location.reload();
+        const hecho = await api.post(
+          puerta.guardar,
+          corregida ? { ...cuerpo, relevado_en: corregida } : cuerpo);
+        /* Quien hace el cambio tiene que saber si el cliente ya se
+           enteró o si le toca llamarlo. Sin esto, el consultor se queda
+           adivinando y acaba avisando dos veces o ninguna. El implantado
+           no manda este correo, así que ahí no se dice nada. */
+        mensaje(hecho && hecho.cliente_avisado === true
+                ? t("srv_cambio_hecho_avisado")
+                : hecho && hecho.cliente_avisado === false
+                  ? t("srv_cambio_hecho_sin_aviso")
+                  : t("srv_cambio_hecho"));
+        setTimeout(() => location.reload(), 1400);
       } catch (err) {
         mensaje(err.message, "grave");
         ev.target.disabled = false;
@@ -815,6 +1393,13 @@ function recuadroPrevia(r, cuerpo, entra) {
             .replace("{n}", dias.length)),
     h("div", { clase: "chico" },
       t("srv_entra"), h("b", {}, entra.nombre), t("srv_mismo_rol")),
+    /* El consultor pidio "hasta el fin del mes" y el sistema decidio
+       cual es ese dia. Decirlo aqui evita que en octubre nadie se
+       acuerde de que el cambio ya termino. */
+    r.tope_automatico
+      ? h("div", { clase: "chico gris", style: "margin-top:4px" },
+          t("srv_tope").replace("{f}", fecha(r.hasta)))
+      : "",
     /* Lo que hasta hoy se perdia: el que se presento esa manana cobra su
        dia. Decirlo aqui es lo que evita el reclamo de la semana que
        viene. */
@@ -828,6 +1413,7 @@ function recuadroPrevia(r, cuerpo, entra) {
       : h("div", { clase: "chico gris", style: "margin-top:8px" },
           t("srv_no_marco")),
     dinero_,
+    bloqueRevisionUnidad(r.revision_pendiente),
     (r.jornadas_con_choque || []).length
       ? aviso(t("srv_choque").replace("{p}", entra.nombre)
                 .replace("{d}", r.jornadas_con_choque.map(fecha).join(", ")),
@@ -855,27 +1441,98 @@ function bloqueCambios(filas) {
   const caja = h("div", { clase: "tarjeta" });
   if (!filas || !filas.length) return h("div");
 
-  caja.append(h("h3", { style: "margin:0 0 2px" }, t("srv_cambios")),
+  caja.append(conAyuda("h3", t("srv_cambios"), "ay_srv_cambios",
+                         { style: "margin:0 0 2px" }),
     h("p", { clase: "gris chico", style: "margin:0 0 12px" },
       t("srv_cambios_pie")));
 
-  for (const r of filas) {
-    caja.append(h("div", { clase: "tarjeta lisa", style: "margin:0 0 10px" },
-      h("div", {},
-        etiqueta(r.motivo_tipo || r.tipo, "alerta"), " ",
-        h("b", {}, `${r.sale || "?"} → ${r.entra || "?"}`),
-        h("span", { clase: "gris chico" },
-          t("srv_dias_n").replace("{n}", r.jornadas_afectadas))),
-      h("div", { clase: "chico gris" },
-        t("srv_desde_f").replace("{f}", fecha(r.desde))
-        + (r.hasta ? t("srv_hasta_f").replace("{f}", fecha(r.hasta))
-                 : t("srv_en_adelante"))),
-      r.motivo ? h("p", { clase: "chico", style: "margin:6px 0 0" },
-                   `"${r.motivo}"`) : "",
-      h("div", { clase: "chico gris", style: "margin-top:4px" },
-        r.formalizo ? t("srv_formalizo").replace("{p}", r.formalizo) : "")));
-  }
+  for (const r of filas) caja.append(tarjetaCambio(r));
   return caja;
+}
+
+/* Por que cambio, en el idioma del que lee. Mapa explicito y no la
+   cadena cruda: el dia que el motivo se llame de otra forma, aqui se ve
+   el hueco en vez de salir en ingles de base de datos. */
+const NOMBRE_DEL_MOTIVO = {
+  contingencia: "srv_m_contingencia", enfermedad: "srv_m_enfermedad",
+  vacaciones: "srv_m_vacaciones", descanso: "srv_m_descanso",
+  baja: "srv_m_baja", otro: "srv_m_otro",
+  mantenimiento_correctivo: "imp_taller_correctivo",
+  mantenimiento_preventivo: "imp_taller_preventivo",
+};
+
+function motivoDe(r) {
+  const clave = NOMBRE_DEL_MOTIVO[r.motivo_tipo];
+  return clave ? t(clave) : (r.motivo_tipo || r.tipo);
+}
+
+/* Tres estados y no dos. Un cambio puede haber terminado solo --llego a
+   su ultimo dia y nadie lo toco-- o haberlo cerrado alguien porque el
+   titular volvio. No es lo mismo: en el segundo caso hubo una decision
+   y tiene dueno. */
+function selloDelCambio(r) {
+  if (r.en_curso) return etiqueta(t("srv_r_en_curso"), "alerta");
+  return etiqueta(r.regreso_en ? t("srv_r_cerrado") : t("srv_r_terminado"));
+}
+
+function tarjetaCambio(r) {
+  const tarjeta = h("div", { clase: "tarjeta lisa", style: "margin:0 0 10px" },
+    h("div", {},
+      selloDelCambio(r), " ", etiqueta(motivoDe(r), "alerta"), " ",
+      h("b", {}, `${r.sale || "?"} → ${r.entra || "?"}`),
+      h("span", { clase: "gris chico" },
+        t("srv_dias_n").replace("{n}", r.jornadas_afectadas))),
+    h("div", { clase: "chico gris" },
+      t("srv_desde_f").replace("{f}", fecha(r.desde))
+      + (r.hasta ? t("srv_hasta_f").replace("{f}", fecha(r.hasta))
+               : t("srv_en_adelante"))),
+    r.motivo ? h("p", { clase: "chico", style: "margin:6px 0 0" },
+                 `"${r.motivo}"`) : "");
+
+  /* El renglon que importa: quien trabajo media jornada cobra media
+     jornada. Hasta hoy eso solo se veia abriendo la nomina --o sea la
+     semana siguiente, o sea cuando ya hubo reclamo--. */
+  for (const d of r.partidos || []) {
+    tarjeta.append(h("div", { clase: "chico", style: "margin-top:4px" },
+      t("srv_r_partido").replace("{f}", fecha(d.fecha))
+        .replace("{p}", d.quien || r.sale || "?").replace("{h}", d.hora)));
+  }
+
+  /* El implantado siempre termina en una fecha, aunque el consultor no
+     la haya escrito. Decirlo evita que el mes siguiente nadie se acuerde
+     de que el cambio ya termino. */
+  if (r.en_curso && r.se_vuelve_a_pedir && r.hasta) {
+    tarjeta.append(h("div", { clase: "chico gris", style: "margin-top:4px" },
+      t("srv_r_repedir").replace("{f}", fecha(r.hasta))));
+  }
+
+  const firma = h("div", { clase: "chico gris", style: "margin-top:4px" },
+    r.formalizo ? t("srv_formalizo").replace("{p}", r.formalizo) : "");
+  if (r.regreso_en) {
+    firma.append(h("div", {},
+      t("srv_r_cerro").replace("{p}", r.regreso_por || "?")
+        .replace("{f}", fecha(r.regreso_en.slice(0, 10)))));
+  }
+  tarjeta.append(firma);
+
+  /* El boton va en la tarjeta del movimiento y no en la tabla de dias,
+     porque el regreso cierra ESE movimiento: no es un cambio nuevo. Solo
+     aparece si sigue corriendo. */
+  if (r.en_curso || r.regreso_en) {
+    const zona = h("div", { style: "margin-top:10px" });
+    tarjeta.append(
+      h("div", { clase: "acciones", style: "margin-top:8px" },
+        h("button", { clase: "claro chico", type: "button",
+          onclick: () => abrirRegreso(zona, r) },
+          r.regreso_en
+            ? t("srv_r_corregir")
+            : (r.tipo === "vehiculo"
+               ? t("srv_r_regresar_u") : t("srv_r_regresar")
+              ).replace("{p}", r.sale || "?"))),
+      zona);
+  }
+
+  return tarjeta;
 }
 
 /* -------------------------------------------- el dia: punto y agenda */
@@ -899,10 +1556,126 @@ async function abrirDia(zona, jornada, cual = {}) {
   // esperando lo del punto, que ya se puede leer.
   caja.append(await bloqueAgenda(jornada));
 
+  // Y lo que paso ese dia de verdad, debajo de lo que estaba planeado:
+  // primero el plan, luego los hechos.
+  caja.append(await bloqueDelDia(jornada));
+
   if (cual.ultimo && !cual.primero) {
     caja.append(punto.vueloDeSalida, punto.guardar);
   }
 }
+
+/* ------------------------------------------- lo que paso ese dia */
+
+/* El meet and greet arriba y la bitacora abajo.
+
+   Arriba va una sola pregunta --¿ya estan con el principal?-- porque es
+   la que le hacen al consultor por telefono y la que decide si el
+   servicio esta corriendo. Debajo, el dia completo para cuando la
+   respuesta corta no alcanza.
+
+   El boton de registrarlo a mano sale de `puedo_registrar_a_mano`, que
+   lo contesta el servidor. El consultor ve el panel y no escribe en el:
+   esa hora fija el inicio real, de donde salen las horas que se le
+   facturan al cliente, y quien vende el servicio es a quien mas le
+   conviene que un dia aparezca trabajado. */
+async function bloqueDelDia(jornada) {
+  const zona = h("div", { clase: "dia_real" });
+  await pintarDelDia(zona, jornada);
+  return zona;
+}
+
+async function pintarDelDia(zona, jornada) {
+  zona.replaceChildren(h("div", { clase: "gris chico" }, t("srv_abriendo")));
+  let d;
+  try { d = await api.get(`/operacion/jornadas/${jornada.id}/dia`); }
+  catch (err) { return zona.replaceChildren(aviso(err.message, "grave")); }
+
+  const mg = d.meet_and_greet || {};
+
+  /* Un renglon por equipo y por dia, y el titulo lo dice. Un servicio
+     puede tener a Alfa en Ciudad de Mexico y a Beta en Monterrey el
+     mismo dia: dos bitacoras distintas que no se mezclan nunca, y
+     dejarlo al contexto es como se lee la del equipo equivocado. */
+  const partes = [
+    h("h3", {}, t("dia_titulo")),
+    h("div", { clase: "gris chico", style: "margin:-8px 0 12px" },
+      t("srv_equipo").replace("{a}", d.equipo || "—"),
+      " · ", fecha(d.fecha)),
+  ];
+
+  if (mg.hay) {
+    const sello = mg.a_mano
+      ? h("span", { clase: "etiqueta alerta" }, t("dia_a_mano"))
+      : h("span", { clase: "etiqueta ok" }, t("dia_desde_app"));
+    partes.push(h("div", { clase: "dia_mg ok" },
+      h("div", {}, h("b", {}, hora(mg.momento)), " · ",
+        mg.persona || "—", " ", sello),
+      mg.a_mano
+        ? h("div", { clase: "gris chico" },
+            `${t("dia_firmado_por")} ${mg.firmado_por || "—"}`
+            + (mg.motivo ? ` · ${mg.motivo}` : ""))
+        : null));
+  } else {
+    partes.push(h("div", { clase: "dia_mg falta" },
+      h("div", {}, t("dia_sin_marca")),
+      h("div", { clase: "gris chico" },
+        `${t("dia_programado")} ${hora(mg.programado)}`)));
+    if (d.puedo_registrar_a_mano) {
+      partes.push(formularioMeetAndGreet(zona, jornada, mg.quien_falta || []));
+    }
+  }
+
+  const { bitacoraDelDia } = await import("./bitacora.js");
+  partes.push(await bitacoraDelDia(jornada.id));
+  zona.replaceChildren(...partes);
+}
+
+/* Los tres campos se exigen y el boton lo dice antes de mandarlos: un
+   403 o un 409 despues de escribir el motivo es la peor forma de
+   enterarse de que faltaba la hora. */
+function formularioMeetAndGreet(zona, jornada, candidatos) {
+  const quien = lista("persona_id",
+    candidatos.map(c => ({ valor: c.persona_id,
+                           texto: c.rol ? `${c.nombre} — ${c.rol}` : c.nombre })));
+  const cuando = entrada("momento", { type: "datetime-local" });
+  const motivo = entrada("justificacion",
+                         { placeholder: t("dia_motivo_ejemplo"), maxlength: 400 });
+  const zonaAviso = h("div", {});
+
+  const boton = h("button", {
+    onclick: async () => {
+      if (!quien.value || !cuando.value || motivo.value.trim().length < 5) {
+        return zonaAviso.replaceChildren(aviso(t("dia_faltan_datos"), "alerta"));
+      }
+      boton.disabled = true;
+      try {
+        await api.post(`/operacion/jornadas/${jornada.id}/meet-and-greet`, {
+          persona_id: Number(quien.value),
+          momento: cuando.value.length === 16 ? `${cuando.value}:00` : cuando.value,
+          justificacion: motivo.value.trim(),
+        });
+        await pintarDelDia(zona, jornada);
+      } catch (err) {
+        boton.disabled = false;
+        zonaAviso.replaceChildren(aviso(err.message, "grave"));
+      }
+    },
+  }, t("dia_registrar"));
+
+  if (!candidatos.length) {
+    return aviso(t("dia_sin_quien"), "alerta");
+  }
+
+  return h("div", { clase: "tarjeta lisa" },
+    conAyuda("h4", t("dia_registrar_titulo"), "ay_mg_mano"),
+    campo(t("dia_quien"), quien),
+    campo(t("dia_cuando"), cuando),
+    campo(t("dia_motivo"), motivo),
+    zonaAviso,
+    h("div", { clase: "acciones" }, boton));
+}
+
 
 function bloqueOrigen(jornada, cual = {}) {
   /* Solo el primer dia recibe al ejecutivo y solo el ultimo lo despide,
@@ -1217,7 +1990,7 @@ async function bloqueAgenda(jornada) {
   pintar();
 
   return h("div", {},
-    h("h4", { clase: "grupo" }, t("srv_agenda")),
+    conAyuda("h4", t("srv_agenda"), "ay_srv_agenda", { clase: "grupo" }),
     h("p", { clase: "gris chico", style: "margin:0 0 12px" },
       t("srv_agenda_pie")),
 
@@ -1261,10 +2034,8 @@ async function pintarHotel(caja, servicio, equipo, cat) {
   const actual = estancias[0] || null;
   const repintar = () => pintarHotel(caja, servicio, equipo, cat);
 
-  const cabeza = h("div", {},
-    h("h4", { style: "margin:0 0 2px" }, t("srv_hotel_ejecutivo")),
-    h("p", { clase: "gris chico", style: "margin:0 0 12px" },
-      t("srv_hotel_pie")));
+  const cabeza = h("p", { clase: "gris chico", style: "margin:0 0 12px" },
+    t("srv_hotel_pie"));
 
   const ficha = h("div");
   if (actual) {
@@ -1365,7 +2136,7 @@ async function pintarHotel(caja, servicio, equipo, cat) {
     } catch (err) { mensaje(err.message, "grave"); guardar.disabled = false; }
   }});
 
-  f.append(campo(t("srv_hotel"), selHotel),
+  f.append(...[campo(t("srv_hotel"), selHotel),
     h("details", { clase: "plegable", open: actual ? null : "" },
       h("summary", {}, t("srv_buscar_hotel")),
       h("div", { clase: "punto-inicio" },
@@ -1377,15 +2148,40 @@ async function pintarHotel(caja, servicio, equipo, cat) {
         campo(t("srv_nombre_hotel"), nombreLibre),
         campo(t("srv_direccion"), direccionLibre),
         campo(t("srv_telefono"), telefonoLibre))),
-    h("div", { clase: "acciones", style: "margin-top:10px" }, guardar));
+    h("div", { clase: "acciones", style: "margin-top:10px" }, guardar)].filter(Boolean));
 
-  caja.replaceChildren(cabeza, ficha, f);
+  /* El hotel nace plegado.
+  
+     Es informativo y opcional --Centauro no reserva-- y ocupa media
+     pantalla entre el buscador de Google, su mapa y los tres campos.
+     Quien abre un servicio casi nunca viene a eso; viene por la gente y
+     los dias, que quedan arriba. Plegado, el renglon dice si hay hotel
+     y cual, que es lo unico que se consulta de corrido. */
+  caja.replaceChildren(plegable(
+    t("srv_hotel_ejecutivo"), [cabeza, ficha, f],
+    () => (actual ? actual.hotel : t("srv_sin_hotel")),
+    {}, false));
 }
 
 /* ------------------------------------------------------------ task sheet */
 
+/* Quien sabe volver a preguntar que le falta a la hoja. Lo guarda la
+   pantalla al armarla, y lo llama el que asigna un recurso. */
+let refrescarHoja = null;
+
+function pintarFaltantes(zona, faltantes) {
+  if (faltantes && faltantes.length) {
+    zona.replaceChildren(
+      aviso(t("srv_falta_publicar"), "alerta"),
+      h("ul", { clase: "chico" }, ...faltantes.map(x => h("li", {}, x))));
+  } else {
+    zona.replaceChildren(aviso(t("srv_listo_publicar"), "ok"));
+  }
+}
+
 async function bloqueTaskSheet(servicio) {
-  const caja = h("div", { clase: "tarjeta" }, h("h3", {}, t("srv_task_sheet")));
+  const caja = h("div", { clase: "tarjeta" },
+    conAyuda("h3", t("srv_task_sheet"), "ay_srv_hoja"));
   let vista;
   try {
     vista = await api.get(`/task-sheets/servicio/${servicio.id}/vista-previa`);
@@ -1394,14 +2190,26 @@ async function bloqueTaskSheet(servicio) {
     return caja;
   }
 
-  if (vista.faltantes && vista.faltantes.length) {
-    caja.append(aviso(t("srv_falta_publicar"), "alerta"));
-    caja.append(h("ul", { clase: "chico" },
-      ...vista.faltantes.map(x => h("li", {}, x))));
-  } else {
-    caja.append(aviso(t("srv_listo_publicar"), "ok"));
-  }
+  /* Lo que falta para publicar vive en su propia zona y se sabe
+     repintar. Se pide una vez al abrir la pantalla, y desde que asignar
+     un recurso ya no recarga todo --se repinta en su sitio, para no
+     cerrarle el panel al consultor a media tarea-- esta lista se
+     quedaba con la foto de antes: el equipo ya estaba puesto y la hoja
+     seguia diciendo "sin personal asignado". */
+  const zonaFaltantes = h("div", {});
+  pintarFaltantes(zonaFaltantes, vista.faltantes);
+  caja.append(zonaFaltantes);
+  refrescarHoja = async () => {
+    try {
+      const otra = await api.get(
+        `/task-sheets/servicio/${servicio.id}/vista-previa`);
+      pintarFaltantes(zonaFaltantes, otra.faltantes);
+    } catch { /* si no se puede, se queda lo ultimo que se supo */ }
+  };
 
+  if (servicio.tipo === "eventual") {
+    caja.append(bloqueVestimenta(servicio));
+  }
   caja.append(bloqueSenal(servicio, vista));
 
   /* La firma del consultor sobre su propia asignacion: que el sistema
@@ -1480,6 +2288,41 @@ async function abrirHoja(servicio, idioma, imprimir = false) {
     mensaje(err.message, "grave");
   }
 }
+
+/* ------------------------------------------------------ la vestimenta */
+
+/* Como se presenta el equipo. Vive junto a la senal porque las dos son
+   lo mismo: como se ve el equipo cuando el ejecutivo lo encuentra. Se
+   puede cambiar despues del alta --una cena que se vuelve junta de
+   consejo-- y lo que no puede pasar es que el equipo se entere por
+   telefono mientras la hoja dice otra cosa. */
+function bloqueVestimenta(servicio) {
+  const select = h("select", { name: "vestimenta" },
+    h("option", { value: "" }, t("vestimenta_sin")),
+    ...["casual", "semiformal", "formal"].map(
+      v => h("option", { value: v,
+                         selected: servicio.vestimenta === v || undefined },
+             t(`vest_${v}`))));
+
+  const guardar = h("button", { clase: "claro", onclick: async (e) => {
+    e.target.disabled = true;
+    try {
+      await api.put(`/servicios/${servicio.id}/vestimenta`,
+                    { vestimenta: select.value || null });
+      servicio.vestimenta = select.value || null;
+      mensaje(t("srv_vestimenta_guardada"));
+    } catch (err) { mensaje(err.message, "grave"); }
+    e.target.disabled = false;
+  } }, t("srv_guardar_vestimenta"));
+
+  return h("div", { style: "margin-top:16px" },
+    h("h4", {}, t("srv_vestimenta")),
+    h("p", { clase: "gris chico", style: "margin:0 0 10px" },
+      t("srv_vestimenta_pie")),
+    h("div", { clase: "rejilla dos" }, campo(t("vestimenta_campo"), select)),
+    h("div", { clase: "acciones", style: "margin-top:10px" }, guardar));
+}
+
 
 /* ----------------------------------------------------------- la senal */
 
@@ -1567,7 +2410,7 @@ function bloqueSenal(servicio, vista) {
   } }, t("srv_quitar_senal"));
 
   zona.append(
-    h("h4", { clase: "grupo" }, t("srv_senal")),
+    conAyuda("h4", t("srv_senal"), "ay_srv_senal", { clase: "grupo" }),
     h("div", { clase: "chico gris", style: "margin-bottom:8px" },
       t("srv_senal_pie")),
     h("div", { clase: "acciones", style: "margin-bottom:6px" },
@@ -1834,9 +2677,18 @@ async function pintarViaticos(caja, equipo) {
                  : t("srv_solicitar"));
 
   caja.replaceChildren(h("div", { clase: "tarjeta lisa", style: "margin:0 0 14px" },
-    h("h4", { style: "margin:0 0 2px" }, t("srv_viaticos")),
+    conAyuda("h4", t("srv_viaticos"), "ay_srv_viaticos",
+               { style: "margin:0 0 2px" }),
     h("p", { clase: "gris chico", style: "margin:0 0 12px" },
       t("srv_dep_pie")),
+    /* Dinero que salio del banco DESPUES de que se cancelo el deposito.
+       Es lo unico de este panel que no se resuelve solo: hay que
+       aplicarlo o pedirlo de vuelta, y si no se ve, no pasa ninguna de
+       las dos cosas. */
+    Number(datos.total_tras_cancelar) > 0
+      ? aviso(t("srv_dep_tarde").replace(
+          "{m}", dinero(datos.total_tras_cancelar, moneda)), "grave")
+      : "",
     h("table", {},
       h("thead", {}, h("tr", {},
         h("th", {}, t("srv_persona")),
@@ -1935,9 +2787,16 @@ function renglonViatico(p, equipo, moneda, repintar) {
       onclick: async (e) => {
         e.target.disabled = true;
         try {
-          await api.post(`/viaticos/equipos/${equipo.id}/cancelar-solicitud`,
-                         { persona_id: p.persona_id });
-          mensaje(t("srv_sol_cancelada"));
+          const r = await api.post(
+            `/viaticos/equipos/${equipo.id}/cancelar-solicitud`,
+            { persona_id: p.persona_id });
+          /* Lo que ya salio en el barrido esta en manos de finanzas y no
+             se cancela desde aqui: queda pedido. Decirlo es lo que evita
+             que el consultor lo de por cancelado y borre el dia. */
+          mensaje(r && r.pedidos_a_finanzas
+                  ? t("srv_sol_pedida_finanzas")
+                  : t("srv_sol_cancelada"),
+                  r && r.pedidos_a_finanzas ? "alerta" : undefined);
           await repintar();
         } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
       } }, t("srv_cancelar_sol"));
@@ -1953,6 +2812,9 @@ function renglonViatico(p, equipo, moneda, repintar) {
         monto, usar),
       desglose),
     h("td", {}, etiqueta(est.texto, est.tono),
+      Number(p.depositado_tras_cancelar) > 0
+        ? h("div", { clase: "chico rojo" }, t("srv_dep_tarde_corto"))
+        : "",
       Number(p.comprobado) > 0
         ? h("div", { clase: "chico gris" },
             t("srv_comprobado_m").replace("{m}", dinero(p.comprobado, moneda)))
@@ -1978,7 +2840,8 @@ function bloqueCompras(datos, equipo, moneda, repintar) {
 
   const zona = h("div");
   return h("div", { style: "margin-top:18px; border-top:1px solid var(--linea); padding-top:14px" },
-    h("h4", { style: "margin:0 0 2px" }, t("srv_compras")),
+    conAyuda("h4", t("srv_compras"), "ay_srv_compras",
+             { style: "margin:0 0 2px" }),
     h("p", { clase: "gris chico", style: "margin:0 0 12px" },
       t("srv_compras_pie")),
     lista_,
@@ -2114,15 +2977,36 @@ function formularioCompra(equipo, zona, repintar) {
 
 const ANGULOS_ES = {
   frente: t("srv_frente"), atras: t("srv_atras"), izquierdo: t("srv_izquierdo"),
-  derecho: t("srv_derecho"), dano: t("srv_golpe"),
+  derecho: t("srv_derecho"), odometro: t("srv_odometro"), dano: t("srv_golpe"),
 };
+
+/* Los cuatro lados y el tablero, en ese orden. El odómetro va al final
+   porque no es un lado de la camioneta: los cuatro primeros prueban cómo
+   estaba la lata, este prueba el número. Sin él, "recorrió 1,800 km" sale
+   de dos cifras que alguien tecleó, y esa es la cuenta de la que después
+   todos se acuerdan distinto. */
+const ANGULOS_LADO_A_LADO = ["frente", "atras", "izquierdo", "derecho",
+                             "odometro"];
 
 const OCTAVOS_ES = [t("srv_vacio"), "1/8", "1/4", "3/8", "1/2", "5/8", "3/4", "7/8",
                     t("srv_lleno")];
 
+/* Escrito entero a proposito, igual que el mapa de estatus en util.js:
+   una clave armada al vuelo --pegando el tipo al prefijo dentro del
+   propio t()-- no la puede barrer `revisar.py`, y el dia que falte una
+   traduccion sale el codigo crudo en la pantalla sin que nada avise.
+
+   El barrido caza hasta el ejemplo escrito en un comentario, que es
+   como se encontro esto. */
+const DANOS_ES = {
+  rayon: t("srv_dano_rayon"), golpe: t("srv_dano_golpe"),
+  cristal: t("srv_dano_cristal"), llanta: t("srv_dano_llanta"),
+  mecanico: t("srv_dano_mecanico"), otro: t("srv_dano_otro"),
+};
+
 async function bloqueRevisiones(servicio) {
   const caja = h("div", { clase: "tarjeta" },
-    h("h3", {}, t("srv_revision")));
+    conAyuda("h3", t("srv_revision"), "ay_srv_revision"));
   let datos;
   try {
     datos = await api.get(`/servicios/${servicio.id}/revisiones`);
@@ -2150,6 +3034,15 @@ function tarjetaRevision(u, servicio) {
         : u.recibe
           ? h("span", { clase: "pastilla alerta" }, t("srv_en_manos"))
           : h("span", { clase: "pastilla alerta" }, t("srv_sin_revisar"))));
+
+  /* Las dos banderas, arriba y sin abrir nada. Son la pregunta que uno
+     se hace al llegar aqui; tener que desplegar las fotos para saber si
+     hubo un golpe es hacerla al reves. */
+  if (u.dano_nuevo) {
+    bloque.append(aviso(t("srv_volvio_golpeada"), "grave"));
+  } else if (u.ya_venia_danada) {
+    bloque.append(aviso(t("srv_ya_venia_golpeada"), "alerta"));
+  }
 
   if (u.kilometros != null) {
     bloque.append(h("p", { clase: "chico" },
@@ -2212,7 +3105,7 @@ function columnas(entrada, salida) {
 function ladoALado(entrada, salida) {
   const zona = h("div", {});
 
-  const angulos = ["frente", "atras", "izquierdo", "derecho"];
+  const angulos = ANGULOS_LADO_A_LADO;
   const deEntrada = mapaFotos(entrada);
   const deSalida = salida ? mapaFotos(salida) : {};
 
@@ -2222,17 +3115,37 @@ function ladoALado(entrada, salida) {
       salida ? foto(deSalida[a], ANGULOS_ES[a]) : h("div", {})));
   }
 
-  const golpes = [...(entrada.fotos || []), ...(salida ? salida.fotos : [])]
-    .filter(f => f.angulo === "dano");
-  if (golpes.length) {
-    zona.append(h("p", { clase: "chico", style: "margin-top:10px" },
+  /* Cada golpe se queda con su punta. Juntos en una sola tira —como
+     estaban— se podía ver que la camioneta llegó con un rayón y volvió
+     con un cristal roto, y no saber cuál ya venía. Que es exactamente la
+     pregunta que uno se está haciendo al abrir esto. */
+  const deAca = golpesDe(entrada);
+  const deAlla = golpesDe(salida);
+  if (deAca.length || deAlla.length) {
+    zona.append(h("p", { clase: "chico", style: "margin-top:12px" },
       h("b", {}, t("srv_golpes"))));
-    zona.append(h("div", { clase: "tira-fotos" },
-      ...golpes.filter(f => f.imagen)
-        .map(f => h("img", { clase: "mini", src: f.imagen,
-                             alt: f.nota || "golpe" }))));
+    zona.append(h("div", { clase: "rejilla-revision par-foto" },
+      tiraDeGolpes(deAca, t("srv_al_recibirla")),
+      tiraDeGolpes(deAlla, t("srv_al_entregarla"))));
   }
   return zona;
+}
+
+function golpesDe(r) {
+  return ((r && r.fotos) || []).filter(f => f.angulo === "dano" && f.imagen);
+}
+
+function tiraDeGolpes(fotos, titulo) {
+  if (!fotos.length) {
+    return h("div", { clase: "chico gris" },
+      t("srv_sin_golpes").replace("{p}", titulo.toLowerCase()));
+  }
+  return h("div", {},
+    h("div", { clase: "chico gris" }, titulo),
+    h("div", { clase: "tira-fotos" },
+      ...fotos.map(f => h("a", { href: f.imagen, target: "_blank" },
+        h("img", { clase: "mini", src: f.imagen,
+                   alt: f.nota || "golpe" })))));
 }
 
 function mapaFotos(r) {
@@ -2255,7 +3168,22 @@ function columna(titulo, r) {
          ? t("srv_tanque").replace("{n}", OCTAVOS_ES[r.combustible_octavos]) : null,
        r.tiene_firma ? t("srv_firmada") : t("srv_sin_firma"),
       ].filter(Boolean).join(" · ")),
+    declaracion(r),
     r.nota ? h("div", { clase: "chico gris" }, r.nota) : null);
+}
+
+/* La declaración de daño, en la columna de su punta.
+
+   Las dos son cosas distintas y por eso se ven distinto: la de la
+   izquierda —"así me la dieron"— es lo que **protege** a esa persona
+   tres semanas después; la de la derecha —"se dañó conmigo"— es la que
+   abre una pregunta. Pintarlas iguales sería cobrarle a quien se portó
+   bien. */
+function declaracion(r) {
+  if (!r || !r.hubo_dano) return null;
+  return h("div", { clase: "aviso alerta", style: "margin:6px 0" },
+    h("b", {}, DANOS_ES[r.dano_tipo] || r.dano_tipo),
+    r.dano_nota ? h("div", { clase: "chico" }, r.dano_nota) : null);
 }
 
 function foto(f, etiqueta) {

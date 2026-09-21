@@ -145,6 +145,22 @@ def _cobertura(c: dict, t: dict) -> str:
     return f' <span class="gris pequeno">· {" · ".join(partes)}</span>'
 
 
+def _vestimenta(codigo: str | None, t: dict) -> str:
+    """Como va vestido el equipo.
+
+    Va pegado al titulo del equipo de seguridad y no en un apartado
+    propio: es un adjetivo de la gente que ya esta listada ahi abajo, no
+    un tema aparte. Si no hay codigo no dice nada --un servicio sin
+    acuerdo no es un servicio "casual"--.
+    """
+    if not codigo:
+        return ""
+    nombre = (t.get("dress") or {}).get(codigo, codigo)
+    return (f'<div class="vestimenta-linea">'
+            f'<span class="vestimenta">{_esc(t["dress_code"])}: '
+            f'{_esc(nombre)}</span></div>')
+
+
 def _encuentro(c: dict, t: dict) -> str:
     """El arranque del servicio: donde, que dia y a que hora.
 
@@ -208,7 +224,7 @@ def _vuelo(v: dict | None, t: dict) -> str:
             + "".join(partes) + "</div>")
 
 
-def _constantes(c: dict | None, t: dict) -> str:
+def _constantes(c: dict | None, t: dict, vestimenta: str | None = None) -> str:
     """El equipo base del servicio. Los dias que se salen de esto lo indican."""
     if not c:
         return ""
@@ -216,6 +232,7 @@ def _constantes(c: dict | None, t: dict) -> str:
     return f"""
     <section class="fijo">
       <div class="subtitulo">{t["security_team"]}{sufijo_dias}</div>
+      {_vestimenta(vestimenta, t)}
       <div class="rejilla dos">
         <div>
           {''.join(_persona(p, t, len(c['unidades']) > 1) for p in c['personal'])
@@ -461,6 +478,14 @@ def render(contenido: dict, version: int, actualizado: str | None = None,
                color: #78828c; font-weight: 650; margin: 0 0 12px;
                text-align: center; }}
   .subtitulo .pequeno {{ color: #78828c; }}
+  /* La vestimenta: debajo del titulo del equipo y centrada como el,
+     en pastilla, para que se lea de un golpe sin competir con los
+     nombres. */
+  .vestimenta-linea {{ text-align: center; margin: -6px 0 14px; }}
+  .vestimenta {{ display: inline-block; font-size: 10px; font-weight: 650;
+                 text-transform: uppercase; letter-spacing: .6px;
+                 color: #1B1546; background: #eef0f5;
+                 padding: 3px 10px; border-radius: 20px; }}
   .bloque-unidad h4 {{ margin: 0 0 1px; color: var(--centauro); }}
   .foto {{ width: 38px; height: 38px; border-radius: 6px; object-fit: cover;
           flex: 0 0 38px; }}
@@ -640,7 +665,7 @@ def render(contenido: dict, version: int, actualizado: str | None = None,
     </div>
   </header>
   <div class="cuerpo">
-    {_constantes(contenido.get('constantes'), t)}
+    {_constantes(contenido.get('constantes'), t, contenido.get('vestimenta'))}
     <h3 class="titulo-dias">{t["schedule"]}</h3>
     {''.join(_dia(d, t, i == 0)
              for i, d in enumerate(contenido['dias']))}

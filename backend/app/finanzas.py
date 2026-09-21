@@ -174,40 +174,68 @@ def por_comprobar(db: Session, ahora: datetime | None = None) -> dict:
     paises, cajas = _por_pais(db), {}
     nombres = {p.id: p.nombre for p in db.query(m.Persona).all()}
 
+    # Un renglon por persona y servicio, no por dia.
+    #
+    # El deposito es uno solo por persona por todos sus dias, y la
+    # persona lo gasta como cae. Juzgando cada dia por separado, un
+    # gasto cargado en el dia 1 dejaba ese dia fuera de la lista y los
+    # otros dos enteros: finanzas leia una deuda que no existe y salia a
+    # perseguir dinero que ya estaba comprobado.
+    grupos: dict = {}
     for v in viaticos:
         origen = _de_donde(v)
-        entregado = _d(v.monto_total)
-        comprobado = _d(v.monto_comprobado)
-        devuelto = _d(v.monto_devuelto)
+        llave = (v.persona_id, origen["servicio_id"] or f"j{v.jornada_id}")
+        grupo = grupos.get(llave)
+        if grupo is None:
+            grupo = grupos[llave] = {"viaticos": [], "origen": origen}
+        grupo["viaticos"].append(v)
+        # De todo el paso por el servicio se queda el dia mas viejo: es
+        # el que manda el limite y el que abre el renglon.
+        if (origen["fecha"] or "") < (grupo["origen"]["fecha"] or ""):
+            grupo["origen"] = origen
+
+    for grupo in grupos.values():
+        suyos = grupo["viaticos"]
+        origen = grupo["origen"]
+        entregado = sum((_d(v.monto_total) for v in suyos), CERO)
+        comprobado = sum((_d(v.monto_comprobado) for v in suyos), CERO)
+        devuelto = sum((_d(v.monto_devuelto) for v in suyos), CERO)
         pendiente = entregado - comprobado - devuelto
         if pendiente <= CERO:
             continue
 
-        limite = v.limite_comprobacion
+        limites = [v.limite_comprobacion for v in suyos
+                   if v.limite_comprobacion]
+        limite = min(limites) if limites else None
         suyo = relojes.ahora(origen["pais_id"])
         vencido = bool(limite and limite < suyo)
         dias = None
         if limite:
             dias = int((suyo - limite).total_seconds() / 86400)
 
+        primero = min(suyos, key=lambda v: v.jornada.fecha if v.jornada
+                      else date.max)
         caja = _caja(cajas, paises, origen["pais_id"],
                      personas=list, total=CERO, vencido=CERO)
         caja["personas"].append({
-            "viatico_id": v.id,
-            "persona_id": v.persona_id,
-            "persona": nombres.get(v.persona_id),
+            "viatico_id": primero.id,
+            "viaticos": [v.id for v in suyos],
+            "dias": len(suyos),
+            "persona_id": primero.persona_id,
+            "persona": nombres.get(primero.persona_id),
             "entregado": entregado,
             "comprobado": comprobado,
             "devuelto": devuelto,
             "pendiente": pendiente,
-            "moneda": v.moneda.value,
-            "estatus": v.estatus.value,
+            "moneda": primero.moneda.value,
+            "estatus": primero.estatus.value,
             "limite": limite.isoformat() if limite else None,
             "vencido": vencido,
             "dias_vencido": dias if vencido else None,
-            "comprobantes": len(v.comprobantes),
-            "sin_validar": len([c for c in v.comprobantes
-                                if not c.validado and not c.rechazado]),
+            "comprobantes": sum(len(v.comprobantes) for v in suyos),
+            "sin_validar": sum(len([c for c in v.comprobantes
+                                    if not c.validado and not c.rechazado])
+                               for v in suyos),
             **origen,
         })
         caja["total"] += pendiente
@@ -289,8 +317,45 @@ def devoluciones(db: Session) -> dict:
         })
         caja["total_devuelto"] += _d(v.monto_devuelto)
 
+    # Lo que alguien dijo que transfirio y nadie ha visto entrar. Es lo
+    # unico de esta pantalla que pide una accion: mientras siga aqui, ni
+    # el dinero volvio ni la persona quedo libre.
+    pendientes = (db.query(m.DevolucionViatico)
+                  .filter(m.DevolucionViatico.estatus
+                          == m.EstatusDevolucion.DECLARADA).all())
+    for fila in pendientes:
+        v = fila.asignacion
+        origen = _de_donde(v)
+        caja = _caja(cajas, paises, origen["pais_id"],
+                     descuentos=list, devueltos=list, por_confirmar=list,
+                     total_descuento=CERO, total_devuelto=CERO,
+                     total_por_confirmar=CERO)
+        # `_caja` es un setdefault: si este pais ya tenia caja por un
+        # descuento, no trae las llaves nuevas.
+        caja.setdefault("por_confirmar", [])
+        caja.setdefault("total_por_confirmar", CERO)
+        caja["por_confirmar"].append({
+            "devolucion_id": fila.id,
+            "viatico_id": v.id,
+            "persona_id": v.persona_id,
+            "persona": nombres.get(v.persona_id),
+            "monto": _d(fila.monto),
+            "moneda": fila.moneda.value,
+            "referencia": fila.referencia,
+            "tiene_comprobante": bool(fila.comprobante),
+            "declarada_en": (fila.declarada_en.isoformat()
+                             if fila.declarada_en else None),
+            "declarada_por": nombres.get(fila.declarada_por_id),
+            **origen,
+        })
+        caja["total_por_confirmar"] += _d(fila.monto)
+
     for caja in cajas.values():
-        caja["cuantos"] = len(caja["descuentos"]) + len(caja["devueltos"])
+        # Las cajas que nacieron antes de este bloque no traen la llave.
+        caja.setdefault("por_confirmar", [])
+        caja.setdefault("total_por_confirmar", CERO)
+        caja["cuantos"] = (len(caja["descuentos"]) + len(caja["devueltos"])
+                           + len(caja["por_confirmar"]))
 
     return {"paises": sorted(cajas.values(), key=lambda p: p["pais"])}
 

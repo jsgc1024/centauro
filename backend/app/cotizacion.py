@@ -134,7 +134,18 @@ def autorizar(db: Session, cotizacion_id: int, autorizada_por: str) -> m.Cotizac
     cotizacion.estatus = m.EstatusCotizacion.AUTORIZADA
     cotizacion.autorizada_en = datetime.now()
     cotizacion.autorizada_por = autorizada_por
-    cotizacion.servicio.estatus = m.EstatusServicio.AUTORIZADO
+
+    # El estatus del servicio no camina hacia atras.
+    #
+    # Esto lo ponia en `autorizado` mirara donde mirara. Autorizar una
+    # cotizacion tarde --con el servicio ya terminado, que es
+    # exactamente lo que pasa cuando la propuesta se captura despues--
+    # lo regresaba al principio del ciclo: un servicio trabajado y
+    # cerrado volvia a verse como uno que todavia no sale.
+    if cotizacion.servicio.estatus in (m.EstatusServicio.BORRADOR,
+                                       m.EstatusServicio.SOLICITADO,
+                                       m.EstatusServicio.COTIZADO):
+        cotizacion.servicio.estatus = m.EstatusServicio.AUTORIZADO
     db.commit()
     db.refresh(cotizacion)
     return cotizacion

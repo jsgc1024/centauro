@@ -52,7 +52,7 @@ def panorama(db: Session, ahora: datetime | None = None) -> dict:
     ahora = ahora or datetime.now()
     relojes = reloj.Relojes(db, ahora)
 
-    en_curso = _jornadas(db, m.EstatusJornada.EN_CURSO)
+    en_curso = _en_curso_de_verdad(db, _jornadas(db, m.ARRANCADAS), relojes)
     # El equipo guarda plaza_id pero no tiene relacion con Plaza, y el
     # servicio guarda pais_id sin relacion con Pais: los nombres se
     # buscan aparte, una sola vez.
@@ -89,12 +89,40 @@ def panorama(db: Session, ahora: datetime | None = None) -> dict:
 # ==================================================================
 
 def _jornadas(db: Session, estatus) -> list[m.Jornada]:
-    return db.query(m.Jornada).filter(m.Jornada.estatus == estatus).all()
+    """Uno o varios estatus: quien llego al punto y espera al principal
+    esta en la calle igual que quien ya arranco, y esta pantalla es
+    justamente donde no puede desaparecer."""
+    quiere = estatus if isinstance(estatus, (tuple, list)) else [estatus]
+    return db.query(m.Jornada).filter(m.Jornada.estatus.in_(quiere)).all()
 
 
 # ==================================================================
 # Lo que esta corriendo
 # ==================================================================
+
+def _en_curso_de_verdad(db: Session, jornadas: list[m.Jornada],
+                        relojes: reloj.Relojes) -> list[m.Jornada]:
+    """Lo que esta corriendo, no lo que trae EN_CURSO en la base.
+
+    Una jornada de hace tres semanas que nadie cerro sigue con ese
+    estatus para siempre, y esta pantalla la contaba como servicio
+    activo. No es un servicio corriendo: es un dia que quedo abierto, y
+    vive en "Dias sin cerrar", que es la pantalla que tiene el boton
+    para firmarlo. La misma regla que usa el pulso de la central.
+    """
+    from app import operacion
+
+    vivas = []
+    for j in jornadas:
+        suyo = relojes.de_la_jornada(j)
+        ultimo = (db.query(m.Hito).filter_by(jornada_id=j.id)
+                  .order_by(m.Hito.marcado_en.desc()).first())
+        movimiento = ultimo.marcado_en if ultimo else None
+        if operacion.dia_abandonado(j, movimiento, suyo):
+            continue
+        vivas.append(j)
+    return vivas
+
 
 def _ficha(db: Session, j: m.Jornada, relojes: reloj.Relojes,
            plazas: dict[int, str]) -> dict:
@@ -313,7 +341,7 @@ def _dia(db: Session, relojes: reloj.Relojes) -> list[dict]:
                       .filter_by(jornada_id=j.id)
                       .order_by(m.Hito.marcado_en.desc()).first())
             callado = (silencio(ultimo, relojes.de_la_jornada(j))
-                       if j.estatus == m.EstatusJornada.EN_CURSO else None)
+                       if j.estatus in m.ARRANCADAS else None)
             barras.append({
                 "jornada_id": j.id,
                 "servicio_id": j.equipo.servicio_id,
@@ -325,7 +353,7 @@ def _dia(db: Session, relojes: reloj.Relojes) -> list[dict]:
                                    if j.fin_programado else None),
                 "fin_real": j.fin_real.isoformat() if j.fin_real else None,
                 "silencio": (color_del_silencio(callado)
-                             if j.estatus == m.EstatusJornada.EN_CURSO else None),
+                             if j.estatus in m.ARRANCADAS else None),
                 "minutos_callado": callado,
                 "ultima_marca": (ultimo.marcado_en.isoformat()
                                  if ultimo and ultimo.marcado_en else None),
@@ -444,15 +472,35 @@ def _calidad(db: Session, relojes: reloj.Relojes,
             if not existe:
                 sin_entrada += 1
 
+    # Unidades que volvieron con un golpe que no traian, declarado por
+    # quien las traia. Es el aviso al consultor, y no lleva estado: no
+    # hay nada que "cerrar" aqui. Se ve, se entra al servicio y se decide
+    # --clasificar una incidencia, o nada-- que es de personas.
+    con_dano_nuevo = 0
+    if ids:
+        servicios_del_dia = {j.equipo.servicio_id for j in del_dia}
+        con_dano_nuevo = (db.query(m.RevisionUnidad.id)
+                          .filter(m.RevisionUnidad.servicio_id.in_(
+                              servicios_del_dia),
+                              m.RevisionUnidad.tipo == m.TipoRevision.ENTREGA,
+                              m.RevisionUnidad.hubo_dano.is_(True))
+                          .count())
+
+    # Dos tablas guardan el mismo hecho: la vieja del implantado y la del
+    # motor de relevo, donde caen todos los cambios nuevos.
     relevos = 0
     if ids:
-        relevos = (db.query(m.Reemplazo)
-                   .filter(m.Reemplazo.jornada_id.in_(ids)).count())
+        relevos = ((db.query(m.Reemplazo)
+                    .filter(m.Reemplazo.jornada_id.in_(ids)).count())
+                   + (db.query(m.ReemplazoRecurso)
+                      .filter(m.ReemplazoRecurso.desde_jornada_id.in_(ids))
+                      .count()))
 
     return {
         "intentos_fuera_de_geocerca": intentos,
         "marcas_por_validar": por_validar,
         "unidades_sin_revision_de_entrada": sin_entrada,
+        "unidades_con_dano_nuevo": con_dano_nuevo,
         "relevos_hoy": relevos,
     }
 

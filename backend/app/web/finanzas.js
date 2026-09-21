@@ -16,7 +16,8 @@
    dias: confirmar cinco veces al mismo agente es como se paga dos veces
    la misma cosa. */
 import { api } from "./api.js";
-import { aviso, campo, dinero, entrada, estatus, etiqueta, fecha, h, mensaje, reducirImagen } from "./util.js";
+import { aviso, campo, conAyuda, dinero, entrada, estatus, etiqueta, fecha,
+         h, mensaje, reducirImagen } from "./util.js";
 import { t } from "./idioma.js";
 
 const TIPOS = { vuelo: t("fin_tipo_vuelo"), hospedaje: t("fin_tipo_hospedaje"),
@@ -81,7 +82,7 @@ async function pintarCorte(zona) {
   catch { return; }
   if (!datos.paises.length) return;
 
-  zona.replaceChildren(...datos.paises.map(p => h("div", {
+  zona.replaceChildren(...[...datos.paises.map(p => h("div", {
     clase: "tarjeta", style: "margin-bottom:14px",
   },
     h("div", { clase: "cabeza-pais" },
@@ -95,7 +96,7 @@ async function pintarCorte(zona) {
              Number(p.vencido) > 0
                ? t("fin_vencido_pie").replace("{m}", dinero(p.vencido, p.moneda)) : null,
              Number(p.vencido) > 0),
-      numero(t("fin_compras_abiertas"), String(p.compras_abiertas))))));
+      numero(t("fin_compras_abiertas"), String(p.compras_abiertas)))))].filter(Boolean));
 }
 
 function numero(titulo, valor, nota = null, alarma = false) {
@@ -146,7 +147,8 @@ async function pintarPorPagar(zona) {
 
 function bloqueDepositos(filas, moneda, repintar) {
   const caja = h("div", { clase: "tarjeta" },
-    h("h3", { style: "margin:0 0 2px" }, t("fin_depositos").replace("{n}", filas.length)),
+    conAyuda("h3", t("fin_depositos").replace("{n}", filas.length),
+               "ay_fin_depositos", { style: "margin:0 0 2px" }),
     h("p", { clase: "gris chico", style: "margin:0 0 12px" },
       t("fin_depositos_pie")));
 
@@ -178,7 +180,11 @@ function renglonDeposito(f, moneda, repintar) {
   const cabeza = h("div", {
     style: "display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start" },
     h("div", {},
-      h("div", {}, abrir, " ", h("b", {}, f.persona)),
+      /* El mes, cuando el renglon es de un implantado: dos meses del
+         mismo agente son dos depositos distintos y tienen que leerse
+         asi. */
+      h("div", {}, abrir, " ", h("b", {}, f.persona),
+        f.periodo ? h("span", { clase: "etiqueta" }, f.periodo) : null),
       h("div", { clase: "chico gris", style: "margin-left:34px" },
         h("a", { href: `#/servicio/${f.servicio_id}` }, f.folio || "\u2014"),
         " \u00b7 ",
@@ -204,8 +210,30 @@ function renglonDeposito(f, moneda, repintar) {
       formulario.replaceChildren(ventanaDeposito(f, moneda, repintar));
     } }, t("fin_depositar")));
 
+  /* El consultor quiere echarse para atras este deposito. No lo cancelo
+     el: el unico que sabe si el dinero ya salio del banco es quien lo
+     manda. Si todavia no sale, se cierra aqui; si ya salio, se deposita
+     normal y el sistema lo marca como llegado tarde. */
+  if (f.cancelacion_pedida) {
+    acciones.append(h("button", { clase: "claro chico", type: "button",
+      onclick: async (e) => {
+        if (!confirm(t("fin_cancelar_confirmar"))) return;
+        e.target.disabled = true;
+        try {
+          await api.post("/viaticos/finanzas/transferencias/cancelar"
+            + `?equipo_id=${f.equipo_id}&persona_id=${f.persona_id}`);
+          mensaje(t("fin_cancelada"));
+          await repintar();
+        } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
+      } }, t("fin_cancelar_pedida")));
+  }
+
   return h("div", { clase: "tarjeta lisa", style: "margin:0 0 10px" },
-    cabeza, cuentaBancaria(f), zona, acciones, formulario);
+    cabeza,
+    f.cancelacion_pedida
+      ? aviso(t("fin_pidieron_cancelar"), "alerta")
+      : "",
+    cuentaBancaria(f), zona, acciones, formulario);
 }
 
 /* A donde se deposita. Viene de Odoo; mientras esa conexion no exista
@@ -286,6 +314,9 @@ function ventanaDeposito(f, moneda, repintar) {
         const imagen = await reducirImagen(archivo.files[0]);
         await api.formulario("/viaticos/finanzas/depositar", {
           equipo_id: f.equipo_id, persona_id: f.persona_id,
+          // El mes, cuando el renglon es de un implantado: ese deposito
+          // es de ese mes y de ningun otro.
+          ...(f.anio && f.mes ? { anio: f.anio, mes: f.mes } : {}),
           referencia: referencia.value.trim(), archivo: imagen,
         });
         mensaje(t("fin_confirmado").replace("{p}", f.persona));
@@ -312,7 +343,8 @@ function ventanaDeposito(f, moneda, repintar) {
 
 function bloqueCompras(compras, repintar) {
   const caja = h("div", { clase: "tarjeta" },
-    h("h3", { style: "margin:0 0 2px" }, t("fin_compras").replace("{n}", compras.length)),
+    conAyuda("h3", t("fin_compras").replace("{n}", compras.length),
+               "ay_fin_compras", { style: "margin:0 0 2px" }),
     h("p", { clase: "gris chico", style: "margin:0 0 12px" },
       t("fin_compras_pie")));
 
@@ -463,7 +495,8 @@ function bloqueRentas(rentas, moneda, repintar) {
       } }, t("fin_ya_cancele")))));
 
   return h("div", { clase: "tarjeta" },
-    h("h3", { style: "margin:0 0 2px" }, t("fin_rentas").replace("{n}", rentas.length)),
+    conAyuda("h3", t("fin_rentas").replace("{n}", rentas.length),
+               "ay_fin_rentas", { style: "margin:0 0 2px" }),
     h("p", { clase: "gris chico", style: "margin:0 0 12px" },
       t("fin_rentas_pie")),
     h("table", {},
@@ -504,7 +537,7 @@ async function pintarDepositado(zona) {
       return lista.replaceChildren(h("div", { clase: "vacio" },
         t("fin_sin_depositos")));
     }
-    lista.replaceChildren(...datos.paises.map(p_ => h("section", {},
+    lista.replaceChildren(...[...datos.paises.map(p_ => h("section", {},
       h("div", { clase: "cabeza-pais" },
         h("h2", { style: "margin:0" }, p_.pais),
         h("span", { clase: "etiqueta" }, p_.moneda || p_.codigo),
@@ -549,7 +582,7 @@ async function pintarDepositado(zona) {
                          href: `/viaticos/depositos/${d.deposito_id}/comprobante` },
                   t("fin_ver_comprobante"))
               : h("span", { clase: "chico", style: "color:#b8860b" },
-                  t("fin_sin_comprobante")))))))))));
+                  t("fin_sin_comprobante"))))))))))].filter(Boolean));
   };
 
   zona.replaceChildren(
@@ -590,7 +623,7 @@ async function pintarPorComprobar(zona) {
       h("span", { clase: "gris" }, t("fin_sin_afuera"))));
   }
 
-  zona.replaceChildren(...datos.paises.map(p => h("section", {},
+  zona.replaceChildren(...[...datos.paises.map(p => h("section", {},
     h("div", { clase: "cabeza-pais" },
       h("h2", { style: "margin:0" }, p.pais),
       h("span", { clase: "etiqueta" }, p.moneda || p.codigo),
@@ -629,7 +662,7 @@ async function pintarPorComprobar(zona) {
             x.vencido
               ? etiqueta(t("fin_vencido_dias").replace("{n}", x.dias_vencido), "grave")
               : h("span", { clase: "chico gris" },
-                  x.limite ? fecha(x.limite) : t("fin_sin_limite")))))))))));
+                  x.limite ? fecha(x.limite) : t("fin_sin_limite"))))))))))].filter(Boolean));
 }
 
 /* ---------------------------------------------------- devoluciones
@@ -637,6 +670,57 @@ async function pintarPorComprobar(zona) {
    Dos caminos que terminan en lo mismo: dinero de vuelta. El servicio
    que se cancelo con el deposito ya hecho, y el viatico que se cerro
    mandando a descuento lo que nadie comprobo. */
+
+/* Un renglon de lo que esta esperando confirmacion.
+
+   Se confirma o se rechaza, y el rechazo pide motivo: una devolucion
+   rechazada sin motivo deja a la persona sin saber que arreglar --y le
+   llega un aviso al telefono diciendolo, porque si no, lo que ve un mes
+   despues es que sigue debiendo y no sabe por que--. */
+function filaPorConfirmar(zona, x, pais) {
+  const motivo = entrada("motivo", {
+    placeholder: t("fin_motivo_rechazo"),
+    clase: "chico", style: "margin-top:6px;width:100%",
+  });
+
+  async function confirmar(e) {
+    e.target.disabled = true;
+    try {
+      await api.post(`/viaticos/devoluciones/${x.devolucion_id}/confirmar`, {});
+      await pintarDevoluciones(zona);
+    } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
+  }
+
+  async function rechazar(e) {
+    if (motivo.value.trim().length < 5) {
+      return mensaje(t("fin_falta_motivo"), "alerta");
+    }
+    e.target.disabled = true;
+    try {
+      await api.post(`/viaticos/devoluciones/${x.devolucion_id}/rechazar`,
+                     { motivo: motivo.value });
+      await pintarDevoluciones(zona);
+    } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
+  }
+
+  return h("tr", {},
+    h("td", {}, h("b", {}, x.persona),
+      h("div", { clase: "chico gris" },
+        [x.referencia || t("fin_sin_referencia"),
+         x.tiene_comprobante ? null : t("fin_sin_comprobante")]
+          .filter(Boolean).join(" · "))),
+    h("td", {}, h("a", { href: rutaServicio(x) }, x.folio || "—")),
+    h("td", { clase: "num", style: "text-align:right" },
+      dinero(x.monto, x.moneda || pais.moneda)),
+    h("td", {},
+      h("div", { clase: "acciones" },
+        h("button", { clase: "chico", onclick: (e) => confirmar(e) },
+          t("fin_confirmar_devolucion")),
+        h("button", { clase: "claro chico", onclick: (e) => rechazar(e) },
+          t("fin_rechazar"))),
+      motivo));
+}
+
 
 async function pintarDevoluciones(zona) {
   zona.replaceChildren(h("div", { clase: "gris chico" }, t("fin_cargando")));
@@ -649,15 +733,31 @@ async function pintarDevoluciones(zona) {
       h("span", { clase: "gris" }, t("fin_nada_regresar"))));
   }
 
-  zona.replaceChildren(...datos.paises.map(p => h("section", {},
+  zona.replaceChildren(...[...datos.paises.map(p => h("section", {},
     h("div", { clase: "cabeza-pais" },
       h("h2", { style: "margin:0" }, p.pais),
       h("span", { clase: "etiqueta" }, p.moneda || p.codigo)),
 
-    p.devueltos.length
+    /* Lo unico de esta pantalla que pide una accion. Va primero: el
+       resto es memoria de dinero que ya se movio; esto es dinero que
+       alguien dice que mando y nadie ha visto entrar. Mientras siga
+       aqui, ni volvio ni la persona quedo libre. */
+    (p.por_confirmar || []).length
       ? h("div", { clase: "tarjeta" },
           h("h3", { style: "margin:0 0 2px" },
-            t("fin_devuelto").replace("{n}", p.devueltos.length)),
+            t("fin_por_confirmar").replace("{n}", p.por_confirmar.length)),
+          h("p", { clase: "gris chico", style: "margin:0 0 12px" },
+            t("fin_por_confirmar_pie")
+              .replace("{m}", dinero(p.total_por_confirmar, p.moneda))),
+          h("table", {},
+            h("tbody", {}, ...p.por_confirmar.map(x =>
+              filaPorConfirmar(zona, x, p)))))
+      : null,
+
+    p.devueltos.length
+      ? h("div", { clase: "tarjeta" },
+          conAyuda("h3", t("fin_devuelto").replace("{n}", p.devueltos.length),
+                     "ay_fin_devuelto", { style: "margin:0 0 2px" }),
           h("p", { clase: "gris chico", style: "margin:0 0 12px" },
             t("fin_total").replace("{m}", dinero(p.total_devuelto, p.moneda))),
           h("table", {},
@@ -671,8 +771,8 @@ async function pintarDevoluciones(zona) {
 
     p.descuentos.length
       ? h("div", { clase: "tarjeta" },
-          h("h3", { style: "margin:0 0 2px" },
-            t("fin_descuento").replace("{n}", p.descuentos.length)),
+          conAyuda("h3", t("fin_descuento").replace("{n}", p.descuentos.length),
+                     "ay_fin_descuento", { style: "margin:0 0 2px" }),
           /* Este dinero no vuelve como efectivo: se descuenta en
              nomina, que es otra pantalla. Aqui se ve para que finanzas
              no lo siga esperando en la caja. */
@@ -689,5 +789,5 @@ async function pintarDevoluciones(zona) {
                 dinero(x.monto, x.moneda)),
               h("td", { clase: "chico gris" },
                 x.cerrado_por ? t("fin_cerro").replace("{p}", x.cerrado_por) : ""))))))
-      : null)));
+      : null))].filter(Boolean));
 }

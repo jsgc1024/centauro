@@ -20,10 +20,9 @@ from app.db import get_db
 
 router = APIRouter(tags=["Task sheet"])
 
-PLANEACION = auth.requiere(m.Rol.CONSULTOR, m.Rol.CENTRAL,
-                           m.Rol.DIRECTOR_OPERACIONES)
-LECTURA = auth.requiere(m.Rol.CONSULTOR, m.Rol.CENTRAL, m.Rol.FINANZAS,
-                        m.Rol.DIRECTOR_OPERACIONES)
+ARMAR = auth.puede("tasksheet.armar")
+PUBLICAR = auth.puede("tasksheet.publicar")
+LECTURA = auth.puede("tasksheet.ver")
 
 
 def _servicio(db: Session, servicio_id: int) -> m.Servicio:
@@ -39,7 +38,7 @@ def _servicio(db: Session, servicio_id: int) -> m.Servicio:
             summary="Cargar la agenda del dia")
 def cargar_agenda(jornada_id: int, datos: s.AgendaIn,
                   db: Session = Depends(get_db),
-                  usuario: m.Usuario = Depends(PLANEACION)):
+                  usuario: m.Usuario = Depends(ARMAR)):
     """La carga el consultor o el agente de la central, segun la modalidad."""
     jornada = db.get(m.Jornada, jornada_id)
     if not jornada:
@@ -66,7 +65,7 @@ def cargar_agenda(jornada_id: int, datos: s.AgendaIn,
 @router.post("/hospedajes", status_code=201,
              summary="Registrar donde se hospeda el ejecutivo")
 def crear_hospedaje(datos: s.HospedajeIn, db: Session = Depends(get_db),
-                    usuario: m.Usuario = Depends(PLANEACION)):
+                    usuario: m.Usuario = Depends(ARMAR)):
     """Uno por equipo. Volver a mandarlo corrige el que ya hay en vez de
     agregar otro: dos hoteles en la hoja dejan la duda de a cual llegar,
     que es justo lo que la hoja tiene que resolver."""
@@ -150,7 +149,7 @@ def crear_hospedaje(datos: s.HospedajeIn, db: Session = Depends(get_db),
 @router.delete("/hospedajes/equipo/{equipo_id}",
                summary="Quitar el hotel del equipo")
 def quitar_hospedaje(equipo_id: int, db: Session = Depends(get_db),
-                     usuario: m.Usuario = Depends(PLANEACION)):
+                     usuario: m.Usuario = Depends(ARMAR)):
     """Se lleva lo mismo que la hoja esta mostrando.
 
     Hay servicios de antes de la regla con sus estancias colgadas del
@@ -214,14 +213,14 @@ def _equipo_unico(db: Session, servicio_id: int) -> m.Equipo:
 @router.get("/task-sheets/equipo/{equipo_id}/vista-previa",
             summary="Como quedaria el task sheet de ese equipo")
 def vista_previa(equipo_id: int, db: Session = Depends(get_db),
-                 _=Depends(PLANEACION)):
+                 _=Depends(PUBLICAR)):
     return motor.armar(db, equipo_id)
 
 
 @router.get("/task-sheets/servicio/{servicio_id}/vista-previa",
             summary="Vista previa cuando el servicio trae un solo equipo")
 def vista_previa_servicio(servicio_id: int, db: Session = Depends(get_db),
-                          _=Depends(PLANEACION)):
+                          _=Depends(PUBLICAR)):
     return motor.armar(db, _equipo_unico(db, servicio_id).id)
 
 
@@ -229,29 +228,34 @@ def vista_previa_servicio(servicio_id: int, db: Session = Depends(get_db),
              summary="Publicar el task sheet de un equipo")
 def publicar(equipo_id: int, datos: s.PublicarTaskSheetIn,
              db: Session = Depends(get_db),
-             usuario: m.Usuario = Depends(PLANEACION)):
+             usuario: m.Usuario = Depends(PUBLICAR)):
     ficha = motor.publicar(db, equipo_id, usuario.persona_id,
-                           datos.motivo, datos.forzar)
+                           datos.motivo, datos.forzar, avisar=datos.avisar)
     auditoria.registrar(db, usuario, ficha.servicio, "publicar task sheet",
                         f"{ficha.equipo.alias} version {ficha.version}")
     db.commit()
     return {"task_sheet_id": ficha.id, "equipo": ficha.equipo.alias,
             "version": ficha.version,
             "publicado_en": ficha.publicado_en.isoformat(),
-            "compartido_con": ["solicitante", "ejecutivo"]}
+            "aviso": datos.avisar,
+            # Se dice a quien se le mando, y cuando no se mando se dice
+            # vacio: la pantalla tiene que poder decir "publicado, sin
+            # aviso" en vez de dejar creer que el cliente ya se entero.
+            "compartido_con": (["solicitante", "ejecutivo"]
+                               if datos.avisar else [])}
 
 
 @router.post("/task-sheets/servicio/{servicio_id}/publicar",
              summary="Publicar el task sheet de cada equipo del servicio")
 def publicar_servicio(servicio_id: int, datos: s.PublicarTaskSheetIn,
                       db: Session = Depends(get_db),
-                      usuario: m.Usuario = Depends(PLANEACION)):
+                      usuario: m.Usuario = Depends(PUBLICAR)):
     """Casi siempre el servicio trae un equipo; si trae varios, se publica
     uno por equipo."""
     publicados = []
     for equipo in motor.equipos_de(db, servicio_id):
         ficha = motor.publicar(db, equipo.id, usuario.persona_id,
-                               datos.motivo, datos.forzar)
+                               datos.motivo, datos.forzar, avisar=datos.avisar)
         auditoria.registrar(db, usuario, ficha.servicio, "publicar task sheet",
                             f"{equipo.alias} version {ficha.version}")
         publicados.append({"task_sheet_id": ficha.id, "equipo_id": equipo.id,
@@ -259,8 +263,12 @@ def publicar_servicio(servicio_id: int, datos: s.PublicarTaskSheetIn,
                            "publicado_en": ficha.publicado_en.isoformat()})
     db.commit()
     if len(publicados) == 1:
-        return {**publicados[0], "compartido_con": ["solicitante", "ejecutivo"]}
-    return {"equipos": publicados, "compartido_con": ["solicitante", "ejecutivo"]}
+        return {**publicados[0], "aviso": datos.avisar,
+                "compartido_con": (["solicitante", "ejecutivo"]
+                                   if datos.avisar else [])}
+    return {"equipos": publicados, "aviso": datos.avisar,
+            "compartido_con": (["solicitante", "ejecutivo"]
+                               if datos.avisar else [])}
 
 
 def _puede_ver(db: Session, usuario: m.Usuario, equipo: m.Equipo) -> None:
@@ -306,7 +314,7 @@ def vigente_servicio(servicio_id: int, db: Session = Depends(get_db),
             response_class=HTMLResponse,
             summary="La hoja del implantado: el acuerdo y el equipo de planta")
 def hoja_implantado(servicio_id: int, idioma: str | None = None,
-                    db: Session = Depends(get_db), _=Depends(PLANEACION)):
+                    db: Session = Depends(get_db), _=Depends(PUBLICAR)):
     contenido = hoja_imp.armar(db, servicio_id)
     acuerdo = (db.query(m.AcuerdoImplantado)
                .filter_by(servicio_id=servicio_id).first())
@@ -322,7 +330,7 @@ def hoja_implantado(servicio_id: int, idioma: str | None = None,
             response_class=HTMLResponse,
             summary="La hoja de un dia que cubre alguien mas")
 def hoja_cobertura(servicio_id: int, fecha: date, idioma: str | None = None,
-                   db: Session = Depends(get_db), _=Depends(PLANEACION)):
+                   db: Session = Depends(get_db), _=Depends(PUBLICAR)):
     """El sabado que pidio el cliente, o el dia que cubrio un relevo.
 
     Misma hoja, con la banda de cobertura y quien va ese dia. Un fin de
@@ -336,7 +344,7 @@ def hoja_cobertura(servicio_id: int, fecha: date, idioma: str | None = None,
 @router.post("/task-sheets/implantado/{servicio_id}/liberar",
              summary="Liberar la hoja del implantado")
 def liberar_implantado(servicio_id: int, db: Session = Depends(get_db),
-                       usuario: m.Usuario = Depends(PLANEACION)):
+                       usuario: m.Usuario = Depends(PUBLICAR)):
     """Liberar la hoja es decir que el servicio ya esta armado.
 
     Se arma antes de liberarla, no al reves: si la hoja no se puede
@@ -470,7 +478,7 @@ LIMITE_IMAGEN = imagenes.LIMITE
             summary="Senal con la que el ejecutivo identifica al equipo")
 def definir_senal(servicio_id: int, datos: s.SenalIn,
                   db: Session = Depends(get_db),
-                  usuario: m.Usuario = Depends(PLANEACION)):
+                  usuario: m.Usuario = Depends(ARMAR)):
     """Una palabra, una imagen o ambas. Se imprime en una hoja aparte para
     que el equipo la muestre al salir el ejecutivo del filtro o en el lobby."""
     servicio = _servicio(db, servicio_id)
@@ -494,7 +502,7 @@ def definir_senal(servicio_id: int, datos: s.SenalIn,
              summary="Subir la imagen de la senal")
 async def subir_senal(servicio_id: int, archivo: UploadFile = File(...),
                       db: Session = Depends(get_db),
-                      usuario: m.Usuario = Depends(PLANEACION)):
+                      usuario: m.Usuario = Depends(ARMAR)):
     """La imagen se guarda dentro del documento, no como enlace, para que la
     hoja se pueda imprimir o mandar sin depender de internet."""
     servicio = _servicio(db, servicio_id)
@@ -544,7 +552,7 @@ def ver_paradas(jornada_id: int, db: Session = Depends(get_db),
              summary="Agregar una parada al dia")
 def agregar_parada(jornada_id: int, datos: s.ParadaIn,
                    db: Session = Depends(get_db),
-                   usuario: m.Usuario = Depends(PLANEACION)):
+                   usuario: m.Usuario = Depends(ARMAR)):
     jornada = _jornada(db, jornada_id)
     parada = m.ParadaAgenda(jornada_id=jornada_id, **datos.model_dump())
     db.add(parada)
@@ -560,7 +568,7 @@ def agregar_parada(jornada_id: int, datos: s.ParadaIn,
               summary="Corregir una parada")
 def corregir_parada(parada_id: int, datos: s.ParadaEdicion,
                     db: Session = Depends(get_db),
-                    usuario: m.Usuario = Depends(PLANEACION)):
+                    usuario: m.Usuario = Depends(ARMAR)):
     parada = db.get(m.ParadaAgenda, parada_id)
     if not parada:
         raise HTTPException(404, f"No existe la parada {parada_id}")
@@ -580,7 +588,7 @@ def corregir_parada(parada_id: int, datos: s.ParadaEdicion,
 @router.delete("/operacion/paradas/{parada_id}", status_code=204,
                summary="Quitar una parada")
 def quitar_parada(parada_id: int, db: Session = Depends(get_db),
-                  usuario: m.Usuario = Depends(PLANEACION)):
+                  usuario: m.Usuario = Depends(ARMAR)):
     parada = db.get(m.ParadaAgenda, parada_id)
     if not parada:
         raise HTTPException(404, f"No existe la parada {parada_id}")
@@ -596,7 +604,7 @@ def quitar_parada(parada_id: int, db: Session = Depends(get_db),
 @router.delete("/servicios/{servicio_id}/senal", status_code=204,
                summary="Quitar la senal")
 def quitar_senal(servicio_id: int, db: Session = Depends(get_db),
-                 usuario: m.Usuario = Depends(PLANEACION)):
+                 usuario: m.Usuario = Depends(ARMAR)):
     servicio = _servicio(db, servicio_id)
     servicio.senal_texto = servicio.senal_imagen = servicio.senal_nota = None
     auditoria.registrar(db, usuario, servicio, "quitar senal", None)

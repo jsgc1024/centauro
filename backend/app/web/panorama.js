@@ -9,7 +9,7 @@
    motor —el mismo numero que usa la central— y esta pantalla solo lo
    pinta. */
 import { api } from "./api.js";
-import { aviso, dinero, etiqueta, fecha, h, hora } from "./util.js";
+import { aviso, conAyuda, dinero, etiqueta, fecha, h, hora } from "./util.js";
 import { t } from "./idioma.js";
 
 const REFRESCO_SEGUNDOS = 60;
@@ -52,7 +52,7 @@ function estado(p) {
 
   caja.append(h("div", { clase: "estado_fila" },
     h("h3", { style: "margin:0" },
-      h("span", { clase: "punto " + e.nivel }), " ", tituloDelEstado(e)),
+      h("span", { clase: "luz " + e.nivel }), " ", tituloDelEstado(e)),
     h("span", { clase: "gris chico" }, fecha(p.momento) + " · " + hora(p.momento))));
 
   caja.append(h("div", { clase: "estado_conteo" }, ...conteo(p.en_la_calle)));
@@ -93,7 +93,7 @@ function conteo(c) {
 }
 
 function renglonAtender(c) {
-  const linea = h("div", { clase: "atender " + c.nivel });
+  const linea = h("div", { clase: "renglon_atender " + c.nivel });
   linea.append(h("div", {}, h("b", {}, textoAtender(c))));
   const pie = detalleAtender(c);
   if (pie) linea.append(h("div", { clase: "chico gris" }, pie));
@@ -185,7 +185,7 @@ function enLaCalle(p) {
         : etiqueta(t("pan_todos_ok"), "ok"))));
   }
   return h("div", { clase: "tarjeta paises" },
-    h("h3", {}, t("pan_por_pais")),
+    conAyuda("h3", t("pan_por_pais"), "ay_pan_paises"),
     h("table", {}, h("thead", {}, h("tr", {},
       h("th", {}, t("pais")), h("th", {}, t("hora")),
       h("th", {}, t("pan_col_personas")),
@@ -229,7 +229,7 @@ function diaDelPais(tira) {
     const ini = min(b.inicio);
     const fin = min(b.fin_programado || b.inicio);
     const barra = h("div", {
-      clase: "barra " + b.estatus + (b.silencio ? " s_" + b.silencio : ""),
+      clase: "tramo " + b.estatus + (b.silencio ? " s_" + b.silencio : ""),
       style: `left:${sitio(ini)}%;width:${Math.max(sitio(fin) - sitio(ini), 1)}%`,
       title: `${b.servicio} · ${hora(b.inicio)}—${hora(b.fin_programado || b.inicio)}`,
     });
@@ -267,7 +267,8 @@ function diaDelPais(tira) {
   }
 
   return h("div", { clase: "tarjeta" },
-    h("h3", {}, `${t("pan_hoy")} · ${tira.pais} ${hora(tira.ahora)}`),
+    conAyuda("h3", `${t("pan_hoy")} · ${tira.pais} ${hora(tira.ahora)}`,
+             "ay_pan_hoy"),
     filas, marcas);
 }
 
@@ -304,11 +305,12 @@ function dineroBloque(d) {
     c.vencidos ? "rojo" : ""));
 
   const caja = h("div", { clase: "tarjeta" },
-    h("h3", {}, t("pan_dinero")), h("table", {}, cuerpo));
+    conAyuda("h3", t("pan_dinero"), "ay_pan_dinero"),
+    h("table", {}, cuerpo));
 
   if (c.devueltos.length) {
     caja.append(h("div", { style: "margin-top:12px" },
-      h("h4", {}, t("pan_regresados")),
+      conAyuda("h4", t("pan_regresados"), "ay_pan_regresados"),
       h("ul", { clase: "chico", style: "margin:0;padding-left:18px" },
         ...c.devueltos.map(x =>
           h("li", {}, `${x.servicio}: ${x.motivo || t("pan_sin_motivo")}`)))));
@@ -333,7 +335,7 @@ function calidad(c) {
       h("td", {}, titulo),
       h("td", { clase: "num" }, h("b", {}, valor)),
       h("td", {}, abre
-        ? h("button", { clase: "chico claro", type: "button",
+        ? h("button", { clase: "chico claro ver_marcas", type: "button",
                         onclick: (e) => verMarcas(e) }, t("pan_ver_marcas"))
         : "")));
   };
@@ -343,20 +345,38 @@ function calidad(c) {
   renglon(t("pan_relevos_hoy"), c.relevos_hoy, false);
 
   return h("div", { clase: "tarjeta" },
-    h("h3", {}, t("pan_calidad")),
+    conAyuda("h3", t("pan_calidad"), "ay_pan_calidad"),
     h("p", { clase: "sub" }, t("pan_calidad_sub")),
     h("table", {}, cuerpo));
 }
 
+/* El boton abre y cierra. Antes solo abria: la lista se quedaba
+   pegada abajo de la tarjeta y volver a picarle la recargaba igual, asi
+   que la unica manera de quitarla de la pantalla era recargar la
+   pagina. Con dieciseis marcas eso es media pantalla que ya no se
+   puede tapar. */
+
+function cerrarMarcas(caja) {
+  const abierta = caja.querySelector(".detalle_marcas");
+  if (abierta) abierta.remove();
+  for (const b of caja.querySelectorAll("button.ver_marcas")) {
+    b.textContent = t("pan_ver_marcas");
+    b.dataset.abierto = "";
+  }
+}
+
 async function verMarcas(e) {
   const boton = e.target;
-  boton.disabled = true;
   const caja = boton.closest(".tarjeta");
-  const vieja = caja.querySelector(".detalle_marcas");
-  if (vieja) vieja.remove();
+  const estaba = boton.dataset.abierto === "1";
+  cerrarMarcas(caja);
+  if (estaba) return;
+  boton.disabled = true;
   try {
     const d = await api.get("/panorama/marcas");
     caja.append(listaMarcas(d));
+    boton.textContent = t("pan_ocultar_marcas");
+    boton.dataset.abierto = "1";
   } catch (err) {
     caja.append(h("div", { clase: "detalle_marcas" }, aviso(err.message, "grave")));
   }

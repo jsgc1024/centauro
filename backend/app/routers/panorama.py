@@ -5,14 +5,12 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app import auth
-from app import models as m
 from app import panorama as motor
 from app.db import get_db
 
 router = APIRouter(tags=["Panorama"])
 
-LECTURA = auth.requiere(m.Rol.DIRECTOR_GENERAL, m.Rol.DIRECTOR_OPERACIONES,
-                        m.Rol.CONSULTOR, m.Rol.CENTRAL, m.Rol.FINANZAS)
+LECTURA = auth.puede("panorama.ver")
 
 
 @router.get("/panorama", summary="Todo lo que esta pasando ahora")

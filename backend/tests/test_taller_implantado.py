@@ -44,8 +44,21 @@ def test_la_unidad_sale_de_circulacion_y_otra_la_cubre(cliente, sesion, datos):
 
     # El bloqueo se ve, y la unidad que entra ya va en los dias.
     filas = cliente.get(f"/implantados/{servicio_id}/taller", headers=h).json()
-    assert any(f["placa"] == datos["suburban"]["placa"] and f["hoy_fuera"]
-               for f in filas), filas
+    fila = next((f for f in filas
+                 if f["placa"] == datos["suburban"]["placa"]), None)
+    assert fila, filas
+    assert fila["desde"] == desde.isoformat()
+    # `hoy_fuera` dice si el bloqueo ya corre HOY, no si existe. Y el
+    # bloqueo empieza el primer dia habil, porque el implantado no tiene
+    # jornadas el fin de semana y un cambio que no mueve ningun dia no
+    # sirve de nada.
+    #
+    # Asi que en sabado o domingo `desde` cae en lunes y todavia no
+    # empezo. Preguntarlo a secas hacia que esta prueba pasara de lunes a
+    # viernes y fallara el fin de semana --paso el sabado 19 de
+    # septiembre-- que es la peor clase de prueba: la que no falla por lo
+    # que cambiaste sino por el dia en que la corriste.
+    assert fila["hoy_fuera"] is (desde <= hoy), (desde, hoy, fila)
 
     panel = cliente.get(f"/implantados/{servicio_id}/mes/{desde.year}/"
                         f"{desde.month}", headers=h).json()

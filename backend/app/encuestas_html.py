@@ -6,8 +6,8 @@ orden de arriba hacia abajo sin adornos.
 """
 import html
 
+from app.correo_html import marca as marca_de_la_casa
 from app.encuestas import _textos
-from app.marca import logo_incrustado
 
 CENTAURO = "#1B1546"
 SUAVE = "#f0f3f5"
@@ -17,32 +17,32 @@ def _esc(valor) -> str:
     return html.escape(str(valor)) if valor not in (None, "") else ""
 
 
-LINEA = "AI/EP"
-
-
 def _marca(alto: int) -> str:
-    """El logo con la linea de operacion debajo: este correo es de
-    Proteccion Ejecutiva, igual que el folio del servicio."""
-    if logo_incrustado():
-        arriba = (f'<img src="{logo_incrustado()}" alt="Centauro" '
-                  f'style="height:{alto}px;display:block">')
-    else:
-        arriba = (f'<span style="font-weight:700;letter-spacing:3px;'
-                  f'color:{CENTAURO};font-size:{max(12, alto // 3)}px">'
-                  f'CENTAURO</span>')
-    return (f'{arriba}<span style="display:inline-block;margin-top:8px;'
-            f'font-weight:700;font-size:11px;letter-spacing:.5px;color:#fff;'
-            f'background:{CENTAURO};padding:2px 8px;border-radius:4px">'
-            f'{LINEA}</span>')
+    """La misma marca del resto de los correos.
+
+    Era una copia de la de `correo_html` y las dos hacian lo mismo. Con
+    el logo nuevo --que ya trae su bajada-- hubo que acomodar la placa
+    al lado en vez de debajo, y una copia habria quedado con el acomodo
+    viejo: el correo de la encuesta con una cara y los otros nueve con
+    otra.
+    """
+    return marca_de_la_casa(alto)
 
 
 # ---------------------------------------------------------------- correo
 
-def correo(encuesta, enlace: str) -> str:
+def correo(encuesta, enlace: str, recordatorio: str = "") -> str:
     """El correo que recibe el ejecutivo o el solicitante.
 
     Una sola llamada a la accion. Nada de parrafos: quien lo abre en el
     telefono decide en dos segundos si contesta o no.
+
+    `recordatorio` es el unico parrafo que este correo admite, y solo
+    existe para el segundo envio. Sin el, el recordatorio de los cinco
+    dias llegaba IDENTICO al primero --este armazon ignora el cuerpo
+    del aviso-- y quien lo recibia no podia distinguir un segundo
+    intento de un correo repetido. Ahi tambien va la fecha en que se
+    cierra, que es lo que convierte "ahi luego contesto" en hoy.
     """
     t = _textos(encuesta.idioma)
     tipo = t[encuesta.tipo.value]
@@ -61,7 +61,10 @@ def correo(encuesta, enlace: str) -> str:
         encuesta.idioma if encuesta.idioma in ("en", "es", "pt") else "en"]
 
     return f"""<!doctype html>
-<html><body style="margin:0;padding:24px;background:{SUAVE};
+<html><head><meta charset="utf-8">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head><body style="margin:0;padding:24px;background:{SUAVE};
   font-family:Inter,-apple-system,'Segoe UI',system-ui,sans-serif;color:#1a1d21">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
 <tr><td align="center">
@@ -75,6 +78,9 @@ def correo(encuesta, enlace: str) -> str:
   <tr><td style="padding:14px 26px 0;font-size:19px;font-weight:650;
                  line-height:1.35;color:{CENTAURO}">
     {_esc(tipo['general'])}</td></tr>
+  {f'''<tr><td style="padding:14px 26px 0;font-size:14px;line-height:1.55;
+                 color:#5d6670">{_esc(recordatorio)}</td></tr>'''
+    if recordatorio else ""}
   <tr><td style="padding:20px 26px 8px">
     <a href="{_esc(enlace)}" style="display:inline-block;background:{CENTAURO};
        color:#fff;text-decoration:none;padding:12px 22px;border-radius:6px;

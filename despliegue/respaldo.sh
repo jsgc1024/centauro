@@ -19,9 +19,33 @@
 set -euo pipefail
 
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DESTINO="${CENTAURO_RESPALDOS:-/var/respaldos/centauro}"
+
+# En modo prueba no se rota nada, no se sube nada y el dump se borra al
+# terminar. Es para correrlo en la maquina de desarrollo y ver con los
+# propios ojos que el respaldo se restaura, que es lo unico que
+# convierte un archivo grande en un respaldo.
+#
+#   ./despliegue/respaldo.sh --probar
+PROBANDO=0
+[ "${1:-}" = "--probar" ] && PROBANDO=1
+
+# En el servidor, el compose de produccion; probando, el de desarrollo,
+# que es el que esta encendido en la maquina de quien prueba. Un script
+# que solo corre en el servidor es un script que nadie prueba hasta el
+# dia que hace falta.
+if [ "$PROBANDO" = "1" ]; then
+  ARCHIVO_COMPOSE="${CENTAURO_COMPOSE:-$RAIZ/docker-compose.yml}"
+else
+  ARCHIVO_COMPOSE="${CENTAURO_COMPOSE:-$RAIZ/docker-compose.prod.yml}"
+fi
+COMPOSE="docker compose -f $ARCHIVO_COMPOSE"
+
+if [ "$PROBANDO" = "1" ]; then
+  DESTINO="$(mktemp -d)"
+else
+  DESTINO="${CENTAURO_RESPALDOS:-/var/respaldos/centauro}"
+fi
 DIAS_A_GUARDAR="${CENTAURO_DIAS:-14}"
-COMPOSE="docker compose -f $RAIZ/docker-compose.prod.yml"
 SELLO="$(date +%Y%m%d-%H%M)"
 ARCHIVO="$DESTINO/centauro-$SELLO.dump"
 
@@ -46,7 +70,10 @@ decir "Respaldo en $ARCHIVO ($PESO)"
 # Aqui es donde este script se gana el sueldo. Se restaura en una base
 # desechable dentro del mismo Postgres y se cuenta lo que llego. Si algo
 # no cuadra, el respaldo viejo NO se borra.
-PRUEBA="verificacion_$SELLO"
+# El sello lleva un guion --20260919-1442-- y en el nombre de un
+# archivo se lee bien, pero Postgres no acepta guiones en el nombre de
+# una base sin comillas. Se cambia por guion bajo aqui y solo aqui.
+PRUEBA="verificacion_${SELLO//-/_}"
 decir "Restaurando en $PRUEBA para verificar…"
 
 limpiar() {
@@ -81,12 +108,66 @@ for TABLA in servicio asignacion_viatico foto_revision nomina_semanal; do
   fi
 done
 
+# Y el contenido de las fotos, no solo cuantas son.
+#
+# Es la diferencia entre "llegaron 240 filas" y "llegaron las mismas
+# 240 fotos". Las imagenes viven DENTRO de la base --las cinco de cada
+# revision de unidad, los comprobantes, las firmas-- y son lo que se
+# usa para discutir un golpe tres semanas despues. Una fila que llega
+# con la imagen cortada cuenta igual y no sirve para nada.
+#
+# Se saca un md5 por fila y un md5 del conjunto: comparar los datos
+# completos de las dos bases no cabria en memoria.
+huella() {
+  $COMPOSE exec -T db psql -U centauro -d "$1" -tAc \
+    "SELECT coalesce(md5(string_agg(md5(imagen), '' ORDER BY id)), 'vacia')
+       FROM foto_revision" 2>/dev/null | tr -d '[:space:]' || echo "x"
+}
+
+VIVAS=$(huella centauro)
+COPIAS=$(huella "$PRUEBA")
+if [ "$VIVAS" = "vacia" ] && [ "$COPIAS" = "vacia" ]; then
+  # Sin fotos no hay nada que comparar, y eso NO es una verificacion
+  # buena: es una que no se hizo. Decirlo con palomita seria decir que
+  # se probo lo unico que de verdad hay que probar.
+  decir "  fotos: no hay ninguna en la base. ESTA PARTE NO SE PROBO."
+  decir "         El dia que haya fotos reales, vuelve a correr esto."
+elif [ "$VIVAS" = "$COPIAS" ] && [ "$VIVAS" != "x" ]; then
+  decir "  fotos: el contenido coincide ✓ ($VIVAS)"
+else
+  decir "  fotos: la base dice '$VIVAS' y el respaldo '$COPIAS'  ✗"
+  FALLAS=$((FALLAS + 1))
+fi
+
+# Y que la copia sepa en que version del esquema esta: una base sin la
+# marca de alembic se restaura pero no se puede seguir migrando.
+VERSION=$($COMPOSE exec -T db psql -U centauro -d "$PRUEBA" -tAc \
+  "SELECT version_num FROM alembic_version" 2>/dev/null | tr -d '[:space:]')
+if [ -n "$VERSION" ]; then
+  decir "  esquema: $VERSION ✓"
+else
+  decir "  esquema: el respaldo no trae la version de alembic  ✗"
+  FALLAS=$((FALLAS + 1))
+fi
+
 if [ "$FALLAS" -gt 0 ]; then
   decir "ERROR: el respaldo no se restaura completo. No se borra nada viejo."
   exit 1
 fi
 
 decir "Verificado: el respaldo se restaura y trae todo."
+
+if [ "$PROBANDO" = "1" ]; then
+  decir "Modo prueba: no se rota nada ni se sube nada."
+  rm -rf "$DESTINO"
+  if [ "$VIVAS" = "vacia" ]; then
+    decir "Listo. El respaldo se saca y se restaura. Lo de las fotos"
+    decir "       queda pendiente hasta que haya fotos que comparar."
+  else
+    decir "Listo. El respaldo se saca, se restaura y trae las fotos enteras."
+  fi
+  exit 0
+fi
 
 # ----------------------------------------------------------- rotar
 # Solo despues de verificar. Borrar lo viejo confiando en un archivo que

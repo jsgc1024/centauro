@@ -43,3 +43,8 @@ Thumbs.db
 
 # Lo que el escritorio deja al entregar archivos.
 Claude outputs/
+
+# Las capturas de la prueba de humo: se regeneran en cada corrida.
+humo/capturas/
+humo/node_modules/
+humo/package-lock.json

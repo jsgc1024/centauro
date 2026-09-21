@@ -205,3 +205,31 @@ def test_lo_que_si_esta_en_la_base_gana_sobre_el_valor_por_defecto():
     assert p.horas_referencia == 2000
     assert p.castigo_leve == Decimal("40")
     assert p.castigo_grave == Decimal("60")
+
+
+def test_la_ficha_dice_con_que_correo_entra(cliente, sesion, datos):
+    """Debajo del nombre va el usuario, no la contraseña.
+
+    Quien arma un equipo mira esta pantalla y la pregunta que sigue es
+    si esa persona puede abrir la app. Salir a Accesos a buscarla otra
+    vez es como se pierde media tarde.
+
+    La contraseña no aparece aquí porque no existe en ningún lado: se
+    guarda un hash. Lo único que se puede decir es si ya puso una.
+    """
+    h = sesion("dirgeneral")
+    juan = datos["personal"]["Juan Ramirez"]["id"]
+
+    f = cliente.get(f"/profesionalismo/persona/{juan}", headers=h).json()
+    assert "usuario" in f, "la ficha no trae el usuario"
+    if f["usuario"]:
+        assert set(f["usuario"]) == {"correo", "activo",
+                                     "ya_puso_contrasena"}
+        assert "@" in f["usuario"]["correo"]
+        # Lo que nunca puede salir de aquí: el hash, ni un pedazo.
+        assert "hash" not in str(f).lower()
+
+    # Y en la lista, que es donde se busca a alguien.
+    pais = datos["personal"]["Juan Ramirez"].get("pais_id") or 1
+    lista = cliente.get(f"/profesionalismo?pais_id={pais}", headers=h).json()
+    assert all("usuario" in x for x in lista), "a la lista le falta"

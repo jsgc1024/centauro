@@ -2,15 +2,22 @@
 y no como se monta el decorado."""
 from datetime import date, datetime, timedelta
 
-ORIGEN = {"origen_lat": "19.4270", "origen_lon": "-99.1677", "geocerca_metros": 250}
+# Con direccion escrita: un punto de verdad la tiene, y la vispera la
+# pide porque es lo que el equipo lee en su telefono.
+ORIGEN = {"origen_lat": "19.4270", "origen_lon": "-99.1677",
+          "origen_direccion": "Av. Reforma 222, Cuauhtemoc, CDMX",
+          "geocerca_metros": 250}
 DENTRO = {"lat": "19.4272", "lon": "-99.1679"}      # a unos 30 m del origen
 LEJOS = {"lat": "19.4540", "lon": "-99.1677"}       # a unos 3 km
 
 
 def crear_servicio(cliente, headers, datos, jornadas, tipo="eventual",
-                   consultor_id=None, pais_id=None, plaza_id=None):
+                   consultor_id=None, pais_id=None, plaza_id=None, **extra):
     """Por omision en Mexico. `pais_id` y `plaza_id` sirven para las
-    pruebas de zona horaria, que necesitan un servicio de otro pais."""
+    pruebas de zona horaria, que necesitan un servicio de otro pais.
+
+    Lo demas del alta --la vestimenta, los idiomas-- entra por `extra`
+    tal cual, sin que esta ayuda tenga que conocer cada campo."""
     cuerpo = {
         "cliente_id": datos["cliente_id"],
         "pais_id": pais_id or datos["mx"]["id"],
@@ -20,6 +27,7 @@ def crear_servicio(cliente, headers, datos, jornadas, tipo="eventual",
         "ejecutivo_nombre": "Ingrid", "ejecutivo_apellidos": "Halvorsen",
         "ejecutivo_correo": "ejecutivo@cliente.com",
         "equipos": [{"clave": "EQ-1", "jornadas": jornadas}],
+        **extra,
     }
     if consultor_id:
         cuerpo["consultor_id"] = consultor_id
@@ -73,9 +81,86 @@ def marcar(cliente, headers, jornada_id, tipo, cuando=None, ubicacion=None):
                         json=cuerpo, headers=headers)
 
 
+# Una imagen de un pixel y una firma que lo parezca. Lo que importa en
+# las pruebas que usan esto es el dia completo, no el JPEG.
+PIXEL = ("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAEBAQEB"
+         "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB"
+         "AQEBAQEBAQH/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQ"
+         "AQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==")
+FIRMA = "data:image/png;base64," + ("A" * 200)
+CINCO = [{"angulo": a, "imagen": PIXEL}
+         for a in ("frente", "atras", "izquierdo", "derecho", "odometro")]
+
+
+# El odometro de las pruebas. Van juntos y en este orden porque un
+# odometro no cuenta para atras: quien siembre una recepcion aparte
+# tiene que arrancar de KM_RECEPCION, o el candado --con razon-- le
+# rechaza la entrega.
+KM_RECEPCION = 42_000
+KM_ENTREGA = 42_380
+
+
+def revisar_unidad(cliente, headers_personal, servicio_id, vehiculo_id,
+                   tipo, km):
+    return cliente.post("/campo/revisiones", headers=headers_personal, json={
+        "servicio_id": servicio_id, "vehiculo_id": vehiculo_id, "tipo": tipo,
+        "kilometraje": km, "combustible_octavos": 8, "firma": FIRMA,
+        # La pregunta del dano ya no se puede saltar. Lo normal es que no
+        # haya, y eso es lo que simula un dia completo.
+        "hubo_dano": False,
+        "fotos": CINCO})
+
+
+def marcar_fin(cliente, headers_personal, jornada_id, cuando):
+    """Cierra el dia, devolviendo la unidad si el servidor la reclama.
+
+    Desde el 18 de septiembre no hay fin de servicio con una unidad que
+    hoy deja el servicio y no tiene su revision de entrega.
+
+    Se hace asi --intentar, y resolver lo que el servidor reclame-- y no
+    revisando siempre por si acaso: asi estas pruebas no fabrican
+    revisiones donde la operacion real no las tendria, y el dia que el
+    candado cambie de forma, esto sigue diciendo la verdad.
+    """
+    cierre = marcar(cliente, headers_personal, jornada_id, "fin_servicio",
+                    cuando)
+    if cierre.status_code != 409:
+        return cierre
+    detalle = cierre.json().get("detail")
+    if not isinstance(detalle, dict) or "unidades" not in detalle:
+        return cierre
+
+    # Cada revision se comprueba. Si una falla y se deja pasar, lo unico
+    # que se ve al final es el 409 del candado otra vez, y eso manda a
+    # buscar el error donde no esta --en el candado-- en vez de donde
+    # esta, que es la revision que no se pudo guardar.
+    for unidad in detalle["unidades"]:
+        if unidad["sin_recepcion"]:
+            r = revisar_unidad(cliente, headers_personal,
+                               detalle["servicio_id"], unidad["vehiculo_id"],
+                               "recibe", KM_RECEPCION)
+            assert r.status_code == 201, f"no se pudo recibir la unidad: {r.text}"
+        r = revisar_unidad(cliente, headers_personal, detalle["servicio_id"],
+                           unidad["vehiculo_id"], "entrega", KM_ENTREGA)
+        assert r.status_code == 201, f"no se pudo entregar la unidad: {r.text}"
+    return marcar(cliente, headers_personal, jornada_id, "fin_servicio",
+                  cuando)
+
+
 def ejecutar_jornada(cliente, headers_personal, jornada_dict, retraso_minutos=0,
                      horas_extra=0):
-    """Marca la secuencia completa: llegada, contacto y fin."""
+    """Marca la secuencia completa: llegada, contacto y fin.
+
+    Desde el 18 de septiembre, un dia completo incluye devolver la unidad:
+    no hay fin de servicio con una unidad que hoy deja el servicio y no
+    tiene su revision de entrega. Si el candado muerde, se hacen las
+    revisiones que pide y se vuelve a marcar.
+
+    Se hace asi --intentar, y resolver lo que el servidor reclame-- y no
+    revisando siempre por si acaso, para que estas pruebas no fabriquen
+    revisiones donde la operacion real no las tendria. Si manana el
+    candado cambia de forma, esto sigue diciendo la verdad.
+    """
     inicio = datetime.fromisoformat(jornada_dict["inicio_programado"])
     fin = datetime.fromisoformat(jornada_dict["fin_programado"])
     retraso = timedelta(minutes=retraso_minutos)
@@ -83,8 +168,9 @@ def ejecutar_jornada(cliente, headers_personal, jornada_dict, retraso_minutos=0,
            inicio - timedelta(minutes=10) + retraso)
     marcar(cliente, headers_personal, jornada_dict["id"], "contacto_ejecutivo",
            inicio + retraso)
-    marcar(cliente, headers_personal, jornada_dict["id"], "fin_servicio",
-           fin + timedelta(hours=horas_extra))
+
+    return marcar_fin(cliente, headers_personal, jornada_dict["id"],
+                      fin + timedelta(hours=horas_extra))
 
 
 def cotizar_y_autorizar(cliente, headers, servicio, perfil_id, categoria_id,
@@ -141,3 +227,74 @@ def depositar(cliente, headers, equipo_id, persona_id,
               "referencia": referencia},
         files={"archivo": ("comprobante.png", io.BytesIO(PIXEL), "image/png")},
         headers=headers)
+
+
+def depositar_de_verdad(cliente, sesion, equipo_id, persona_id,
+                        referencia="SPEI-000001"):
+    """El dinero completo: se le pide a finanzas y finanzas lo deposita.
+
+    Asignar un viático es autorizarlo, no depositarlo. Desde que la app
+    dejó de decir "te depositaron" con dinero que todavía no sale del
+    banco, cualquier prueba que quiera ver dinero EN LA CUENTA de
+    alguien tiene que pasar por aquí. Recibe `sesion` y no unos headers
+    porque son dos personas distintas: el consultor pide y finanzas
+    deposita.
+    """
+    r = cliente.post(f"/viaticos/equipos/{equipo_id}/solicitar",
+                     json={"persona_id": persona_id},
+                     headers=sesion("consultor"))
+    assert r.status_code in (200, 201), r.text
+    r = depositar(cliente, sesion("finanzas"), equipo_id, persona_id,
+                  referencia)
+    assert r.status_code in (200, 201), r.text
+    return r
+
+
+def devolver(cliente, headers, viatico_id, monto, referencia="SPEI-DEV-01"):
+    """Finanzas registra una devolucion que ya entro a la cuenta.
+
+    Referencia y comprobante son obligatorios, igual que en el deposito:
+    un dinero que vuelve sin evidencia es la palabra de quien lo
+    capturo, y eso no es un registro contable.
+    """
+    import io as _io
+
+    return cliente.post(
+        f"/viaticos/{viatico_id}/devolver",
+        data={"monto": str(monto), "referencia": referencia},
+        files={"archivo": ("transferencia.png", _io.BytesIO(PIXEL),
+                           "image/png")},
+        headers=headers)
+
+
+def servicio_para_cierre(cliente, sesion, datos, offset=900, dias=1):
+    """Un servicio cotizado, trabajado y ya enviado a finanzas.
+
+    Devuelve `(servicio, cierre_id)`, listo para que finanzas lo
+    apruebe. El cierre se abre solo al terminar el ultimo dia; aqui se
+    pide con `abrir`, que devuelve el que ya existe.
+    """
+    h = sesion("consultor")
+    servicio = crear_servicio(
+        cliente, h, datos,
+        [jornada(manana(offset + i), datos["modalidades"]["full_day"]["id"])
+         for i in range(dias)],
+        consultor_id=datos["personal"]["Ana Solis"]["id"])
+    cotizar_y_autorizar(
+        cliente, h, servicio, datos["perfiles"]["conductor_seguridad"]["id"],
+        datos["categorias"]["suv_blindada"]["id"])
+
+    for j in servicio["equipos"][0]["jornadas"]:
+        asignar(cliente, h, j["id"],
+                persona_id=datos["personal"]["Juan Ramirez"]["id"],
+                vehiculo_id=datos["suburban"]["id"])
+        configurar_origen(cliente, h, j["id"])
+        ejecutar_jornada(cliente, sesion("juan"), j)
+
+    r = cliente.post(f"/cierre/servicio/{servicio['id']}/abrir", headers=h)
+    assert r.status_code == 200, r.text
+    cierre_id = r.json()["cierre_id"]
+
+    envio = cliente.post(f"/cierre/{cierre_id}/enviar-finanzas", headers=h)
+    assert envio.status_code == 200, envio.text
+    return servicio, cierre_id

@@ -27,11 +27,12 @@ button, input, select, textarea { font: inherit; color: inherit; }
 header.barra {
   background: #fff; border-bottom: 1px solid var(--linea);
   border-top: 5px solid var(--centauro);
-  padding: 10px 20px 0; display: block;
+  padding: 12px 20px 0; display: block;
   position: sticky; top: 0; z-index: 10;
 }
 header.barra .cinta {
   display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  padding-bottom: 10px;
 }
 header.barra img { height: 40px; }
 header.barra .identidad { display: flex; align-items: center; gap: 14px; }
@@ -48,9 +49,12 @@ header.barra .identidad { display: flex; align-items: center; gap: 14px; }
   color: var(--gris); font-weight: 650;
 }
 .entrada .linea { justify-content: center; margin: -10px 0 22px; }
+/* El menu, en su propio renglon y con el renglon entero para el. Es lo
+   unico de aqui arriba que se usa todo el dia; lo demas --quien eres, en
+   que idioma, la salida-- vive recogido en la pastilla de la derecha. */
 header.barra nav {
-  display: flex; gap: 4px; margin: 8px 0 0; padding-bottom: 2px;
-  border-top: 1px solid var(--linea); padding-top: 6px;
+  display: flex; gap: 4px; margin: 12px 0 0; padding-bottom: 8px;
+  border-top: 1px solid var(--linea); padding-top: 10px;
   overflow-x: auto;      /* en el celular se recorre, no se encima */
 }
 header.barra nav a {
@@ -59,11 +63,56 @@ header.barra nav a {
 }
 header.barra nav a:hover { background: var(--suave); color: var(--centauro); }
 header.barra nav a.activo { background: var(--centauro); color: #fff; }
-header.barra .quien { margin-left: auto; text-align: right; font-size: 12px; }
 header.barra nav a { white-space: nowrap; }
-header.barra .quien b { display: block; }
-header.barra .quien span { color: var(--gris); }
-main { max-width: 1180px; margin: 0 auto; padding: 22px 20px 60px; }
+
+/* ------------------------------------------------ quien esta trabajando
+   Una pastilla con el nombre, y adentro lo que no cambia nunca: el rol,
+   el correo, el idioma y la salida. Antes estaba todo desplegado arriba
+   y el encabezado se leia como un solo bloque apretado. */
+header.barra .yo { margin-left: auto; position: relative; }
+.pastilla {
+  display: flex; align-items: center; gap: 9px; background: #fff;
+  /* El color va dicho: el `button` de la casa es azul con letra blanca,
+     y una pastilla blanca que no lo diga sale con el nombre en blanco
+     sobre blanco. */
+  color: var(--texto);
+  border: 1px solid var(--linea); border-radius: 999px;
+  padding: 4px 12px 4px 4px; cursor: pointer;
+}
+.pastilla:hover { background: var(--suave); }
+.pastilla .iniciales {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--centauro); color: #fff; display: grid;
+  place-items: center; font-size: 11px; font-weight: 700; letter-spacing: .5px;
+}
+.pastilla .nom { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.pastilla .flecha { color: var(--gris); font-size: 10px; }
+
+.menu-yo {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 20;
+  width: 232px; background: #fff; border: 1px solid var(--linea);
+  border-radius: 10px; box-shadow: 0 8px 24px rgba(27, 21, 70, .14);
+  padding: 12px 14px; text-align: left;
+}
+.menu-yo .rol {
+  display: block; font-size: 10px; font-weight: 700; letter-spacing: 1.4px;
+  text-transform: uppercase; color: var(--centauro);
+}
+.menu-yo .nombre { font-size: 13px; font-weight: 600; }
+.menu-yo .correo { font-size: 11.5px; color: var(--gris); word-break: break-all; }
+.menu-yo hr { border: 0; border-top: 1px solid var(--linea); margin: 10px 0; }
+.menu-yo .idiomas { display: flex; gap: 6px; }
+.menu-yo .salir {
+  display: block; width: 100%; margin-top: 10px; background: var(--suave);
+  color: var(--texto);
+  border: 1px solid var(--linea); border-radius: 6px; padding: 7px;
+  font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+.menu-yo .salir:hover { background: var(--linea); }
+/* El menu de arriba esta pegajoso y la pantalla empieza justo
+   debajo: con poco aire, el titulo se lee como un renglon mas del
+   menu. */
+main { max-width: 1180px; margin: 0 auto; padding: 28px 20px 60px; }
 
 h1 { font-size: 22px; margin: 0 0 4px; }
 h2 { font-size: 16px; margin: 26px 0 10px; }
@@ -131,6 +180,65 @@ button.chico { padding: 5px 11px; font-size: 12.5px; }
 button.peligro { background: var(--grave); }
 .acciones { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 
+/* ------------------------------------------------ lo que paso ese dia */
+/* El meet and greet arriba, con una barra de color a la izquierda: es
+   la respuesta corta --¿ya estan con el principal?-- y tiene que leerse
+   sin buscarla. Verde cuando hay marca, ambar cuando falta; el ambar no
+   es una falta grave, es "revisa esto antes de que el cliente llame". */
+.dia_real { margin-top: 18px; }
+.dia_mg {
+  padding: 10px 14px; border-radius: 8px; margin-bottom: 14px;
+  border-left: 4px solid var(--gris);
+  background: var(--suave);
+}
+.dia_mg.ok { border-left-color: var(--ok); background: #e6f4ec; }
+.dia_mg.falta { border-left-color: var(--alerta); background: #fdf6e3; }
+
+/* La bitacora dentro de la ficha del dia del implantado: separada de
+   las posiciones por una linea, porque son dos cosas --quien iba y que
+   paso-- y leerlas pegadas las confunde. */
+.bit_del_dia {
+  margin-top: 16px; padding-top: 14px;
+  border-top: 1px solid var(--linea);
+}
+
+/* Lo que se escribe en la bitacora va al final, separado de lo que ya
+   paso: primero se lee el dia y luego se le agrega. */
+.bit_escribir {
+  margin-top: 14px; padding-top: 12px;
+  border-top: 1px solid var(--linea);
+}
+.bit_escribir .fila { display: flex; gap: 8px; flex-wrap: wrap;
+                      align-items: center; margin-top: 6px; }
+/* El formulario de corregir una hora cuelga de su propio renglon y se
+   nota que pertenece a esa marca y no al dia entero. */
+.bit_corregir {
+  margin: 8px 0 4px; padding: 10px 12px;
+  background: var(--suave); border-radius: 8px;
+}
+.paso.nota .punto { border-color: var(--centauro); color: var(--centauro); }
+.paso.nota .titulo { font-weight: 600; }
+
+/* Secciones que se pliegan. El titulo entero es el boton --no una
+   flechita de doce pixeles-- porque se usa con prisa y con el raton
+   encima de otra cosa. */
+.cabeza-plegable {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  cursor: pointer; user-select: none;
+  padding: 6px 0; border-radius: 6px;
+}
+.cabeza-plegable:hover { background: var(--suave); }
+.cabeza-plegable:focus-visible { outline: 2px solid var(--centauro);
+                                 outline-offset: 2px; }
+.flecha-plegable { color: var(--gris); font-size: 12px; width: 12px; }
+/* El resumen de lo plegado: gris y en la misma linea del titulo, para
+   que se lea de corrido y no compita con el. */
+.resumen-plegable {
+  color: var(--gris); font-size: 13px; font-weight: 400;
+}
+.plegable + .plegable { border-top: 1px solid var(--linea);
+                        margin-top: 10px; padding-top: 4px; }
+
 /* ---------------------------------------------------------- etiquetas */
 .etiqueta {
   display: inline-block; font-size: 10.5px; font-weight: 700;
@@ -143,8 +251,23 @@ button.peligro { background: var(--grave); }
    consultor tiene que leer la columna de un golpe. */
 .etiqueta.info { background: #e8ecf7; color: var(--centauro); }
 .etiqueta.ok { background: #e6f4ec; color: var(--ok); }
+/* Azul de verdad, no el azul de la marca: "info" usa el tono Centauro y
+   con el asignado al lado se leian como el mismo estado. */
+.etiqueta.azul { background: #e4edfd; color: #1f4fbf; }
+/* Arribado: entre el azul de "armado y esperando el dia" y el verde de
+   "corriendo". El equipo ya esta parado en el punto y el servicio
+   todavia no arranca; si fuera verde se leeria como que ya arranco, y
+   si fuera azul no se distinguiria de un servicio que no ha salido. */
+.etiqueta.arribo { background: #ddf1f2; color: #0f6b74; }
 .etiqueta.alerta { background: #fdf6e3; color: var(--alerta); }
 .etiqueta.grave { background: #fdecea; color: var(--grave); }
+/* El cierre en dos tiempos, decision de Salvador. Cafe es "el dia ya
+   se cumplio" y negro es "el expediente ya se cerro": dos estados
+   apagados, pero distintos, y con el gris de `borrador` a un lado se
+   confundian los tres. Los dos van sin saturacion a proposito --lo que
+   ya no pide nada no compite con el verde de lo que esta en curso--. */
+.etiqueta.cafe { background: #efe7df; color: #6b4a2f; }
+.etiqueta.negro { background: #e2e4e6; color: #1c1f22; }
 .gris { color: var(--gris); }
 /* El mismo semaforo del dinero, en texto: verde ya salio, ambar va en
    camino. Sin esto los tres renglones del desglose se leen igual. */
@@ -333,8 +456,8 @@ td.caja-agenda { background: #f7f9fa; }
    columna angosta se encimaban. */
 td.col-hora .chico { margin: 2px 0 4px; }
 
-/* Las banderas del idioma de las plantillas, junto a Salir. */
-.banderas { display: flex; gap: 4px; }
+/* Las banderas del idioma. Viven dentro del menu de quien esta
+   trabajando: se cambia una vez al dia, no cada rato. */
 button.bandera {
   background: none; border: 1px solid transparent; border-radius: 6px;
   padding: 3px 6px; font-size: 17px; line-height: 1; cursor: pointer;
@@ -345,22 +468,6 @@ button.bandera.activa {
   filter: none; opacity: 1; border-color: var(--linea);
   background: var(--suave);
 }
-
-/* El selector de idioma: se ve la bandera puesta y las otras se abren
-   debajo, como cualquier menu. */
-.banderas { position: relative; }
-.otras-banderas {
-  position: absolute; right: 0; top: 100%; z-index: 20;
-  background: #fff; border: 1px solid var(--linea); border-radius: 8px;
-  box-shadow: 0 6px 18px rgba(27, 21, 70, .12);
-  padding: 4px; display: flex; flex-direction: column; gap: 2px;
-}
-.otras-banderas button.bandera {
-  display: flex; align-items: center; gap: 8px; width: 100%;
-  filter: none; opacity: 1; white-space: nowrap;
-}
-.otras-banderas button.bandera:hover { background: var(--suave); }
-.nombre-idioma { font-size: 12px; font-weight: 600; color: var(--gris); }
 
 
 /* El mes del implantado. Siete columnas de lunes a domingo: el color
@@ -509,19 +616,38 @@ button.bandera.activa {
 }
 .estado_conteo { margin: 10px 0 4px; font-size: 16px; }
 
-.punto {
+/* El semaforo del renglon de arriba. Se llamaba `.punto`, que ya era el
+   renglon de "una persona con su palomita" de la central: la regla nueva
+   ganaba por venir despues y convertia a cada integrante del equipo en
+   una bolita de nueve pixeles, con el nombre y el rol desbordados
+   encima de la lista de pendientes. Es el mismo choque que `.barra`, en
+   el mismo commit: nombres genericos que ya estaban ocupados. */
+.luz {
   display: inline-block; width: 9px; height: 9px; border-radius: 50%;
   background: var(--ok); vertical-align: middle;
 }
-.punto.atender { background: var(--alerta); }
-.punto.grave { background: var(--grave); }
+.luz.atender { background: var(--alerta); }
+.luz.grave { background: var(--grave); }
 
-.atender {
+/* Y lo mismo con `.atender`, que ademas de renglon es el nivel de una
+   tarjeta: `tarjeta estado atender` se llevaba el `display:flex` y el
+   relleno de aqui, y el recuadro de estado se armaba en renglon. Un
+   modificador --atender, grave-- no puede llamarse igual que un
+   componente. */
+.renglon_atender {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   border-top: 1px solid var(--linea); padding: 10px 0 0; margin-top: 10px;
 }
-.atender > div:first-child { flex: 1 1 260px; }
-.atender.grave > div:first-child b { color: var(--grave); }
+.renglon_atender > div:first-child { flex: 1 1 260px; }
+.renglon_atender.grave > div:first-child b { color: var(--grave); }
+/* La bitacora abierta ocupa el ancho completo del renglon y no una
+   columna del flex: es un bloque para leer, no un dato al lado de los
+   otros. `flex-basis: 100%` la empuja a su propio renglon sin tener que
+   cambiar como esta armado lo de arriba. */
+.bitacora_pegada {
+  flex: 0 0 100%; margin-top: 10px; padding-top: 10px;
+  border-top: 1px dashed var(--linea);
+}
 .rojo { color: var(--grave); font-weight: 600; }
 
 /* La tira del dia. Una barra por equipo sobre su propio eje: las 14:00
@@ -535,16 +661,34 @@ button.bandera.activa {
   position: relative; flex: 1; height: 16px; border-radius: 4px;
   background: var(--suave);
 }
-.barra {
+/* El tramo que pinta un servicio sobre el eje del dia.
+
+   Se llamaba `.barra`, y el encabezado de la consola es
+   `<header class="barra">`. La regla suelta le pegaba tambien al
+   encabezado: `height: 10px` con `box-sizing: border-box` lo dejaba en
+   dieciocho pixeles de alto --el filo, el relleno y nada mas--, con el
+   logo y el menu colgando por fuera de su caja. Como la caja no
+   ocupaba lugar, la pantalla entera arrancaba debajo del filo azul y el
+   titulo se pintaba ENCIMA del menu. Eso es lo que se veia amontonado.
+   `header.barra` gana en especificidad para `position` y `top`, que si
+   declara, y por eso el desastre no era completo: solo el alto se
+   colaba. Un nombre que dos cosas distintas comparten no falla el dia
+   que se escribe, falla el dia que alguien toca la otra. */
+.tramo {
   position: absolute; top: 3px; height: 10px; border-radius: 5px;
   background: var(--centauro);
 }
-.barra.proxima_a_iniciar, .barra.confirmada, .barra.planeada {
+.tramo.proxima_a_iniciar, .tramo.confirmada, .tramo.planeada {
   background: #cfd6dd;
 }
-.barra.terminada { background: #aeb8c2; }
-.barra.s_ambar { background: var(--alerta); }
-.barra.s_rojo, .barra.s_sin_reporte { background: var(--grave); }
+/* Llego al punto y espera al principal. Mas claro que el azul de
+   "corriendo" y mas solido que el gris de "todavia no sale": de un
+   vistazo se ve que hay alguien parado alla y que el servicio aun no
+   arranca. */
+.tramo.arribado { background: #7fa8cf; }
+.tramo.terminada { background: #aeb8c2; }
+.tramo.s_ambar { background: var(--alerta); }
+.tramo.s_rojo, .tramo.s_sin_reporte { background: var(--grave); }
 .muesca {
   position: absolute; top: 0; width: 2px; height: 16px;
   background: rgba(0,0,0,.35);
@@ -571,3 +715,384 @@ button.bandera.activa {
   .paises th, .paises td { padding-left: 8px; padding-right: 8px; }
   .paises .etiqueta { white-space: normal; }
 }
+
+
+/* ------------------------------------------- codigo de acceso de campo
+   Pensada para telefono: la llamada de las 5:40 le llega al consultor en
+   su casa. Los digitos grandes son para dictarlos sin equivocarse. */
+
+.lista-codigo { margin-top: 12px; }
+
+.persona-codigo {
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  border-top: 1px solid var(--linea); padding: 12px 0;
+}
+.persona-codigo:first-child { border-top: 0; }
+.persona-codigo .foto {
+  width: 44px; height: 44px; border-radius: 50%; object-fit: cover;
+  background: var(--linea); flex: 0 0 auto;
+}
+.datos-codigo { flex: 1 1 180px; min-width: 0; }
+.persona-codigo button { flex: 0 0 auto; }
+
+.codigo-grande { text-align: center; margin-top: 14px; }
+.codigo-grande .digitos {
+  font-size: 54px; font-weight: 700; letter-spacing: 6px;
+  font-variant-numeric: tabular-nums; color: var(--centauro);
+  margin: 6px 0 2px;
+}
+
+@media (max-width: 480px) {
+  /* El boton baja a su propio renglon y ocupa el ancho: con una mano y
+     medio dormido, un boton chico al lado de la foto se falla. */
+  .persona-codigo button { flex: 1 1 100%; }
+  .codigo-grande .digitos { font-size: 46px; letter-spacing: 4px; }
+}
+
+
+/* ------------------------------------------------------ panel de accesos */
+
+.renglon-acceso {
+  display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+  border-top: 1px solid var(--linea); padding: 12px 0;
+}
+.renglon-acceso > :first-child { flex: 1 1 220px; min-width: 0; }
+.renglon-acceso > :nth-child(2) { flex: 0 0 150px; }
+.renglon-acceso > :nth-child(3) { flex: 0 0 110px; }
+.quien-acceso { min-width: 0; }
+.quien-acceso .chico { overflow-wrap: anywhere; }
+
+/* El acceso cerrado se ve apagado, no escondido: sigue siendo una
+   cuenta que existe y a la que alguien le puede volver a abrir. */
+.cerrado .renglon-acceso { opacity: .55; }
+
+@media (max-width: 700px) {
+  /* En telefono cada dato baja a su renglon: el puesto y el ultimo
+     acceso apretados en 110px no se leen. */
+  .renglon-acceso > :nth-child(2),
+  .renglon-acceso > :nth-child(3) { flex: 1 1 auto; }
+}
+
+
+/* ------------------------------------------------- puestos y permisos
+
+   Veintinueve casillas en una lista plana no se leen: hay que bajar por
+   todas para encontrar las cuatro que importan. Agrupadas por familia,
+   armar un puesto es apagar un bloque —el dinero— y seguir. */
+
+.familia { border-top: 1px solid var(--linea); padding: 10px 0 4px; }
+.familia-titulo {
+  display: flex; align-items: baseline; gap: 10px;
+  justify-content: space-between; margin-bottom: 4px;
+}
+.acciones-familia { display: flex; gap: 10px; flex: 0 0 auto; }
+
+/* Dos columnas en pantalla grande: las 29 caben de un vistazo y se ve
+   el bloque entero sin bajar. En telefono, una. */
+.casillas { display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; }
+.casillas label.casilla { font-weight: 400; align-items: flex-start; }
+.casillas label.casilla input { margin-top: 3px; }
+
+/* El nombre tecnico de la actividad va al lado, en gris: quien reparte
+   accesos lee la descripcion, pero el dia que algo no cuadra, lo que se
+   busca en el codigo es `viaticos.transferir`. */
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px; }
+
+.renglon-permiso {
+  display: flex; align-items: center; gap: 10px;
+  padding: 3px 0; justify-content: space-between;
+}
+.renglon-permiso > :first-child { flex: 1 1 auto; min-width: 0; }
+.renglon-permiso .marca {
+  flex: 0 0 auto; font-size: 11px; font-weight: 600;
+  padding: 1px 8px; border-radius: 10px;
+  background: var(--suave); color: var(--gris);
+}
+.renglon-permiso .marca.si { background: #e6f4ec; color: var(--ok); }
+.renglon-permiso > :last-child { flex: 0 0 52px; text-align: right; }
+
+/* Un boton que no parece boton: dar o quitar un permiso suelto es una
+   accion menor al lado de guardar el puesto entero, y con el mismo peso
+   visual se confunden. */
+button.enlace {
+  background: none; border: none; padding: 0; width: auto;
+  color: var(--centauro); text-decoration: underline; cursor: pointer;
+  font-weight: 600;
+}
+button.enlace:hover { opacity: .75; }
+
+@media (max-width: 700px) {
+  .casillas { grid-template-columns: 1fr; }
+}
+
+
+/* ------------------------------------------------ la ayuda en pantalla
+
+   El "?" vive pegado al título del bloque que explica, no en una
+   pantalla de ayuda aparte: obligar a salir de donde estás para
+   preguntar por donde estabas es la forma más segura de que nadie
+   pregunte. */
+
+.con-ayuda { margin-bottom: 2px; position: relative; }
+.fila-ayuda { display: flex; align-items: baseline; gap: 8px; }
+.fila-ayuda > :first-child { flex: 1 1 auto; min-width: 0; }
+
+/* Discreto a propósito. Un signo que compite con el título se toca por
+   accidente, y el que se toca por accidente se aprende a ignorar. */
+button.boton-ayuda {
+  flex: 0 0 auto; width: 20px; height: 20px; padding: 0;
+  border-radius: 50%; border: 1px solid var(--linea);
+  background: var(--suave); color: var(--gris);
+  font-size: 12px; font-weight: 700; line-height: 1; cursor: pointer;
+}
+button.boton-ayuda:hover {
+  border-color: var(--centauro); color: var(--centauro);
+}
+
+/* Flota sobre el bloque en vez de empujarlo: abierto dentro, quedaba
+   pegado al pie que el bloque ya trae y los botones se iban hacia abajo.
+   Se ancla al "?", que vive al final del renglon del titulo. */
+.panel-ayuda {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 30;
+  width: min(380px, calc(100vw - 48px));
+  background: #fff; border: 1px solid var(--linea); border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(27, 21, 70, .16);
+  padding: 12px 14px; text-align: left;
+}
+.panel-ayuda b { color: var(--texto); }
+.panel-ayuda p { color: var(--gris); }
+.panel-ayuda p:first-child { margin-top: 0; }
+
+/* --------------------------------------------- el recorrido de la primera vez
+
+   La tercera capa de la ayuda, y la unica que se pone enfrente. Por eso
+   se cierra con un clic en cualquier lado, con Escape, y con su propio
+   boton: lo que se abre solo tiene que cerrarse facil. */
+.recorrido-capa {
+  position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;
+  background: rgba(27, 21, 70, .45); padding: 20px;
+}
+.recorrido-tarjeta {
+  background: #fff; border-radius: 12px; border-top: 5px solid var(--centauro);
+  box-shadow: 0 18px 50px rgba(27, 21, 70, .3);
+  width: min(560px, 100%); max-height: 86vh; overflow-y: auto;
+  padding: 22px 24px 16px;
+}
+.recorrido-cuerpo h2 { font-size: 17px; }
+.recorrido-entrada {
+  border-top: 1px solid var(--linea); padding: 9px 0 0; margin-top: 9px;
+}
+.recorrido-entrada:first-of-type { border-top: 0; margin-top: 0; }
+.recorrido-muestra {
+  display: flex; align-items: center; gap: 10px; margin-top: 14px;
+  background: var(--suave); border-radius: 8px; padding: 10px 12px;
+}
+.boton-ayuda-muestra {
+  width: 20px; height: 20px; flex: 0 0 20px; border-radius: 50%;
+  border: 1px solid var(--linea); background: #fff; color: var(--gris);
+  font-size: 12px; font-weight: 700; display: grid; place-items: center;
+}
+.recorrido-pie {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-top: 20px; padding-top: 14px;
+  border-top: 1px solid var(--linea);
+}
+.recorrido-puntos { display: flex; gap: 6px; }
+.recorrido-punto {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--linea);
+}
+.recorrido-punto.activo { background: var(--centauro); }
+.menu-yo .otra-vez {
+  display: block; width: 100%; margin: 0 0 10px; background: #fff;
+  color: var(--texto); border: 1px solid var(--linea); border-radius: 6px;
+  padding: 7px; font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+.menu-yo .otra-vez:hover { background: var(--suave); }
+
+/* ---------------------------------------------------------- bonos
+   Las pestañas del mes, el corte de cifras y la ficha con su
+   desglose. La estrella apagada se dibuja: "5 de 6" se lee, pero
+   cinco estrellas encendidas y una apagada se ve de un golpe. */
+.pestanas { display: flex; gap: 6px; margin-top: 14px; flex-wrap: wrap; }
+.pestana {
+  background: #fff; color: var(--centauro); border: 1px solid var(--linea);
+  border-radius: 7px; padding: 7px 14px; font-weight: 600; cursor: pointer;
+}
+.pestana.activa { background: var(--centauro); color: #fff; border-color: var(--centauro); }
+
+.corte {
+  display: flex; background: #fff; border: 1px solid var(--linea);
+  border-radius: 8px; margin-bottom: 14px; overflow: hidden; flex-wrap: wrap;
+}
+.corte > div { flex: 1 1 140px; padding: 12px 16px; border-left: 1px solid var(--linea); }
+.corte > div:first-child { border-left: 0; }
+.cifra { font-size: 22px; font-weight: 700; color: var(--centauro);
+         font-variant-numeric: tabular-nums; line-height: 1.2; }
+.cifra.rojo { color: var(--grave); }
+
+.estrellas { color: #c9922a; letter-spacing: 1px; font-size: 15px; }
+.estrellas .apagada { color: #d5d9de; }
+
+.cabeza_ficha { display: flex; justify-content: space-between; gap: 14px;
+                flex-wrap: wrap; align-items: flex-start; margin-bottom: 8px; }
+.criterio { display: flex; gap: 14px; padding: 13px 0;
+            border-bottom: 1px solid #f0f2f4; align-items: flex-start; }
+.criterio:last-of-type { border-bottom: 0; }
+.criterio .cuerpo { flex: 1; }
+.criterio .nombre { font-weight: 650; }
+.criterio .num { min-width: 96px; text-align: right; font-weight: 650; }
+.marca_bono {
+  width: 24px; height: 24px; border-radius: 50%; flex: 0 0 24px;
+  text-align: center; line-height: 24px; font-size: 13px; font-weight: 700;
+}
+.marca_bono.si { background: #e6f4ec; color: var(--ok); }
+.marca_bono.no { background: #fdecea; color: var(--grave); }
+.marca_bono.na { background: var(--suave); color: var(--gris); }
+
+.total_barra {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 13px 18px; background: var(--centauro); color: #fff;
+  border-radius: 8px; margin-top: 10px; font-size: 15px;
+}
+input.campo.num { width: 92px; text-align: right;
+                  font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------- encuestas
+   Un caso por bloque, no por renglón de tabla: lo que el cliente dijo
+   es texto, y el texto no se lee en una celda. */
+.caso { border: 1px solid var(--linea); border-radius: 8px;
+        padding: 14px 16px; margin-bottom: 12px; background: #fdfdfe; }
+.cabeza_caso { display: flex; justify-content: space-between; gap: 12px;
+               align-items: flex-start; flex-wrap: wrap; }
+.dichos { display: grid; gap: 6px; margin: 10px 0 2px;
+          padding: 10px 12px; background: var(--suave); border-radius: 7px; }
+.dicho { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.dicho span:first-child { flex: 0 0 auto; min-width: 180px; }
+.nota_encuesta { display: inline-block; font-weight: 700; font-size: 13px;
+                 padding: 3px 10px; border-radius: 20px;
+                 font-variant-numeric: tabular-nums; }
+/* El color dice la gravedad sin leer el número: 1 y 2 son una cuenta
+   en riesgo, 3 abre revisión, 4 y 5 no piden nada. */
+.nota_encuesta.n1, .nota_encuesta.n2 { background: #fdecea; color: var(--grave); }
+.nota_encuesta.n3 { background: #fdf6e3; color: var(--alerta); }
+.nota_encuesta.n4, .nota_encuesta.n5 { background: #e6f4ec; color: var(--ok); }
+.marco_revision { margin-top: 12px; padding-top: 12px;
+                  border-top: 1px solid var(--linea); }
+.marco_revision textarea { width: 100%; min-height: 70px; }
+a.enlace { color: var(--centauro); font-weight: 600; font-size: 13px;
+           text-decoration: none; }
+a.enlace:hover { text-decoration: underline; }
+
+/* ------------------------------------------------ el menú agrupado
+   Once entradas no caben en la barra. Las de operación van bajo un
+   solo botón que se abre; <details> lo hace el navegador, así que
+   Escape lo cierra y el teclado llega a él sin que nadie lo programe.
+
+   El panel va con position:fixed y se coloca al abrirlo. Tiene que ser
+   fixed: la barra del menú se desplaza de lado en el celular
+   (overflow-x), y cualquier panel absoluto adentro se recorta contra
+   ese carril justo cuando se necesita. */
+header.barra nav .grupo_menu > summary {
+  list-style: none; cursor: pointer; padding: 7px 13px; border-radius: 6px;
+  font-weight: 600; font-size: 13px; color: var(--gris); white-space: nowrap;
+}
+header.barra nav .grupo_menu > summary::-webkit-details-marker { display: none; }
+header.barra nav .grupo_menu > summary::after { content: " ▾"; opacity: .55; }
+header.barra nav .grupo_menu > summary:hover {
+  background: var(--suave); color: var(--centauro);
+}
+header.barra nav .grupo_menu > summary.activo {
+  background: var(--centauro); color: #fff;
+}
+.panel_menu {
+  position: fixed; z-index: 30; display: flex; flex-direction: column;
+  min-width: 200px; padding: 6px; background: #fff;
+  border: 1px solid var(--linea); border-radius: 9px;
+  box-shadow: 0 12px 28px rgba(27,21,70,.16);
+}
+.panel_menu a { display: block; }
+
+/* ------------------------------------------ personal de seguridad
+   La calificación con su barra: el número solo obliga a comparar de
+   memoria contra los demás renglones. */
+.calif { display: flex; align-items: center; gap: 9px; }
+.calif b { font-size: 17px; font-variant-numeric: tabular-nums;
+           color: var(--centauro); min-width: 44px; }
+.barrita { flex: 1; height: 6px; background: #edeff2; border-radius: 4px;
+           overflow: hidden; min-width: 56px; display: inline-block; }
+.barrita i { display: block; height: 100%; background: var(--centauro); }
+.medido { font-size: 11px; color: var(--gris); }
+.calificacion_grande { font-size: 26px; font-weight: 700;
+                       color: var(--centauro);
+                       font-variant-numeric: tabular-nums; line-height: 1.1; }
+.dim { display: flex; gap: 14px; padding: 12px 0;
+       border-bottom: 1px solid #f0f2f4; align-items: flex-start; }
+.dim:last-of-type { border-bottom: 0; }
+.dim .cuerpo { flex: 1; min-width: 0; }
+.dim .nombre { font-weight: 650; font-size: 13.5px; }
+.dim .aporte { text-align: right; min-width: 104px; font-weight: 650;
+               font-variant-numeric: tabular-nums; }
+.dim .aporte .de { display: block; font-size: 11px; color: var(--gris);
+                   font-weight: 400; }
+.pesa { width: 58px; flex: 0 0 58px; }
+.pesa .n { font-size: 10.5px; color: var(--gris); font-weight: 650; }
+.pesa .b { height: 6px; background: #edeff2; border-radius: 4px;
+           overflow: hidden; margin-top: 8px; }
+.pesa .b i { display: block; height: 100%; background: var(--centauro); }
+
+/* ------------------------------------------- la bitácora del día
+   El eje va en medio: a la izquierda la hora, a la derecha lo que
+   pasó. Lo planeado y lo real comparten la misma línea, que es todo el
+   punto: la diferencia se lee sin restar. */
+.bitacora { padding: 4px 0 2px; }
+.leyenda_bitacora { display: flex; gap: 18px; flex-wrap: wrap;
+  margin-bottom: 14px; font-size: 12px; color: var(--gris); }
+.leyenda_bitacora b { color: var(--texto); font-weight: 650; }
+.paso { display: flex; align-items: stretch; }
+.paso .hora { flex: 0 0 62px; text-align: right; padding: 10px 12px 10px 0;
+  font-size: 12.5px; color: var(--gris); font-weight: 650;
+  font-variant-numeric: tabular-nums; }
+.paso .eje { flex: 0 0 28px; position: relative; }
+.paso .eje::before { content: ""; position: absolute; left: 13px; top: 0;
+  bottom: 0; width: 2px; background: var(--linea); }
+.paso:first-of-type .eje::before { top: 16px; }
+.paso:last-of-type .eje::before { bottom: calc(100% - 16px); }
+.paso .punto { position: absolute; left: 4px; top: 9px; width: 20px;
+  height: 20px; border-radius: 50%; background: #fff;
+  border: 2px solid var(--linea); font-size: 9px; line-height: 16px;
+  text-align: center; color: var(--gris); z-index: 1; }
+.paso .cuerpo { flex: 1; padding: 9px 0 9px 12px; min-width: 0; }
+.paso .titulo { font-weight: 650; font-size: 13.5px; }
+.paso .detalle { font-size: 12.5px; color: var(--gris); }
+.paso .titulo .etiqueta, .paso .titulo .marca { margin-left: 6px; }
+/* El color dice de dónde salió el renglón: gris es una promesa del
+   cliente, azul marino un hecho del equipo, ámbar algo que el sistema
+   notó, azul algo que alguien de la casa tocó a mano. */
+.paso.plan .punto { border-color: #c8cfda; color: #8892a0; }
+.paso.plan .titulo { color: #5d6670; font-weight: 600; }
+.paso.hito .punto { border-color: var(--centauro); color: var(--centauro); }
+.paso.alerta .punto { border-color: var(--alerta); color: var(--alerta);
+  background: #fdf6e3; }
+.paso.alerta .titulo { color: #7a5c07; }
+.paso.central .punto { border-color: #1f4fbf; color: #1f4fbf;
+  background: #e4edfd; }
+.paso.central .titulo { color: #1f4fbf; }
+.paso .marca { display: inline-block; font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .5px; padding: 2px 7px;
+  border-radius: 20px; background: var(--suave); color: var(--centauro);
+  vertical-align: middle; }
+.paso .marca.ok { background: #e6f4ec; color: var(--ok); }
+.paso .marca.alerta { background: #fdf6e3; color: var(--alerta); }
+.paso .marca.grave { background: #fdecea; color: var(--grave); }
+
+/* La cuenta regresiva del visto bueno.
+
+   Grande y en numeros tabulares: se lee de un vistazo desde el otro
+   lado del escritorio, y no baila cada segundo al cambiar de digito.
+   Ambar en la ultima hora y rojo cuando vencio: un plazo que no se ve
+   no se siente, y de este depende la comision del consultor. */
+.reloj-cierre { font-size: 34px; font-weight: 700; line-height: 1.1;
+                font-variant-numeric: tabular-nums; margin: 4px 0 2px; }
+.reloj-cierre.apurado { color: var(--alerta); }
+.reloj-cierre.vencido { color: var(--grave); font-size: 20px; }

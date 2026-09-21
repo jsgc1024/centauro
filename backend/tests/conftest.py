@@ -30,11 +30,21 @@ TABLAS_DE_OPERACION = [
     "ajuste_comision", "comision_consultor", "resultado_criterio",
     "evaluacion_mensual", "incidencia", "reemplazo", "contrato_implantado",
     "desviacion", "cierre", "linea_cotizacion", "cotizacion",
-    "registro_accion", "notificacion", "alerta", "hito",
+    "registro_accion", "registro_admin", "notificacion", "alerta", "hito",
+    # El telefono suscrito a los avisos es movimiento, no catalogo: lo
+    # da de alta el propio agente desde su app. Faltaba aqui, asi que
+    # las suscripciones se acumulaban de una prueba a la siguiente y la
+    # misma persona terminaba con tres telefonos.
+    "suscripcion_push",
+    # Los certificados tampoco son catalogo: los manda Odoo, y cada
+    # prueba que los siembra se los dejaba puestos a la siguiente. La
+    # que revisa el padron vacio los encontraba llenos.
+    "capacitacion",
     "reemplazo_recurso", "alerta_incidencia",
     "concepto_nomina", "renglon_nomina", "ajuste_nomina", "nomina_semanal",
     "respuesta_encuesta", "encuesta",
-    "solicitud_transferencia", "comprobante", "concepto_asignado",
+    "solicitud_transferencia", "devolucion_viatico",
+    "comprobante", "concepto_asignado",
     "asignacion_viatico", "asignacion_vehiculo", "asignacion_personal",
     "jornada", "equipo", "servicio", "solicitante",
     "task_sheet", "agenda_jornada", "parada_agenda", "hospedaje",
@@ -121,6 +131,7 @@ CUENTAS = {
     "consultor2": "beatriz.roman@centauro.lat",
     "central": "central@centauro.lat",
     "finanzas": "finanzas@centauro.lat",
+    "rrhh": "rrhh@centauro.lat",
     "diroperaciones": "operaciones@centauro.lat",
     "dirgeneral": "direccion@centauro.lat",
     "juan": "juan.ramirez@centauro.lat",

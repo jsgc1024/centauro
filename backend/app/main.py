@@ -11,9 +11,9 @@ from sqlalchemy.exc import IntegrityError
 
 from app import models  # noqa: F401  (registra las tablas en Base)
 from app import auth
-from app.config import revisar_secretos, settings
+from app.config import puertas_de_la_api, revisar_secretos, settings
 from app.marca import logo_incrustado
-from app.db import engine
+from app.db import engine, get_db
 from app.routers import (acceso, bonos, campo, catalogos, central, cierre,
                          contingencia, encuestas, implantados, mapas, nomina,
                          odoo, operacion, panorama, profesionalismo, servicios,
@@ -39,6 +39,9 @@ app = FastAPI(
     version="0.2.0",
     description="Sistema de operacion de servicios de proteccion ejecutiva.",
     lifespan=lifespan,
+    # En desarrollo, `/docs` abierto. En produccion no existe: ver
+    # `puertas_de_la_api`.
+    **puertas_de_la_api(settings),
 )
 
 app.include_router(acceso.router)
@@ -149,12 +152,50 @@ def sembrar_catalogos(usuario=Depends(auth.usuario_opcional)):
 
 WEB = Path(__file__).resolve().parent / "web"
 
+# El estado del correo lo mira quien reparte accesos: es la misma gente
+# que responde cuando alguien dice que no le llego nada.
+ADMINISTRA = auth.requiere(models.Rol.ADMIN, models.Rol.DIRECTOR_GENERAL)
+
 
 @app.get("/sistema/logo", tags=["Sistema"], summary="Logo incrustado")
 def logo():
     """La consola lo pide una vez y lo reusa: es el mismo del task sheet,
     asi que la pantalla y el documento nunca se ven distintos."""
     return {"logo": logo_incrustado()}
+
+
+@app.get("/sistema/correo", tags=["Sistema"],
+         summary="Como esta la cola de avisos")
+def estado_del_correo(db: Session = Depends(get_db),
+                      _: models.Usuario = Depends(ADMINISTRA)):
+    """Si hay proveedor configurado y cuantos avisos esperan.
+
+    Es lo que se mira cuando alguien dice que no le llego nada: o no hay
+    proveedor --y entonces no le llego a nadie-- o el aviso esta ahi con
+    su error escrito al lado.
+
+    Y es lo que hay que mirar ANTES de poner las credenciales:
+    `saldrian` son los avisos que van a salir en la primera vuelta y
+    `viejos` los que ya no --escritos hace mas de `horas_de_vida`--.
+    Encender sin mirar este numero es mandar semanas de avisos viejos a
+    clientes reales.
+    """
+    from app import correo
+    return correo.estado(db)
+
+
+@app.post("/sistema/correo/despachar", tags=["Sistema"],
+          summary="Sacar los avisos pendientes ahora")
+def despachar_correo(db: Session = Depends(get_db),
+                     _: models.Usuario = Depends(ADMINISTRA)):
+    """La misma vuelta que da el reloj cada cinco minutos, a mano.
+
+    Sirve el dia que se configura el proveedor y no se quiere esperar, y
+    sirve para probar que de verdad sale algo antes de confiar en que
+    sale solo.
+    """
+    from app import correo
+    return correo.despachar(db)
 
 
 class ConsolaSinCache(StaticFiles):

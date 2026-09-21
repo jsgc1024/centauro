@@ -35,6 +35,21 @@ class TipoServicio(str, enum.Enum):
     IMPLANTADO = "implantado"
 
 
+class CodigoVestimenta(str, enum.Enum):
+    """Como se presenta el equipo. Lista cerrada de tres y no texto
+    libre: "traje oscuro sin corbata" escrito a mano en cada servicio se
+    lee distinto cada vez, y quien lo tiene que cumplir es alguien que
+    lee la app a las cinco de la manana.
+
+    Solo aplica al eventual. El implantado trabaja todos los dias con el
+    mismo cliente y su vestimenta se acuerda una vez, no servicio por
+    servicio. Decision de Salvador (20 sep).
+    """
+    CASUAL = "casual"
+    SEMIFORMAL = "semiformal"
+    FORMAL = "formal"
+
+
 class NivelHospital(str, enum.Enum):
     """Hasta donde llega un hospital.
 
@@ -83,6 +98,17 @@ class Pais(Base):
     anticipacion_min: Mapped[int] = mapped_column(
         Integer, default=30, server_default="30")
     moneda_local: Mapped[Moneda] = mapped_column(Enum(Moneda))
+    # En que idioma se le habla a la gente de este pais. Decision de
+    # Salvador (19 sep) para la app de campo: el agente no elige idioma
+    # --va con una mano y prisa, y un boton que se toca sin querer y le
+    # deja la app en portugues a las seis de la manana es peor que el
+    # problema que resuelve--. Lo toma del pais donde esta su plaza.
+    #
+    # Va como texto de dos letras y no como ENUM de Postgres, igual que
+    # el resto: agregar un idioma manana no deberia necesitar tocar la
+    # base.
+    idioma: Mapped[str] = mapped_column(String(2), default="es",
+                                        server_default="es")
     # Que hora es alla. Nombre IANA: America/Mexico_City,
     # America/Sao_Paulo, America/Caracas.
     #
@@ -480,19 +506,65 @@ class EstatusServicio(str, enum.Enum):
     PLANEADO = "planeado"
     # Ya tiene personal y unidad en todas sus jornadas, pero todavia no sale.
     ASIGNADO = "asignado"
+    # El equipo ya esta parado en el punto, esperando al principal.
+    # Decision de Salvador, 20 sep: mirando la cartera queria saber que
+    # su gente ya llego, y "asignado" no se lo decia.
+    #
+    # No lo promueve `programacion.evaluar`: lo enciende la llegada al
+    # punto, igual que en la jornada. Y de aqui solo se sale hacia
+    # adelante --el contacto con el principal lo pasa a en curso-- o por
+    # el cierre del ultimo dia.
+    ARRIBADO = "arribado"
     EN_CURSO = "en_curso"
     TERMINADO = "terminado"
     CERRADO = "cerrado"
     CANCELADO = "cancelado"
 
 
+# Todo lo que pasa ANTES de que el servicio salga a la calle.
+#
+# Vive aqui y no en cada archivo porque tres lugares distintos preguntan
+# lo mismo --¿este servicio ya arranco?-- y el dia que no coincidieron
+# paso esto: un servicio con la cotizacion ya autorizada no llegaba
+# nunca a `en curso` ni a `terminado`, porque el que enciende el motor
+# miraba una lista corta que no incluia `autorizado`. El servicio se
+# trabajaba, se cerraba el dia, y en la cartera seguia viendose como uno
+# que todavia no sale.
+ANTES_DE_ARRANCAR = (
+    EstatusServicio.BORRADOR,
+    EstatusServicio.SOLICITADO,
+    EstatusServicio.COTIZADO,
+    EstatusServicio.AUTORIZADO,
+    EstatusServicio.PLANEADO,
+    EstatusServicio.ASIGNADO,
+)
+
+
 class EstatusJornada(str, enum.Enum):
     PLANEADA = "planeada"
     CONFIRMADA = "confirmada"
     PROXIMA_A_INICIAR = "proxima_a_iniciar"
+    # Llego al punto y espera al principal. Decision de Salvador, 20 sep.
+    #
+    # Llegar y esperar veinte minutos a que el ejecutivo baje no es tener
+    # el servicio corriendo, y decir "en curso" ahi le quitaba a la
+    # central la unica pantalla donde se ve ese rato --que es justo el
+    # rato en que todavia se puede hacer algo si el equipo no esta--.
+    #
+    # Para todo lo demas cuenta como arrancado: esta en la calle, se le
+    # mide el silencio, su dia ya no se borra y sus horas cuentan. Lo
+    # unico que cambia es lo que dice la pantalla. Ver ARRANCADAS.
+    ARRIBADO = "arribado"
     EN_CURSO = "en_curso"
     TERMINADA = "terminada"
     CANCELADA = "cancelada"
+
+
+# Los dias que ya arrancaron. Quien tenga que preguntar "¿ya empezo?" lo
+# pregunta con esto y no con una lista propia: el dia que se agrego
+# `arribado`, cada lista suelta era un lugar donde alguien parado en la
+# calle desaparecia de una pantalla.
+ARRANCADAS = (EstatusJornada.ARRIBADO, EstatusJornada.EN_CURSO)
 
 
 def _nombre_completo(nombre: str | None, apellidos: str | None) -> str | None:
@@ -531,6 +603,21 @@ class Servicio(Base):
     ejecutivo_correo: Mapped[str | None] = mapped_column(String(160), nullable=True)
     ejecutivo_telefono: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
+    # En que idioma lee cada uno. El principal arranca en ingles --suele
+    # ser extranjero, que es la regla que textos.py ya tenia escrita para
+    # el task sheet-- y el solicitante en el idioma del pais donde se
+    # ejecuta el servicio, porque casi siempre es gente local: la
+    # asistente, el area de seguridad del cliente. Decision de Salvador
+    # (20 sep).
+    #
+    # El del solicitante admite nulo a proposito: vacio quiere decir "el
+    # de su pais" y se resuelve al escribir el aviso, asi los servicios
+    # viejos quedan con la regla nueva sin rellenarlos uno por uno.
+    idioma_ejecutivo: Mapped[str] = mapped_column(
+        String(2), default="en", server_default="en")
+    idioma_solicitante: Mapped[str | None] = mapped_column(
+        String(2), nullable=True)
+
     @property
     def solicitante_completo(self) -> str | None:
         return _nombre_completo(self.solicitante_nombre, self.solicitante_apellidos)
@@ -545,6 +632,10 @@ class Servicio(Base):
         DateTime(timezone=True), nullable=True)
     asignacion_confirmada_por_id: Mapped[int | None] = mapped_column(
         ForeignKey("persona.id"), nullable=True)
+    # Como va vestido el equipo. Nulo a proposito: los servicios que ya
+    # existen no dicen nada en vez de decir algo que nadie acordo, y el
+    # implantado no la usa nunca.
+    vestimenta: Mapped[str | None] = mapped_column(String(12), nullable=True)
     senal_texto: Mapped[str | None] = mapped_column(String(80), nullable=True)
     senal_imagen: Mapped[str | None] = mapped_column(Text, nullable=True)
     senal_nota: Mapped[str | None] = mapped_column(String(200), nullable=True)
@@ -703,6 +794,21 @@ class AsignacionPersonal(Base):
     rol_id: Mapped[int | None] = mapped_column(
         ForeignKey("perfil_personal.id"), nullable=True)
     confirmado: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Cuando y por quien. Vacio el segundo quiere decir que confirmo la
+    # propia persona desde su app, que es el caso normal.
+    #
+    # Lo llena la central cuando el agente no trae la app --o no la
+    # tiene encendida-- y lo confirmo por telefono. Va sellado a
+    # proposito: una confirmacion registrada por otro NO es la misma
+    # cosa que la de la persona, y la pantalla no las pinta igual. Sin
+    # el sello, el dia que alguien no llegue nadie podria saber si
+    # confirmo el o lo confirmaron por el.
+    confirmado_en: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True)
+    confirmado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    nota_confirmacion: Mapped[str | None] = mapped_column(
+        String(200), nullable=True)
     # Reemplazo por contingencia: a quien sustituye esta asignacion.
     reemplaza_a_id: Mapped[int | None] = mapped_column(ForeignKey("persona.id"), nullable=True)
     # El otro lado del mismo cambio: esta asignacion fue relevada a media
@@ -719,10 +825,19 @@ class AsignacionPersonal(Base):
     vehiculo_id: Mapped[int | None] = mapped_column(
         ForeignKey("vehiculo.id", ondelete="SET NULL"), nullable=True)
 
+    # El cliente lo pidio por nombre. Lo marca el consultor al armar el
+    # equipo, y es lo unico que distingue "me lo volvieron a pedir" de
+    # "coincidimos porque estaba libre". Nace apagado: un campo vacio no
+    # castiga a nadie --el criterio simplemente no aplica--.
+    pedido_por_cliente: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false")
+
     jornada: Mapped[Jornada] = relationship(back_populates="personal")
     persona: Mapped[Persona] = relationship(foreign_keys=[persona_id])
     relevado_por: Mapped["Persona | None"] = relationship(
         foreign_keys=[relevado_por_id])
+    confirmado_por: Mapped["Persona | None"] = relationship(
+        foreign_keys=[confirmado_por_id])
     rol: Mapped["PerfilPersonal | None"] = relationship()
     vehiculo: Mapped["Vehiculo | None"] = relationship()
 
@@ -819,6 +934,8 @@ class AsignacionViatico(Base):
         back_populates="asignacion", cascade="all, delete-orphan")
     comprobantes: Mapped[list["Comprobante"]] = relationship(
         back_populates="asignacion", cascade="all, delete-orphan")
+    devoluciones: Mapped[list["DevolucionViatico"]] = relationship(
+        back_populates="asignacion", cascade="all, delete-orphan")
 
 
 class ConceptoAsignado(Base):
@@ -873,6 +990,65 @@ class EstatusTransferencia(str, enum.Enum):
     CANCELADA = "cancelada"
 
 
+class EstatusDevolucion(str, enum.Enum):
+    DECLARADA = "declarada"      # la persona dice que ya transfirio
+    CONFIRMADA = "confirmada"    # finanzas la vio entrar a la cuenta
+    RECHAZADA = "rechazada"      # no llego, o no cuadra
+
+
+class DevolucionViatico(Base):
+    """El dinero que regresa: la transferencia al reves.
+
+    Sobro dinero, o el servicio se cancelo con el deposito ya hecho. La
+    persona transfiere de vuelta y manda su comprobante; finanzas
+    confirma cuando lo ve entrar en la cuenta de la empresa.
+
+    **Declarada no es confirmada**, por la misma razon por la que
+    autorizado no es depositado. Si lo declarado contara de una vez, a
+    la persona se le apagaria sola su deuda --y con ella el plazo de
+    comprobacion-- diciendo que devolvio un dinero que la empresa
+    todavia no ha visto. Ese es exactamente el defecto que tenia la app
+    del otro lado, y cuesta lo mismo no repetirlo aqui.
+
+    `AsignacionViatico.monto_devuelto` guarda SOLO lo confirmado: es lo
+    que leen la rentabilidad, el bono y el tablero de dinero en la
+    calle, y ninguno de esos puede moverse con una promesa.
+    """
+    __tablename__ = "devolucion_viatico"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asignacion_id: Mapped[int] = mapped_column(
+        ForeignKey("asignacion_viatico.id", ondelete="CASCADE"), index=True)
+    monto: Mapped[float] = mapped_column(Numeric(12, 2))
+    moneda: Mapped[Moneda] = mapped_column(Enum(Moneda))
+    # El folio del banco y la imagen. Misma regla que el deposito: sin
+    # evidencia, la unica prueba de que el dinero volvio es la palabra
+    # de quien lo capturo.
+    referencia: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    comprobante: Mapped[str | None] = mapped_column(Text, nullable=True)
+    estatus: Mapped[EstatusDevolucion] = mapped_column(
+        Enum(EstatusDevolucion), default=EstatusDevolucion.DECLARADA)
+    # Quien dijo que transfirio. Es la propia persona desde su app, o
+    # finanzas capturandola cuando la vio llegar sin que nadie avisara.
+    declarada_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    declarada_en: Mapped[datetime | None] = mapped_column(DateTime,
+                                                          nullable=True)
+    confirmada_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    confirmada_en: Mapped[datetime | None] = mapped_column(DateTime,
+                                                           nullable=True)
+    motivo_rechazo: Mapped[str | None] = mapped_column(String(300),
+                                                       nullable=True)
+
+    asignacion: Mapped["AsignacionViatico"] = relationship(
+        back_populates="devoluciones")
+    declarada_por: Mapped["Persona | None"] = relationship(
+        foreign_keys=[declarada_por_id])
+    confirmada_por: Mapped["Persona | None"] = relationship(
+        foreign_keys=[confirmada_por_id])
+
+
 class SolicitudTransferencia(Base):
     """Por el volumen no se transfiere en tiempo real: ventanas y barridos por lote."""
     __tablename__ = "solicitud_transferencia"
@@ -893,6 +1069,15 @@ class SolicitudTransferencia(Base):
     confirmada_en: Mapped[datetime | None] = mapped_column(DateTime,
                                                            nullable=True)
     confirmada_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    # El consultor quiere echarse para atras algo que YA esta en manos de
+    # finanzas. No lo cancela el solo: el unico que sabe si el dinero ya
+    # salio del banco es finanzas, y cancelar aqui una transferencia que
+    # ya se hizo deja dinero entregado sin registro. Queda pedida, y
+    # finanzas la cierra --o la deposita, si ya era tarde--.
+    cancelacion_pedida_en: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True)
+    cancelacion_pedida_por_id: Mapped[int | None] = mapped_column(
         ForeignKey("persona.id"), nullable=True)
     # De que deposito salio. Varias solicitudes --los dias de una persona
     # en un equipo-- se pagan con una sola transferencia, y es ahi donde
@@ -944,6 +1129,13 @@ class DepositoBancario(Base):
                                                             nullable=True)
     despachado_por_id: Mapped[int | None] = mapped_column(
         ForeignKey("persona.id"), nullable=True)
+    # El dinero salio del banco DESPUES de que alguien cancelo la
+    # solicitud. No se rechaza --un deposito real siempre tiene donde
+    # registrarse, o se arregla por fuera y lo que se arregla por fuera
+    # no se audita-- pero queda marcado: es dinero que hay que aplicar o
+    # pedir de vuelta, y el consultor tiene que verlo.
+    sobre_cancelada: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"))
     # Subir el archivo correcto es lo mas comun que pasa despues de
     # registrar. Se permite siempre, y queda quien lo cambio y cuando.
     corregido_en: Mapped[datetime | None] = mapped_column(DateTime,
@@ -1063,6 +1255,11 @@ class Destinatario(str, enum.Enum):
     CENTRAL = "central"
     CONSULTOR = "consultor"
     PERSONAL = "personal"
+    # Alguien de la empresa, por algo que no es un servicio: su
+    # invitacion de acceso, el enlace para recuperar su contrasena, un
+    # aviso de administracion. Los cinco de arriba son papeles dentro de
+    # un servicio; este es una persona a secas.
+    COLABORADOR = "colaborador"
 
 
 class Canal(str, enum.Enum):
@@ -1101,10 +1298,169 @@ class Hito(Base):
     ajustado_por_id: Mapped[int | None] = mapped_column(ForeignKey("persona.id"), nullable=True)
     marcado_original: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     justificacion_ajuste: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    # Registrado por la central porque nadie lo marco desde la calle.
+    #
+    # No es lo mismo que un ajuste. Ajustar corrige la hora de una marca
+    # que existe; esto CREA una marca que nunca se hizo, y esa diferencia
+    # tiene que poder verse para siempre: `inicio_real` sale de aqui, y
+    # de `inicio_real` salen las horas que se le facturan al cliente.
+    # Un dia que alguien firmo desde una oficina no se puede confundir
+    # con uno que alguien marco parado en la calle.
+    registrado_a_mano_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    registrado_a_mano_en: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True)
+    motivo_a_mano: Mapped[str | None] = mapped_column(String(400),
+                                                      nullable=True)
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # La marca anulada. Pasa cuando la central reabre un dia que el
+    # equipo ya habia cerrado desde la calle: ese fin de servicio deja
+    # de contar, pero NO se borra. Una marca real que desaparece sin
+    # rastro es lo que este sistema no hace; dentro de seis meses
+    # alguien va a querer saber por que ese dia se cerro dos veces.
+    anulado_en: Mapped[datetime | None] = mapped_column(DateTime,
+                                                        nullable=True)
+    anulado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    motivo_anulacion: Mapped[str | None] = mapped_column(String(400),
+                                                         nullable=True)
 
     jornada: Mapped[Jornada] = relationship()
     persona: Mapped[Persona] = relationship(foreign_keys=[persona_id])
+    registrado_a_mano_por: Mapped[Persona | None] = relationship(
+        foreign_keys=[registrado_a_mano_por_id])
+    anulado_por: Mapped[Persona | None] = relationship(
+        foreign_keys=[anulado_por_id])
+
+
+class NotaBitacora(Base):
+    """Lo que alguien de la casa supo y escribio en el dia.
+
+    Las otras cuatro fuentes de la bitacora son automaticas: el plan lo
+    dicto el cliente, los hitos los marco el equipo, las alertas las
+    levanto el sistema y las acciones quedaron al tocar otra pantalla.
+    Faltaba la quinta, y era la que hace que una bitacora sea una
+    bitacora: lo que la central averigua por telefono.
+
+    "Hable con Juan, va en camino, hay manifestacion en Reforma." "El
+    cliente avisa que se extiende hasta las 22:00." Eso vivia en la
+    cabeza de quien contesto o en un WhatsApp, y el turno siguiente no
+    lo heredaba.
+
+    **No se edita ni se borra.** Una bitacora que se puede corregir
+    despues no sirve para lo unico que sirve una bitacora: reconstruir
+    que se sabia y en que momento. Si algo quedo mal escrito, se
+    escribe otra nota --y las dos se leen, en orden.
+    """
+    __tablename__ = "nota_bitacora"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    jornada_id: Mapped[int] = mapped_column(ForeignKey("jornada.id"))
+    persona_id: Mapped[int] = mapped_column(ForeignKey("persona.id"))
+    texto: Mapped[str] = mapped_column(String(600))
+    # La hora la pone el servidor: una nota con hora a eleccion de quien
+    # escribe deja de ser un registro de cuando se supo algo.
+    creada_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+    persona: Mapped[Persona] = relationship(foreign_keys=[persona_id])
+
+
+class EstadoTrayecto(str, enum.Enum):
+    """Como va quien todavia no ha llegado al punto."""
+    ESPERANDO = "esperando"          # se le pregunto y no ha contestado
+    EN_CAMINO = "en_camino"          # contesto y se esta acercando
+    CERCA = "cerca"                  # ya esta al lado del punto
+    LLEGO = "llego"                  # marco su llegada; se apaga
+    SIN_RESPUESTA = "sin_respuesta"  # no contesta los toques
+    NO_LLEGA = "no_llega"            # se mueve, pero no le alcanza el tiempo
+    # La central hablo con el por telefono y dijo que ya va. Vale, y se
+    # ve distinto de la posicion que manda el telefono solo: una es un
+    # dato, la otra es la palabra de alguien. Y no vale para siempre:
+    # pasado el plazo se vuelve a vigilar.
+    POR_TELEFONO = "por_telefono"
+
+
+class Trayecto(Base):
+    """El camino al meet and greet, de una persona en un dia.
+
+    Existe por el caso que no daba ninguna senal: el conductor que se
+    queda dormido. No marca nada --el sistema no recibe un dato
+    equivocado, no recibe ninguno-- y el silencio no disparaba nada; la
+    central se enteraba cuando llamaba el cliente.
+
+    Y reponer a alguien toma hasta hora y media (dato de Salvador, 20
+    sep), asi que enterarse a la hora de la presentacion es enterarse
+    tarde. Por eso el primer toque va a DOS horas de la hora de estar en
+    el punto: con hora y media, el reemplazo llegaria quince minutos
+    despues del servicio.
+
+    La ventana se abre con el primer toque y se cierra al marcar la
+    llegada o al acercarse al punto. Fuera de ella no se toma nada: esto
+    es el tiempo de la persona, no el del servicio.
+    """
+    __tablename__ = "trayecto"
+    __table_args__ = (UniqueConstraint("jornada_id", "persona_id",
+                                       name="uq_trayecto_jornada_persona"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    jornada_id: Mapped[int] = mapped_column(ForeignKey("jornada.id"), index=True)
+    persona_id: Mapped[int] = mapped_column(ForeignKey("persona.id"), index=True)
+    estado: Mapped[EstadoTrayecto] = mapped_column(
+        String(14), default=EstadoTrayecto.ESPERANDO)
+    # Cuantas veces se le pregunto. Tres y ya: mas toques no dan mas
+    # informacion, solo ensenan a ignorar los avisos.
+    toques: Mapped[int] = mapped_column(Integer, default=0,
+                                        server_default=text("0"))
+    ultimo_toque_en: Mapped[datetime | None] = mapped_column(DateTime,
+                                                             nullable=True)
+    # La primera lectura y la ultima. Con estas dos y el reloj sale todo
+    # lo que hay que saber, sin preguntarle nada a nadie.
+    distancia_inicial_m: Mapped[int | None] = mapped_column(Integer,
+                                                            nullable=True)
+    distancia_ultima_m: Mapped[int | None] = mapped_column(Integer,
+                                                           nullable=True)
+    ultima_lectura_en: Mapped[datetime | None] = mapped_column(DateTime,
+                                                               nullable=True)
+    # Cuantas lecturas seguidas sin avanzar. Una es trafico; dos ya no.
+    sin_avanzar: Mapped[int] = mapped_column(Integer, default=0,
+                                             server_default=text("0"))
+    # Para no levantar la misma alerta cada cinco minutos.
+    alertado: Mapped[bool] = mapped_column(Boolean, default=False,
+                                           server_default="false")
+    # La llamada de la central. Lo que se guarda no es "va en camino"
+    # --eso lo dice el estado-- sino QUIEN lo dijo y CUANDO, que es lo
+    # unico que distingue la palabra de una persona de una posicion del
+    # GPS. El dia que alguien no llegue, esa diferencia es la pregunta.
+    por_telefono_en: Mapped[datetime | None] = mapped_column(DateTime,
+                                                             nullable=True)
+    por_telefono_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    por_telefono_nota: Mapped[str | None] = mapped_column(String(200),
+                                                          nullable=True)
+
+    jornada: Mapped["Jornada"] = relationship()
+    persona: Mapped["Persona"] = relationship(foreign_keys=[persona_id])
+    por_telefono_por: Mapped["Persona | None"] = relationship(
+        foreign_keys=[por_telefono_por_id])
+    lecturas: Mapped[list["LecturaTrayecto"]] = relationship(
+        cascade="all, delete-orphan", order_by="LecturaTrayecto.momento")
+
+
+class LecturaTrayecto(Base):
+    """Donde estaba cada vez que contesto."""
+    __tablename__ = "lectura_trayecto"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    trayecto_id: Mapped[int] = mapped_column(
+        ForeignKey("trayecto.id", ondelete="CASCADE"), index=True)
+    momento: Mapped[datetime] = mapped_column(DateTime)
+    lat: Mapped[float] = mapped_column(Numeric(10, 7))
+    lon: Mapped[float] = mapped_column(Numeric(10, 7))
+    # En linea recta al punto de origen. Lo que importa no es el numero,
+    # es si baja.
+    distancia_m: Mapped[int] = mapped_column(Integer)
 
 
 class Alerta(Base):
@@ -1133,23 +1489,84 @@ class Alerta(Base):
 
 
 class Notificacion(Base):
-    """Aviso al solicitante, al ejecutivo o al personal.
-    En el demo se registra; el envio real se conecta despues."""
+    """Un aviso que sale de la empresa: correo o WhatsApp.
+
+    En el demo se registra; el envio real se conecta despues.
+
+    `servicio_id` era obligatorio, y con eso el sistema no sabia mandar
+    nada que no fuera sobre un servicio: ni la invitacion de acceso de
+    alguien que acaba de entrar, ni el enlace de "olvide mi contrasena".
+    Por eso esos dos los sigue entregando administracion a mano.
+
+    Es la tercera tabla con la misma suposicion metida --"todo lo que
+    pasa aqui pasa dentro de un servicio"--. `RegistroAccion` la tenia y
+    por eso nacio `RegistroAdmin`. Aqui se quito en vez de hacer una
+    tabla nueva: un aviso a una persona y un aviso sobre un servicio son
+    la misma cosa saliendo por el mismo canal, y partirlos en dos habria
+    dejado dos bandejas que revisar.
+    """
     __tablename__ = "notificacion"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     jornada_id: Mapped[int | None] = mapped_column(ForeignKey("jornada.id"), nullable=True)
-    servicio_id: Mapped[int] = mapped_column(ForeignKey("servicio.id"))
+    # Vacio: el aviso no es sobre un servicio. Va a una persona.
+    servicio_id: Mapped[int | None] = mapped_column(
+        ForeignKey("servicio.id"), nullable=True)
     destinatario: Mapped[Destinatario] = mapped_column(Enum(Destinatario))
     canal: Mapped[Canal] = mapped_column(Enum(Canal))
     correo: Mapped[str | None] = mapped_column(String(160), nullable=True)
     asunto: Mapped[str] = mapped_column(String(200))
     cuerpo: Mapped[str] = mapped_column(String(2000))
     enlace_seguimiento: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    # La ficha del aviso: pares "clave: valor" que se pintan en una tabla
+    # de dos columnas. Quien va, en que unidad, a que hora.
+    #
+    # Va aqui y no dentro del cuerpo porque un dato metido en un parrafo
+    # es un dato que hay que leer entero para encontrar: el correo se
+    # abre en el telefono a las seis de la manana y lo que se busca es la
+    # placa. Se guarda como JSON de texto --lista de pares-- para no
+    # atar la tabla a un tipo de Postgres por cuatro renglones.
+    datos: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # En que idioma se escribio. El cuerpo y el asunto ya vienen
+    # traducidos de quien origina el aviso; esto es para lo que el
+    # despachador pone encima: el texto del boton y la linea de lo que
+    # vence. Vacio: ingles, que es la omision de la casa.
+    idioma: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    # Con que cara sale. Vacio quiere decir el armazon de la casa; la
+    # encuesta tiene el suyo --una sola llamada a la accion, en tres
+    # idiomas-- porque lo que le pide al cliente es distinto.
+    # El nombre de la plantilla del correo. Veinte caracteres era una
+    # trampa: "encuesta_recordatorio" mide veintiuno y reventaba al
+    # guardar, no al escribirlo. Un nombre de plantilla se lee en el
+    # codigo y tiene que poder decir lo que es.
+    plantilla: Mapped[str | None] = mapped_column(String(40), nullable=True)
     expira_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Cuando se ESCRIBIO el aviso. El nombre viene de cuando esta tabla
+    # solo registraba; se queda porque ya hay codigo y pruebas que lo
+    # leen, y renombrarlo no le devuelve el dia a nadie.
     enviada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    servicio: Mapped[Servicio] = relationship()
+    # Y cuando salio de verdad. Escribir el aviso y entregarlo son dos
+    # cosas distintas: entre una y otra hay un proveedor que puede estar
+    # caido, una direccion mal escrita y una bandeja que lo rebota.
+    #
+    #   pendiente  escrito, todavia no sale
+    #   enviada    el proveedor lo acepto
+    #   fallida    se intento lo suficiente y no se pudo
+    #   sin_correo no hay a donde mandarlo (aviso interno, o sin direccion)
+    #   vencida    se escribio y no salio a tiempo; ya no tiene sentido
+    #              mandarlo (ver correo.HORAS_DE_VIDA)
+    estado: Mapped[str] = mapped_column(String(12), default="pendiente",
+                                        server_default="pendiente", index=True)
+    intentos: Mapped[int] = mapped_column(Integer, default=0,
+                                          server_default=text("0"))
+    salio_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Lo ultimo que dijo el proveedor cuando dijo que no. Se guarda
+    # porque "no salio" no le sirve a nadie: lo que se necesita saber es
+    # si fue la direccion, la clave o que el buzon esta lleno.
+    ultimo_error: Mapped[str | None] = mapped_column(String(300), nullable=True)
+
+    servicio: Mapped[Servicio | None] = relationship()
 
 
 # ================================================================ ACCESO
@@ -1162,6 +1579,11 @@ class Rol(str, enum.Enum):
     DIRECTOR_OPERACIONES = "director_operaciones"
     DIRECTOR_GENERAL = "director_general"       # decide en incidencias graves
     FINANZAS = "finanzas"
+    # Autoriza el bono del mes y reparte los accesos. Lo que NO trae, y
+    # es a proposito: depositar. Autorizar el bono y pagarlo son el
+    # unico control que tiene ese dinero, y juntos en una mano el
+    # control es la buena fe.
+    RECURSOS_HUMANOS = "recursos_humanos"
     ADMIN = "admin"
 
 
@@ -1175,11 +1597,27 @@ class Usuario(Base):
     correo: Mapped[str] = mapped_column(String(160), unique=True, index=True)
     hash_contrasena: Mapped[str | None] = mapped_column(String(200), nullable=True)
     rol: Mapped[Rol] = mapped_column(Enum(Rol))
+    # Su puesto configurable. Vacio: cae en los permisos de su rol, que
+    # es como funciono el sistema hasta que existieron las categorias.
+    categoria_id: Mapped[int | None] = mapped_column(
+        ForeignKey("categoria_acceso.id"), nullable=True)
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
     ultimo_acceso: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Cuando vio el recorrido de la primera vez. Va en el usuario y no en
+    # el navegador: quien ya lo vio no tiene que volver a verlo porque
+    # cambio de computadora, y quien nunca lo vio lo ve aunque entre
+    # desde una que ya lo mostro.
+    recorrido_en: Mapped[datetime | None] = mapped_column(DateTime,
+                                                          nullable=True)
+    # Todo token emitido antes de esta hora deja de valer. Es lo que hace
+    # que cambiar la contrasena tire las sesiones abiertas: con un token
+    # sin estado, el que te la robo seguiria adentro doce horas mas.
+    sesiones_desde: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     persona: Mapped[Persona] = relationship()
+    categoria: Mapped["CategoriaAcceso | None"] = relationship()
 
 
 class TipoRevision(str, enum.Enum):
@@ -1188,11 +1626,37 @@ class TipoRevision(str, enum.Enum):
     ENTREGA = "entrega"      # el equipo la devuelve
 
 
+class TipoDano(str, enum.Enum):
+    """De que fue el golpe.
+
+    Con nombre y no como texto libre por la misma razon que
+    `MotivoCambio`: de aqui salen cuentas que la direccion va a pedir
+    --cuantas unidades vuelven con dano al mes, de que tipo, en que
+    plazas-- y escrito a mano no se puede contar. La descripcion en
+    texto va aparte y es obligatoria; esto solo sirve para agrupar.
+
+    La lista es corta a proposito: se elige de un vistazo en un telefono,
+    a las seis de la manana. `OTRO` existe para que nadie se quede
+    atorado escogiendo.
+    """
+    RAYON = "rayon"
+    GOLPE = "golpe"            # abolladura
+    CRISTAL = "cristal"
+    LLANTA = "llanta"
+    MECANICO = "mecanico"
+    OTRO = "otro"
+
+
 class AnguloFoto(str, enum.Enum):
     FRENTE = "frente"
     ATRAS = "atras"
     IZQUIERDO = "izquierdo"
     DERECHO = "derecho"
+    # El tablero con el kilometraje a la vista. Los cuatro lados prueban
+    # como estaba la lata; este prueba el numero, que hasta hoy era un
+    # dato tecleado y nada mas: al entregar, "recorrio 1,800 km" salia de
+    # dos cifras que alguien escribio de memoria.
+    ODOMETRO = "odometro"
     DANO = "dano"            # un golpe en particular, de cerca
 
 
@@ -1227,6 +1691,25 @@ class RevisionUnidad(Base):
     combustible_octavos: Mapped[int | None] = mapped_column(Integer,
                                                              nullable=True)
     nota: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # La declaracion de dano. Una sola pregunta, y lo que significa lo
+    # dice `tipo`:
+    #
+    #   recibe  + hubo_dano   la recibio golpeada. No es suyo, y
+    #                         declararlo es lo que lo protege.
+    #   entrega + hubo_dano   se golpeo durante su servicio, y ahi dice
+    #                         que paso.
+    #
+    # Por eso no hacen falta dos juegos de columnas. Y por eso la
+    # pregunta es obligatoria: una casilla opcional se queda vacia, y
+    # quien recibe una camioneta golpeada con prisa no va a documentar
+    # por su cuenta un dano que no hizo --que es justo donde le hara
+    # falta tres semanas despues--.
+    hubo_dano: Mapped[bool] = mapped_column(Boolean, default=False)
+    dano_tipo: Mapped[TipoDano | None] = mapped_column(String(12),
+                                                       nullable=True)
+    dano_nota: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     firma: Mapped[str | None] = mapped_column(Text, nullable=True)
     lat: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
     lon: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
@@ -1288,15 +1771,110 @@ class SuscripcionPush(Base):
     persona: Mapped["Persona"] = relationship()
 
 
+class CategoriaAcceso(Base):
+    """Un puesto configurable: que puede tocar y cuanto dura su sesion.
+
+    Existe para que "consultor junior --consultor que no decide cuanto
+    dinero se deposita--" sea una cosa con nombre, y no un permiso
+    suelto colgado de una persona.
+    """
+    __tablename__ = "categoria_acceso"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nombre: Mapped[str] = mapped_column(String(80), unique=True)
+    descripcion: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # Cuanto dura la sesion de quien la trae. Vacio: las doce horas de
+    # siempre. Doce parejas para todos no sirven: quien esta en la calle
+    # vuelve a entrar a media jornada, y una computadora de oficina que
+    # se queda prendida sigue abierta toda la tarde.
+    horas_sesion: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    activa: Mapped[bool] = mapped_column(Boolean, default=True)
+    creado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+    actividades: Mapped[list["ActividadDeCategoria"]] = relationship(
+        back_populates="categoria", cascade="all, delete-orphan")
+
+
+class ActividadDeCategoria(Base):
+    """Que trae una categoria. Una fila por actividad."""
+    __tablename__ = "actividad_de_categoria"
+    __table_args__ = (UniqueConstraint("categoria_id", "actividad"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    categoria_id: Mapped[int] = mapped_column(
+        ForeignKey("categoria_acceso.id", ondelete="CASCADE"))
+    # El nombre de la actividad, como lo declara `permisos.py`. Se guarda
+    # el texto y no una llave foranea porque el catalogo vive en el
+    # codigo: es el codigo el que sabe que puertas existen.
+    actividad: Mapped[str] = mapped_column(String(60), index=True)
+
+    categoria: Mapped[CategoriaAcceso] = relationship(
+        back_populates="actividades")
+
+
+class PermisoExtra(Base):
+    """Lo que una persona puede de mas que su categoria.
+
+    Solo da, nunca quita. Una excepcion que quitara dejaria su renglon
+    diciendo "Consultor" cuando no lo es; para quitar se le hace una
+    categoria propia, que si se lee de un vistazo.
+
+    Lleva quien lo dio y cuando: un permiso suelto sin dueno es el que
+    nadie se atreve a quitar.
+    """
+    __tablename__ = "permiso_extra"
+    __table_args__ = (UniqueConstraint("usuario_id", "actividad"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    usuario_id: Mapped[int] = mapped_column(
+        ForeignKey("usuario.id", ondelete="CASCADE"))
+    actividad: Mapped[str] = mapped_column(String(60))
+    dado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    motivo: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    creado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+    dado_por: Mapped["Persona | None"] = relationship(
+        foreign_keys=[dado_por_id])
+
+
+class TipoInvitacion(str, enum.Enum):
+    """Las dos razones por las que se manda un enlace de contrasena.
+
+    Usan el mismo esqueleto y no son lo mismo: la invitacion vive tres
+    dias porque quien entra nuevo quiza no revisa el correo hoy; la
+    recuperacion dura poco, porque es la llave de una cuenta que ya
+    existe y ya tiene cosas adentro.
+    """
+    INVITACION = "invitacion"
+    RECUPERACION = "recuperacion"
+    # Cuatro digitos que el consultor o la central le dictan por
+    # telefono al personal de campo. Su correo es personal y la empresa
+    # no lo controla, asi que lo suyo no va por correo.
+    CODIGO_CAMPO = "codigo_campo"
+
+
 class Invitacion(Base):
-    """Token que se manda por correo para que el empleado cree su contrasena."""
+    """Token que se manda por correo para crear o recuperar la contrasena."""
     __tablename__ = "invitacion"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     usuario_id: Mapped[int] = mapped_column(ForeignKey("usuario.id"))
     token: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    tipo: Mapped[TipoInvitacion] = mapped_column(
+        Enum(TipoInvitacion), default=TipoInvitacion.INVITACION)
     expira_en: Mapped[datetime] = mapped_column(DateTime)
     usado_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Un enlace nuevo mata a los anteriores: si no, el correo de hace una
+    # semana sigue abriendo la cuenta.
+    anulado_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Cuantas veces se fallo. Solo cuenta para el codigo de cuatro
+    # digitos: a los cinco fallos el codigo se muere y hay que pedir
+    # otro. Vive aqui y no en Redis porque `intentos.py` se abre si Redis
+    # no contesta, y eso dejaria diez mil combinaciones sin candado.
+    fallos: Mapped[int] = mapped_column(Integer, default=0)
 
     usuario: Mapped[Usuario] = relationship()
 
@@ -1323,6 +1901,41 @@ class RegistroAccion(Base):
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     persona: Mapped[Persona] = relationship(foreign_keys=[persona_id])
+
+
+class RegistroAdmin(Base):
+    """Bitacora de lo que no pasa sobre un servicio.
+
+    Quien le cerro la puerta a quien, quien le cambio el puesto, quien
+    movio un precio. La otra bitacora --`RegistroAccion`-- exige un
+    servicio, y ninguna de estas cosas lo tiene.
+
+    Guarda el antes y el despues en texto a proposito: dentro de un ano,
+    "consultor -> finanzas" se lee sin tener que reconstruir que
+    significaba el numero 3 en aquel momento.
+    """
+    __tablename__ = "registro_admin"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuario.id"))
+    # Se guarda tambien la persona y el rol de quien actuo: si su acceso
+    # se borra o cambia de rol despues, el renglon sigue diciendo quien
+    # era cuando lo hizo.
+    persona_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    rol: Mapped[Rol] = mapped_column(Enum(Rol))
+
+    accion: Mapped[str] = mapped_column(String(80))
+    # Sobre que: "usuario", "tarifario", "comision"...
+    objeto: Mapped[str] = mapped_column(String(40), index=True)
+    objeto_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    antes: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    despues: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    detalle: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    creado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+    persona: Mapped["Persona | None"] = relationship(foreign_keys=[persona_id])
 
 
 # ================================================================ COTIZACION
@@ -1432,6 +2045,18 @@ class Cierre(Base):
     devuelto_motivo: Mapped[str | None] = mapped_column(String(500), nullable=True)
     aprobado_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     aprobado_por_id: Mapped[int | None] = mapped_column(ForeignKey("persona.id"), nullable=True)
+    # La factura, del lado de Odoo. `factura_odoo` guarda el folio que
+    # Odoo devuelve: es lo unico que permite contestar "¿ya se facturo?"
+    # sin abrir Odoo, y lo que amarra este servicio con ese documento.
+    #
+    # `factura_error` guarda por que no salio. Un envio que falla en
+    # silencio deja un servicio aprobado que nadie cobra: el error tiene
+    # que verse en la bandeja, no en un log que nadie lee.
+    facturado_en: Mapped[datetime | None] = mapped_column(DateTime,
+                                                          nullable=True)
+    factura_odoo: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    factura_error: Mapped[str | None] = mapped_column(String(400),
+                                                      nullable=True)
 
     servicio: Mapped[Servicio] = relationship()
     desviaciones: Mapped[list["Desviacion"]] = relationship(
@@ -1604,6 +2229,21 @@ class AcuerdoImplantado(Base):
     dias_servicio: Mapped[DiasServicio | None] = mapped_column(
         Enum(DiasServicio), nullable=True)
 
+    # Como se cubre el puesto. Son dos operaciones distintas y hay que
+    # decir cual es desde el alta, porque de aqui sale el calendario:
+    #
+    #   natural  una persona, doce horas corridas, los dias que diga el
+    #            acuerdo. Es lo que opera Centauro en Mexico.
+    #   12x36    dos personas que se alternan dia con dia y cubren los
+    #            siete dias de la semana. Es la escala de Brasil: doce
+    #            horas de trabajo por treinta y seis de descanso.
+    #
+    # Va como texto de codigo y no como ENUM de Postgres, igual que el
+    # resto de las columnas que llevan un codigo: agregar una escala
+    # manana no deberia necesitar tocar la base.
+    turno: Mapped[str] = mapped_column(String(10), default="natural",
+                                       server_default="natural")
+
     # El punto de inicio es el mismo todos los dias: se captura una vez
     # y cada jornada del mes lo hereda.
     origen_direccion: Mapped[str | None] = mapped_column(String(300), nullable=True)
@@ -1656,6 +2296,11 @@ class Capacitacion(Base):
     obtenida_en: Mapped[date | None] = mapped_column(Date, nullable=True)
     vigencia_hasta: Mapped[date | None] = mapped_column(Date, nullable=True)
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
+    # El dia en que se aviso por ultima vez. La tarea corre diario y hay
+    # dos momentos que avisan --treinta dias antes y el dia que vence--,
+    # asi que sin esto un solo aviso se manda cada vez que alguien
+    # reinicia la tarea el mismo dia.
+    avisado_en: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     persona: Mapped["Persona"] = relationship()
 
@@ -1692,6 +2337,12 @@ class PersonaImplantado(Base):
     # agente, en la que se transporta.
     vehiculo_id: Mapped[int | None] = mapped_column(
         ForeignKey("vehiculo.id", ondelete="SET NULL"), nullable=True)
+    # Solo en 12x36: cual de las dos entra el primer dia. Lo dice el
+    # consultor y no el orden en que se capturaron, porque el orden de
+    # captura es un accidente y de esto sale quien trabaja el dia 1 de
+    # cada mes que se abra despues.
+    empieza: Mapped[bool] = mapped_column(Boolean, default=False,
+                                          server_default=text("false"))
 
     persona: Mapped["Persona"] = relationship()
     rol: Mapped["PerfilPersonal | None"] = relationship()
@@ -1751,6 +2402,17 @@ class CodigoCriterio(str, enum.Enum):
     SEGUIMIENTO_APP = "seguimiento_app"
     CAPACITACION = "capacitacion"
     CIERRE_VIATICOS = "cierre_viaticos"
+    # Que la unidad se entregue documentada: la revision de entrega
+    # existe y esta completa. Ojo con lo que NO mide: el dano. El dano
+    # lo declara quien recibe, asi que medirlo aqui seria dejar que la
+    # palabra de uno le cueste el bono a otro sin que nadie lo revise.
+    # El dano ya tiene su camino --avisa al consultor, y si amerita se
+    # vuelve incidencia con visto bueno-- y la incidencia apaga el mes.
+    ENTREGA_UNIDAD = "entrega_unidad"
+    # Que el cliente lo pida por nombre. La unica senal de calidad que
+    # el sistema puede contar solo, y la marca un humano: el consultor
+    # al armar el equipo.
+    RECOMPRA = "recompra"
 
 
 class GravedadIncidencia(str, enum.Enum):
@@ -1777,6 +2439,28 @@ class CriterioEstrella(Base):
     umbral_pct: Mapped[float] = mapped_column(Numeric(5, 2), default=100)
     monto_mensual: Mapped[float] = mapped_column(Numeric(12, 2))
     moneda: Mapped[Moneda] = mapped_column(Enum(Moneda))
+    # El margen. Un umbral de 100 por ciento castiga igual al que llego
+    # dos minutos tarde una vez y al que llego cuarenta tarde tres
+    # veces, y lo que no distingue no motiva. Los dos numeros van
+    # juntos: tantos minutos, tantas veces en el mes. En cero, no hay
+    # margen y el umbral manda solo --que es como estaba.
+    tolerancia_minutos: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0")
+    tolerancia_ocasiones: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0")
+    # Si su monto entra al reparto cuando el criterio no aplica.
+    #
+    # Casi siempre si: un mes sin viaticos no debe cobrarse de menos,
+    # asi que esos 390 se reparten entre los demas. Pero hay uno que
+    # tiene que SUMAR y no restar --que el cliente lo vuelva a pedir--,
+    # y con reparto no sumaba nada: si al que no lo pidieron le
+    # repartian sus 130 entre los otros criterios, terminaba cobrando
+    # exactamente igual que al que si pidieron. El criterio quedaba de
+    # adorno. En `false`, su monto se queda fuera y el mes perfecto sin
+    # recompra paga 2,470 en vez de 2,600: los 130 son lo que se gana
+    # por que lo pidan, no lo que se pierde por que no.
+    reparte: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true")
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
@@ -1796,6 +2480,12 @@ class Incidencia(Base):
     visto_bueno_por_id: Mapped[int | None] = mapped_column(
         ForeignKey("persona.id"), nullable=True)
     autorizada: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Cuando se dio el visto bueno. Importa por el calendario del bono:
+    # el mes se calcula el dia 3 y se paga el 5. Una incidencia
+    # autorizada despues de eso no alcanza ese mes, y hay que poder
+    # demostrar que llego tarde, no que se ignoro.
+    visto_bueno_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
     resolucion_direccion: Mapped[str | None] = mapped_column(String(600), nullable=True)
     creada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -1824,10 +2514,18 @@ class EvaluacionMensual(Base):
         Enum(EstatusEvaluacion), default=EstatusEvaluacion.CALCULADA)
     calculada_en: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
+    autorizada_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    autorizada_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
 
     persona: Mapped[Persona] = relationship(foreign_keys=[persona_id])
     detalle: Mapped[list["ResultadoCriterio"]] = relationship(
         back_populates="evaluacion", cascade="all, delete-orphan")
+    # Uno o ninguno: la llave unica del otro lado es el candado del
+    # doble pago.
+    pago: Mapped["PagoBono | None"] = relationship(
+        back_populates="evaluacion", uselist=False)
 
 
 class ResultadoCriterio(Base):
@@ -1847,6 +2545,37 @@ class ResultadoCriterio(Base):
 
     evaluacion: Mapped[EvaluacionMensual] = relationship(back_populates="detalle")
     criterio: Mapped[CriterioEstrella] = relationship()
+
+
+class PagoBono(Base):
+    """El deposito del bono del mes.
+
+    Va aparte de la nomina semanal a proposito. El bono se paga el dia 5
+    --o el primer habil despues del 5-- y el corte semanal cae donde
+    cae: amarrar uno al otro haria que la fecha de pago se moviera entre
+    el 2 y el 8 segun el ano.
+
+    La llave unica sobre la evaluacion es el candado del doble pago: una
+    evaluacion tiene un pago o no tiene ninguno.
+    """
+    __tablename__ = "pago_bono"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    evaluacion_id: Mapped[int] = mapped_column(
+        ForeignKey("evaluacion_mensual.id"), unique=True, index=True)
+    monto: Mapped[float] = mapped_column(Numeric(12, 2))
+    moneda: Mapped[Moneda] = mapped_column(Enum(Moneda))
+    # El folio del banco. Mismo trato que el deposito de viaticos: sin
+    # referencia no se registra, porque es lo unico que amarra el
+    # movimiento del banco con el renglon del sistema.
+    referencia: Mapped[str] = mapped_column(String(120))
+    comprobante: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pagado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    pagado_por_id: Mapped[int] = mapped_column(ForeignKey("persona.id"))
+
+    evaluacion: Mapped["EvaluacionMensual"] = relationship(
+        back_populates="pago")
 
 
 # ================================================================ COMISION CONSULTOR
@@ -2152,6 +2881,10 @@ class AlertaIncidencia(Base):
     jornada: Mapped["Jornada | None"] = relationship()
     reporta: Mapped["Persona | None"] = relationship(
         foreign_keys=[reporta_persona_id])
+    # Hay tres llaves a persona en esta tabla --quien reporta, quien toma
+    # y quien cierra-- asi que cada relacion tiene que decir cual usa.
+    tomada_por: Mapped["Persona | None"] = relationship(
+        foreign_keys=[tomada_por_id])
 
 
 class TipoRecurso(str, enum.Enum):
@@ -2263,6 +2996,20 @@ class ReemplazoRecurso(Base):
         ForeignKey("persona.id"), nullable=True)
     creado_en: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
+    # Cuando el titular volvio. El regreso no abre otro movimiento: recorre
+    # el `hasta` de este y lo firma, para que el mes lea "Luis cubrio a
+    # Marta del 10 al 24" y no dos cambios cruzados que nadie sabe cual
+    # cierra a cual.
+    regreso_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    regreso_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    # La hora que el sistema propuso para partir el dia del regreso: la
+    # ultima marca del que cubria. Es la gemela de `hora_propuesta`, que
+    # es la del relevo que abrio el movimiento. Si no coincide con la que
+    # quedo en la asignacion, alguien la corrigio, y ese alguien es
+    # `regreso_por_id`. Va vacia cuando el regreso no partio ningun dia.
+    hora_propuesta_regreso: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True)
 
 
 # ================================================================ NOMINA SEMANAL
@@ -2320,13 +3067,39 @@ class ConceptoNomina(Base):
 
     Sirve de doble proposito: es el detalle que ve la persona y es el
     candado que impide pagar dos veces la misma jornada.
+
+    Ese candado vivia solo en Python --`jornadas_pendientes` saca lo que
+    ya esta pagado y lo descuenta-- y entre leerlo y escribirlo hay una
+    rendija: dos cortes calculados al mismo tiempo leen los dos que la
+    jornada esta libre y los dos la toman. La nomina de la MISMA semana
+    ya no puede duplicarse (`nomina_semanal` es unica por pais y fecha),
+    pero dos cortes de semanas distintas del mismo pais si podian
+    llevarse la misma jornada. Lo que sale por ahi es dinero pagado dos
+    veces, y se descubre al mes siguiente o nunca.
+
+    Por eso la base tambien lo sabe: una jornada se le paga a una
+    persona una sola vez, en el corte que sea.
+
+    `persona_id` esta duplicada a proposito --vive en el renglon-- y es
+    el precio de que el candado quepa en una sola tabla. No se actualiza
+    nunca: un concepto no se edita, y recalcular un corte borra sus
+    renglones y los vuelve a escribir.
     """
     __tablename__ = "concepto_nomina"
+    __table_args__ = (
+        UniqueConstraint("jornada_id", "persona_id",
+                         name="uq_concepto_jornada_persona"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     renglon_id: Mapped[int] = mapped_column(ForeignKey("renglon_nomina.id"))
     jornada_id: Mapped[int | None] = mapped_column(
         ForeignKey("jornada.id"), nullable=True, index=True)
+    # A quien se le pago. Un ajuste no cuelga de ninguna jornada, y ahi
+    # `jornada_id` va en nulo: Postgres no compara nulos entre si, asi
+    # que la restriccion de arriba no le estorba a los ajustes --se
+    # pueden arrastrar varios de la misma persona sin pelearse.
+    persona_id: Mapped[int] = mapped_column(ForeignKey("persona.id"))
     ajuste_id: Mapped[int | None] = mapped_column(
         ForeignKey("ajuste_nomina.id"), nullable=True)
     descripcion: Mapped[str] = mapped_column(String(300))
@@ -2419,6 +3192,12 @@ class Encuesta(Base):
     enviada_en: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
     respondida_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Cuando se le recordo. Uno solo por encuesta: el campo es lo que
+    # impide que la tarea diaria mande el mismo recordatorio cada dia
+    # --al ejecutivo de un cliente grande, diez correos por un servicio
+    # no se leen como interes, se leen como acoso--.
+    recordada_en: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True)
     estatus: Mapped[EstatusEncuesta] = mapped_column(
         Enum(EstatusEncuesta), default=EstatusEncuesta.ENVIADA, index=True)
 

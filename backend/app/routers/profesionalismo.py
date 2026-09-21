@@ -10,9 +10,8 @@ from app.db import get_db
 
 router = APIRouter(prefix="/profesionalismo", tags=["Profesionalismo"])
 
-LECTURA = auth.requiere(m.Rol.CONSULTOR, m.Rol.CENTRAL,
-                        m.Rol.DIRECTOR_OPERACIONES)
-CONFIGURA = auth.requiere(m.Rol.ADMIN, m.Rol.DIRECTOR_OPERACIONES)
+LECTURA = auth.puede("profesionalismo.ver")
+CONFIGURA = auth.puede("profesionalismo.pesos")
 
 
 @router.get("", summary="Tablero de todo el personal")
@@ -28,6 +27,19 @@ def ficha(persona_id: int, db: Session = Depends(get_db), _=Depends(LECTURA)):
     if not resultado:
         raise HTTPException(404, f"No existe la persona {persona_id}")
     return resultado
+
+
+@router.get("/persona/{persona_id}/expediente",
+            summary="El bono, lo que dijeron los clientes y sus certificados")
+def expediente(persona_id: int, meses: int = 6,
+               db: Session = Depends(get_db), _=Depends(LECTURA)):
+    """Los tres bloques de la ficha, debajo de las dimensiones.
+
+    Viven en tres tablas distintas y hasta hoy no se podian ver juntos:
+    para decidir a quien mandar habia que abrir tres pantallas y
+    acordarse de las tres.
+    """
+    return motor.expediente(db, persona_id, meses)
 
 
 @router.get("/pesos", summary="Ver los pesos de cada dimension")

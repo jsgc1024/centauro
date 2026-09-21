@@ -1,0 +1,24 @@
+La prueba de humo
+=================
+
+    ./humo.sh
+
+Abre la consola y la app de campo en un Chromium sin ventana, recorre
+las pantallas y falla por tres cosas:
+
+  1. Errores de JavaScript. Uno sin atrapar mata el resto de la pantalla
+     en silencio: el boton sigue ahi y ya no hace nada.
+  2. Texto basura: null, undefined, NaN, None, [object Object].
+  3. Contenido que se sale de la pantalla.
+
+Deja una captura de cada pantalla en humo/capturas/.
+
+Lo que NO hace: juzgar. Un panel que aparece donde nadie lo ve, una hora
+que confunde o una lista que se quedo con la foto vieja le parecen bien.
+Eso lo ve una persona.
+
+Las cuentas salen de las variables CORREO/CLAVE y CAMPO_CORREO/CAMPO_CLAVE;
+por omision son las de demostracion.
+
+El navegador vive en la imagen de Playwright, que se baja la primera vez
+(pesa, tarda unos minutos) y despues queda en cache.

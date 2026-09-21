@@ -120,17 +120,18 @@ Calendario actual (`app/celery_app.py`, en hora de México):
 | Hora | Tarea | Qué hace |
 |---|---|---|
 | 06:30 | `implantados.abrir_mes_siguiente` | Abre el mes siguiente de los implantados antes de que se acabe el actual |
-| 17:00 | `campo.recordar_la_vispera` | Le avisa al equipo que mañana trabaja |
+| Cada hora en punto | `campo.recordar_la_vispera` | Le avisa al equipo que mañana trabaja, a las 17:00 de cada país |
 
 Dos cosas que hay que tener presentes:
 
 - **Beat corre en una sola instancia.** Si algún día la API se escala a
   varios servidores, `beat` se queda en uno solo o dispara todo por duplicado.
-- **El calendario de Celery es uno solo, en hora de México.** El recordatorio
-  de la víspera sale a las 17:00 de México, o sea a las 19:00 de São Paulo.
-  La tarea ya calcula bien el "mañana" de cada país; lo que no está partido
-  por país es la hora a la que se dispara. Es un pendiente conocido, no un
-  error: el aviso llega, llega dos horas más tarde de lo ideal.
+- **El calendario de Celery es uno solo, en hora de México.** Las tareas
+  que se disparan a una hora fija lo hacen con el reloj del contenedor. La
+  víspera ya no: se dispara cada hora en punto y la tarea decide en qué país
+  son las 17:00 locales, con `app/reloj.py`. Cualquier tarea nueva que se
+  cuelgue de una hora del día tiene que resolverlo igual, o le va a llegar
+  corrida a São Paulo.
 
 ---
 

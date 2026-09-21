@@ -9,8 +9,10 @@
    lo que cambie despues viaja hacia adelante como ajuste. Eso no es una
    limitacion del sistema: es que el dinero ya salio. */
 import { api } from "./api.js";
-import { aviso, campo, dinero, entrada, estatus, etiqueta, fecha, h, lista, mensaje } from "./util.js";
+import { aviso, campo, conAyuda, dinero, entrada, estatus, etiqueta,
+         fecha, h, lista, mensaje } from "./util.js";
 import { catalogos } from "./catalogos.js";
+import { t } from "./idioma.js";
 
 let paisActual = null;
 let corteActual = null;
@@ -19,10 +21,8 @@ export async function pantallaNomina(main) {
   const cat = await catalogos();
 
   main.append(
-    h("h1", {}, "Nomina del personal de seguridad"),
-    h("p", { clase: "sub" },
-      "Comisiones por rol y dias de servicio. Los viaticos y las compras "
-      + "van en Gastos del servicio."));
+    h("h1", {}, t("nom_titulo")),
+    h("p", { clase: "sub" }, t("nom_sub")));
 
   const paises = lista("pais", cat.paises.map(
     p => ({ valor: p.id, texto: p.nombre })));
@@ -44,12 +44,12 @@ export async function pantallaNomina(main) {
   main.append(
     h("div", { clase: "tarjeta lisa" },
       h("div", { clase: "rejilla tres" },
-        campo("Pais", paises),
+        campo(t("pais"), paises),
         h("div", { clase: "campo" },
           h("label", {}, " "),
           h("button", { clase: "chico", type: "button",
             onclick: (e) => calcular(e, zona, historial) },
-            "Calcular el corte de esta semana")))),
+            t("nom_calcular"))))),
     tabulador, historial, zona);
 
   await pintarTabulador(tabulador);
@@ -65,10 +65,10 @@ export async function pantallaNomina(main) {
 
 async function calcular(e, zona, historial) {
   e.target.disabled = true;
-  zona.replaceChildren(h("div", { clase: "gris chico" }, "Calculando…"));
+  zona.replaceChildren(h("div", { clase: "gris chico" }, t("nom_calculando")));
   try {
     const r = await api.post("/nomina/calcular", { pais_id: paisActual });
-    mensaje(`Corte armado: ${r.personas} persona(s)`);
+    mensaje(t("nom_corte_armado").replace("{n}", r.personas));
     corteActual = r.nomina_id;
     await pintarHistorial(historial, zona);
     await pintarCorte(zona, r.nomina_id);
@@ -85,18 +85,19 @@ function bloqueSinTarifa(err) {
   if (!filas.length) return aviso(err.message, "grave");
 
   return h("div", { clase: "tarjeta" },
-    h("h3", { style: "margin:0 0 2px" }, "El corte no sale todavia"),
+    h("h3", { style: "margin:0 0 2px" }, t("nom_no_sale")),
     h("p", { clase: "gris chico", style: "margin:0 0 12px" },
       err.message),
     h("table", {},
       h("thead", {}, h("tr", {},
-        h("th", {}, "Persona"), h("th", {}, "Dia"),
-        h("th", {}, "Modalidad"), h("th", {}, "Rol"), h("th", {}, "Tipo"))),
+        h("th", {}, t("nom_persona")), h("th", {}, t("nom_dia")),
+        h("th", {}, t("nom_modalidad")), h("th", {}, t("nom_rol")),
+        h("th", {}, t("nom_tipo")))),
       h("tbody", {}, ...filas.map(f => h("tr", {},
         h("td", {}, h("b", {}, f.persona)),
         h("td", {}, fecha(f.fecha)),
         h("td", {}, f.modalidad),
-        h("td", {}, f.rol || etiqueta("sin rol", "grave")),
+        h("td", {}, f.rol || etiqueta(t("nom_sin_rol"), "grave")),
         h("td", { clase: "chico gris" }, f.tipo))))));
 }
 
@@ -110,16 +111,17 @@ async function pintarHistorial(zona, zonaCorte) {
   if (!cortes.length) {
     return zona.replaceChildren(h("div", { clase: "tarjeta" },
       h("span", { clase: "gris" },
-        "Todavia no hay ningun corte de este pais.")));
+        t("nom_sin_cortes"))));
   }
 
   zona.replaceChildren(h("div", { clase: "tarjeta" },
-    h("h3", { style: "margin:0 0 12px" }, "Cortes"),
+    conAyuda("h3", t("nom_cortes"), "ay_nom_cortes",
+             { style: "margin:0 0 12px" }),
     h("table", {},
       h("thead", {}, h("tr", {},
-        h("th", {}, "Semana del"), h("th", {}, "Personas"),
-        h("th", { style: "text-align:right" }, "Total"),
-        h("th", {}, "Estado"), h("th", {}, ""))),
+        h("th", {}, t("nom_semana_del")), h("th", {}, t("nom_personas")),
+        h("th", { style: "text-align:right" }, t("nom_total")),
+        h("th", {}, t("nom_estado")), h("th", {}, ""))),
       h("tbody", {}, ...cortes.map(c => h("tr", {},
         h("td", {}, h("b", {}, fecha(c.fecha_corte))),
         h("td", {}, String(c.personas)),
@@ -130,13 +132,13 @@ async function pintarHistorial(zona, zonaCorte) {
         h("td", {},
           h("button", { clase: "claro chico", type: "button",
             onclick: () => { corteActual = c.id; pintarCorte(zonaCorte, c.id); } },
-            "Ver")))))))); 
+            t("nom_ver"))))))))); 
 }
 
 /* ------------------------------------------------------ el corte */
 
 async function pintarCorte(zona, nominaId) {
-  zona.replaceChildren(h("div", { clase: "gris chico" }, "Cargando…"));
+  zona.replaceChildren(h("div", { clase: "gris chico" }, t("nom_cargando")));
   let n;
   try { n = await api.get(`/nomina/${nominaId}`); }
   catch (err) { return zona.replaceChildren(aviso(err.message, "grave")); }
@@ -144,43 +146,45 @@ async function pintarCorte(zona, nominaId) {
   const pagada = n.estatus === "pagada";
   const caja = h("div", { clase: "tarjeta" });
 
-  caja.append(
+  caja.append(...[
     h("div", { style: "display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:baseline" },
       h("div", {},
-        h("h3", { style: "margin:0" }, `Semana del ${fecha(n.fecha_corte)}`),
+        h("h3", { style: "margin:0" },
+           t("nom_semana_de").replace("{f}", fecha(n.fecha_corte))),
         h("div", { clase: "gris chico" },
-          `${n.renglones.length} persona(s) · ${n.dias_pagados} dia(s) `
-          + `pagados`)),
+          t("nom_resumen_corte")
+            .replace("{p}", n.renglones.length)
+            .replace("{d}", n.dias_pagados))),
       h("div", { style: "text-align:right" },
         h("div", { style: "font-size:22px;font-weight:650" },
           dinero(n.total, n.moneda)),
         etiqueta(estatus(n.estatus), pagada ? "ok" : "alerta"),
         pagada && n.pagada_en
-          ? h("div", { clase: "gris chico" }, fecha(n.pagada_en)) : null)));
+          ? h("div", { clase: "gris chico" }, fecha(n.pagada_en)) : null))].filter(Boolean));
 
   /* Lo que se fue en cada rol. Es la cuenta que la direccion pide, y de
      un total plano no se saca. */
   if (n.por_rol.length) {
     caja.append(
-      h("h4", { clase: "grupo" }, "Por rol"),
+      conAyuda("h4", t("nom_por_rol"), "ay_nom_por_rol",
+               { clase: "grupo" }),
       h("div", { clase: "rejilla cuatro" },
         ...n.por_rol.map(r => h("div", {},
           h("div", { clase: "gris chico" }, r.rol),
           h("div", { style: "font-size:18px;font-weight:650" },
             dinero(r.monto, n.moneda)),
-          h("div", { clase: "gris chico" }, `${r.dias} dia(s)`)))));
+          h("div", { clase: "gris chico" },
+            t("nom_dias_n").replace("{n}", r.dias))))));
   }
 
-  caja.append(h("h4", { clase: "grupo" }, "Por persona"));
+  caja.append(h("h4", { clase: "grupo" }, t("nom_por_persona")));
   for (const r of n.renglones) caja.append(renglonPersona(r, n));
 
   if (!pagada) {
     caja.append(h("div", { clase: "acciones", style: "margin-top:16px" },
       h("button", { type: "button", onclick: (e) => pagar(e, zona, n) },
-        `Marcar pagado ${dinero(n.total, n.moneda)}`),
-      h("span", { clase: "gris chico" },
-        "Despues de esto el corte ya no se recalcula: lo que cambie "
-        + "viaja como ajuste a la semana siguiente.")));
+        t("nom_marcar_pagado").replace("{m}", dinero(n.total, n.moneda))),
+      h("span", { clase: "gris chico" }, t("nom_pagado_aviso"))));
   }
 
   zona.replaceChildren(caja, h("div", { style: "margin-top:14px" },
@@ -200,7 +204,7 @@ function renglonPersona(r, n) {
           dinero(c.monto, n.moneda)))))));
 
   const abrir = h("button", { clase: "claro chico", type: "button",
-    onclick: () => { detalle.hidden = !detalle.hidden; } }, "Ver dias");
+    onclick: () => { detalle.hidden = !detalle.hidden; } }, t("nom_ver_dias"));
 
   return h("div", { clase: "tarjeta lisa", style: "margin:0 0 8px" },
     h("div", { style: "display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center" },
@@ -217,7 +221,7 @@ async function pagar(e, zona, n) {
   e.target.disabled = true;
   try {
     await api.post(`/nomina/${n.id}/pagar`, {});
-    mensaje(`Corte de la semana del ${fecha(n.fecha_corte)} marcado como pagado`);
+    mensaje(t("nom_corte_pagado").replace("{f}", fecha(n.fecha_corte)));
     await pintarCorte(zona, n.id);
   } catch (err) {
     mensaje(err.message, "grave");
@@ -233,10 +237,10 @@ async function pagar(e, zona, n) {
 
 function bloqueAjustes() {
   const caja = h("div", { clase: "tarjeta" },
-    h("h3", { style: "margin:0 0 2px" }, "Ajustes pendientes"),
+    conAyuda("h3", t("nom_ajustes"), "ay_nom_ajustes",
+             { style: "margin:0 0 2px" }),
     h("p", { clase: "gris chico", style: "margin:0 0 12px" },
-      "Entran en el proximo corte. En positivo se le debe; en negativo "
-      + "se le descuenta."));
+      t("nom_ajustes_pie")));
   const lista_ = h("div");
   caja.append(lista_, formularioAjuste(() => cargar()));
 
@@ -248,7 +252,7 @@ function bloqueAjustes() {
 
     if (!filas.length) {
       return lista_.replaceChildren(h("div", { clase: "gris chico" },
-        "Nada pendiente."));
+        t("nom_nada_pendiente")));
     }
     lista_.replaceChildren(h("table", {},
       h("tbody", {}, ...filas.map(a => h("tr", {},
@@ -266,18 +270,19 @@ function bloqueAjustes() {
 
 function formularioAjuste(alGuardar) {
   const abrir = h("button", { clase: "claro chico", type: "button",
-    onclick: () => { form.hidden = !form.hidden; } }, "Registrar un ajuste");
+    onclick: () => { form.hidden = !form.hidden; } }, t("nom_registrar"));
 
   const quien = lista("persona_id", []);
   const monto = entrada("monto", { type: "number", step: "1",
-                                   placeholder: "Positivo o negativo" });
-  const motivo = entrada("motivo", { placeholder: "Por que" });
+                                   placeholder: t("nom_mas_menos") });
+  const motivo = entrada("motivo", { placeholder: t("nom_por_que") });
   const form = h("div", { hidden: true, style: "margin-top:12px" },
     h("div", { clase: "rejilla tres" },
-      campo("Persona", quien), campo("Monto", monto), campo("Motivo", motivo)),
+      campo(t("nom_persona"), quien), campo(t("nom_monto"), monto),
+      campo(t("nom_motivo"), motivo)),
     h("div", { clase: "acciones" },
       h("button", { clase: "chico", type: "button",
-        onclick: (e) => guardar(e) }, "Guardar el ajuste")));
+        onclick: (e) => guardar(e) }, t("nom_guardar_ajuste"))));
 
   (async () => {
     const cat = await catalogos();
@@ -287,7 +292,7 @@ function formularioAjuste(alGuardar) {
 
   async function guardar(e) {
     if (!quien.value || !monto.value || !motivo.value.trim()) {
-      return mensaje("Falta la persona, el monto o el motivo", "alerta");
+      return mensaje(t("nom_falta_ajuste"), "alerta");
     }
     e.target.disabled = true;
     try {
@@ -295,7 +300,7 @@ function formularioAjuste(alGuardar) {
         persona_id: Number(quien.value), pais_id: paisActual,
         monto: Number(monto.value), motivo: motivo.value.trim(),
       });
-      mensaje("Ajuste registrado. Entra en el proximo corte.");
+      mensaje(t("nom_ajuste_hecho"));
       monto.value = ""; motivo.value = "";
       form.hidden = true;
       alGuardar();
@@ -326,19 +331,19 @@ async function pintarTabulador(zona) {
   const faltan = datos.eventual.sin_cargar + datos.implantado.sin_cargar;
   const abrir = h("button", { clase: "claro chico", type: "button",
     onclick: () => { cuerpo.hidden = !cuerpo.hidden; } },
-    "Tabulador de pagos");
+    t("nom_tabulador"));
 
   cuerpo.append(
-    tablaComision("Eventuales", datos, datos.eventual, "eventual"),
-    tablaComision("Implantados", datos, datos.implantado, "implantado"));
+    tablaComision(t("nom_eventuales"), datos, datos.eventual, "eventual"),
+    tablaComision(t("nom_implantados"), datos, datos.implantado, "implantado"));
 
   zona.replaceChildren(h("div", { clase: "tarjeta" },
     h("div", { clase: "acciones" }, abrir,
       /* Un cruce sin monto no es un detalle de captura: es un dia que no
          se va a poder pagar, y el corte se detiene por el. */
       faltan
-        ? etiqueta(`${faltan} cruces sin monto`, "alerta")
-        : etiqueta("completo", "ok")),
+        ? etiqueta(t("nom_cruces_faltan").replace("{n}", faltan), "alerta")
+        : etiqueta(t("nom_completo"), "ok")),
     cuerpo));
 }
 
@@ -353,7 +358,7 @@ function tablaComision(titulo, datos, tabla, tipo) {
         type: "number", step: "1", min: "0", clase: "num",
         style: "text-align:right; max-width:110px",
         value: c.monto !== null ? String(Math.round(Number(c.monto))) : "",
-        placeholder: "sin cargar",
+        placeholder: t("nom_sin_cargar"),
       });
       /* La hora extra solo donde la modalidad la admite. Ofrecerla donde
          no aplica invita a capturar un numero que nunca se va a usar. */
@@ -363,7 +368,7 @@ function tablaComision(titulo, datos, tabla, tipo) {
             style: "text-align:right; max-width:90px",
             value: c.monto_hora_extra !== null
               ? String(Math.round(Number(c.monto_hora_extra))) : "",
-            placeholder: "h extra",
+            placeholder: t("nom_h_extra"),
           })
         : null;
       celdas.push({ perfil_id: r.perfil_id, modalidad_id: c.modalidad_id,
@@ -394,7 +399,7 @@ function tablaComision(titulo, datos, tabla, tipo) {
               ? Number(c.extra.value) : null,
           })),
       });
-      mensaje(`Tabulador de ${titulo.toLowerCase()} guardado`);
+      mensaje(t("nom_tab_guardado").replace("{t}", titulo.toLowerCase()));
     } catch (err) { mensaje(err.message, "grave"); }
     e.target.disabled = false;
   }
@@ -402,12 +407,11 @@ function tablaComision(titulo, datos, tabla, tipo) {
   return h("div", { clase: "tarjeta lisa", style: "margin:0 0 14px" },
     h("h4", { style: "margin:0 0 2px" }, titulo),
     h("p", { clase: "gris chico", style: "margin:0 0 10px" },
-      `Por dia y por persona, en ${datos.moneda}. Abajo de cada monto, `
-      + "lo que se paga por hora extra donde la modalidad la admite."),
+      t("nom_tab_pie").replace("{m}", datos.moneda)),
     h("div", { style: "overflow-x:auto" },
       h("table", {},
         h("thead", {}, h("tr", {},
-          h("th", {}, "Rol"),
+          h("th", {}, t("nom_rol")),
           /* Cada tabla trae sus propias modalidades: el implantado es
              siempre dia completo, y las columnas de medio dia y transfer
              ahi no significan nada. */

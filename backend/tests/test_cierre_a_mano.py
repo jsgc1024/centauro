@@ -151,9 +151,9 @@ def test_un_dia_de_manana_no_aparece_como_sin_cerrar(cliente, sesion, datos):
     assert not [d for d in r.json()["dias"] if d["jornada_id"] == j["id"]]
 
 
-def test_reabrir_deshace_solo_lo_que_la_central_cerro(cliente, sesion, datos):
-    """Un dia que el equipo marco desde la calle no se reabre por aqui:
-    esa hora se corrige ajustando el hito, que es donde queda el rastro."""
+def test_reabrir_un_dia_que_no_esta_cerrado_no_hace_nada(cliente, sesion,
+                                                         datos):
+    """No hay nada que deshacer."""
     _, j = _dia_pasado(cliente, sesion, datos)
     h = sesion("central")
 
@@ -161,7 +161,14 @@ def test_reabrir_deshace_solo_lo_que_la_central_cerro(cliente, sesion, datos):
                      json={"justificacion": "Me equivoque de jornada al cerrar"},
                      headers=h)
     assert r.status_code == 409, r.text
-    assert "no lo cerro la central" in r.json()["detail"]["mensaje"]
+    assert "no esta cerrado" in r.json()["detail"]["mensaje"]
+
+
+def test_reabrir_deshace_el_cierre_de_la_central(cliente, sesion, datos):
+    """El de la central se deshace entero: ahi alguien tecleo una hora
+    en una oficina y si se equivoco, se borra."""
+    _, j = _dia_pasado(cliente, sesion, datos)
+    h = sesion("central")
 
     cliente.post(f"/operacion/jornadas/{j['id']}/cerrar-a-mano",
                  json={"justificacion": MOTIVO}, headers=h)
@@ -174,3 +181,58 @@ def test_reabrir_deshace_solo_lo_que_la_central_cerro(cliente, sesion, datos):
     # Y vuelve a aparecer en la lista de pendientes.
     r = cliente.get("/operacion/dias-sin-cerrar", headers=h)
     assert [d for d in r.json()["dias"] if d["jornada_id"] == j["id"]]
+
+
+def test_reabrir_un_dia_que_cerro_el_equipo_anula_su_marca(cliente, sesion,
+                                                           datos):
+    """Decisión de Salvador, 20 sep.
+
+    Un día cerrado desde la calle no se podía reabrir de ninguna manera,
+    y eso pasa: se marca el fin en el servicio equivocado, o el equipo
+    sigue trabajando después de cerrar.
+
+    La marca no se borra —tiene hora, ubicación y quién la hizo— se
+    anula, con el nombre de quien la anuló y el motivo. Y deja de
+    contar, o el equipo no podría volver a cerrar: la app no le
+    ofrecería ese paso porque ya estaría hecho.
+    """
+    from app import models as mo
+    from app.db import SessionLocal
+    from ayudas import marcar, marcar_fin
+
+    servicio, j = _dia_pasado(cliente, sesion, datos)
+    juan = sesion("juan")
+    arranca = datetime.fromisoformat(j["inicio_programado"])
+    marcar(cliente, juan, j["id"], "llegada_origen",
+           arranca - timedelta(minutes=10))
+    marcar(cliente, juan, j["id"], "contacto_ejecutivo", arranca)
+    cierre = marcar_fin(cliente, juan, j["id"],
+                        datetime.fromisoformat(j["fin_programado"]))
+    assert cierre.status_code == 200, cierre.text
+
+    r = cliente.post(f"/operacion/jornadas/{j['id']}/reabrir",
+                     json={"justificacion": "Cerro el servicio equivocado"},
+                     headers=sesion("central"))
+    assert r.status_code == 200, r.text
+    assert r.json()["marca_anulada"] is True
+
+    with SessionLocal() as db:
+        fila = db.get(mo.Jornada, j["id"])
+        assert fila.estatus == mo.EstatusJornada.PLANEADA
+        assert fila.fin_real is None
+        fin = (db.query(mo.Hito)
+               .filter_by(jornada_id=j["id"], tipo=mo.TipoHito.FIN_SERVICIO)
+               .first())
+        # Sigue ahi, con su firma y su motivo.
+        assert fin is not None
+        assert fin.anulado_en is not None
+        assert fin.anulado_por_id
+        assert "equivocado" in fin.motivo_anulacion
+
+    # Y el equipo puede volver a cerrar: la app vuelve a ofrecer el paso.
+    mio = cliente.get("/campo/mi-dia", headers=juan).json()
+    del mio  # el dia ya paso, no sale en hoy; lo que importa es la marca
+
+    otra = marcar_fin(cliente, juan, j["id"],
+                      datetime.fromisoformat(j["fin_programado"]))
+    assert otra.status_code == 200, otra.text

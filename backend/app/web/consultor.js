@@ -6,8 +6,10 @@
    hospedaje. Quien arma el documento lo ve igual que quien lo recibe. */
 import { api, sesion } from "./api.js";
 import { catalogos } from "./catalogos.js";
-import { aviso, campo, datosDeFormulario, dinero, entrada, estatus, etiqueta, fecha, h, hora, lista, mensaje, telefono, vaciar } from "./util.js";
-import { t } from "./idioma.js";
+import { aviso, buscador, campo, coincide, conAyuda, datosDeFormulario,
+         dinero, entrada, estatus, etiqueta, fecha, h, hora, lista,
+         mensaje, plegable, telefono, textoDe, vaciar } from "./util.js";
+import { IDIOMAS, t } from "./idioma.js";
 
 /* Google cobra por sesion: todas las teclas de una misma busqueda mas el
    lugar que se elija cuentan como una. Se renueva al cerrar cada una. */
@@ -17,9 +19,34 @@ function sesionDeBusqueda() {
 }
 
 const TONO_ESTATUS = {
-  borrador: "", solicitado: "info", cotizado: "", autorizado: "ok", planeado: "alerta",
-  asignado: "ok",
-  en_curso: "alerta", terminado: "", cerrado: "ok", cancelado: "grave",
+  /* El semaforo del servicio, de izquierda a derecha en el tiempo.
+
+     Azul es "listo y esperando": el equipo esta completo y el dia
+     todavia no llega. Verde es "el equipo ya esta con el principal",
+     que es el estado bueno de verdad y el que la pantalla debe hacer
+     saltar. Ambar es lo que le falta algo.
+
+     Y por eso el final se apaga: un servicio que ya paso no necesita
+     atencion, y dejarlo en verde hacia que el color mas fuerte de la
+     lista lo llevaran los que ya no importan --con doscientos servicios
+     cerrados, el verde dejaba de querer decir nada--.
+
+     Y el principio tambien se apaga: `solicitado` va en gris, decision
+     de Salvador. Es el primer estado de la fila y todavia no pide nada
+     --lo que pide es `planeado`, que es el que le falta equipo--. En
+     azul competia con `asignado` en la misma columna y adelantaba una
+     urgencia que no existe.
+
+     Apagado no quiere decir igual. Cafe es `terminado` --el dia se
+     cumplio, falta el papeleo-- y negro es `cerrado` --el expediente ya
+     no se toca--, decision de Salvador. Con los dos en gris, tres
+     estados muy distintos se leian iguales en la misma columna. */
+  borrador: "", solicitado: "", cotizado: "", autorizado: "info",
+  planeado: "alerta",
+  asignado: "azul",
+  arribado: "arribo",
+  en_curso: "ok",
+  terminado: "cafe", cerrado: "negro", cancelado: "grave",
 };
 
 /* ------------------------------------------------------------ cartera */
@@ -45,26 +72,51 @@ export async function cartera(main) {
     return;
   }
 
-  const cuerpo = h("tbody");
-  for (const s of servicios.slice().reverse()) {
-    cuerpo.append(h("tr", { clase: "clic",
-                            onclick: () => (location.hash = `#/servicio/${s.id}`) },
-      h("td", {}, h("b", {}, s.folio)),
-      h("td", {}, cliente(s.cliente_id)),
-      h("td", {}, s.ejecutivo_completo
-        || h("span", { clase: "gris" }, t("sin_ejecutivo"))),
-      h("td", {}, s.tipo),
-      h("td", {}, etiqueta(estatus(s.estatus), TONO_ESTATUS[s.estatus] || "")),
-      h("td", { clase: "num" }, s.equipos ? s.equipos.length : 1),
-    ));
-  }
+  /* Por folio, por cliente, por ejecutivo o por estatus. La cartera
+     crece y nada mas: con doscientos servicios, encontrar uno a ojo
+     deja de ser posible. */
+  const zona = h("div");
+  let q = "";
+  const caja = buscador(t("bus_ayuda_servicio"), (texto) => {
+    q = texto;
+    dibujar();
+  });
+  main.append(
+    h("div", { clase: "tarjeta lisa", style: "margin-bottom:16px" },
+      campo(t("bus_buscar"), caja)),
+    zona);
+  dibujar();
 
-  main.append(h("table", { clase: "lista" },
-    h("thead", {}, h("tr", {},
-      h("th", {}, t("col_folio")), h("th", {}, t("col_cliente")),
-      h("th", {}, t("col_ejecutivo")), h("th", {}, t("col_tipo")),
-      h("th", {}, t("col_estatus")), h("th", {}, t("col_equipos")))),
-    cuerpo));
+  function dibujar() {
+    const filas = servicios.slice().reverse().filter(
+      s => coincide(q, s.folio, cliente(s.cliente_id), s.ejecutivo_completo,
+                    s.tipo, estatus(s.estatus)));
+    if (!filas.length) {
+      return zona.replaceChildren(
+        aviso(t("bus_nada").replace("{q}", q.trim())));
+    }
+
+    const cuerpo = h("tbody");
+    for (const s of filas) {
+      cuerpo.append(h("tr", { clase: "clic",
+                              onclick: () => (location.hash = `#/servicio/${s.id}`) },
+        h("td", {}, h("b", {}, s.folio)),
+        h("td", {}, cliente(s.cliente_id)),
+        h("td", {}, s.ejecutivo_completo
+          || h("span", { clase: "gris" }, t("sin_ejecutivo"))),
+        h("td", {}, s.tipo),
+        h("td", {}, etiqueta(estatus(s.estatus), TONO_ESTATUS[s.estatus] || "")),
+        h("td", { clase: "num" }, s.equipos ? s.equipos.length : 1),
+      ));
+    }
+
+    zona.replaceChildren(h("table", { clase: "lista" },
+      h("thead", {}, h("tr", {},
+        h("th", {}, t("col_folio")), h("th", {}, t("col_cliente")),
+        h("th", {}, t("col_ejecutivo")), h("th", {}, t("col_tipo")),
+        h("th", {}, t("col_estatus")), h("th", {}, t("col_equipos")))),
+      cuerpo));
+  }
 }
 
 /* ------------------------------------------------------------ alta */
@@ -142,6 +194,7 @@ export async function nuevoServicio(main) {
       for (const eq of equipos) eq.ciudad.repintar();
       repintarModalidades(); clavesDeTelefono(); revisar();
     } });
+
 
   /* La ciudad es de cada equipo, no del servicio: un mismo proyecto lleva
      al ejecutivo de Ciudad de Mexico a Monterrey, y cada equipo opera
@@ -262,6 +315,30 @@ export async function nuevoServicio(main) {
 
   /* El correo va primero porque es lo que identifica al contacto: en
      cuanto se escribe uno ya conocido, el resto se llena solo. */
+  /* En que idioma lee cada uno. El principal arranca en ingles
+     --suele ser extranjero-- y quien solicita, en el de su pais: casi
+     siempre es gente local. El vacio del solicitante no es "sin idioma",
+     es "el de su pais", y lo resuelve el servidor con el pais del
+     servicio. Decision de Salvador (20 sep). */
+  const idiomaEjecutivo = h("select", { name: "idioma_ejecutivo" },
+    ...IDIOMAS.map(i => h("option", {
+      value: i.codigo, selected: i.codigo === "en" || undefined },
+      `${i.bandera} ${i.nombre}`)));
+  const idiomaSolicitante = h("select", { name: "idioma_solicitante" },
+    h("option", { value: "" }, t("idioma_del_pais")),
+    ...IDIOMAS.map(i => h("option", { value: i.codigo },
+                          `${i.bandera} ${i.nombre}`)));
+
+  /* Como se presenta el equipo. Tres y no texto libre: "traje oscuro
+     sin corbata" escrito a mano en cada servicio se lee distinto cada
+     vez, y quien lo tiene que cumplir lo lee en la app a las cinco de
+     la manana. Arranca vacio a proposito: un servicio del que nadie
+     acordo nada no es un servicio "casual". */
+  const vestimenta = h("select", { name: "vestimenta" },
+    h("option", { value: "" }, t("vestimenta_sin")),
+    ...["casual", "semiformal", "formal"].map(
+      v => h("option", { value: v }, t(`vest_${v}`))));
+
   const solicitanteCorreo = entrada("solicitante_correo", {
     type: "email", oninput: () => reconocerPorCorreo() });
   const solicitante = entrada("solicitante_nombre", { oninput: () => revisar() });
@@ -590,12 +667,7 @@ export async function nuevoServicio(main) {
          y en un hotel eso deja al conductor marcando su llegada desde
          cuatro cuadras antes. */
       if (esAeropuerto.checked && googleAeropuerto === false) {
-        const ok = confirm(
-          "Google dice que ese lugar no es un aeropuerto.\n\n"
-          + "Marcarlo como tal abre la geocerca de 500 m a 2 km, y el "
-          + "conductor podria marcar su llegada desde lejos.\n\n"
-          + "Confirma solo si de verdad es un aeropuerto: una terminal "
-          + "privada o una pista chica que Google no reconoce.");
+        const ok = confirm(t("cons_no_aeropuerto"));
         if (!ok) { esAeropuerto.checked = false; return; }
         forzadoAeropuerto = true;
       }
@@ -811,7 +883,8 @@ export async function nuevoServicio(main) {
       /* El punto de inicio y los dias son una sola cosa: el punto es
          donde arranca el dia 1, y la hora de ese dia es la que amarra el
          arranque. Por eso van en el mismo apartado y en ese orden. */
-      h("h4", { clase: "grupo" }, t("inicio_y_dias")),
+      conAyuda("h4", t("inicio_y_dias"), "ay_alta_inicio",
+               { clase: "grupo" }),
       h("p", { clase: "gris chico", style: "margin:0 0 12px" },
         t("inicio_y_dias_sub")),
       h("div", { clase: "punto-inicio" },
@@ -831,7 +904,8 @@ export async function nuevoServicio(main) {
           campo(t("longitud"), lon),
           campo(t("radio_metros"), metros))),
 
-      h("h4", { style: "margin:18px 0 2px" }, t("dias")),
+      conAyuda("h4", t("dias"), "ay_alta_dias",
+               { style: "margin:18px 0 2px" }),
       h("p", { clase: "gris chico", style: "margin:0 0 10px" }, t("dias_sub")),
       h("table", {},
         h("thead", {}, h("tr", {},
@@ -941,7 +1015,7 @@ export async function nuevoServicio(main) {
 
   function agregarEquipo(conDia = true) {
     if (equipos.length >= ALIAS.length) {
-      return mensaje(`Mas de ${ALIAS.length} equipos no se arman desde aqui`,
+      return mensaje(t("alta_tope_equipos").replace("{n}", ALIAS.length),
                      "alerta");
     }
     const equipo = crearEquipo();
@@ -1103,6 +1177,9 @@ export async function nuevoServicio(main) {
         ejecutivo_apellidos: armados[0].ejecutivo_apellidos,
         ejecutivo_correo: armados[0].ejecutivo_correo,
         ejecutivo_telefono: armados[0].ejecutivo_telefono,
+        idioma_ejecutivo: idiomaEjecutivo.value,
+        idioma_solicitante: idiomaSolicitante.value || null,
+        vestimenta: vestimenta.value || null,
         equipos: armados,
       });
       mensaje(`${servicio.folio}: `
@@ -1125,25 +1202,53 @@ export async function nuevoServicio(main) {
 
   /* =================================================== armado */
 
+  /* Cada bloque se pliega cuando ya se resolvio, y al plegarse deja su
+     resumen en el mismo renglon del titulo. Para cuando se llega a los
+     dias de cada equipo --que es lo largo del alta-- lo de arriba ya no
+     estorba y sigue estando a la vista en una linea. */
+  const unidos = (...partes) => partes.filter(Boolean).join(" · ");
+
   formulario.append(
     h("div", { clase: "tarjeta" },
-      h("h4", {}, t("cliente")),
-      h("div", { clase: "rejilla tres" },
-        campo(t("cliente"), clientes),
-        campo(t("consultor_asignado"), consultores)),
-      h("div", { clase: "rejilla tres" },
-        campo(t("pais"), paises)),
+      plegable(t("cliente"), [
+        h("div", { clase: "rejilla tres" },
+          campo(t("cliente"), clientes),
+          campo(t("consultor_asignado"), consultores)),
+        h("div", { clase: "rejilla tres" },
+          campo(t("pais"), paises)),
+      ], () => unidos(clientes.value ? textoDe(clientes) : "",
+                      textoDe(paises), textoDe(consultores))),
 
-      h("h4", { clase: "grupo" }, t("quien_solicita")),
-      campo(t("elegir_solicitante"), solicitanteElegido),
-      h("div", { clase: "rejilla cuatro" },
-        campo(t("correo_campo"), solicitanteCorreo),
-        campo(t("nombre"), solicitante),
-        campo(t("apellido"), solicitanteApellidos),
-        campo(t("telefono"), solicitanteTelefono))),
+      plegable(t("quien_solicita"), [
+        campo(t("elegir_solicitante"), solicitanteElegido),
+        h("div", { clase: "rejilla cuatro" },
+          campo(t("correo_campo"), solicitanteCorreo),
+          campo(t("nombre"), solicitante),
+          campo(t("apellido"), solicitanteApellidos),
+          campo(t("telefono"), solicitanteTelefono)),
+      ], () => unidos(
+        [solicitante.value, solicitanteApellidos.value]
+          .filter(Boolean).join(" ").trim(),
+        solicitanteCorreo.value), { clase: "grupo" }),
+
+      plegable(t("idioma_titulo"), [
+        h("p", { clase: "gris chico", style: "margin:0 0 12px" },
+          t("idioma_sub")),
+        h("div", { clase: "rejilla tres" },
+          campo(t("idioma_principal"), idiomaEjecutivo),
+          campo(t("idioma_solicitante"), idiomaSolicitante)),
+      ], () => unidos(textoDe(idiomaEjecutivo), textoDe(idiomaSolicitante)),
+         { clase: "grupo" }),
+
+      plegable(t("vestimenta_titulo"), [
+        h("p", { clase: "gris chico", style: "margin:0 0 12px" },
+          t("vestimenta_sub")),
+        h("div", { clase: "rejilla tres" },
+          campo(t("vestimenta_campo"), vestimenta)),
+      ], () => textoDe(vestimenta), { clase: "grupo" })),
 
     h("div", { clase: "tarjeta minimo-caja" },
-      h("h4", {}, t("equipos_titulo")),
+      conAyuda("h4", t("equipos_titulo"), "ay_alta_equipos"),
       h("p", { clase: "gris chico", style: "margin:0" }, t("equipos_sub"))),
 
     zonaEquipos,
@@ -1164,7 +1269,7 @@ export async function nuevoServicio(main) {
     h("h1", {}, t("alta_titulo")),
     h("p", { clase: "sub" }, t("alta_sub")),
     h("div", { clase: "tarjeta minimo-caja" },
-      h("h4", {}, t("para_planeado")),
+      conAyuda("h4", t("para_planeado"), "ay_alta_minimo"),
       listaMinimo),
     formulario);
 

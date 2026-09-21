@@ -118,6 +118,22 @@ label { display: block; font-size: 13px; color: var(--gris);
         margin-bottom: 6px; }
 .campo { margin-bottom: 14px; }
 
+/* La franja de deshacer: justo encima de la barra, que es donde el
+   pulgar acaba de estar. Nunca encima del boton de panico. */
+.deshacer {
+  position: fixed; left: 8px; right: 8px; bottom: 74px;
+  z-index: 40;
+  display: flex; align-items: center; gap: 10px;
+  justify-content: space-between;
+  background: var(--centauro); color: #fff;
+  border-radius: 10px; padding: 10px 12px;
+  box-shadow: 0 4px 14px rgba(27, 21, 70, .28);
+  margin-bottom: env(safe-area-inset-bottom);
+}
+.deshacer .chico { opacity: .85; margin-top: 2px; }
+.deshacer button { min-height: 38px; margin: 0; flex: 0 0 auto; }
+.deshacer.dicho { justify-content: center; }
+
 /* La barra de abajo: donde llega el pulgar sin mover la mano. */
 .barra {
   position: fixed; left: 0; right: 0; bottom: 0;
@@ -189,10 +205,25 @@ label { display: block; font-size: 13px; color: var(--gris);
 }
 .ranura.lista { border-style: solid; border-color: var(--ok); padding: 0; }
 .ranura img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.ranura.vieja { border-style: solid; border-color: var(--linea);
-                padding: 0; cursor: default; opacity: .85; }
+/* La foto de referencia ES la ranura: es un <img> con esta clase, no un
+   <img> DENTRO de una ranura. Por eso lleva su propio ancho aqui.
 
-/* Al entregar: como estaba al recibirla, y como esta ahora, pegadas. */
+   La regla que le pone el ancho a las fotos es `.ranura img`, y a esta
+   no le aplicaba: se pintaba a su tamano natural --mil seiscientos
+   pixeles-- saliendose de su columna y encimandose sobre la celda de al
+   lado y sobre el "Tocar para la foto" de junto. Se veia como dos fotos
+   transparentes una encima de otra. */
+.ranura.vieja { border-style: solid; border-color: var(--linea);
+                padding: 0; cursor: default; opacity: .85;
+                width: 100%; height: auto; object-fit: cover; }
+
+/* Al entregar: como estaba al recibirla, y como esta ahora, pegadas.
+
+   La rejilla baja a una columna cuando se compara, para que cada foto
+   quede a media pantalla en vez de a un cuarto. Un rayon en una foto de
+   ochenta pixeles no se ve, y ver el golpe es toda la razon por la que
+   existe esta pantalla. */
+.rejilla.comparando { grid-template-columns: 1fr; }
 .par { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .par > div { min-width: 0; }
 
@@ -213,3 +244,30 @@ a.botonazo {
   background: var(--centauro); color: #fff; border-radius: 10px;
   min-height: 52px; line-height: 52px; font-weight: 650; font-size: 15px;
 }
+
+/* El desglose del bono: un punto por criterio, y la frase que lo
+   explica. Sin la frase, un bono perdido es solo un numero mas chico. */
+.renglon_bono { display: flex; gap: 10px; align-items: flex-start;
+                margin-bottom: 10px; }
+.renglon_bono .punto {
+  width: 22px; height: 22px; border-radius: 50%; flex: 0 0 22px;
+  text-align: center; line-height: 22px; font-size: 12px; font-weight: 700;
+}
+.renglon_bono .punto.si { background: #e6f4ec; color: var(--ok); }
+.renglon_bono .punto.no { background: #fdecea; color: var(--grave); }
+.renglon_bono .punto.na { background: var(--suave); color: var(--gris); }
+
+/* El encabezado de las cuatro pestanas: la marca a la izquierda y, solo
+   en "Yo", el boton de salir a la derecha. Alto fijo y chico: cada pixel
+   de aqui se lo quita al dia que el agente viene a leer. */
+.encabezado { display: flex; align-items: center; justify-content: space-between;
+              gap: 10px; margin: 0 0 10px; min-height: 30px; }
+.encabezado .logo { height: 30px; width: auto; display: block; }
+/* El logotipo completo de la empresa --marca y leyenda-- es mucho mas
+   ancho que alto: a 30 px de alto la leyenda no se lee y a mas alto se
+   come la pantalla. Se le da altura propia y un tope de ancho para que
+   nunca empuje al boton de salir fuera del renglon. */
+.encabezado .logo.ancho { height: 34px; max-width: 62%; object-fit: contain;
+                          object-position: left center; }
+.logo-entrada { max-width: 76%; max-height: 90px; display: block;
+                margin: 0 auto 6px; object-fit: contain; }

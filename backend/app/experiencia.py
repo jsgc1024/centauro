@@ -16,7 +16,7 @@ def horas_acumuladas(db: Session, persona_id: int) -> int:
                       m.AsignacionPersonal.jornada_id == m.Jornada.id)
                 .filter(m.AsignacionPersonal.persona_id == persona_id,
                         m.Jornada.estatus.in_([m.EstatusJornada.TERMINADA,
-                                               m.EstatusJornada.EN_CURSO]))
+                                               *m.ARRANCADAS]))
                 .all())
 
     horas = 0.0

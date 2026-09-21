@@ -42,7 +42,7 @@ def test_puntualidad_exige_el_cien_por_ciento(cliente, sesion, datos):
                          headers=sesion("consultor")).json()
 
     puntualidad = next(c for c in ficha["criterios"]
-                       if c["criterio"] == "Puntualidad")
+                       if c["criterio"] == "Llegar al punto")
     assert puntualidad["medido"] == 50.0
     assert puntualidad["cumplido"] is False
 
@@ -56,10 +56,13 @@ def test_mes_sin_viaticos_no_regala_la_estrella(cliente, sesion, datos):
                          headers=sesion("consultor")).json()
 
     viaticos = next(c for c in ficha["criterios"]
-                    if c["criterio"] == "Cierre de viaticos")
+                    if c["criterio"] == "Comprobar el dinero a tiempo")
     assert viaticos["aplica"] is False
     assert float(viaticos["monto"]) == 0
-    assert ficha["estrellas_posibles"] == 3
+    # Cuatro posibles: llegar, no callarse, entregar la unidad
+    # documentada y la capacitacion. Los viaticos no aplican --no le
+    # asignaron-- y la recompra tampoco --nadie lo pidio por nombre--.
+    assert ficha["estrellas_posibles"] == 4
 
 
 def test_el_bono_se_reparte_entre_los_criterios_aplicables(cliente, sesion, datos):
@@ -70,9 +73,40 @@ def test_el_bono_se_reparte_entre_los_criterios_aplicables(cliente, sesion, dato
                                "mes": hoy.month, "capacitacion_cumplida": True},
                          headers=sesion("consultor")).json()
 
-    # Catalogo: 800 + 600 + 500 + 700 = 2600 repartidos entre 3 aplicables
-    assert ficha["estrellas"] == 3
-    assert abs(float(ficha["bono"]) - 2600) < 0.05
+    # Catalogo: 780 + 650 + 390 + 390 + 260 + 130 = 2600. Los viaticos
+    # no aplican y sus 390 se reparten; la recompra tampoco aplica pero
+    # NO reparte --es el que suma y no resta--, asi que el techo del mes
+    # sin recompra es 2,470.
+    assert ficha["estrellas"] == 4
+    assert abs(float(ficha["bono"]) - 2470) < 0.05
+
+
+def test_lo_que_no_aplica_se_reparte_a_prorrata_no_en_partes_iguales(
+        cliente, sesion, datos):
+    """El defecto que esto cuida: el reparto era en partes iguales, asi
+    que aplanaba SIEMPRE el catalogo --con todo aplicando, puntualidad
+    dejaba de valer 780 y capacitacion dejaba de valer 260: las dos
+    pagaban lo mismo--. La pantalla dejaba configurar pesos y el motor
+    los ignoraba."""
+    _, persona = _mes_trabajado(cliente, sesion, datos, dia_base=20)
+    hoy = date.today()
+    ficha = cliente.post("/evaluaciones",
+                         json={"persona_id": persona, "anio": hoy.year,
+                               "mes": hoy.month, "capacitacion_cumplida": True},
+                         headers=sesion("consultor")).json()
+
+    llegar = next(c for c in ficha["criterios"]
+                  if c["criterio"] == "Llegar al punto")
+    central = next(c for c in ficha["criterios"]
+                   if c["criterio"] == "No dejar callada a la central")
+
+    # Los viaticos no aplicaron: lo suyo se reparte, asi que cada uno
+    # paga mas de lo que dice el catalogo.
+    assert float(llegar["monto"]) > 780
+    assert float(central["monto"]) > 650
+    # Y se reparte a prorrata: la proporcion del catalogo se conserva.
+    assert abs(float(llegar["monto"]) / float(central["monto"])
+               - 780 / 650) < 0.01
 
 
 def test_incidencia_no_pega_sin_visto_bueno(cliente, sesion, datos):

@@ -44,9 +44,18 @@ class Hallazgo:
 
 
 def _jornadas_de_persona(db: Session, persona_id: int, desde: datetime, hasta: datetime):
-    """Jornadas vivas de la persona en la ventana ampliada (un dia de margen)."""
-    return (
-        db.query(m.Jornada)
+    """Jornadas vivas de la persona en la ventana ampliada (un dia de margen).
+
+    El dia del que la RELEVARON deja de ocuparle la tarde: se releva a
+    alguien a las seis y a las siete ya esta libre, pero su asignacion
+    sigue ahi --y tiene que seguir, porque ese dia lo trabajo y se le
+    paga--. Mirando solo la asignacion, quien salio de un servicio por
+    contingencia quedaba ocupado hasta la medianoche y no se le podia
+    poner en otro lado. Por eso la jornada viaja con la hora en que
+    termino DE VERDAD para esa persona.
+    """
+    filas = (
+        db.query(m.Jornada, m.AsignacionPersonal.relevado_en)
         .join(m.AsignacionPersonal, m.AsignacionPersonal.jornada_id == m.Jornada.id)
         .filter(
             m.AsignacionPersonal.persona_id == persona_id,
@@ -56,10 +65,13 @@ def _jornadas_de_persona(db: Session, persona_id: int, desde: datetime, hasta: d
         )
         .all()
     )
+    return [(j, relevado) for j, relevado in filas]
 
 
 def _jornadas_de_vehiculo(db: Session, vehiculo_id: int, desde: datetime, hasta: datetime):
-    return (
+    """Igual que las de la persona, pero la unidad no se releva a media
+    jornada: si cambia, cambia el dia entero."""
+    return [(j, None) for j in (
         db.query(m.Jornada)
         .join(m.AsignacionVehiculo, m.AsignacionVehiculo.jornada_id == m.Jornada.id)
         .filter(
@@ -68,8 +80,7 @@ def _jornadas_de_vehiculo(db: Session, vehiculo_id: int, desde: datetime, hasta:
             m.Jornada.fecha >= (desde - timedelta(days=1)).date(),
             m.Jornada.fecha <= (hasta + timedelta(days=1)).date(),
         )
-        .all()
-    )
+        .all())]
 
 
 def _evaluar(
@@ -82,14 +93,30 @@ def _evaluar(
 ) -> list[Hallazgo]:
     hallazgos: list[Hallazgo] = []
 
-    for j in ocupadas:
+    for j, relevado_en in ocupadas:
         if excluir_jornada_id and j.id == excluir_jornada_id:
             continue
 
         folio = j.equipo.servicio.folio
 
+        # A que hora termino ese dia PARA ESTA PERSONA.
+        #
+        # Dos cosas lo acortan. El relevo: lo que ocupa es hasta que la
+        # relevaron, no hasta el fin programado del servicio, que siguio
+        # sin ella. Y el cierre: un dia que ya termino --con su hora
+        # real de fin marcada-- deja de ocupar a partir de ahi. Sin
+        # esto, quien hizo un transfer de 14:00 a 17:00 quedaba ocupado
+        # hasta la medianoche y no se le podia poner en nada mas esa
+        # tarde, aunque el servicio ya estuviera cerrado.
+        cerrada = j.estatus == m.EstatusJornada.TERMINADA
+        suyo_termina = relevado_en or (j.fin_real if cerrada else None) \
+            or j.fin_programado
+        # La relevaron antes de que empezara: ese dia no le ocupa nada.
+        if relevado_en and relevado_en <= j.inicio_programado:
+            continue
+
         # 1. Empalme real de horarios: nadie puede estar en dos lugares.
-        if inicio < j.fin_programado and j.inicio_programado < fin:
+        if inicio < suyo_termina and j.inicio_programado < fin:
             hallazgos.append(Hallazgo(
                 nivel="bloqueo",
                 motivo="Empalme de horarios con otro servicio",
@@ -99,19 +126,31 @@ def _evaluar(
             continue
 
         # Holgura entre ventanas contiguas.
-        if j.fin_programado <= inicio:
-            holgura = (inicio - j.fin_programado).total_seconds() / 3600
+        if suyo_termina <= inicio:
+            holgura = (inicio - suyo_termina).total_seconds() / 3600
         else:
             holgura = (j.inicio_programado - fin).total_seconds() / 3600
 
         hay_full_day = bloquea_dia or j.modalidad.bloquea_dia_completo
 
-        # 2. Full day y mismo dia de presentacion: es el mismo dia contratado.
+        # 2. Full day y mismo dia de presentacion: es el mismo dia
+        #    contratado.
+        #
+        #    Deja de ser bloqueo cuando ese dia ya se cerro o la
+        #    relevaron: entonces no es imposible, es un dato que el
+        #    consultor tiene que ver --le esta vendiendo un dia completo
+        #    a alguien que esa mañana ya dio horas a otro cliente-- y el
+        #    decide si lo fuerza. Decision de Salvador, 20 sep.
         if hay_full_day and j.fecha == inicio.date():
             cual = "la nueva jornada" if bloquea_dia else "la jornada ya asignada"
+            libre = cerrada or bool(relevado_en)
             hallazgos.append(Hallazgo(
-                nivel="bloqueo",
-                motivo=f"Full day: {cual} ocupa el dia completo del recurso",
+                nivel="riesgo" if libre else "bloqueo",
+                motivo=(f"Full day: ya trabajo ese dia en {folio} "
+                        f"(hasta las {suyo_termina:%H:%M}). Se le vende el "
+                        f"dia completo a otro cliente."
+                        if libre else
+                        f"Full day: {cual} ocupa el dia completo del recurso"),
                 jornada_id=j.id, servicio_folio=folio,
                 inicio=j.inicio_programado, fin=j.fin_programado,
             ))
@@ -119,7 +158,9 @@ def _evaluar(
 
         # 3. Full day nocturno que cruza la medianoche: son dias distintos y se
         #    cobran por separado, asi que solo se alerta y decide el consultor.
-        if hay_full_day and ({inicio.date(), fin.date()} & {j.fecha, j.fin_programado.date()}):
+        if (hay_full_day and not relevado_en and not cerrada
+                and ({inicio.date(), fin.date()}
+                     & {j.fecha, j.fin_programado.date()})):
             hallazgos.append(Hallazgo(
                 nivel="riesgo",
                 motivo=(f"Jornada nocturna que cruza la medianoche: el recurso encadena "

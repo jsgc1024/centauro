@@ -61,24 +61,230 @@ def jornadas_del_mes(db: Session, persona_id: int, anio: int, mes: int) -> list[
 
 # ---------------------------------------------------------------- criterios
 
-def medir_puntualidad(db: Session, jornadas: list[m.Jornada]) -> dict:
-    """Se mide contra la hora de presentacion de cada dia.
-    En implantados cada dia del mes; en eventuales todos los servicios.
-    Se exige el 100 por ciento."""
-    evaluables = [j for j in jornadas if j.inicio_real]
-    if not evaluables:
+def medir_puntualidad(db: Session, jornadas: list[m.Jornada], persona_id: int,
+                      margen_minutos: int = 0,
+                      margen_ocasiones: int = 0) -> dict:
+    """Llegar al punto. Son dos cosas, no una.
+
+    La hora sola no basta: "marque a tiempo" desde la casa no es haber
+    llegado. Por eso la marca de llegada tiene que estar dentro de la
+    geocerca del origen. Si la marca no trae coordenadas no se le
+    cuenta en contra --no se puede probar lo contrario--; lo que cuenta
+    en contra es la marca que SI trae coordenadas y cayo fuera.
+
+    El margen: tantos minutos, tantas veces al mes. Sin el, un retraso
+    de dos minutos una vez pesa igual que cuarenta minutos tres veces, y
+    lo que no distingue no motiva. Cuando los retrasos perdonables pasan
+    de las ocasiones permitidas, se perdonan los mas chicos y los demas
+    cuentan tarde: el margen es para el descuido, no para el habito.
+    """
+    # Contra que se mide. `inicio_real` NO sirve: lo escribe el hito de
+    # contacto con el ejecutivo, o sea el meet and greet. Medir la
+    # llegada con esa hora es medir otra cosa --y castiga al que llego
+    # temprano y espero veinte minutos a que el ejecutivo bajara--.
+    # Se mide contra la marca de LLEGADA, que es la que dice "estoy en
+    # el punto"; `inicio_real` queda de respaldo para el dia raro en que
+    # no haya marca de llegada, porque exentar ese dia seria premiarlo.
+    llegadas = {h.jornada_id: h for h in db.query(m.Hito).filter(
+        m.Hito.jornada_id.in_([j.id for j in jornadas]),
+        m.Hito.persona_id == persona_id,
+        m.Hito.tipo == m.TipoHito.LLEGADA_ORIGEN).all()}
+
+    # Lo que decide si el criterio aplica son las JORNADAS, no las
+    # marcas. Es la diferencia entre "no le toco" y "no marco", y
+    # confundirlas abria un agujero: el dia que alguien no marcara su
+    # llegada, el criterio se declaraba no aplicable, sus 780 se
+    # repartian entre los demas criterios, y no marcar salia pagando
+    # MAS que llegar a tiempo. Un mes sin jornadas si es "no le toco".
+    if not jornadas:
         return {"valor": CERO, "aplica": False,
-                "detalle": "Sin jornadas con inicio registrado este mes"}
+                "detalle": "Sin jornadas este mes"}
 
-    a_tiempo = [j for j in evaluables if j.inicio_real <= j.inicio_programado]
-    tarde = [j for j in evaluables if j.inicio_real > j.inicio_programado]
-    valor = Decimal(len(a_tiempo)) / Decimal(len(evaluables)) * 100
+    # El dia cuya llegada asento la central a mano NO se mide: decision
+    # de Salvador, 20 sep. La central no puede probar la hora --no hay
+    # ubicacion, nadie estaba ahi con el telefono-- asi que ni la premia
+    # ni la castiga.
+    #
+    # Ese dia sale del DENOMINADOR y no cuenta como cumplido: contarlo a
+    # favor convertiria el registro a mano en una forma de regalar bono,
+    # que es justo lo que el candado de "nadie firma su propio dia"
+    # existe para evitar.
+    a_mano = {j.id for j in jornadas
+              if (llegadas.get(j.id) is not None
+                  and llegadas[j.id].registrado_a_mano_en is not None)}
+    medibles = [j for j in jornadas if j.id not in a_mano]
 
-    detalle = f"{len(a_tiempo)} de {len(evaluables)} jornadas a tiempo"
+    # Un mes entero asentado a mano no deja nada que medir. Entonces el
+    # criterio no aplica Y SU MONTO NO SE REPARTE: si se repartiera,
+    # volveriamos al agujero que ya cerramos --no marcar pagando mas que
+    # llegar a tiempo--, solo que ahora por la puerta de la central.
+    if not medibles:
+        return {"valor": CERO, "aplica": False, "reparte": False,
+                "detalle": (f"Las {len(a_mano)} jornadas del mes las asento "
+                            "la central a mano: no hay llegada que medir")}
+
+    # El intento de marcar fuera del punto no deja hito --el servidor lo
+    # rechaza-- pero si deja alerta. Sin esto, ese dia aparece como "sin
+    # marca" a secas y la ficha no explica nada.
+    intentos = {a.jornada_id for a in db.query(m.Alerta).filter(
+        m.Alerta.jornada_id.in_([j.id for j in jornadas]),
+        m.Alerta.persona_id == persona_id,
+        m.Alerta.tipo == m.TipoAlerta.FUERA_DE_GEOCERCA).all()}
+
+    buenas, fuera, tarde, perdonables, sin_marca = [], [], [], [], []
+    for j in medibles:
+        marca = llegadas.get(j.id)
+        momento = marca.marcado_en if marca is not None else j.inicio_real
+        if momento is None:
+            sin_marca.append(j)
+            continue
+        if marca is not None and marca.dentro_geocerca is False:
+            fuera.append(j)
+            continue
+        retraso = (momento - j.inicio_programado).total_seconds() / 60
+        if retraso <= 0:
+            buenas.append(j)
+        elif retraso <= margen_minutos:
+            perdonables.append((j, int(round(retraso))))
+        else:
+            tarde.append((j, int(round(retraso))))
+
+    # Los que sobran del margen se van a tarde: se perdonan los mas chicos.
+    perdonables.sort(key=lambda x: x[1])
+    tarde.extend(perdonables[margen_ocasiones:])
+    perdonadas = perdonables[:margen_ocasiones]
+    buenas.extend(j for j, _ in perdonadas)
+
+    valor = Decimal(len(buenas)) / Decimal(len(medibles)) * 100
+    detalle = f"{len(buenas)} de {len(medibles)} jornadas a tiempo y en el punto"
+    if a_mano:
+        detalle += (f". Fuera del calculo: {len(a_mano)} que asento la "
+                    "central a mano")
     if tarde:
-        dias = ", ".join(j.fecha.strftime("%d/%m") for j in tarde[:5])
+        tarde.sort(key=lambda x: -x[1])
+        dias = ", ".join(f"{j.fecha:%d/%m} ({mm} min)" for j, mm in tarde[:4])
         detalle += f". Tarde: {dias}"
+    if fuera:
+        dias = ", ".join(f"{j.fecha:%d/%m}" for j in fuera[:4])
+        detalle += f". Marco fuera del punto: {dias}"
+    if sin_marca:
+        con_intento = [j for j in sin_marca if j.id in intentos]
+        resto = [j for j in sin_marca if j.id not in intentos]
+        if con_intento:
+            dias = ", ".join(f"{j.fecha:%d/%m}" for j in con_intento[:4])
+            detalle += f". Intento marcar fuera del punto: {dias}"
+        if resto:
+            dias = ", ".join(f"{j.fecha:%d/%m}" for j in resto[:4])
+            detalle += f". Sin marca de llegada: {dias}"
+    if perdonadas:
+        dias = ", ".join(f"{j.fecha:%d/%m}" for j, _ in perdonadas)
+        detalle += f". Dentro del margen: {dias}"
     return {"valor": valor.quantize(Decimal("0.01")), "detalle": detalle}
+
+
+def medir_entrega_unidad(db: Session, jornadas: list[m.Jornada],
+                         persona_id: int) -> dict:
+    """Entregar la unidad documentada.
+
+    Ojo con lo que este criterio NO mide: el dano. El dano al entregar
+    lo declara quien entrega, y el dano que aparece despues lo declara
+    quien recibe --asi que medirlo aqui seria dejar que la palabra de
+    uno le cueste el bono a otro sin que nadie lo revise--. El dano ya
+    tiene su camino: avisa al consultor, y si amerita se vuelve
+    incidencia con visto bueno de direccion, y la incidencia apaga el
+    mes completo. Aqui se mide lo que es 100 por ciento suyo y no
+    necesita el juicio de nadie: que la revision de entrega exista y
+    este completa --odometro, firma y las fotos--.
+
+    Y declarar un dano nunca castiga: quien lo declara se esta
+    protegiendo, y frenarlo seria castigar justo lo que queremos.
+    """
+    # Se miden LAS ENTREGAS QUE EL REGISTRO, no las unidades que hubo en
+    # sus jornadas.
+    #
+    # La unidad del dia no vive en su asignacion: con una sola unidad en
+    # el equipo, `asignacion_personal.vehiculo_id` se queda vacio a
+    # proposito --sobra decirlo-- y el vehiculo cuelga de la jornada. Y
+    # de todos modos amarrarlo a la asignacion seria cobrarle la entrega
+    # a quien nunca toco la camioneta, o al que lo relevaron a media
+    # jornada.
+    #
+    # Como ya no hay fin de servicio sin revision de entrega, la revision
+    # existe: lo que este criterio mide es que este COMPLETA --odometro,
+    # firma y fotos--, que es lo unico que sirve tres semanas despues.
+    servicios = {j.equipo.servicio_id for j in jornadas}
+    if not servicios:
+        return {"valor": CERO, "aplica": False, "detalle": "Sin jornadas este mes"}
+
+    entregas = (db.query(m.RevisionUnidad)
+                .filter(m.RevisionUnidad.persona_id == persona_id,
+                        m.RevisionUnidad.tipo == m.TipoRevision.ENTREGA,
+                        m.RevisionUnidad.servicio_id.in_(servicios)).all())
+    if not entregas:
+        return {"valor": CERO, "aplica": False,
+                "detalle": "No entrego ninguna unidad este mes: el criterio "
+                           "no aplica"}
+
+    bien, problemas = 0, []
+    for r in entregas:
+        falta = []
+        if r.kilometraje is None:
+            falta.append("odometro")
+        if not r.firma:
+            falta.append("firma")
+        if not r.fotos:
+            falta.append("fotos")
+        if falta:
+            placa = r.vehiculo.placa if r.vehiculo else "?"
+            problemas.append(f"{r.momento:%d/%m} {placa} (sin {', '.join(falta)})")
+        else:
+            bien += 1
+
+    valor = Decimal(bien) / Decimal(len(entregas)) * 100
+    detalle = f"{bien} de {len(entregas)} entregas documentadas"
+    if problemas:
+        detalle += f". {', '.join(problemas[:4])}"
+    return {"valor": valor.quantize(Decimal("0.01")), "detalle": detalle}
+
+
+def medir_recompra(db: Session, jornadas: list[m.Jornada],
+                   persona_id: int) -> dict:
+    """Que el cliente lo vuelva a pedir.
+
+    La unica senal de calidad que el sistema puede contar solo. No se
+    deduce de que haya coincidido con el mismo cliente --eso puede ser
+    nada mas quien estaba libre--: la marca el consultor al armar el
+    equipo, porque alguien tiene que afirmarlo.
+
+    Se mide en veces, no en porcentaje: el valor es el numero de
+    servicios distintos en que lo pidieron, y el umbral se configura en
+    ese mismo lenguaje.
+    """
+    if not jornadas:
+        return {"valor": CERO, "aplica": False, "detalle": "Sin jornadas este mes"}
+
+    servicios = set()
+    for j in jornadas:
+        for a in j.personal:
+            if a.persona_id == persona_id and a.pedido_por_cliente:
+                servicios.add(j.equipo.servicio_id)
+
+    if not servicios:
+        # No aplica en vez de reprobado: este criterio suma, no resta.
+        # El personal de plazas chicas o de cuentas nuevas no tiene como
+        # acumularlas, y cobrarles por eso seria cobrarles la geografia.
+        return {"valor": CERO, "aplica": False,
+                "detalle": "Ningun cliente lo pidio por nombre este mes"}
+
+    nombres = []
+    for servicio_id in list(servicios)[:3]:
+        servicio = db.get(m.Servicio, servicio_id)
+        if servicio and servicio.folio:
+            nombres.append(servicio.folio)
+    detalle = f"Lo pidieron por nombre en {len(servicios)} servicio(s)"
+    if nombres:
+        detalle += f": {', '.join(nombres)}"
+    return {"valor": Decimal(len(servicios)), "detalle": detalle}
 
 
 def medir_seguimiento(db: Session, jornadas: list[m.Jornada], persona_id: int) -> dict:
@@ -148,6 +354,51 @@ def medir_cierre_viaticos(db: Session, jornadas: list[m.Jornada],
     return {"valor": valor.quantize(Decimal("0.01")), "detalle": detalle}
 
 
+def medir_capacitacion(db: Session, persona_id: int, anio: int,
+                       mes: int) -> dict:
+    """Si traia todos sus certificados vigentes al cierre del mes.
+
+    Esto era una casilla que alguien marcaba a mano, y el criterio del
+    bono decia "dato de Odoo" cuando Odoo no lo mandaba. Ahora sale del
+    padron: esta al corriente quien no trae ningun certificado vencido.
+    El sistema lo sabe solo, y el dia que Odoo mande los cursos solo
+    cambia de donde llegan las filas --no como se mide--.
+
+    Se mide al CIERRE del mes, no a hoy: un certificado que vencio el 2
+    de octubre estaba vigente todo septiembre, y septiembre es el mes
+    que se esta calculando.
+
+    Padron vacio NO es reprobado. Sin certificados registrados el
+    criterio no aplica y su monto se reparte entre los demas: nadie
+    pierde dinero porque a un padron le falte una captura --o porque
+    Odoo todavia no conecte--.
+    """
+    cierre = _rango(anio, mes)[1]
+    cursos = (db.query(m.Capacitacion)
+              .filter_by(persona_id=persona_id, activo=True).all())
+    if not cursos:
+        return {"valor": CERO, "aplica": False,
+                "detalle": "Sin certificados registrados: el criterio no aplica"}
+
+    vencidos = [c for c in cursos
+                if c.vigencia_hasta and c.vigencia_hasta < cierre]
+    if vencidos:
+        cuales = ", ".join(f"{c.nombre} ({c.vigencia_hasta:%d/%m/%Y})"
+                           for c in vencidos[:3])
+        return {"valor": CERO,
+                "detalle": f"Vencido al {cierre:%d/%m}: {cuales}"}
+
+    # El que esta por vencer todavia cuenta, y se dice: el mes que entra
+    # ya no cuenta, y avisarlo aqui es mas barato que descontarlo
+    # despues.
+    pronto = sorted((c for c in cursos if c.vigencia_hasta),
+                    key=lambda c: c.vigencia_hasta)
+    detalle = f"{len(cursos)} certificado(s) vigentes al {cierre:%d/%m}"
+    if pronto:
+        detalle += f". El proximo vence el {pronto[0].vigencia_hasta:%d/%m/%Y}"
+    return {"valor": Decimal("100"), "detalle": detalle}
+
+
 # ---------------------------------------------------------------- evaluacion
 
 def incidencia_del_mes(db: Session, persona_id: int, anio: int, mes: int):
@@ -164,7 +415,7 @@ def incidencia_del_mes(db: Session, persona_id: int, anio: int, mes: int):
 
 
 def evaluar(db: Session, persona_id: int, anio: int, mes: int,
-            capacitacion_cumplida: bool = False) -> m.EvaluacionMensual:
+            capacitacion_cumplida: bool | None = None) -> m.EvaluacionMensual:
     persona = db.get(m.Persona, persona_id)
     if not persona:
         raise HTTPException(404, f"No existe la persona {persona_id}")
@@ -193,25 +444,65 @@ def evaluar(db: Session, persona_id: int, anio: int, mes: int,
         db.flush()
 
     evaluacion.jornadas_evaluadas = len(jornadas)
-    evaluacion.capacitacion_cumplida = capacitacion_cumplida
 
+    puntual = next((c for c in criterios
+                    if c.codigo == m.CodigoCriterio.PUNTUALIDAD), None)
     medidas = {
-        m.CodigoCriterio.PUNTUALIDAD: medir_puntualidad(db, jornadas),
+        m.CodigoCriterio.PUNTUALIDAD: medir_puntualidad(
+            db, jornadas, persona_id,
+            margen_minutos=int(puntual.tolerancia_minutos) if puntual else 0,
+            margen_ocasiones=int(puntual.tolerancia_ocasiones) if puntual else 0),
         m.CodigoCriterio.SEGUIMIENTO_APP: medir_seguimiento(db, jornadas, persona_id),
         m.CodigoCriterio.CIERRE_VIATICOS: medir_cierre_viaticos(db, jornadas, persona_id),
-        m.CodigoCriterio.CAPACITACION: {
-            "valor": Decimal("100") if capacitacion_cumplida else CERO,
-            "detalle": ("Capacitacion del mes cumplida" if capacitacion_cumplida
-                        else "Sin registro de capacitacion (dato de Odoo)")},
+        m.CodigoCriterio.ENTREGA_UNIDAD: medir_entrega_unidad(db, jornadas, persona_id),
+        m.CodigoCriterio.RECOMPRA: medir_recompra(db, jornadas, persona_id),
+        # Vacio no es reprobado. Mientras Odoo no mande la capacitacion
+        # del mes, el criterio NO APLICA y su monto se reparte entre los
+        # demas: nadie debe perder dinero porque a un sistema le falta
+        # una conexion. Un False explicito si reprueba --eso ya es un
+        # dato--; lo que no hay es None.
+        # Sin decir nada, sale del padron de certificados. Un bool
+        # explicito sigue mandando, para el caso raro en que alguien
+        # tenga que corregir un mes a mano.
+        m.CodigoCriterio.CAPACITACION: (
+            medir_capacitacion(db, persona_id, anio, mes)
+            if capacitacion_cumplida is None else
+            {"valor": Decimal("100") if capacitacion_cumplida else CERO,
+             "detalle": ("Capacitacion del mes cumplida a mano"
+                         if capacitacion_cumplida
+                         else "Marcado a mano como no cumplido")}),
     }
 
     # El bono posible del mes es la suma del catalogo. Si algun criterio no
     # aplica, ese monto se reparte entre los que si aplican, para que nadie
     # cobre de menos por algo que no dependio de el.
+    #
+    # El reparto es A PRORRATA DEL PESO, no en partes iguales. Repartir
+    # en partes iguales aplanaba SIEMPRE el catalogo --con los cuatro
+    # criterios aplicando, puntualidad dejaba de valer 800 y
+    # capacitacion dejaba de valer 500: los dos pagaban 650--, o sea
+    # que la pantalla dejaba configurar pesos y el motor los ignoraba.
     bono_posible = sum((Decimal(str(c.monto_mensual)) for c in criterios), CERO)
     aplicables = [c for c in criterios
                   if medidas.get(c.codigo, {}).get("aplica", True)]
-    valor_estrella = (bono_posible / len(aplicables)) if aplicables else CERO
+
+    # El criterio que suma y no resta se sale del reparto: si no aplica,
+    # su monto no se reparte entre los demas, simplemente no esta. Sin
+    # esto, al que no le pidieron cobraba igual que a quien si.
+    # `reparte` puede venir del catalogo --el criterio que suma y no
+    # resta-- o de la medida del mes, cuando lo que dejo al criterio sin
+    # medir fue algo que hizo la casa y no la persona. Las dos razones
+    # llevan al mismo sitio: ese monto no se reparte, simplemente no
+    # esta.
+    def _reparte(c):
+        return c.reparte and medidas.get(c.codigo, {}).get("reparte", True)
+
+    fuera = sum((Decimal(str(c.monto_mensual)) for c in criterios
+                 if not _reparte(c) and c not in aplicables), CERO)
+    a_repartir = bono_posible - fuera
+    suma_aplicables = sum((Decimal(str(c.monto_mensual)) for c in aplicables),
+                          CERO)
+    factor = (a_repartir / suma_aplicables) if suma_aplicables else CERO
 
     estrellas = 0
     total = CERO
@@ -220,7 +511,8 @@ def evaluar(db: Session, persona_id: int, anio: int, mes: int,
                              {"valor": CERO, "detalle": "Sin medir", "aplica": True})
         aplica = medida.get("aplica", True)
         cumplido = aplica and medida["valor"] >= Decimal(str(criterio.umbral_pct))
-        monto = valor_estrella.quantize(Decimal("0.01")) if cumplido else CERO
+        monto = ((Decimal(str(criterio.monto_mensual)) * factor)
+                 .quantize(Decimal("0.01")) if cumplido else CERO)
         if cumplido:
             estrellas += 1
             total += monto
@@ -229,6 +521,14 @@ def evaluar(db: Session, persona_id: int, anio: int, mes: int,
             valor_medido=medida["valor"], umbral=criterio.umbral_pct,
             cumplido=cumplido, aplica=aplica, monto=monto,
             detalle=medida["detalle"]))
+
+    # Lo que se guarda es lo que se MIDIO. De este campo lee despues la
+    # dimension de capacitacion de la calificacion --"3 de 3 meses al
+    # corriente"--, asi que guardar el parametro en vez del resultado
+    # dejaba a las dos midiendo cosas distintas.
+    medida_cap = medidas[m.CodigoCriterio.CAPACITACION]
+    evaluacion.capacitacion_cumplida = bool(
+        medida_cap.get("aplica", True) and medida_cap["valor"] > CERO)
 
     incidencia = incidencia_del_mes(db, persona_id, anio, mes)
     if incidencia:
@@ -246,6 +546,59 @@ def evaluar(db: Session, persona_id: int, anio: int, mes: int,
     db.commit()
     db.refresh(evaluacion)
     return evaluacion
+
+
+def calcular_el_mes(db: Session, anio: int, mes: int) -> dict:
+    """Las estrellas de todo el personal activo, de un golpe.
+
+    Corre el dia 3 y no el 1 a proposito: el viatico del ultimo dia del
+    mes tiene 24 horas para comprobarse, asi que calcular el 1 castiga a
+    quien todavia esta en plazo. El dia 2 queda para que finanzas suba
+    los comprobantes que entraron al filo.
+
+    Lo que ya se autorizo o se pago no se toca: es dinero. Lo demas se
+    vuelve a calcular cada vez que corre, asi que volver a correrla el
+    dia 4 levanta lo que se cerro tarde.
+
+    Y la incidencia que se autoriza despues de esto no alcanza este mes:
+    el calculo lee las que ya traen visto bueno. Por eso el visto bueno
+    tiene fecha --se puede demostrar que llego tarde, no que se ignoro--.
+    """
+    calculadas, saltadas, fallidas = 0, 0, []
+    personas = (db.query(m.Persona)
+                .join(m.Usuario, m.Usuario.persona_id == m.Persona.id)
+                .filter(m.Persona.activo.is_(True),
+                        m.Usuario.rol == m.Rol.PERSONAL_SEGURIDAD)
+                .all())
+    for persona in personas:
+        firme = (db.query(m.EvaluacionMensual)
+                 .filter(m.EvaluacionMensual.persona_id == persona.id,
+                         m.EvaluacionMensual.anio == anio,
+                         m.EvaluacionMensual.mes == mes,
+                         m.EvaluacionMensual.estatus.in_(
+                             [m.EstatusEvaluacion.AUTORIZADA,
+                              m.EstatusEvaluacion.PAGADA]))
+                 .first())
+        if firme:
+            saltadas += 1
+            continue
+        try:
+            evaluar(db, persona.id, anio, mes)
+            calculadas += 1
+        except Exception as error:
+            # Una persona sin plaza, o un pais sin criterios, no puede
+            # tumbar la corrida de los otros treinta y siete.
+            db.rollback()
+            fallidas.append({"persona_id": persona.id,
+                             "nombre": persona.nombre,
+                             "motivo": str(error)[:200]})
+    return {"periodo": f"{mes:02d}/{anio}", "calculadas": calculadas,
+            "ya_firmes": saltadas, "fallidas": fallidas}
+
+
+def mes_anterior(hoy: date) -> tuple[int, int]:
+    """El mes que se cierra hoy. En enero, diciembre del ano pasado."""
+    return (hoy.year - 1, 12) if hoy.month == 1 else (hoy.year, hoy.month - 1)
 
 
 def ficha(db: Session, evaluacion: m.EvaluacionMensual) -> dict:
@@ -272,6 +625,12 @@ def ficha(db: Session, evaluacion: m.EvaluacionMensual) -> dict:
             "umbral": float(r.umbral),
             "cumplido": r.cumplido,
             "monto": r.monto,
+            # Lo que vale el criterio en el catalogo, al lado de lo que
+            # pago. Sin los dos numeros juntos no se puede ver el
+            # reparto: un criterio que cobra mas de lo que vale esta
+            # recibiendo lo de otro que no aplico, y eso hay que poder
+            # mirarlo --en la pantalla y en las pruebas.
+            "monto_mensual": r.criterio.monto_mensual,
             "detalle": r.detalle,
         } for r in evaluacion.detalle],
     }

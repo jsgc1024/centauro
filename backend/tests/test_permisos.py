@@ -46,7 +46,19 @@ def test_cada_rol_en_su_carril(cliente, sesion, datos):
                         headers=sesion("consultor")).status_code == 201
 
 
-def test_direccion_general_alcanza_operacion_pero_no_catalogos(cliente, sesion, datos):
+def test_direccion_general_alcanza_todo(cliente, sesion, datos):
+    """Antes esta prueba decia lo contrario.
+
+    La raya estaba puesta a proposito: direccion general llegaba a todo
+    lo operativo pero no a catalogos ni tarifarios, por control interno
+    --quien aprueba un margen no deberia poder cambiar en silencio el
+    precio con el que se calcula ese margen--.
+
+    Se le planteo asi a la direccion y decidio alcanzarlo todo. La
+    consecuencia es que un cambio de precio suyo ya no tiene candado que
+    lo detenga, solo bitacora que lo cuente, y por eso la bitacora de
+    catalogos dejo de ser un lujo.
+    """
     h = sesion("dirgeneral")
     assert cliente.get("/servicios", headers=h).status_code == 200
     assert cliente.post("/viaticos/transferencias/barrido", headers=h).status_code == 200
@@ -55,7 +67,15 @@ def test_direccion_general_alcanza_operacion_pero_no_catalogos(cliente, sesion, 
                         json={"pais_id": datos["mx"]["id"], "moneda": "MXN",
                               "vigencia_desde": "2026-01-01",
                               "nombre": f"Tarifario {uuid.uuid4().hex[:8]}"},
-                        headers=h).status_code == 403
+                        headers=h).status_code == 201
+
+    # Y el resto sigue sin alcanzarlo: que direccion general pase no
+    # abre la puerta a los demas.
+    assert cliente.post("/catalogos/tarifarios",
+                        json={"pais_id": datos["mx"]["id"], "moneda": "MXN",
+                              "vigencia_desde": "2026-01-01",
+                              "nombre": f"Tarifario {uuid.uuid4().hex[:8]}"},
+                        headers=sesion("consultor")).status_code == 403
 
 
 def _jornada_con_juan(cliente, sesion, datos, dia=None):
@@ -162,3 +182,22 @@ def test_un_duplicado_devuelve_un_mensaje_claro(cliente, sesion, datos):
     segunda = cliente.post("/catalogos/plazas", json=plaza, headers=h)
     assert segunda.status_code == 409
     assert "ya existe" in segunda.json()["detail"]["mensaje"].lower()
+
+
+def test_el_403_dice_quien_si_puede(cliente, sesion, datos):
+    """"No tienes permiso" a secas deja a alguien mirando un boton mudo.
+
+    Quien se topa con esto no puede adivinar a quien hablarle, y la
+    pantalla tampoco: el servidor es el unico que sabe que roles traen
+    esa actividad, asi que lo dice el.
+    """
+    # Con un rol que de verdad no la trae. Direccion general no sirve
+    # para esto: hereda consultor y operaciones, asi que pasa.
+    r = cliente.put("/implantados/1/tabulador",
+                    json={"renglones": []},
+                    headers=sesion("juan"))
+    assert r.status_code == 403, r.text
+    detalle = r.json()["detail"]
+    assert detalle["que_hacer"], "el 403 no dice quien si puede"
+    assert "consultor" in detalle["que_hacer"]
+    assert detalle["actividad"] == "implantado.tabulador"

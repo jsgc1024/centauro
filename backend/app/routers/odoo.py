@@ -31,6 +31,22 @@ def flota(vehiculos: list[s.VehiculoOdoo],
         db, [v.model_dump(exclude_none=True) for v in vehiculos])
 
 
+@router.post("/capacitaciones",
+             summary="Recibir los cursos y certificados desde Odoo")
+def capacitaciones(filas: list[s.CapacitacionOdoo],
+                   db: Session = Depends(get_db),
+                   _=Depends(requiere(m.Rol.ADMIN))):
+    """Los cursos del personal viven en Odoo y entran por aqui.
+
+    De este padron sale si alguien esta al corriente --el criterio del
+    bono y la dimension de la calificacion-- y de aqui salen los avisos
+    de certificado por vencer. Mientras no llegue la primera carga, ese
+    criterio simplemente no aplica: nadie reprueba por un padron vacio.
+    """
+    return odoo.sincronizar_capacitaciones(
+        db, [f.model_dump(exclude_none=False) for f in filas])
+
+
 @router.post("/taller", summary="Recibir del taller las unidades fuera")
 def taller(entradas: list[s.TallerOdoo],
            db: Session = Depends(get_db),

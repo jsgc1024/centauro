@@ -171,3 +171,58 @@ def test_un_servicio_cancelado_no_se_vuelve_a_cancelar(cliente, sesion, datos):
     r = cliente.post(f"/servicios/{servicio['id']}/cancelar",
                      json={"motivo": "Otra vez"}, headers=h)
     assert r.status_code == 409
+
+
+def test_quitar_un_dia_con_dinero_lo_cancela_en_vez_de_bloquear(cliente,
+                                                                sesion,
+                                                                datos):
+    """El dia se cancela; el dinero conserva su rastro.
+
+    El endpoint bloqueaba por cualquier viatico asignado, tuviera dinero
+    afuera o no, y dejaba al consultor sin poder quitar un dia que el
+    cliente ya no pidio. Su propio docstring decia la regla correcta:
+    con dinero de por medio el dia se cancela, no se borra.
+    """
+    from decimal import Decimal
+
+    from ayudas import (asignar, crear_servicio, depositar_de_verdad,
+                        jornada, manana)
+
+    h = sesion("consultor")
+    juan = datos["personal"]["Juan Ramirez"]["id"]
+    servicio = crear_servicio(
+        cliente, h, datos,
+        [jornada(manana(960 + i), datos["modalidades"]["full_day"]["id"])
+         for i in range(3)])
+    for j in servicio["equipos"][0]["jornadas"]:
+        asignar(cliente, h, j["id"], persona_id=juan)
+
+    equipo_id = servicio["equipos"][0]["id"]
+    cliente.post(f"/viaticos/equipos/{equipo_id}/persona",
+                 json={"persona_id": juan, "monto": "900"}, headers=h)
+    depositar_de_verdad(cliente, sesion, equipo_id, juan)
+
+    tercero = servicio["equipos"][0]["jornadas"][2]
+    r = cliente.delete(f"/servicios/jornadas/{tercero['id']}", headers=h)
+    assert r.status_code == 200, r.text
+    assert r.json()["borrado"] is False
+
+    from app import models as m
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        suya = db.get(m.Jornada, tercero["id"])
+        assert suya is not None, "se borro el dia con su dinero"
+        assert suya.estatus == m.EstatusJornada.CANCELADA
+        vivos = (db.query(m.AsignacionViatico)
+                 .filter_by(jornada_id=suya.id).all())
+        assert vivos, "se borro el rastro del dinero"
+    finally:
+        db.close()
+
+    # Y la cuenta del agente sigue cuadrando contra el servicio entero.
+    mios = cliente.get("/campo/mis-viaticos", headers=sesion("juan")).json()
+    fila = next(s for s in mios["servicios"]
+                if s["folio"] == servicio["folio"])
+    assert Decimal(str(fila["entregado"])) == Decimal("900")

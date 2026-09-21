@@ -19,6 +19,102 @@ export function h(etiqueta, atributos = {}, ...hijos) {
   return nodo;
 }
 
+/* Una seccion que se pliega, y que al plegarse DICE lo que guarda.
+
+   El alta de un servicio es larga: cliente, quien solicita, idiomas,
+   vestimenta, y luego un equipo por cada uno. Para cuando se llega a los
+   dias, lo de arriba ya esta resuelto y solo estorba --hay que bajar
+   media pantalla para volver a ver lo que importa ahora--.
+
+   Lo que hace que esto sirva y no sea solo esconder es el RESUMEN. Una
+   seccion plegada que no dice nada obliga a abrirla para recordar que se
+   puso, y entonces plegarla no ahorro nada: se cambio bajar la pantalla
+   por abrir y cerrar. Con "Cliente Demo AAA · Mexico · Salvador Garcia"
+   en el mismo renglon del titulo, no hace falta abrirla.
+
+   El resumen se calcula al plegar, no al construir: los campos se llenan
+   despues, asi que uno fijo diria siempre lo mismo que al abrir la
+   pantalla, o sea nada.
+
+   No se pliega sola al completarse, a proposito. Alguien que todavia
+   esta escribiendo y ve desaparecer lo que escribe no confia en la
+   pantalla nunca mas. Se pliega cuando la persona lo decide. */
+export function plegable(titulo, contenido, resumen = null,
+                         atributos = {}, abierto = true) {
+  const cuerpo = h("div", {}, contenido);
+  const linea = h("span", { clase: "resumen-plegable" });
+  const flecha = h("span", { clase: "flecha-plegable" }, abierto ? "▾" : "▸");
+
+  const pintar = (plegado) => {
+    cuerpo.hidden = plegado;
+    flecha.textContent = plegado ? "▸" : "▾";
+    cabeza.setAttribute("aria-expanded", plegado ? "false" : "true");
+    linea.textContent = plegado && resumen ? (resumen() || "") : "";
+  };
+
+  const alternar = () => pintar(!cuerpo.hidden);
+
+  const cabeza = h("div", {
+    clase: "cabeza-plegable", role: "button", tabindex: "0",
+    "aria-expanded": "true",
+    onclick: alternar,
+    onkeydown: (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); alternar(); }
+    },
+  }, flecha, h("h4", { ...atributos, style: "margin:0" }, titulo), linea);
+
+  /* Un bloque que nace cerrado tiene que nacer CON su resumen. Sin
+     esto, el que arranca plegado se ve como un titulo solo --sin decir
+     si guarda algo o esta vacio-- y hay que abrirlo para averiguarlo,
+     que es justo lo que el resumen existe para evitar. */
+  if (!abierto) pintar(true);
+
+  return h("div", { clase: "plegable" }, cabeza, cuerpo);
+}
+
+/* Comparar nombres como los escribe alguien con prisa.
+  
+   Quien busca a Gerardo Muñoz teclea "munoz", y quien busca a Ivan
+   escribe "ivan" aunque en su ficha diga "Ivan". Un filtro que exige la
+   tilde y la ene no encuentra a nadie y se abandona al segundo intento.
+   Se quitan los diacriticos y se baja todo a minusculas de los dos
+   lados. */
+export function sinTildes(texto) {
+  return (texto || "").normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+
+/* ------------------------------------------------------------ buscar
+
+   Tres listas --personal, servicios, implantados-- crecen hasta que dar
+   con un renglon a ojo deja de ser posible. El buscador es el mismo en
+   las tres y vive aqui para que se porte igual en todas: filtra sobre
+   lo que ya se trajo --pedir la lista otra vez por cada letra es lo que
+   hace que un buscador se sienta trabado-- y no le importan los
+   acentos, porque Munoz y Muñoz son la misma persona para quien escribe
+   de prisa. */
+
+export function coincide(q, ...datos) {
+  const buscado = sinTildes(q);
+  if (!buscado) return true;
+  return datos.some(dato => sinTildes(dato).includes(buscado));
+}
+
+export function buscador(ayuda, alEscribir) {
+  const caja = h("input", { type: "search", placeholder: ayuda });
+  caja.addEventListener("input", () => alEscribir(caja.value));
+  return caja;
+}
+
+
+/* Lo que se lee en un desplegable, no su id: el resumen es para una
+   persona. */
+export function textoDe(select) {
+  if (!select || select.selectedIndex < 0) return "";
+  const opcion = select.options[select.selectedIndex];
+  return opcion ? opcion.text.trim() : "";
+}
+
 export function campo(etiqueta, control) {
   return h("div", { clase: "campo" }, h("label", {}, etiqueta), control);
 }
@@ -97,6 +193,7 @@ const ESTATUS = {
   autorizado: "est_autorizado",
   planeado: "est_planeado",
   asignado: "est_asignado",
+  arribado: "est_arribado",
   en_curso: "est_en_curso",
   terminado: "est_terminado",
   cerrado: "est_cerrado",
@@ -119,6 +216,96 @@ export function estatus(codigo) {
 
 export function aviso(texto, tono = "") {
   return h("div", { clase: `aviso ${tono}`.trim() }, texto);
+}
+
+/* ------------------------------------------------ la ayuda en pantalla
+
+   Un encabezado de bloque con su "?" al lado. Tres frases, y las tres
+   son la misma pregunta hecha de tres maneras:
+
+     para      para que sirve este bloque
+     cuando    cuando te enteras si falla
+     numero    de donde sale el numero (cuando hay numero)
+
+   Las dos primeras se exigen; la tercera solo tiene sentido donde hay
+   una cifra que alguien va a querer cuadrar.
+
+   El "?" existe para no escribir un manual. Un tutorial que vive aparte
+   de la pantalla se despega el dia que la pantalla cambia, y nadie se
+   entera hasta que alguien sigue un paso que ya no existe y pierde la
+   confianza en todo lo demas. Este proyecto ya aprendio esa leccion tres
+   veces: el umbral de silencio con 60 en una pantalla y 120 en la otra,
+   el tope del mes escrito lejos de su candado, la lista de angulos de
+   foto que se quedo en cuatro cuando el servidor paso a cinco.
+
+   Por eso la clave se escribe AQUI, pegada al bloque que explica. Quien
+   cambie el bloque tiene el texto delante, y `revisar.py` se queja si la
+   clave no existe en los tres idiomas.
+
+   El panel FLOTA, y no siempre fue asi. Abierto dentro del bloque
+   empujaba todo hacia abajo y quedaba pegado al pie que ese mismo bloque
+   ya trae: dos explicaciones seguidas y luego los botones, todo
+   amontonado justo cuando uno abrio el "?" porque no entendia algo. Una
+   ayuda que desacomoda la pantalla que esta explicando se lee peor que
+   no tenerla.
+
+   Asi que se abre encima, como cualquier menu: nada se mueve de su
+   lugar, se lee, y se cierra picando afuera o con Escape. Una sola a la
+   vez, porque dos paneles abiertos son dos explicaciones compitiendo. */
+export function conAyuda(nivel, texto, clave, atributos = {}) {
+  const panel = h("div", {
+    clase: "panel-ayuda", hidden: "hidden",
+    // Picar dentro no lo cierra: se puede seleccionar el texto.
+    onclick: (e) => e.stopPropagation(),
+  },
+    parrafoAyuda(t("ayuda_para"), `${clave}_para`),
+    parrafoAyuda(t("ayuda_cuando"), `${clave}_cuando`),
+    parrafoAyuda(t("ayuda_numero"), `${clave}_numero`, true));
+
+  const boton = h("button", {
+    clase: "boton-ayuda", type: "button",
+    title: t("ayuda_abrir"),
+    "aria-label": t("ayuda_abrir"),
+    "aria-expanded": "false",
+    onclick: (e) => {
+      e.stopPropagation();
+      const abrir = panel.hidden;
+      cerrarAyudas();
+      panel.hidden = !abrir;
+      boton.setAttribute("aria-expanded", abrir ? "true" : "false");
+    },
+  }, "?");
+
+  return h("div", { clase: "con-ayuda" },
+    h("div", { clase: "fila-ayuda" }, h(nivel, atributos, texto), boton),
+    panel);
+}
+
+/* Se cierran como cualquier menu. Va una sola vez por modulo y no una
+   por cada "?": hay cuarenta en la consola y se repintan enteros en cada
+   vuelta, asi que un oyente por bloque son cuarenta oyentes nuevos cada
+   vez que alguien cambia de pantalla. */
+function cerrarAyudas() {
+  for (const p of document.querySelectorAll(".panel-ayuda:not([hidden])")) {
+    p.hidden = true;
+  }
+  for (const b of document.querySelectorAll('.boton-ayuda[aria-expanded="true"]')) {
+    b.setAttribute("aria-expanded", "false");
+  }
+}
+
+document.addEventListener("click", cerrarAyudas);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") cerrarAyudas();
+});
+
+/* La tercera frase no siempre aplica, y un renglon vacio con su titulito
+   es peor que no ponerlo: ensena que los "?" traen relleno. */
+function parrafoAyuda(rotulo, clave, opcional = false) {
+  const texto = t(clave);
+  if (opcional && (!texto || texto === clave)) return null;
+  return h("p", { clase: "chico", style: "margin:6px 0 0" },
+    h("b", {}, rotulo), " ", texto);
 }
 
 /* Mismo formato de fecha del task sheet: sin ambiguedad entre

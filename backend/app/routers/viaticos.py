@@ -1,5 +1,6 @@
 """Asignacion, transferencia, comprobacion y cierre de viaticos."""
 import base64
+import logging
 from datetime import date, datetime
 from decimal import Decimal, ROUND_FLOOR
 
@@ -10,28 +11,37 @@ from sqlalchemy.orm import Session
 from app import auditoria
 from app import auth
 from app import depositos as motor_depositos
+from app import devoluciones as devoluciones_motor
 from app import imagenes
 from app import models as m
 from app import schemas as s
 from app import finanzas as control
 from app import nomina
+from app import push
+from app import reloj
 from app import viaticos as motor
 from app.db import get_db
 
 router = APIRouter(prefix="/viaticos", tags=["Viaticos"])
+registro = logging.getLogger("centauro.viaticos")
 
-CONSULTOR = auth.requiere(m.Rol.CONSULTOR, m.Rol.DIRECTOR_OPERACIONES)
-FINANZAS = auth.requiere(m.Rol.FINANZAS)
-CAMPO = auth.requiere(m.Rol.PERSONAL_SEGURIDAD)
-LECTURA = auth.requiere(m.Rol.CONSULTOR, m.Rol.DIRECTOR_OPERACIONES,
-                        m.Rol.FINANZAS, m.Rol.CENTRAL)
+# Las puertas preguntan por actividad y no por rol. Hoy la respuesta es
+# la misma --cada actividad nace con los roles que tenia-- pero el dia
+# que exista el panel de categorias, estas puertas no se tocan.
+#
+# Decidir cuanto se deposita no es lo mismo que revisar lo que se gasto,
+# asi que son dos actividades: es la diferencia entre un consultor y un
+# consultor junior.
+CONSULTOR = auth.puede("viaticos.asignar")
+CIERRA = auth.puede("viaticos.cerrar")
+FINANZAS = auth.puede("viaticos.transferir")
+CAMPO = auth.puede("viaticos.comprobar")
+LECTURA = auth.puede("viaticos.ver")
 # La evidencia del deposito la ven finanzas y direccion, el consultor
 # —que es quien recibe la llamada de "no me ha llegado"— y el agente,
 # pero solo la suya. Lo ultimo se revisa dentro del endpoint, no aqui:
-# el rol deja pasar, la pertenencia decide.
-EVIDENCIA = auth.requiere(m.Rol.FINANZAS, m.Rol.DIRECTOR_OPERACIONES,
-                          m.Rol.DIRECTOR_GENERAL, m.Rol.CONSULTOR,
-                          m.Rol.PERSONAL_SEGURIDAD)
+# la actividad deja pasar, la pertenencia decide.
+EVIDENCIA = auth.puede("viaticos.evidencia")
 
 
 def _obtener(db: Session, viatico_id: int) -> m.AsignacionViatico:
@@ -207,6 +217,19 @@ def barrido(db: Session = Depends(get_db),
             "pospuestas": len(pendientes) - len(enviadas), "detalle": enviadas}
 
 
+def _avisar_sin_tumbar(que, *args) -> None:
+    """Un aviso al telefono nunca detiene lo que lo llamo.
+
+    El deposito ya esta guardado cuando se llama a esto. Si el envio
+    fallara --un telefono desuscrito, una llave mal puesta-- lo que no
+    puede pasar es que se caiga la operacion que ya ocurrio en el banco.
+    """
+    try:
+        que(*args)
+    except Exception:                     # noqa: BLE001
+        registro.exception("no se pudo mandar el aviso de %s", que.__name__)
+
+
 @router.post("/transferencias/{solicitud_id}/confirmar",
              summary="Finanzas confirma el deposito")
 def confirmar(solicitud_id: int, referencia_odoo: str | None = None,
@@ -230,6 +253,10 @@ def confirmar(solicitud_id: int, referencia_odoo: str | None = None,
     deposito = motor_depositos.registrar(
         db, [solicitud.id], referencia_odoo,
         despachado_por_id=usuario.persona_id, exige_evidencia=False)
+    db.commit()
+    # "¿Ya me depositaron?" es la pregunta que mas recibe la central, y
+    # hasta hoy se contestaba mirando la bandeja.
+    _avisar_sin_tumbar(push.avisar_deposito, db, deposito)
     db.commit()
     return {"resultado": "confirmada", "solicitud_id": solicitud.id,
             "viatico_id": solicitud.asignacion_id,
@@ -255,7 +282,7 @@ def subir_comprobante(viatico_id: int, datos: s.ComprobanteIn,
     # tener los topes en un solo endpoint era dejar la otra puerta
     # abierta, y la persona bloqueada por una entraba por la otra.
     mal = motor.revisar_comprobante(v, Decimal(str(datos.monto)),
-                                    datos.concepto, datos.descripcion)
+                                    datos.concepto, datos.descripcion, db=db)
     if mal:
         raise HTTPException(mal.pop("codigo"), mal)
 
@@ -305,6 +332,11 @@ def rechazar_comprobante(viatico_id: int, comprobante_id: int, motivo: str,
                         jornada_id=v.jornada_id)
     db.commit()
     db.refresh(v)
+    # Sin esto, el rechazo se entera de dos maneras: cuando ve el
+    # descuento en su pago, o cuando alguien le habla. Y casi siempre
+    # lo que paso es que el ticket salio borroso.
+    _avisar_sin_tumbar(push.avisar_comprobante_rechazado, db, v, comprobante)
+    db.commit()
     pendiente = (Decimal(str(v.monto_total)) - Decimal(str(v.monto_comprobado))
                  - Decimal(str(v.monto_devuelto)))
     return {"resultado": "rechazado", "comprobante_id": comprobante_id,
@@ -442,51 +474,87 @@ def validar_comprobante(viatico_id: int, comprobante_id: int,
     return {"resultado": "validado", "comprobante_id": comprobante_id}
 
 
-@router.post("/{viatico_id}/devolver", summary="Registrar devolucion de dinero")
-def devolver(viatico_id: int, monto: Decimal, archivo_url: str | None = None,
-             db: Session = Depends(get_db),
-             _=Depends(CONSULTOR)):
-    """Si sobro dinero se devuelve con comprobante.
-    Si el servicio se cancela despues de transferido, se devuelve todo.
+@router.post("/{viatico_id}/devolver",
+             summary="Finanzas registra una devolucion que ya entro")
+async def devolver(viatico_id: int, monto: Decimal = Form(...),
+                   referencia: str = Form(...),
+                   archivo: UploadFile = File(...),
+                   db: Session = Depends(get_db),
+                   usuario: m.Usuario = Depends(FINANZAS)):
+    """La transferencia llego y nadie la habia declarado.
 
-    Es acumulativo, asi que hay que cuidarlo: mandar el POST dos veces
-    dejaba el devuelto al doble, el pendiente en negativo, y a la
-    persona fuera del tablero de dinero en la calle —que filtra por
-    pendiente mayor a cero. Y con un monto negativo se borraba una
-    devolucion real sin dejar mas rastro que una nota.
+    Lo captura finanzas porque es quien mira la cuenta. Antes esto lo
+    hacia el consultor, con el monto en la direccion y sin un solo
+    papel: el consultor nunca vio ese dinero entrar, asi que lo unico
+    que se estaba registrando era su buena fe.
+
+    Referencia y comprobante son obligatorios, igual que en el deposito:
+    es lo que permite rastrear el movimiento en el banco si despues no
+    cuadra.
     """
-    v = _obtener(db, viatico_id)
-
-    if monto <= 0:
-        raise HTTPException(400, {
-            "mensaje": "La devolucion tiene que ser mayor a cero",
-            "que_hacer": "Si hay que corregir una devolucion anterior, "
-                         "se hace como ajuste, no devolviendo en negativo."})
-
-    if v.estatus in (m.EstatusViatico.CANCELADO,):
-        raise HTTPException(409, "Ese viatico esta cancelado")
-
-    entregado = Decimal(str(v.monto_total))
-    devuelto = Decimal(str(v.monto_devuelto))
-    comprobado = Decimal(str(v.monto_comprobado))
-    puede = entregado - comprobado - devuelto
-    if monto > puede:
-        raise HTTPException(409, {
-            "mensaje": "Esa devolucion pasa de lo que queda por devolver",
-            "que_hacer": (f"Se entregaron {entregado}, hay {comprobado} "
-                          f"comprobados y {devuelto} ya devueltos: quedan "
-                          f"{puede}."),
-            "por_devolver": str(puede)})
-
-    v.monto_devuelto = devuelto + monto
-    db.add(m.Comprobante(
-        asignacion_id=v.id, concepto=m.ConceptoViatico.OTROS,
-        tipo=m.TipoComprobante.NOTA, monto=Decimal("0"),
-        archivo_url=archivo_url, descripcion=f"Devolucion de {monto}",
-        validado=True))
+    viatico = _obtener(db, viatico_id)
+    comprobante = await imagenes.leer(archivo)
+    fila = devoluciones_motor.declarar(
+        db, viatico, monto, referencia, comprobante, usuario.persona_id,
+        reloj.ahora_de_la_jornada(db, viatico.jornada), ya_confirmada=True)
+    auditoria.registrar(db, usuario, viatico.jornada.equipo.servicio,
+                        "devolucion de viaticos",
+                        f"{viatico.persona.nombre}: {monto} "
+                        f"{viatico.moneda.value}, ref {fila.referencia}",
+                        jornada_id=viatico.jornada_id)
     db.commit()
-    db.refresh(v)
-    return {"resultado": "registrada", "monto_devuelto": float(v.monto_devuelto)}
+    return {"resultado": "registrada", "devolucion_id": fila.id,
+            "monto_devuelto": float(viatico.monto_devuelto)}
+
+
+@router.post("/devoluciones/{devolucion_id}/confirmar",
+             summary="Finanzas confirma que el dinero entro")
+def confirmar_devolucion(devolucion_id: int, db: Session = Depends(get_db),
+                         usuario: m.Usuario = Depends(FINANZAS)):
+    """Hasta aqui el dinero no habia vuelto, solo estaba prometido."""
+    fila = db.get(m.DevolucionViatico, devolucion_id)
+    if not fila:
+        raise HTTPException(404, f"No existe la devolucion {devolucion_id}")
+
+    viatico = fila.asignacion
+    devoluciones_motor.confirmar(
+        db, fila, usuario.persona_id,
+        reloj.ahora_de_la_jornada(db, viatico.jornada))
+    auditoria.registrar(db, usuario, viatico.jornada.equipo.servicio,
+                        "devolucion confirmada",
+                        f"{viatico.persona.nombre}: {fila.monto} "
+                        f"{fila.moneda.value}, ref {fila.referencia}",
+                        jornada_id=viatico.jornada_id)
+    db.commit()
+    return {"resultado": "confirmada",
+            "monto_devuelto": float(viatico.monto_devuelto)}
+
+
+@router.post("/devoluciones/{devolucion_id}/rechazar",
+             summary="La devolucion no llego o no cuadra")
+def rechazar_devolucion(devolucion_id: int, datos: s.RechazoDevolucionIn,
+                        db: Session = Depends(get_db),
+                        usuario: m.Usuario = Depends(FINANZAS)):
+    """No se borra: la persona dijo que transfirio y eso queda anotado,
+    con el motivo por el que no se acepto. Una devolucion que desaparece
+    deja la discusion sin papeles."""
+    fila = db.get(m.DevolucionViatico, devolucion_id)
+    if not fila:
+        raise HTTPException(404, f"No existe la devolucion {devolucion_id}")
+
+    viatico = fila.asignacion
+    devoluciones_motor.rechazar(
+        db, fila, usuario.persona_id, datos.motivo,
+        reloj.ahora_de_la_jornada(db, viatico.jornada))
+    auditoria.registrar(db, usuario, viatico.jornada.equipo.servicio,
+                        "devolucion rechazada",
+                        f"{viatico.persona.nombre}: {fila.monto} "
+                        f"{fila.moneda.value} · {datos.motivo}",
+                        jornada_id=viatico.jornada_id)
+    db.commit()
+    _avisar_sin_tumbar(push.avisar_devolucion_rechazada, db, fila)
+    db.commit()
+    return {"resultado": "rechazada", "motivo": fila.motivo_rechazo}
 
 
 @router.get("/jornada/{jornada_id}", response_model=list[s.ViaticoOut],
@@ -625,6 +693,19 @@ def panel_de_equipo(equipo_id: int, db: Session = Depends(get_db),
         for a in jornada.personal:
             personas.setdefault(a.persona_id, a.persona)
 
+    # El dinero que salio del banco despues de que alguien cancelo la
+    # solicitud. Es lo unico de este panel que no se resuelve solo: hay
+    # que aplicarlo o pedirlo de vuelta, y si no se ve, no pasa ninguna
+    # de las dos cosas.
+    tardios: dict[int, Decimal] = {}
+    for deposito in (db.query(m.DepositoBancario)
+                     .filter(m.DepositoBancario.equipo_id == equipo.id,
+                             m.DepositoBancario.sobre_cancelada.is_(True))
+                     .all()):
+        tardios[deposito.persona_id] = (tardios.get(deposito.persona_id,
+                                                    Decimal("0"))
+                                        + Decimal(str(deposito.monto)))
+
     filas = []
     for persona_id, persona in personas.items():
         suyos = _dias_de(persona_id, dias)
@@ -645,6 +726,9 @@ def panel_de_equipo(equipo_id: int, db: Session = Depends(get_db),
             "estatus": _semaforo(dinero),
             "comprobado": sum((Decimal(str(v.monto_comprobado))
                                for v in viaticos), Decimal("0")),
+            # Se le depositó después de que se canceló: hay que aplicarlo
+            # o pedirlo de vuelta.
+            "depositado_tras_cancelar": tardios.get(persona_id, Decimal("0")),
         })
     filas.sort(key=lambda f: f["nombre"])
 
@@ -665,6 +749,7 @@ def panel_de_equipo(equipo_id: int, db: Session = Depends(get_db),
                                    Decimal("0")),
         "compras": [s.CompraOut.model_validate(c, from_attributes=True)
                     for c in compras],
+        "total_tras_cancelar": sum(tardios.values(), Decimal("0")),
     }
 
 
@@ -909,7 +994,8 @@ def cancelar_solicitud(equipo_id: int, datos: s.SolicitarDepositoIn,
         consulta = consulta.filter(
             m.AsignacionViatico.persona_id == datos.persona_id)
 
-    cancelados, monto = 0, Decimal("0")
+    ahora = datetime.now()
+    cancelados, pedidos, monto, pedido = 0, 0, Decimal("0"), Decimal("0")
     for viatico in consulta.all():
         vueltas = (db.query(m.SolicitudTransferencia)
                    .filter(m.SolicitudTransferencia.asignacion_id == viatico.id,
@@ -917,9 +1003,26 @@ def cancelar_solicitud(equipo_id: int, datos: s.SolicitarDepositoIn,
                    .all())
         if not vueltas:
             continue
+        suyas = 0
         for solicitud in vueltas:
+            # Lo que ya salio en el barrido esta en manos de finanzas, y
+            # puede estar transfiriendose AHORA MISMO. El unico que sabe
+            # si el dinero ya salio del banco es finanzas: cancelarlo
+            # aqui dejaria una transferencia hecha sin registro, y quien
+            # la recibio con dinero que el sistema no conoce. Queda
+            # pedida y finanzas la cierra.
+            if solicitud.estatus == m.EstatusTransferencia.ENVIADA:
+                if not solicitud.cancelacion_pedida_en:
+                    solicitud.cancelacion_pedida_en = ahora
+                    solicitud.cancelacion_pedida_por_id = usuario.persona_id
+                    pedidos += 1
+                    pedido += Decimal(str(solicitud.monto))
+                continue
             solicitud.estatus = m.EstatusTransferencia.CANCELADA
             monto += Decimal(str(solicitud.monto))
+            suyas += 1
+        if not suyas:
+            continue
         # Vuelve a quedar en manos del consultor, con su monto intacto:
         # casi siempre lo que sigue es corregirlo, no capturarlo de nuevo.
         # Al que ya recibio un deposito antes no se le toca el estatus:
@@ -928,14 +1031,21 @@ def cancelar_solicitud(equipo_id: int, datos: s.SolicitarDepositoIn,
             viatico.estatus = m.EstatusViatico.ASIGNADO
         cancelados += 1
 
-    if not cancelados:
+    if not cancelados and not pedidos:
         raise HTTPException(409, "No hay depositos por cancelar. Si el "
                                  "dinero ya salio, se devuelve.")
 
-    auditoria.registrar(db, usuario, equipo.servicio, "cancelar solicitud",
-                        f"{monto} · {equipo.alias}, {cancelados} deposito(s)")
+    auditoria.registrar(
+        db, usuario, equipo.servicio, "cancelar solicitud",
+        f"{monto} · {equipo.alias}, {cancelados} deposito(s)"
+        + (f"; {pedidos} pedido(s) a finanzas por {pedido}" if pedidos else ""))
     db.commit()
-    return panel_de_equipo(equipo_id, db)
+    panel = panel_de_equipo(equipo_id, db)
+    # Lo que quedo pedido no esta cancelado todavia. Decirlo aqui es lo
+    # que evita que el consultor lo de por hecho y borre el servicio.
+    panel["cancelados"] = cancelados
+    panel["pedidos_a_finanzas"] = pedidos
+    return panel
 
 
 # ================================================ compras especiales
@@ -1154,10 +1264,22 @@ def bandeja(db: Session = Depends(get_db), _=Depends(LECTURA)):
         jornada = viatico.jornada
         equipo = jornada.equipo
         servicio = equipo.servicio
-        clave = (equipo.id, viatico.persona_id)
+        # El mes es la unidad del implantado: se factura, se opera y se
+        # deposita por mes. Juntar dos meses en un renglon obligaba a
+        # depositar 10,500 de un golpe y a que la pantalla del consultor
+        # los mostrara partidos despues, sin que nadie hubiera decidido
+        # ese reparto. El eventual sigue agrupado por equipo: ahi el
+        # servicio es la unidad y casi nunca cruza el cambio de mes.
+        por_mes = servicio.tipo == m.TipoServicio.IMPLANTADO
+        periodo = (jornada.fecha.year, jornada.fecha.month) if por_mes else None
+        clave = (equipo.id, viatico.persona_id, periodo)
         fila = depositos.setdefault(clave, {
             "pais_id": servicio.pais_id,
             "equipo_id": equipo.id, "equipo": equipo.alias,
+            # Con que mes se deposita. Nulo en el eventual.
+            "anio": periodo[0] if periodo else None,
+            "mes": periodo[1] if periodo else None,
+            "periodo": (f"{periodo[1]:02d}/{periodo[0]}" if periodo else None),
             "servicio_id": servicio.id, "folio": servicio.folio,
             "cliente": servicio.cliente.nombre if servicio.cliente else None,
             "persona_id": viatico.persona_id,
@@ -1167,6 +1289,11 @@ def bandeja(db: Session = Depends(get_db), _=Depends(LECTURA)):
             "primera_jornada": jornada.fecha.isoformat(),
             "solicitudes": [], "detalle": [],
             "solicito": None, "solicitada_en": None,
+            # El consultor quiere echarse para atras algo que ya esta
+            # aqui. No lo canceló él: el que sabe si el dinero ya salio
+            # del banco es quien lo deposita. Sale en la bandeja para
+            # que se cierre antes de ir al banco, no despues.
+            "cancelacion_pedida": False, "cancelacion_pedida_en": None,
             # A donde se deposita. Viene de Odoo; mientras esa conexion
             # no exista, finanzas lo llena y se va poblando.
             "banco": viatico.persona.banco,
@@ -1203,6 +1330,11 @@ def bandeja(db: Session = Depends(get_db), _=Depends(LECTURA)):
         if solicitud.creada_en:
             pedida = solicitud.creada_en.isoformat()
             fila["solicitada_en"] = min(fila["solicitada_en"] or pedida, pedida)
+        if solicitud.cancelacion_pedida_en:
+            cuando = solicitud.cancelacion_pedida_en.isoformat()
+            fila["cancelacion_pedida"] = True
+            fila["cancelacion_pedida_en"] = min(
+                fila["cancelacion_pedida_en"] or cuando, cuando)
 
     compras = (db.query(m.CompraEspecial)
                .filter(m.CompraEspecial.estatus.in_(ABIERTAS))
@@ -1408,17 +1540,17 @@ def renta_cancelada(vehiculo_id: int, db: Session = Depends(get_db),
             "arrendadora": vehiculo.arrendadora}
 
 
-@router.post("/finanzas/depositar", summary="Finanzas registra el deposito")
-async def depositar(equipo_id: int = Form(...), persona_id: int = Form(...),
-                    referencia: str = Form(...),
-                    archivo: UploadFile = File(...),
-                    db: Session = Depends(get_db),
-                    usuario: m.Usuario = Depends(FINANZAS)):
-    """Un solo movimiento por persona, aunque por dentro sean varios dias.
+@router.post("/finanzas/transferencias/cancelar",
+             summary="Finanzas confirma que el deposito no salio")
+def cancelar_desde_finanzas(equipo_id: int, persona_id: int,
+                            db: Session = Depends(get_db),
+                            usuario: m.Usuario = Depends(FINANZAS)):
+    """El consultor pidio echar atras un deposito que ya estaba aqui.
 
-    La referencia y el comprobante son obligatorios: es lo que contesta
-    "¿ya me depositaron?" sin tener que creerle a nadie, y lo que sirve
-    para rastrear el dinero en el banco si no llego.
+    Lo cierra finanzas y no el consultor porque el unico que sabe si el
+    dinero ya salio del banco es quien lo manda. Si ya habia salido,
+    esto no se usa: se sube el comprobante como cualquier otro deposito
+    y el sistema lo marca como llegado tarde.
     """
     equipo = _equipo(db, equipo_id)
     dias = _dias_vivos(equipo)
@@ -1429,24 +1561,114 @@ async def depositar(equipo_id: int = Form(...), persona_id: int = Form(...),
                    .filter(m.AsignacionViatico.persona_id == persona_id,
                            m.AsignacionViatico.jornada_id.in_(
                                [j.id for j in dias]),
-                           m.SolicitudTransferencia.estatus.in_(
-                               (m.EstatusTransferencia.PENDIENTE,
-                                m.EstatusTransferencia.ENVIADA)))
+                           m.SolicitudTransferencia.estatus.in_(EN_CAMINO))
                    .all())
+    pedidas = [x for x in solicitudes if x.cancelacion_pedida_en]
+    if not pedidas:
+        raise HTTPException(409, {
+            "mensaje": "Nadie pidio cancelar este deposito",
+            "que_hacer": ("La cancelacion la pide el consultor desde el "
+                          "panel de viaticos del equipo."),
+        })
+
+    monto = Decimal("0")
+    for solicitud in pedidas:
+        solicitud.estatus = m.EstatusTransferencia.CANCELADA
+        monto += Decimal(str(solicitud.monto))
+        viatico = solicitud.asignacion
+        if viatico.estatus == m.EstatusViatico.SOLICITADO:
+            viatico.estatus = m.EstatusViatico.ASIGNADO
+
+    auditoria.registrar(db, usuario, equipo.servicio, "cancelar deposito",
+                        f"{monto} · {equipo.alias}, {len(pedidas)} "
+                        f"solicitud(es) que el consultor pidio detener")
+    db.commit()
+    return {"resultado": "cancelado", "solicitudes": len(pedidas),
+            "monto": monto,
+            "nota": "El consultor ya puede corregir el monto o borrar el dia"}
+
+
+@router.post("/finanzas/depositar", summary="Finanzas registra el deposito")
+async def depositar(equipo_id: int = Form(...), persona_id: int = Form(...),
+                    referencia: str = Form(...),
+                    archivo: UploadFile = File(...),
+                    anio: int | None = Form(None), mes: int | None = Form(None),
+                    db: Session = Depends(get_db),
+                    usuario: m.Usuario = Depends(FINANZAS)):
+    """Un solo movimiento por persona, aunque por dentro sean varios dias.
+
+    La referencia y el comprobante son obligatorios: es lo que contesta
+    "¿ya me depositaron?" sin tener que creerle a nadie, y lo que sirve
+    para rastrear el dinero en el banco si no llego.
+    """
+    equipo = _equipo(db, equipo_id)
+    dias = _dias_vivos(equipo)
+    # Acotado al mes cuando viene: asi es como la bandeja del implantado
+    # presenta cada renglon, y confirmar de mas seria dar por depositado
+    # un mes que nadie reviso.
+    if anio and mes:
+        dias = [j for j in dias
+                if j.fecha.year == anio and j.fecha.month == mes]
+        if not dias:
+            raise HTTPException(404, f"Ese equipo no tiene dias en "
+                                     f"{mes:02d}/{anio}")
+
+    def _suyas(estatus) -> list:
+        return (db.query(m.SolicitudTransferencia)
+                .join(m.AsignacionViatico,
+                      m.SolicitudTransferencia.asignacion_id
+                      == m.AsignacionViatico.id)
+                .filter(m.AsignacionViatico.persona_id == persona_id,
+                        m.AsignacionViatico.jornada_id.in_(
+                            [j.id for j in dias]),
+                        m.SolicitudTransferencia.estatus.in_(estatus))
+                .all())
+
+    solicitudes = _suyas((m.EstatusTransferencia.PENDIENTE,
+                          m.EstatusTransferencia.ENVIADA))
+
+    # La puerta de atras. El consultor cancelo el deposito mientras
+    # finanzas estaba en el banco, y finanzas vuelve con la referencia y
+    # el comprobante de una transferencia que ya se hizo. Antes esto era
+    # un 404 y el dinero se quedaba sin donde registrarse; lo que no se
+    # puede registrar se arregla por fuera, y lo que se arregla por
+    # fuera no se audita.
+    #
+    # Se acepta y queda marcado, para que el consultor lo vea y decida
+    # si lo aplica o lo pide de vuelta.
+    tardio = False
     if not solicitudes:
-        raise HTTPException(404, "No hay depositos pendientes de esa persona")
+        solicitudes = [x for x in _suyas((m.EstatusTransferencia.CANCELADA,))
+                       if not x.deposito_id]
+        tardio = bool(solicitudes)
+
+    if not solicitudes:
+        raise HTTPException(404, {
+            "mensaje": "No hay depositos pendientes de esa persona",
+            "que_hacer": ("Si ya le transferiste, habla con el consultor: el "
+                          "dia o el servicio pudo haberse borrado y el "
+                          "deposito necesita a que colgarse."),
+        })
 
     comprobante = await imagenes.leer(archivo)
     deposito = motor_depositos.registrar(
         db, [x.id for x in solicitudes], referencia, comprobante,
-        despachado_por_id=usuario.persona_id)
+        despachado_por_id=usuario.persona_id, sobre_cancelada=tardio)
 
     auditoria.registrar(db, usuario, equipo.servicio, "deposito bancario",
                         f"{deposito.monto} {deposito.moneda.value} a "
-                        f"{deposito.persona.nombre}, ref {deposito.referencia}")
+                        f"{deposito.persona.nombre}, ref {deposito.referencia}"
+                        + (" · SOBRE SOLICITUD CANCELADA" if tardio else ""))
     db.commit()
     db.refresh(deposito)
+    _avisar_sin_tumbar(push.avisar_deposito, db, deposito)
+    db.commit()
     return {"resultado": "depositado", "monto": deposito.monto,
             "deposito_id": deposito.id,
             "depositos": len(deposito.solicitudes),
-            "nota": "Ya aparece en la app del personal como saldo disponible"}
+            "sobre_cancelada": tardio,
+            "nota": ("El consultor ya habia cancelado este deposito. Queda "
+                     "registrado y marcado: el consultor tiene que aplicarlo "
+                     "o pedir la devolucion."
+                     if tardio else
+                     "Ya aparece en la app del personal como saldo disponible")}

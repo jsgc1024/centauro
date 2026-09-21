@@ -120,6 +120,49 @@ def test_lo_obligatorio_en_el_modelo_lo_es_en_la_base(base_migrada):
                      f"dejo opcionales: {sorted(mal)}")
 
 
+def test_lo_unico_en_el_modelo_lo_es_en_la_base(base_migrada):
+    """Una restriccion unica que el modelo declara y la migracion olvido.
+
+    Es la misma clase de cosa que la de arriba, y peor: una restriccion
+    unica casi nunca es cosmetica --dice "esto no puede pasar dos
+    veces"-- y la bateria, que arma su base desde el modelo, la tiene
+    puesta siempre. La prueba pasa en verde y en produccion la fila
+    duplicada entra sin que nada se queje.
+
+    Se comparan por columnas y no por nombre: como se llame la
+    restriccion no le importa a nadie, y ponerle el mismo nombre en los
+    dos lados es justo lo que se olvida.
+    """
+    from sqlalchemy import Index, UniqueConstraint
+    from app.db import Base
+
+    inspector = inspect(base_migrada)
+    faltan = []
+    for nombre, tabla in Base.metadata.tables.items():
+        if nombre not in set(inspector.get_table_names()):
+            continue            # eso ya lo dice otra prueba
+
+        del_modelo = {frozenset(c.name for c in r.columns)
+                      for r in tabla.constraints
+                      if isinstance(r, UniqueConstraint)}
+        del_modelo |= {frozenset(c.name for c in i.columns)
+                       for i in tabla.indexes if i.unique}
+
+        # En la base cuenta igual una restriccion que un indice unico:
+        # las dos prohiben lo mismo, y Alembic escribe una u otro segun
+        # como se haya pedido.
+        en_la_base = {frozenset(r["column_names"])
+                      for r in inspector.get_unique_constraints(nombre)}
+        en_la_base |= {frozenset(i["column_names"])
+                       for i in inspector.get_indexes(nombre) if i["unique"]}
+
+        for juego in del_modelo - en_la_base:
+            faltan.append(f"{nombre}({', '.join(sorted(juego))})")
+
+    assert not faltan, ("el modelo lo declara unico y la base lo dejo "
+                        f"pasar dos veces: {sorted(faltan)}")
+
+
 def test_los_depositos_viejos_conservan_su_referencia(base_migrada):
     """La migracion del deposito bancario rellena hacia atras.
 

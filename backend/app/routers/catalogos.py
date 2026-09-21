@@ -25,7 +25,7 @@ DIAS_SIN_USAR = 30
 # sus placas adentro.
 LEER = auth.requiere(m.Rol.ADMIN, m.Rol.CONSULTOR, m.Rol.CENTRAL,
                      m.Rol.FINANZAS, m.Rol.DIRECTOR_OPERACIONES,
-                     m.Rol.DIRECTOR_GENERAL)
+                     m.Rol.DIRECTOR_GENERAL, m.Rol.RECURSOS_HUMANOS)
 
 
 @router.get("/plazas", response_model=list[s.PlazaOut], tags=["Ciudades"],

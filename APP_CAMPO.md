@@ -324,3 +324,20 @@ va a hablar.
 - **La geolocalización exige HTTPS.** `localhost` está exento, así que en
   desarrollo funciona; para probar en un teléfono real hace falta
   certificado.
+
+### El idioma sale de su plaza
+
+**19 de septiembre.** La app está en español, inglés y portugués, y no
+tiene selector: el idioma sale del país de la plaza de la persona
+(`Pais.idioma`, que `/auth/yo` devuelve y `app.js` pone antes de pintar
+nada). Un agente en São Paulo abre la app y está en portugués.
+
+La consola sí tiene bandera porque quien la usa está sentado y puede
+elegir. El de campo va con una mano y prisa: no hay nada que tocar.
+
+Las fechas y los números también. `local()` traduce el idioma a
+`es-MX` / `en-US` / `pt-BR`, porque una pantalla en portugués que dice
+"lunes" está a medio traducir.
+
+El detalle de cómo se hizo —y por qué la primera pasada dejó cien
+textos sin tocar— está en la sección 23 de la bitácora.

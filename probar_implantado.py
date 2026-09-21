@@ -109,11 +109,18 @@ c, res = pedir("GET", f"/implantados/contratos/{con['contrato_id']}/resumen", to
 _, srv_full = pedir("GET", f"/servicios/{srv['id']}", token=ana)
 jornadas = srv_full["equipos"][0]["jornadas"]
 jornada_media = jornadas[len(jornadas) // 2]
-c, rem = pedir("POST", f"/implantados/jornadas/{jornada_media['id']}/reemplazo",
-               {"entra_id": luis["id"], "motivo": "enfermedad",
+c, rem = pedir("POST", f"/implantados/{srv['id']}/cambios",
+               {"tipo": "personal", "desde": jornada_media["fecha"],
+                "hasta": jornada_media["fecha"], "sale_id": juan["id"],
+                "entra_id": luis["id"], "motivo": "enfermedad",
                 "nota": "Incapacidad de un dia"}, token=ana)
-print(f"   {rem['fecha']}: sale {rem['sale']}, entra {rem['entra']} "
+print(f"   {rem['desde']}: sale {rem['sale']}, entra {rem['entra']} "
       f"({rem['motivo']})")
+if rem.get("jornadas_partidas"):
+    print(f"   dia partido: {', '.join(rem['jornadas_partidas'])} "
+          f"—los dos cobran su parte")
+if rem.get("aviso"):
+    print(f"   {rem['aviso']}")
 
 titulo("6. Resumen del mes para facturar")
 c, res = pedir("GET", f"/implantados/contratos/{con['contrato_id']}/resumen", token=ana)

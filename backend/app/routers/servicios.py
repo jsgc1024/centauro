@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app import auditoria
 from app import auth
 from app import programacion
+from app import push
 from app import telefonos
 from app.routers import solicitantes as contactos
 from app import disponibilidad as disp
@@ -17,6 +18,22 @@ from app import schemas as s
 from app.db import get_db
 
 router = APIRouter(prefix="/servicios", tags=["Servicios"])
+
+
+def _avisar_sin_tumbar(que, *args) -> None:
+    """Un aviso al telefono nunca tumba la asignacion que lo llamo.
+
+    Lo asignado ya esta guardado cuando se llama a esto. Si el envio
+    fallara, un 500 aqui le diria al consultor que no se asigno --y el
+    consultor volveria a asignar a la misma persona dos veces--.
+    """
+    import logging
+
+    try:
+        que(*args)
+    except Exception:                     # noqa: BLE001
+        logging.getLogger("centauro").exception(
+            "no se pudo mandar el aviso de %s", que.__name__)
 
 
 # ---------------------------------------------------------------- utilidades
@@ -129,6 +146,22 @@ def crear_servicio(datos: s.ServicioIn, db: Session = Depends(get_db),
         **datos.model_dump(exclude={"equipos"}),
     )
 
+    # Si nadie dijo en que idioma lee quien pidio el servicio, lee en el
+    # de su pais: casi siempre es gente local --la asistente, el area de
+    # seguridad del cliente--. El principal no entra aqui: ese arranca en
+    # ingles y su omision vive en el modelo.
+    if not servicio.idioma_solicitante:
+        pais = db.get(m.Pais, datos.pais_id)
+        servicio.idioma_solicitante = pais.idioma if pais else "es"
+
+    # La vestimenta es del eventual. El implantado trabaja todos los dias
+    # con el mismo cliente y eso se acuerda una vez, no servicio por
+    # servicio; si llegara aqui seria un dato que nadie va a mantener.
+    if servicio.tipo != m.TipoServicio.EVENTUAL:
+        servicio.vestimenta = None
+    elif servicio.vestimenta is not None:
+        servicio.vestimenta = m.CodigoVestimenta(servicio.vestimenta).value
+
     # Quien solicita: se elige de la lista del cliente, o se capturan sus
     # datos y queda dado de alta para la proxima vez.
     if datos.solicitante_id:
@@ -238,7 +271,7 @@ def crear_servicio(datos: s.ServicioIn, db: Session = Depends(get_db),
 def listar_servicios(db: Session = Depends(get_db), limite: int = 100,
                      tipo: m.TipoServicio = m.TipoServicio.EVENTUAL,
                      todos: bool = False,
-                     _=Depends(auth.requiere(m.Rol.CONSULTOR, m.Rol.CENTRAL, m.Rol.DIRECTOR_OPERACIONES))):
+                     _=Depends(auth.puede("servicios.ver"))):
     """Eventuales por omision.
 
     El implantado se opera en su propia pantalla —se captura por mes, no
@@ -265,7 +298,7 @@ def ver_programacion(servicio_id: int, db: Session = Depends(get_db),
 
 @router.get("/{servicio_id}", response_model=s.ServicioOut, summary="Ver servicio")
 def ver_servicio(servicio_id: int, db: Session = Depends(get_db),
-                 _=Depends(auth.requiere(m.Rol.CONSULTOR, m.Rol.CENTRAL, m.Rol.DIRECTOR_OPERACIONES))):
+                 _=Depends(auth.puede("servicios.ver"))):
     servicio = db.get(m.Servicio, servicio_id)
     if not servicio:
         raise HTTPException(404, f"No existe el servicio {servicio_id}")
@@ -279,7 +312,7 @@ def ver_servicio(servicio_id: int, db: Session = Depends(get_db),
 def recomendaciones(jornada_id: int, categoria_id: int,
                     perfil_id: int | None = None,
                     db: Session = Depends(get_db),
-                    _=Depends(auth.requiere(m.Rol.CONSULTOR, m.Rol.CENTRAL, m.Rol.DIRECTOR_OPERACIONES))):
+                    _=Depends(auth.puede("asignaciones.ver"))):
     jornada = _obtener_jornada(db, jornada_id)
     # La ciudad del equipo: en un proyecto que va de Mexico a Monterrey,
     # el local de Monterrey es el de Beta, no el del servicio.
@@ -326,7 +359,7 @@ def _rol(db: Session, rol_id: int | None):
 def asignar_personal(jornada_id: int, datos: s.AsignarPersonalIn,
                      db: Session = Depends(get_db),
                      usuario: m.Usuario = Depends(
-                         auth.requiere(m.Rol.CONSULTOR, m.Rol.DIRECTOR_OPERACIONES))):
+                         auth.puede("asignaciones.mover"))):
     """Bloqueo duro si hay empalme real. Si solo hay holgura insuficiente
     se devuelve alerta de riesgo y el consultor decide con forzar=true."""
     jornada = _obtener_jornada(db, jornada_id)
@@ -364,6 +397,12 @@ def asignar_personal(jornada_id: int, datos: s.AsignarPersonalIn,
     servicio = jornada.equipo.servicio
     programacion.evaluar(servicio)
     db.commit()
+    # Si ya no le toca la vispera --de hoy para hoy, o de manana
+    # armado despues de las cinco-- o se le avisa ahora, o se entera
+    # por telefono.
+    _avisar_sin_tumbar(push.avisar_asignacion_sin_vispera, db,
+                       [jornada], persona.id)
+    db.commit()
     return {"resultado": "asignado", "persona": persona.nombre,
             "rol": rol.nombre if rol else None,
             "estatus_servicio": servicio.estatus.value,
@@ -376,7 +415,7 @@ def asignar_personal(jornada_id: int, datos: s.AsignarPersonalIn,
 def asignar_vehiculo(jornada_id: int, datos: s.AsignarVehiculoIn,
                      db: Session = Depends(get_db),
                      usuario: m.Usuario = Depends(
-                         auth.requiere(m.Rol.CONSULTOR, m.Rol.DIRECTOR_OPERACIONES))):
+                         auth.puede("asignaciones.mover"))):
     jornada = _obtener_jornada(db, jornada_id)
     vehiculo = db.get(m.Vehiculo, datos.vehiculo_id)
     if not vehiculo:
@@ -484,6 +523,7 @@ def corregir_dia(jornada_id: int, datos: s.DiaIn, db: Session = Depends(get_db),
     if "es_foraneo" in cambios and cambios["es_foraneo"] is not None:
         jornada.es_foraneo = cambios["es_foraneo"]
 
+    antes = jornada.inicio_programado
     hora = cambios.get("hora_presentacion") or jornada.inicio_programado.time()
     if cambios.get("hora_presentacion"):
         jornada.hora_confirmada = True     # ya no es la heredada
@@ -498,6 +538,11 @@ def corregir_dia(jornada_id: int, datos: s.DiaIn, db: Session = Depends(get_db),
                         f"{jornada.fecha} {hora.strftime('%H:%M')}",
                         jornada_id=jornada.id)
     db.commit()
+    # Quien ya confirmo lo hizo sobre una hora. Si esa hora cambia y
+    # nadie le avisa, su confirmacion apunta a algo que ya no es cierto.
+    if jornada.inicio_programado != antes:
+        push.avisar_cambio_de_hora(db, jornada, antes)
+        db.commit()
     return {"resultado": "dia corregido", "jornada_id": jornada.id,
             "fecha": jornada.fecha.isoformat(),
             "inicio": jornada.inicio_programado.isoformat(),
@@ -517,16 +562,49 @@ def quitar_dia(jornada_id: int, db: Session = Depends(get_db),
         raise HTTPException(409, "El equipo se quedaria sin dias. "
                                  "Cancela el servicio en vez de quitarlo.")
 
-    con_viaticos = (db.query(m.AsignacionViatico)
-                    .filter_by(jornada_id=jornada.id).count())
-    if con_viaticos:
-        raise HTTPException(409, {
-            "mensaje": "Ese dia ya tiene viaticos asignados",
-            "que_hacer": "Cancelalos primero o cancela el servicio",
-        })
-
     fecha = jornada.fecha.isoformat()
     servicio = equipo.servicio
+
+    # El dinero de ese dia decide si el dia se borra o se cancela.
+    viaticos = (db.query(m.AsignacionViatico)
+                .filter_by(jornada_id=jornada.id).all())
+    con_dinero = []
+    for v in viaticos:
+        fuera = (db.query(m.SolicitudTransferencia)
+                 .filter(m.SolicitudTransferencia.asignacion_id == v.id,
+                         m.SolicitudTransferencia.estatus
+                         != m.EstatusTransferencia.CANCELADA)
+                 .first())
+        if fuera or v.estatus != m.EstatusViatico.ASIGNADO:
+            con_dinero.append(v)
+
+    if con_dinero:
+        # Se cancela, no se borra. Borrarlo se llevaria por delante el
+        # viatico y con el la prueba de que ese dinero salio del banco.
+        # El bolson del eventual es el servicio entero, asi que lo
+        # comprobado y lo devuelto siguen cuadrando contra el mismo
+        # total aunque el dia ya no se trabaje.
+        total = sum((Decimal(str(v.monto_total or 0)) for v in con_dinero),
+                    Decimal("0"))
+        quienes = ", ".join(sorted(
+            v.persona.nombre for v in con_dinero if v.persona))
+        jornada.estatus = m.EstatusJornada.CANCELADA
+        programacion.evaluar(servicio)
+        auditoria.registrar(db, usuario, servicio, "cancelar dia",
+                            f"{equipo.alias}: {fecha} · {total} de {quienes}")
+        db.commit()
+        return {"resultado": "dia cancelado", "fecha": fecha,
+                "borrado": False, "monto": str(total),
+                "estatus_servicio": servicio.estatus.value,
+                "nota": (f"El dia queda cancelado: trae {total} de {quienes} "
+                         f"que ya salio del banco. Ese dinero se resuelve "
+                         f"con la comprobacion o la devolucion, no borrando "
+                         f"el dia.")}
+
+    # Lo que solo estaba asignado se va con el dia.
+    for v in viaticos:
+        db.delete(v)
+    db.flush()
     # Lo que cuelga del dia se va con el; lo que solo lo menciona —la
     # bitacora, un aviso, un renglon de nomina— se queda sin el enlace,
     # porque esa historia no es del dia, es de quien la hizo.
@@ -547,7 +625,7 @@ def quitar_dia(jornada_id: int, db: Session = Depends(get_db),
 def abordo(jornada_id: int, persona_id: int, datos: s.AbordoIn,
            db: Session = Depends(get_db),
            usuario: m.Usuario = Depends(
-               auth.requiere(m.Rol.CONSULTOR, m.Rol.DIRECTOR_OPERACIONES))):
+               auth.puede("asignaciones.mover"))):
     """Solo entre lo que ya esta asignado a esa jornada: no se puede subir
     a alguien a una unidad que ese dia trae otro equipo."""
     jornada = _obtener_jornada(db, jornada_id)
@@ -600,8 +678,7 @@ def _dias_vivos(equipo: m.Equipo) -> list[m.Jornada]:
 def recomendaciones_equipo(equipo_id: int, categoria_id: int,
                            perfil_id: int | None = None,
                            db: Session = Depends(get_db),
-                           _=Depends(auth.requiere(m.Rol.CONSULTOR, m.Rol.CENTRAL,
-                                                   m.Rol.DIRECTOR_OPERACIONES))):
+                           _=Depends(auth.puede("asignaciones.ver"))):
     """Se revisa dia por dia y se contesta por el equipo completo.
 
     Quien tenga un choque en cualquiera de los dias sale bloqueado con la
@@ -655,8 +732,15 @@ def _juntar(por_dia: list[dict], fechas: list, llave: str) -> dict:
                 for alerta in ficha.get("alertas") or []:
                     # El motivo lleva el dia: "07/10: se empalma con EP-0009".
                     copia = dict(alerta)
-                    copia["mensaje"] = (f"{fecha.strftime('%d/%m')}: "
-                                        f"{alerta.get('mensaje') or alerta.get('tipo')}")
+                    # El texto sale de `Hallazgo.como_dict`, que lo llama
+                    # `motivo`. Se pedia `mensaje` o `tipo` --dos llaves
+                    # que ese diccionario no tiene-- y la pantalla
+                    # terminaba diciendo "20/09: None" en la cara del
+                    # consultor, justo donde se explica por que alguien
+                    # no se puede asignar.
+                    razon = (alerta.get("mensaje") or alerta.get("motivo")
+                             or alerta.get("tipo") or "")
+                    copia["mensaje"] = f"{fecha.strftime('%d/%m')}: {razon}".strip()
                     junta["alertas"].append(copia)
 
     libres, con_riesgo, ocupados, foraneos = [], [], [], []
@@ -688,8 +772,7 @@ def _juntar(por_dia: list[dict], fechas: list, llave: str) -> dict:
 def asignar_personal_equipo(equipo_id: int, datos: s.AsignarPersonalIn,
                             db: Session = Depends(get_db),
                             usuario: m.Usuario = Depends(
-                                auth.requiere(m.Rol.CONSULTOR,
-                                              m.Rol.DIRECTOR_OPERACIONES))):
+                                auth.puede("asignaciones.mover"))):
     """El equipo es la misma gente de principio a fin. Si hay bloqueo en
     cualquier dia no se asigna ninguno: dejar el servicio a medias es
     peor que no empezarlo."""
@@ -742,6 +825,10 @@ def asignar_personal_equipo(equipo_id: int, datos: s.AsignarPersonalIn,
                         f" · {equipo.alias}, {puestos} dia(s)"
                         + (" (forzado sobre alerta)" if riesgos else ""))
     db.commit()
+    # Lo mismo que al asignar un solo dia, mirando todos los dias del
+    # equipo: basta que uno se haya quedado sin vispera.
+    _avisar_sin_tumbar(push.avisar_asignacion_sin_vispera, db, dias, persona.id)
+    db.commit()
     return {"resultado": "asignado", "persona": persona.nombre,
             "rol": rol.nombre if rol else None,
             "dias": puestos,
@@ -755,8 +842,7 @@ def asignar_personal_equipo(equipo_id: int, datos: s.AsignarPersonalIn,
 def asignar_vehiculo_equipo(equipo_id: int, datos: s.AsignarVehiculoIn,
                             db: Session = Depends(get_db),
                             usuario: m.Usuario = Depends(
-                                auth.requiere(m.Rol.CONSULTOR,
-                                              m.Rol.DIRECTOR_OPERACIONES))):
+                                auth.puede("asignaciones.mover"))):
     equipo = _equipo(db, equipo_id)
     vehiculo = db.get(m.Vehiculo, datos.vehiculo_id)
     if not vehiculo:
@@ -815,8 +901,7 @@ def asignar_vehiculo_equipo(equipo_id: int, datos: s.AsignarVehiculoIn,
 def vehiculo_rentado(equipo_id: int, datos: s.VehiculoRentadoIn,
                      db: Session = Depends(get_db),
                      usuario: m.Usuario = Depends(
-                         auth.requiere(m.Rol.CONSULTOR,
-                                       m.Rol.DIRECTOR_OPERACIONES))):
+                         auth.puede("unidades.subarrendar"))):
     """Cuando no hay la categoria que pide el cliente o la flota esta
     saturada, el auto se renta. El consultor lo captura en el mismo
     momento en que esta asignando recursos —no en el catalogo de flota,
@@ -959,8 +1044,7 @@ DINERO_AFUERA = (m.EstatusViatico.TRANSFERIDO, m.EstatusViatico.EN_COMPROBACION,
 def quitar_personal(equipo_id: int, persona_id: int,
                     db: Session = Depends(get_db),
                     usuario: m.Usuario = Depends(
-                        auth.requiere(m.Rol.CONSULTOR,
-                                      m.Rol.DIRECTOR_OPERACIONES))):
+                        auth.puede("asignaciones.mover"))):
     """Se va de todos los dias del equipo, como se asigno."""
     equipo = _equipo(db, equipo_id)
     ids = [j.id for j in equipo.jornadas]
@@ -1014,8 +1098,7 @@ def quitar_personal(equipo_id: int, persona_id: int,
 def quitar_vehiculo(equipo_id: int, vehiculo_id: int,
                     db: Session = Depends(get_db),
                     usuario: m.Usuario = Depends(
-                        auth.requiere(m.Rol.CONSULTOR,
-                                      m.Rol.DIRECTOR_OPERACIONES))):
+                        auth.puede("asignaciones.mover"))):
     equipo = _equipo(db, equipo_id)
     ids = [j.id for j in equipo.jornadas]
     asignaciones = (db.query(m.AsignacionVehiculo)
@@ -1061,7 +1144,7 @@ def quitar_vehiculo(equipo_id: int, vehiculo_id: int,
 def abordo_equipo(equipo_id: int, persona_id: int, datos: s.AbordoIn,
                   db: Session = Depends(get_db),
                   usuario: m.Usuario = Depends(
-                      auth.requiere(m.Rol.CONSULTOR, m.Rol.DIRECTOR_OPERACIONES))):
+                      auth.puede("asignaciones.mover"))):
     """Quien aborda que unidad tampoco cambia de un dia a otro."""
     equipo = _equipo(db, equipo_id)
     asignaciones = (db.query(m.AsignacionPersonal)
@@ -1101,8 +1184,7 @@ def abordo_equipo(equipo_id: int, persona_id: int, datos: s.AbordoIn,
 @router.get("/equipos/{equipo_id}/asignaciones",
             summary="Quien y que trae el equipo, y en que dias")
 def asignaciones_equipo(equipo_id: int, db: Session = Depends(get_db),
-                        _=Depends(auth.requiere(m.Rol.CONSULTOR, m.Rol.CENTRAL,
-                                                m.Rol.DIRECTOR_OPERACIONES))):
+                        _=Depends(auth.puede("asignaciones.ver"))):
     """Lo normal es que el equipo sea el mismo todos los dias. Cuando no
     —un cambio por contingencia a media semana— se dice en cuantos dias
     esta cada quien, para que la diferencia se vea."""
@@ -1131,8 +1213,22 @@ def asignaciones_equipo(equipo_id: int, db: Session = Depends(get_db),
             # recursos son los mismos todos los dias. La ficha tiene que
             # decirlo, o el consultor lee un equipo que no existe.
             "relevado_en": None, "reemplaza_a": None,
+            # La confirmacion es de cada dia, no de la persona: en un
+            # servicio de cinco dias alguien puede haber confirmado tres.
+            # Por eso se cuenta, en vez de un si/no que mentiria en los
+            # otros dos.
+            #
+            # `confirmado_por` junta los nombres de quien la registro
+            # por telefono. Vacio con todo confirmado quiere decir que
+            # lo dijo la persona desde su app, que no es la misma cosa.
+            "confirmados": 0, "confirmado_por": [],
             "dias": 0})
         ficha["dias"] += 1
+        if a.confirmado:
+            ficha["confirmados"] += 1
+        quien = a.confirmado_por.nombre if a.confirmado_por else None
+        if quien and quien not in ficha["confirmado_por"]:
+            ficha["confirmado_por"].append(quien)
         if a.relevado_en:
             ficha["relevado_en"] = a.relevado_en.isoformat()
         if a.reemplaza_a_id:
@@ -1163,7 +1259,7 @@ def asignaciones_equipo(equipo_id: int, db: Session = Depends(get_db),
 @router.get("/jornadas/{jornada_id}/asignaciones",
             summary="Ver quien y que esta asignado a la jornada")
 def ver_asignaciones(jornada_id: int, db: Session = Depends(get_db),
-                     _=Depends(auth.requiere(m.Rol.CONSULTOR, m.Rol.CENTRAL, m.Rol.DIRECTOR_OPERACIONES))):
+                     _=Depends(auth.puede("asignaciones.ver"))):
     jornada = _obtener_jornada(db, jornada_id)
     return {
         "jornada_id": jornada.id,
@@ -1202,8 +1298,7 @@ def ver_asignaciones(jornada_id: int, db: Session = Depends(get_db),
 @router.get("/{servicio_id}/auditoria",
             summary="Quien ha trabajado este servicio")
 def auditoria_servicio(servicio_id: int, db: Session = Depends(get_db),
-                       _=Depends(auth.requiere(m.Rol.CONSULTOR, m.Rol.CENTRAL,
-                                               m.Rol.DIRECTOR_OPERACIONES))):
+                       _=Depends(auth.puede("asignaciones.ver"))):
     servicio = db.get(m.Servicio, servicio_id)
     if not servicio:
         raise HTTPException(404, f"No existe el servicio {servicio_id}")
@@ -1235,9 +1330,10 @@ def auditoria_servicio(servicio_id: int, db: Session = Depends(get_db),
 # era que una captura equivocada no se podia deshacer nunca: contestaba
 # "Un servicio que ya arranco se cancela, no se borra", que ni siquiera
 # era cierto.
-ANTES_DE_ARRANCAR = {m.EstatusServicio.BORRADOR, m.EstatusServicio.SOLICITADO,
-                     m.EstatusServicio.COTIZADO, m.EstatusServicio.AUTORIZADO,
-                     m.EstatusServicio.PLANEADO, m.EstatusServicio.ASIGNADO}
+# La misma lista que usa el motor para encender el servicio, traida de
+# un solo lugar: dos copias de "todavia no arranca" se contradicen el dia
+# que alguien agregue un estatus a una y no a la otra.
+ANTES_DE_ARRANCAR = set(m.ANTES_DE_ARRANCAR)
 
 
 # Viaticos que todavia no son dinero en manos de nadie: asignados es
@@ -1284,15 +1380,35 @@ def _movimientos(db: Session, jornada_ids: list[int],
             f"({', '.join(c.tipo.value for c in compradas)})")
     if not jornada_ids:
         return razones
-    depositados = [v for v in _viaticos_de(db, jornada_ids)
+    viaticos = _viaticos_de(db, jornada_ids)
+    depositados = [v for v in viaticos
                    if v.estatus not in VIATICOS_SIN_DEPOSITAR]
     if depositados:
         razones.append(f"ya tiene {len(depositados)} viatico(s) depositados")
+
+    # Dinero que alguien puede estar transfiriendo en este momento.
+    #
+    # Antes esto no detenia el borrado: las solicitudes se borraban de la
+    # base y quien borraba se llevaba un numero en la respuesta, que no
+    # lee nadie. A finanzas no se le avisaba. Si ya habia ido al banco,
+    # ese deposito quedaba fuera del sistema: nadie lo podia comprobar ni
+    # reclamar, y la persona terminaba con dinero de la empresa que aqui
+    # no existe.
+    en_camino = (db.query(m.SolicitudTransferencia)
+                 .filter(m.SolicitudTransferencia.asignacion_id.in_(
+                     [v.id for v in viaticos]),
+                     m.SolicitudTransferencia.estatus.in_(
+                         [m.EstatusTransferencia.PENDIENTE,
+                          m.EstatusTransferencia.ENVIADA]))
+                 .count()) if viaticos else 0
+    if en_camino:
+        razones.append(f"tiene {en_camino} deposito(s) en camino con "
+                       f"finanzas")
     if db.query(m.Hito).filter(m.Hito.jornada_id.in_(jornada_ids)).count():
         razones.append("ya tiene hitos marcados desde la app")
     if db.query(m.Jornada).filter(
             m.Jornada.id.in_(jornada_ids),
-            m.Jornada.estatus.in_([m.EstatusJornada.EN_CURSO,
+            m.Jornada.estatus.in_([*m.ARRANCADAS,
                                    m.EstatusJornada.TERMINADA])).count():
         razones.append("tiene dias que ya arrancaron")
     if db.query(m.ReemplazoRecurso).filter(
@@ -1329,8 +1445,40 @@ def _limpiar_jornadas(db: Session, jornada_ids: list[int]) -> int:
             m.AsignacionViatico.id.in_(viaticos)).delete(
                 synchronize_session=False)
 
-    for tabla in (m.AsignacionPersonal, m.AsignacionVehiculo, m.AgendaJornada,
-                  m.ParadaAgenda, m.Alerta):
+    # El camino al punto y sus lecturas. Las lecturas primero: cuelgan
+    # del trayecto, no del dia.
+    #
+    # Faltaban. Las tablas nacieron el 20 de septiembre y no se
+    # agregaron aqui, asi que borrar un servicio en el que alguien
+    # habia dicho "voy en camino" reventaba con una violacion de llave
+    # foranea: un 500 en la cara del consultor, con el servicio a medio
+    # desarmar. Lo encontro el zoologico de la prueba 360 al limpiarse
+    # a si mismo, que es exactamente para lo que existe.
+    trayectos = [t.id for t in db.query(m.Trayecto)
+                 .filter(m.Trayecto.jornada_id.in_(jornada_ids)).all()]
+    if trayectos:
+        db.query(m.LecturaTrayecto).filter(
+            m.LecturaTrayecto.trayecto_id.in_(trayectos)).delete(
+                synchronize_session=False)
+        db.query(m.Trayecto).filter(m.Trayecto.id.in_(trayectos)).delete(
+            synchronize_session=False)
+
+    # Las marcas del dia y los reemplazos por descanso. Un hito de un
+    # dia que no existe no significa nada.
+    #
+    # Al endpoint de borrado no le hacian falta --`_movimientos` frena
+    # antes de llegar aqui si hay hitos marcados-- pero esta funcion la
+    # llaman dos, y la otra tiene que poder desarmar CUALQUIER servicio.
+    # Una funcion que solo funciona porque alguien mas revisa antes es
+    # una trampa esperando al segundo que la llame.
+    # La nota de turno se va con el dia y no se queda huerfana: apunta a
+    # la jornada con llave obligatoria --una nota de un dia que no existe
+    # no significa nada-- y dejarla suelta reventaria el borrado con una
+    # violacion de llave foranea. Lo encontro la prueba de la limpieza,
+    # que es exactamente para lo que existe.
+    for tabla in (m.Hito, m.Reemplazo, m.AsignacionPersonal,
+                  m.AsignacionVehiculo, m.AgendaJornada, m.ParadaAgenda,
+                  m.Alerta, m.NotaBitacora):
         db.query(tabla).filter(tabla.jornada_id.in_(jornada_ids)).delete(
             synchronize_session=False)
     # Lo que apunta al dia sin depender de el se queda huerfano a
@@ -1340,116 +1488,23 @@ def _limpiar_jornadas(db: Session, jornada_ids: list[int]) -> int:
                          (m.Notificacion, m.Notificacion.jornada_id),
                          (m.AlertaIncidencia, m.AlertaIncidencia.jornada_id),
                          (m.Incidencia, m.Incidencia.jornada_id),
+                         (m.AjusteNomina, m.AjusteNomina.jornada_id),
                          (m.ConceptoNomina, m.ConceptoNomina.jornada_id)):
         db.query(tabla).filter(campo.in_(jornada_ids)).update(
             {campo: None}, synchronize_session=False)
     return en_camino
 
 
-@router.delete("/equipos/{equipo_id}", summary="Eliminar un equipo del servicio")
-def eliminar_equipo(equipo_id: int, datos: s.EliminarIn | None = None,
-                    db: Session = Depends(get_db),
-                    usuario: m.Usuario = Depends(auth.puede("servicios.alta"))):
-    """El equipo que se armo de mas, o el que el cliente echo para atras.
-    Con viaticos o con dias andando ya no: eso se cancela."""
-    equipo = db.get(m.Equipo, equipo_id)
-    if not equipo:
-        raise HTTPException(404, f"No existe el equipo {equipo_id}")
-    servicio = equipo.servicio
+def desarmar_servicio(db: Session, servicio: m.Servicio,
+                      jornada_ids: list[int], folio: str) -> int:
+    """Todo lo que cuelga de un servicio, en el orden en que la base lo
+    suelta. Devuelve cuantas transferencias iban en camino.
 
-    if len(servicio.equipos) == 1:
-        raise HTTPException(409, {
-            "mensaje": "Es el unico equipo del servicio",
-            "que_hacer": "Elimina el servicio completo",
-        })
-    if servicio.estatus not in ANTES_DE_ARRANCAR:
-        raise HTTPException(409, {
-            "mensaje": f"El servicio esta {servicio.estatus.value}",
-            "que_hacer": "Un servicio que ya arranco se cancela, no se borra",
-        })
-
-    jornada_ids = [j.id for j in equipo.jornadas]
-    razones = _movimientos(db, jornada_ids, [equipo.id])
-    if razones:
-        raise HTTPException(409, {
-            "mensaje": f"El equipo {equipo.alias} " + " y ".join(razones),
-            "que_hacer": "Cancela lo que ya se movio antes de borrarlo",
-        })
-
-    alias = equipo.alias
-    db.query(m.TaskSheet).filter_by(equipo_id=equipo.id).delete(
-        synchronize_session=False)
-    en_camino = _limpiar_jornadas(db, jornada_ids)
-    db.query(m.Jornada).filter_by(equipo_id=equipo.id).delete(
-        synchronize_session=False)
-    # Los dias ya se fueron por consulta directa: si no se le avisa, el
-    # ORM intenta borrarlos otra vez al soltar el equipo.
-    db.expire(equipo, ["jornadas"])
-    db.delete(equipo)
-    db.flush()
-    # Y la lista de equipos del servicio todavia trae al que se fue.
-    db.expire(servicio, ["equipos"])
-
-    # Los alias son por posicion: si se fue Beta, Gamma pasa a ser Beta.
-    for posicion, quedan in enumerate(
-            sorted(servicio.equipos, key=lambda e: e.id)):
-        quedan.alias = alias_de_equipo(posicion)
-
-    # El auto de renta que se queda sin un solo dia ya no se ocupa: se
-    # devuelve. Se da de baja y deja de ofrecerse, pero no se borra
-    # porque su costo ya entro a la cuenta del servicio.
-    for vehiculo in (db.query(m.Vehiculo)
-                     .filter_by(servicio_id=servicio.id, rentado=True,
-                                activo=True).all()):
-        sigue = (db.query(m.AsignacionVehiculo)
-                 .filter_by(vehiculo_id=vehiculo.id).count())
-        if not sigue:
-            _devolver_renta(vehiculo, servicio.folio)
-
-    programacion.evaluar(servicio)
-    auditoria.registrar(db, usuario, servicio, "eliminar equipo",
-                        f"{alias}: {len(jornada_ids)} dia(s)"
-                        + (f" · {datos.motivo}" if datos and datos.motivo else ""))
-    db.commit()
-    return {"resultado": "equipo eliminado", "equipo": alias,
-            "equipos_restantes": [e.alias for e in servicio.equipos],
-            "estatus_servicio": servicio.estatus.value,
-            "transferencias_por_detener": en_camino,
-            "nota": ("Avisa a finanzas: habia instrucciones de transferencia "
-                     "en camino" if en_camino else None)}
-
-
-@router.delete("/{servicio_id}", summary="Eliminar un servicio")
-def eliminar_servicio(servicio_id: int, datos: s.EliminarIn | None = None,
-                      db: Session = Depends(get_db),
-                      usuario: m.Usuario = Depends(auth.puede("servicios.alta"))):
-    """La captura equivocada o el servicio que se echo para atras antes de
-    arrancar. Del servicio solo queda su renglon en la bitacora de
-    eliminados: que era, quien lo quito y por que."""
-    servicio = db.get(m.Servicio, servicio_id)
-    if not servicio:
-        raise HTTPException(404, f"No existe el servicio {servicio_id}")
-
-    if servicio.estatus not in ANTES_DE_ARRANCAR:
-        raise HTTPException(409, {
-            "mensaje": f"El servicio esta {servicio.estatus.value}",
-            "que_hacer": "Un servicio que ya arranco se cancela, no se borra",
-        })
-
-    jornada_ids = [j.id for e in servicio.equipos for j in e.jornadas]
-    razones = _movimientos(db, jornada_ids,
-                           [e.id for e in servicio.equipos])
-    if razones:
-        raise HTTPException(409, {
-            "mensaje": "El servicio " + " y ".join(razones),
-            "que_hacer": "Cancelalo en vez de borrarlo: ya hay rastro que "
-                         "conservar",
-        })
-
-    folio = servicio.folio
-    dias = len(jornada_ids)
-    equipos = len(servicio.equipos)
-
+    Vive aparte del endpoint porque hay dos que necesitan desarmar un
+    servicio --el borrado de verdad y el sembrador de la prueba 360-- y
+    tener la lista escrita dos veces es tener una de las dos mal el dia
+    que aparezca una tabla nueva.
+    """
     en_camino = _limpiar_jornadas(db, jornada_ids)
     # Las respuestas cuelgan de la encuesta: primero ellas.
     encuestas = [e.id for e in db.query(m.Encuesta).filter_by(
@@ -1520,6 +1575,118 @@ def eliminar_servicio(servicio_id: int, datos: s.EliminarIn | None = None,
     db.query(m.Servicio).filter_by(servicio_origen_id=servicio.id).update(
         {"servicio_origen_id": None}, synchronize_session=False)
     db.flush()
+    return en_camino
+
+
+@router.delete("/equipos/{equipo_id}", summary="Eliminar un equipo del servicio")
+def eliminar_equipo(equipo_id: int, datos: s.EliminarIn | None = None,
+                    db: Session = Depends(get_db),
+                    usuario: m.Usuario = Depends(auth.puede("servicios.alta"))):
+    """El equipo que se armo de mas, o el que el cliente echo para atras.
+    Con viaticos o con dias andando ya no: eso se cancela."""
+    equipo = db.get(m.Equipo, equipo_id)
+    if not equipo:
+        raise HTTPException(404, f"No existe el equipo {equipo_id}")
+    servicio = equipo.servicio
+
+    if len(servicio.equipos) == 1:
+        raise HTTPException(409, {
+            "mensaje": "Es el unico equipo del servicio",
+            "que_hacer": "Elimina el servicio completo",
+        })
+    if servicio.estatus not in ANTES_DE_ARRANCAR:
+        raise HTTPException(409, {
+            "mensaje": f"El servicio esta {servicio.estatus.value}",
+            "que_hacer": "Un servicio que ya arranco se cancela, no se borra",
+        })
+
+    jornada_ids = [j.id for j in equipo.jornadas]
+    razones = _movimientos(db, jornada_ids, [equipo.id])
+    if razones:
+        raise HTTPException(409, {
+            "mensaje": f"El equipo {equipo.alias} " + " y ".join(razones),
+            "que_hacer": ("Cancela lo que ya se movio antes de borrarlo. Si "
+                          "hay depositos en camino, cancelalos desde el "
+                          "panel de viaticos: los que ya estan con finanzas "
+                          "los cierra finanzas."),
+        })
+
+    alias = equipo.alias
+    db.query(m.TaskSheet).filter_by(equipo_id=equipo.id).delete(
+        synchronize_session=False)
+    en_camino = _limpiar_jornadas(db, jornada_ids)
+    db.query(m.Jornada).filter_by(equipo_id=equipo.id).delete(
+        synchronize_session=False)
+    # Los dias ya se fueron por consulta directa: si no se le avisa, el
+    # ORM intenta borrarlos otra vez al soltar el equipo.
+    db.expire(equipo, ["jornadas"])
+    db.delete(equipo)
+    db.flush()
+    # Y la lista de equipos del servicio todavia trae al que se fue.
+    db.expire(servicio, ["equipos"])
+
+    # Los alias son por posicion: si se fue Beta, Gamma pasa a ser Beta.
+    for posicion, quedan in enumerate(
+            sorted(servicio.equipos, key=lambda e: e.id)):
+        quedan.alias = alias_de_equipo(posicion)
+
+    # El auto de renta que se queda sin un solo dia ya no se ocupa: se
+    # devuelve. Se da de baja y deja de ofrecerse, pero no se borra
+    # porque su costo ya entro a la cuenta del servicio.
+    for vehiculo in (db.query(m.Vehiculo)
+                     .filter_by(servicio_id=servicio.id, rentado=True,
+                                activo=True).all()):
+        sigue = (db.query(m.AsignacionVehiculo)
+                 .filter_by(vehiculo_id=vehiculo.id).count())
+        if not sigue:
+            _devolver_renta(vehiculo, servicio.folio)
+
+    programacion.evaluar(servicio)
+    auditoria.registrar(db, usuario, servicio, "eliminar equipo",
+                        f"{alias}: {len(jornada_ids)} dia(s)"
+                        + (f" · {datos.motivo}" if datos and datos.motivo else ""))
+    db.commit()
+    return {"resultado": "equipo eliminado", "equipo": alias,
+            "equipos_restantes": [e.alias for e in servicio.equipos],
+            "estatus_servicio": servicio.estatus.value,
+            "transferencias_por_detener": en_camino,
+            "nota": ("Avisa a finanzas: habia instrucciones de transferencia "
+                     "en camino" if en_camino else None)}
+
+
+@router.delete("/{servicio_id}", summary="Eliminar un servicio")
+def eliminar_servicio(servicio_id: int, datos: s.EliminarIn | None = None,
+                      db: Session = Depends(get_db),
+                      usuario: m.Usuario = Depends(auth.puede("servicios.alta"))):
+    """La captura equivocada o el servicio que se echo para atras antes de
+    arrancar. Del servicio solo queda su renglon en la bitacora de
+    eliminados: que era, quien lo quito y por que."""
+    servicio = db.get(m.Servicio, servicio_id)
+    if not servicio:
+        raise HTTPException(404, f"No existe el servicio {servicio_id}")
+
+    if servicio.estatus not in ANTES_DE_ARRANCAR:
+        raise HTTPException(409, {
+            "mensaje": f"El servicio esta {servicio.estatus.value}",
+            "que_hacer": "Un servicio que ya arranco se cancela, no se borra",
+        })
+
+    jornada_ids = [j.id for e in servicio.equipos for j in e.jornadas]
+    razones = _movimientos(db, jornada_ids,
+                           [e.id for e in servicio.equipos])
+    if razones:
+        raise HTTPException(409, {
+            "mensaje": "El servicio " + " y ".join(razones),
+            "que_hacer": ("Cancelalo en vez de borrarlo: ya hay rastro que "
+                          "conservar. Si hay depositos en camino, cancelalos "
+                          "primero desde el panel de viaticos."),
+        })
+
+    folio = servicio.folio
+    dias = len(jornada_ids)
+    equipos = len(servicio.equipos)
+
+    en_camino = desarmar_servicio(db, servicio, jornada_ids, folio)
 
     # El rastro vive fuera del servicio, porque el servicio deja de existir.
     db.add(m.ServicioEliminado(
@@ -1607,6 +1774,36 @@ def confirmar_asignacion(servicio_id: int, db: Session = Depends(get_db),
             "sigue": "El TS queda liberado: descargalo y mandalo por correo"}
 
 
+@router.put("/{servicio_id}/vestimenta",
+            summary="Codigo de vestimenta del equipo")
+def poner_vestimenta(servicio_id: int, datos: s.VestimentaIn,
+                     db: Session = Depends(get_db),
+                     usuario: m.Usuario = Depends(auth.puede("servicios.alta"))):
+    """Casual, semiformal o formal; vacio la quita.
+
+    Se puede cambiar despues del alta porque el cliente cambia de
+    opinion --una cena que se vuelve junta de consejo-- y lo que no
+    puede pasar es que el equipo se entere por telefono mientras la hoja
+    dice otra cosa.
+    """
+    servicio = db.get(m.Servicio, servicio_id)
+    if not servicio:
+        raise HTTPException(404, f"No existe el servicio {servicio_id}")
+    if servicio.tipo != m.TipoServicio.EVENTUAL:
+        raise HTTPException(409, {
+            "mensaje": "El codigo de vestimenta es solo de los eventuales",
+            "que_hacer": ("En un implantado la vestimenta se acuerda una vez "
+                          "con el cliente, no servicio por servicio."),
+        })
+
+    servicio.vestimenta = datos.vestimenta.value if datos.vestimenta else None
+    auditoria.registrar(db, usuario, servicio, "codigo de vestimenta",
+                        servicio.vestimenta or "sin codigo")
+    db.commit()
+    return {"resultado": "vestimenta guardada",
+            "vestimenta": servicio.vestimenta}
+
+
 @router.post("/{servicio_id}/cancelar", summary="Cancelar un servicio")
 def cancelar_servicio(servicio_id: int, datos: s.CancelarIn,
                       db: Session = Depends(get_db),
@@ -1624,12 +1821,14 @@ def cancelar_servicio(servicio_id: int, datos: s.CancelarIn,
 
     jornadas = [j for e in servicio.equipos for j in e.jornadas]
     dias_cancelados = 0
+    cancelados = []
     for jornada in jornadas:
         # Un dia que ya se trabajo no se borra del historial: se queda
         # terminado, porque esas horas se pagan.
         if jornada.estatus != m.EstatusJornada.TERMINADA:
             jornada.estatus = m.EstatusJornada.CANCELADA
             dias_cancelados += 1
+            cancelados.append(jornada)
 
     # El dinero: lo que no ha salido se cancela; lo que ya salio se
     # devuelve, y mientras no vuelva sigue siendo responsabilidad de
@@ -1677,7 +1876,15 @@ def cancelar_servicio(servicio_id: int, datos: s.CancelarIn,
                         f"estaba {antes} · {datos.motivo}")
     db.commit()
 
+    # Se avisa despues de guardar: el servicio ya quedo cancelado pase
+    # lo que pase con el aviso. Sin esto la cancelacion se quedaba entre
+    # el consultor y el sistema, y el equipo se presentaba a las seis de
+    # la manana a un servicio que ya no existia.
+    avisados = push.avisar_cancelacion(db, cancelados, servicio.folio)
+    db.commit()
+
     return {"resultado": "servicio cancelado", "folio": servicio.folio,
+            "avisados": avisados["avisados"],
             "estatus_anterior": antes,
             "dias_cancelados": dias_cancelados,
             "autos_rentados_por_devolver": [v.placa for v in rentados],
@@ -1732,6 +1939,13 @@ def revisiones_del_servicio(servicio_id: int, fotos: bool = False,
             "kilometraje": r.kilometraje,
             "combustible_octavos": r.combustible_octavos,
             "nota": r.nota,
+            # La declaracion. Lo que significa depende de la punta:
+            # al recibir, "asi me la dieron"; al entregar, "esto paso
+            # conmigo". Es la distincion que decide quien responde, y
+            # antes habia que deducirla comparando fotos.
+            "hubo_dano": r.hubo_dano,
+            "dano_tipo": r.dano_tipo,
+            "dano_nota": r.dano_nota,
             "tiene_firma": bool(r.firma),
             # Las imagenes solo cuando se piden. Van como data URI y son
             # varios megas por servicio; esta pantalla se recarga sola
@@ -1746,6 +1960,11 @@ def revisiones_del_servicio(servicio_id: int, fotos: bool = False,
 
     for fila in por_unidad.values():
         entrada, salida = fila["recibe"], fila["entrega"]
+        # El renglon que hay que atender: volvio con un golpe que no
+        # traia. Se calcula aqui y no en la pantalla porque es la
+        # pregunta que se hace al abrir, no un detalle que se busca.
+        fila["dano_nuevo"] = bool(salida and salida["hubo_dano"])
+        fila["ya_venia_danada"] = bool(entrada and entrada["hubo_dano"])
         # El kilometraje del servicio: el numero que nadie apunta y del
         # que despues todos se acuerdan distinto.
         if (entrada and salida and entrada["kilometraje"] is not None

@@ -15,23 +15,31 @@ from app import auth
 from app import models as m
 from app import geocercas
 from app import programacion
+from app import push
+from app import reloj
 from app import operacion as motor
 from app import schemas as s
 from app.db import get_db
 
 router = APIRouter(prefix="/operacion", tags=["Operacion"])
 
-CENTRAL = auth.requiere(m.Rol.CENTRAL, m.Rol.DIRECTOR_OPERACIONES)
-MONITOREO = auth.requiere(m.Rol.CENTRAL, m.Rol.CONSULTOR, m.Rol.DIRECTOR_OPERACIONES)
-PLANEACION = auth.requiere(m.Rol.CONSULTOR, m.Rol.CENTRAL, m.Rol.DIRECTOR_OPERACIONES)
+# La app del agente no se muda a actividades. El candado de ahi no es un
+# permiso repartible sino "es su propia jornada": como casilla del panel
+# seria una que nadie debe marcar nunca, y el dia que alguien la marcara
+# por curiosidad le abriria la app del campo a gente de oficina.
 CAMPO = auth.requiere(m.Rol.PERSONAL_SEGURIDAD)
+
+VER = auth.puede("operacion.ver")
+PLANEAR = auth.puede("operacion.planear")
+CORREGIR = auth.puede("operacion.corregir")
+ATENDER = auth.puede("operacion.atender")
 
 
 @router.patch("/jornadas/{jornada_id}/origen",
               summary="Configurar el punto de origen y su geocerca")
 def configurar_origen(jornada_id: int, datos: s.OrigenIn,
                       db: Session = Depends(get_db),
-                      _=Depends(PLANEACION)):
+                      _=Depends(PLANEAR)):
     jornada = db.get(m.Jornada, jornada_id)
     if not jornada:
         raise HTTPException(404, f"No existe la jornada {jornada_id}")
@@ -70,7 +78,7 @@ def configurar_origen(jornada_id: int, datos: s.OrigenIn,
               summary="Capturar el vuelo del ejecutivo de ese dia")
 def configurar_vuelo(jornada_id: int, datos: s.VueloIn,
                      db: Session = Depends(get_db),
-                     _=Depends(PLANEACION)):
+                     _=Depends(PLANEAR)):
     """El vuelo sale en el meet and greet del task sheet. Se puede ir
     completando: primero la aerolinea y el numero, la hora despues."""
     jornada = db.get(m.Jornada, jornada_id)
@@ -138,8 +146,64 @@ def confirmar_recurso(jornada_id: int, db: Session = Depends(get_db),
     if not asignacion:
         raise HTTPException(403, "No estas asignado a esa jornada")
     asignacion.confirmado = True
+    # Sin `confirmado_por`: la confirmo la propia persona. Ese hueco es
+    # el dato, y es lo que la distingue de la que registra la central.
+    asignacion.confirmado_en = reloj.ahora_de_la_jornada(
+        db, asignacion.jornada)
     db.commit()
     return {"resultado": "confirmado", "persona": asignacion.persona.nombre}
+
+
+@router.post("/jornadas/{jornada_id}/confirmar-a-mano",
+             summary="La central registra que confirmo por telefono")
+def confirmar_a_mano(jornada_id: int, datos: s.ConfirmarAManoIn,
+                     db: Session = Depends(get_db),
+                     usuario: m.Usuario = Depends(
+                         auth.puede("asignaciones.confirmar_a_mano"))):
+    """El agente sin la app no podia confirmar de ninguna manera.
+
+    La central le hablaba por telefono, el agente decia que si, y el
+    renglon se quedaba rojo para siempre. Un renglon rojo que miente
+    ensena a ignorar los renglones rojos.
+
+    Queda sellado con quien lo registro y no se pinta igual que la
+    confirmacion de la persona: el dia que alguien no llegue, la
+    diferencia entre "confirmo el" y "lo confirmaron por el" es la
+    unica pregunta que importa.
+    """
+    jornada = db.get(m.Jornada, jornada_id)
+    if not jornada:
+        raise HTTPException(404, f"No existe la jornada {jornada_id}")
+
+    # Nadie se confirma a si mismo por esta puerta: para eso esta la
+    # app, que ademas deja dicho que confirmo el.
+    if datos.persona_id == usuario.persona_id:
+        raise HTTPException(403, {
+            "mensaje": "Tu propia confirmacion va por la app",
+            "que_hacer": "Entra a la app y confirma desde tu dia."})
+
+    asignacion = next((a for a in jornada.personal
+                       if a.persona_id == datos.persona_id), None)
+    if not asignacion:
+        raise HTTPException(404, "Esa persona no esta asignada a la jornada")
+    if asignacion.confirmado:
+        raise HTTPException(409, "Esa persona ya habia confirmado")
+
+    asignacion.confirmado = True
+    asignacion.confirmado_en = reloj.ahora_de_la_jornada(db, jornada)
+    asignacion.confirmado_por_id = usuario.persona_id
+    asignacion.nota_confirmacion = (datos.nota or "").strip() or None
+    auditoria.registrar(db, usuario, jornada.equipo.servicio,
+                        "confirmacion por telefono",
+                        f"{jornada.fecha} {asignacion.persona.nombre}"
+                        + (f": {asignacion.nota_confirmacion}"
+                           if asignacion.nota_confirmacion else ""),
+                        jornada_id=jornada.id)
+    db.commit()
+    return {"resultado": "confirmado",
+            "persona": asignacion.persona.nombre,
+            "por": usuario.persona.nombre if usuario.persona else None,
+            "a_mano": True}
 
 
 @router.post("/jornadas/{jornada_id}/hitos", summary="Marcar un hito desde la app")
@@ -160,7 +224,7 @@ def marcar_hito(jornada_id: int, datos: s.HitoIn,
              summary="La central ajusta el corte de tiempo")
 def ajustar(hito_id: int, datos: s.AjusteHitoIn,
             db: Session = Depends(get_db),
-            usuario: m.Usuario = Depends(CENTRAL)):
+            usuario: m.Usuario = Depends(CORREGIR)):
     """Solo la central o el director de operaciones. La justificacion es
     obligatoria y el ajuste queda firmado con quien lo hizo."""
     hito = db.get(m.Hito, hito_id)
@@ -185,11 +249,42 @@ def ajustar(hito_id: int, datos: s.AjusteHitoIn,
 # vende el servicio y a quien mas le conviene que un dia aparezca
 # trabajado.
 
+# El camino NO es `/bitacora`: ese ya lo tiene el expediente de la
+# jornada --hitos y notificaciones-- desde mucho antes, y FastAPI se
+# queda con la primera ruta que coincide. Puesta ahi, esta se llevaba
+# la de aquella sin que nada lo dijera. `revisar.py` ahora se queja si
+# vuelve a pasar.
+@router.get("/jornadas/{jornada_id}/dia",
+            summary="La bitacora del dia: plan, marcas, alertas y la central")
+def bitacora_del_dia(jornada_id: int, db: Session = Depends(get_db),
+                     usuario: m.Usuario = Depends(VER)):
+    """Los cuatro hilos del dia en una sola columna ordenada por hora.
+
+    Cada uno vivia en su tabla y en su pantalla. Juntos y por hora es la
+    unica forma de ver donde el plan y la realidad se separaron, y que
+    paso en los huecos.
+    """
+    from app import bitacora
+
+    resultado = bitacora.del_dia(db, jornada_id)
+    if not resultado:
+        raise HTTPException(404, f"No existe la jornada {jornada_id}")
+
+    # Quien puede firmar el meet and greet lo dice el servidor, no la
+    # pantalla. Si la consola decidiera por rol, la respuesta se
+    # separaria de la de verdad el dia que una categoria cambie los
+    # permisos de alguien --que es justo para lo que existen-- y el
+    # boton saldria para quien luego se come un 403.
+    resultado["puedo_registrar_a_mano"] = auth.puede_el_usuario(
+        db, usuario, "operacion.corregir")
+    return resultado
+
+
 @router.get("/dias-sin-cerrar", summary="Dias que ya pasaron y siguen abiertos")
 def dias_sin_cerrar(db: Session = Depends(get_db),
                     ahora: datetime | None = None,
                     pais_id: int | None = None,
-                    _=Depends(MONITOREO)):
+                    _=Depends(VER)):
     """La lista de trabajo de la central.
 
     Cada renglon es alguien que trabajo y todavia no puede cobrar. Sale
@@ -206,7 +301,7 @@ def dias_sin_cerrar(db: Session = Depends(get_db),
 def cerrar_a_mano(jornada_id: int, datos: s.CierreAManoIn,
                   db: Session = Depends(get_db),
                   ahora: datetime | None = None,
-                  usuario: m.Usuario = Depends(CENTRAL)):
+                  usuario: m.Usuario = Depends(CORREGIR)):
     """Queda firmado con el usuario que lo hizo, no con lo que diga el
     cuerpo de la peticion."""
     jornada = db.get(m.Jornada, jornada_id)
@@ -231,13 +326,133 @@ def cerrar_a_mano(jornada_id: int, datos: s.CierreAManoIn,
     return resultado
 
 
+@router.post("/jornadas/{jornada_id}/marca-a-mano",
+             summary="La central asienta un punto critico que nadie marco")
+def hito_a_mano(jornada_id: int, datos: s.HitoAManoIn,
+                db: Session = Depends(get_db),
+                ahora: datetime | None = None,
+                usuario: m.Usuario = Depends(CORREGIR)):
+    """Mismo candado que cerrar un dia a mano, y por la misma razon.
+
+    Esa hora fija `inicio_real`, de donde salen las horas extra que se le
+    facturan al cliente y se le pagan a la gente. El consultor ve el
+    panel y no escribe en el: es quien vende el servicio y a quien mas
+    le conviene que un dia aparezca trabajado.
+    """
+    jornada = db.get(m.Jornada, jornada_id)
+    if not jornada:
+        raise HTTPException(404, f"No existe la jornada {jornada_id}")
+
+    # Nadie se firma sus propias marcas, igual que nadie cierra a mano un
+    # dia que trabajo.
+    if any(a.persona_id == usuario.persona_id for a in jornada.personal):
+        raise HTTPException(403, {
+            "mensaje": "No puedes registrar marcas de un dia que trabajaste",
+            "que_hacer": "Que las registre otra persona de la central."})
+
+    tipo = m.TipoHito(datos.tipo)
+    resultado = motor.registrar_hito_a_mano(
+        db, jornada_id, datos.persona_id, usuario.persona_id, tipo,
+        datos.momento, datos.justificacion, ahora)
+    auditoria.registrar(db, usuario, jornada.equipo.servicio,
+                        "marca a mano",
+                        f"{jornada.fecha} {tipo.value} "
+                        f"{datos.momento:%H:%M}: {datos.justificacion}",
+                        jornada_id=jornada.id)
+    db.commit()
+    return resultado
+
+
+@router.post("/jornadas/{jornada_id}/notas",
+             status_code=201,
+             summary="Escribir una nota de turno en la bitacora del dia")
+def escribir_nota(jornada_id: int, datos: s.NotaBitacoraIn,
+                  db: Session = Depends(get_db),
+                  usuario: m.Usuario = Depends(VER)):
+    """Quien puede ver el dia puede escribir en el. Decision de Salvador.
+
+    Una nota no toca lo que se factura ni lo que se paga: es
+    informacion. Y el consultor es a quien le llama el cliente, asi que
+    si no pudiera escribir lo que le dijeron, ese dato no entraria nunca
+    al sistema.
+
+    La hora la pone el servidor y la firma es la sesion: una nota con
+    hora o con autor a eleccion de quien escribe deja de ser un registro
+    de que se supo y cuando.
+    """
+    jornada = db.get(m.Jornada, jornada_id)
+    if not jornada:
+        raise HTTPException(404, f"No existe la jornada {jornada_id}")
+
+    nota = m.NotaBitacora(jornada_id=jornada_id,
+                          persona_id=usuario.persona_id,
+                          texto=datos.texto.strip())
+    db.add(nota)
+    db.commit()
+    db.refresh(nota)
+    return {"id": nota.id, "texto": nota.texto,
+            "persona": usuario.persona.nombre if usuario.persona else None,
+            "creada_en": nota.creada_en.isoformat()}
+
+
+@router.post("/jornadas/{jornada_id}/hora-de-manana",
+             summary="A que hora arranca el dia siguiente de este equipo")
+def hora_de_manana(jornada_id: int, datos: s.HoraDeManianaIn,
+                   db: Session = Depends(get_db),
+                   usuario: m.Usuario = Depends(CORREGIR)):
+    """El principal dice al cerrar el dia a que hora se ven manana.
+
+    Candado de central y direccion, decision de Salvador. Cambiar la
+    hora de un dia ya existe desde la pantalla del servicio y ahi la
+    tiene el consultor; esta puerta es mas apretada porque se usa a
+    deshoras y sobre un dia que ya tiene gente confirmada.
+
+    El dia siguiente es el del MISMO EQUIPO. Un servicio puede tener a
+    Alfa en Ciudad de Mexico y a Beta en Monterrey, y lo que dijo el
+    principal de Alfa no mueve la hora de Beta.
+    """
+    jornada = db.get(m.Jornada, jornada_id)
+    if not jornada:
+        raise HTTPException(404, f"No existe la jornada {jornada_id}")
+
+    r = motor.fijar_hora_de_manana(db, jornada, datos.hora,
+                                   usuario.persona_id, datos.nota)
+    siguiente, antes = r["siguiente"], r["antes"]
+    auditoria.registrar(db, usuario, jornada.equipo.servicio,
+                        "hora de maniana",
+                        f"{siguiente.fecha} {datos.hora:%H:%M}",
+                        jornada_id=siguiente.id)
+    db.commit()
+
+    # Quien ya confirmo lo hizo sobre una hora. Si esa hora cambia y
+    # nadie le avisa, su confirmacion apunta a algo que ya no es cierto.
+    if siguiente.inicio_programado != antes:
+        push.avisar_cambio_de_hora(db, siguiente, antes)
+        db.commit()
+
+    return {"resultado": "hora de maniana fijada",
+            "jornada_id": siguiente.id,
+            "fecha": siguiente.fecha.isoformat(),
+            "inicio": siguiente.inicio_programado.isoformat(),
+            "fin": siguiente.fin_programado.isoformat()}
+
+
 @router.post("/jornadas/{jornada_id}/reabrir",
              summary="Deshacer un cierre a mano")
 def reabrir_dia(jornada_id: int, datos: s.ReabrirDiaIn,
                 db: Session = Depends(get_db),
-                usuario: m.Usuario = Depends(CENTRAL)):
-    """Solo se deshace lo que la central cerro. Un dia que el equipo
-    marco desde la calle se corrige ajustando el hito."""
+                usuario: m.Usuario = Depends(CORREGIR)):
+    """Deshace un cierre, lo haya hecho la central o el equipo.
+
+    El de la central se deshace entero: ahi alguien tecleo una hora en
+    una oficina y si se equivoco, se borra.
+
+    El del equipo es otra cosa: hay una marca de fin con su hora, su
+    ubicacion y quien la hizo. Esa marca se ANULA --deja de contar, y el
+    equipo puede volver a cerrar-- pero no se borra: se queda con el
+    nombre de quien la anulo y con el motivo. Dentro de seis meses
+    alguien va a querer saber por que ese dia se cerro dos veces.
+    """
     jornada = db.get(m.Jornada, jornada_id)
     if not jornada:
         raise HTTPException(404, f"No existe la jornada {jornada_id}")
@@ -254,20 +469,20 @@ def reabrir_dia(jornada_id: int, datos: s.ReabrirDiaIn,
 
 @router.get("/tablero-proximos", summary="Servicios a dos horas de iniciar")
 def tablero(db: Session = Depends(get_db), ahora: datetime | None = None,
-            _=Depends(MONITOREO)):
+            _=Depends(VER)):
     """Valida confirmacion del recurso, viatico transferido y vehiculo asignado."""
     return motor.tablero_proximos(db, ahora)
 
 
 @router.post("/revisar-standby", summary="Detectar servicios sin reporte")
 def revisar_standby(db: Session = Depends(get_db), ahora: datetime | None = None,
-                    _=Depends(MONITOREO)):
+                    _=Depends(VER)):
     return {"alertas_generadas": motor.revisar_standby(db, ahora)}
 
 
 @router.post("/avisar-horas-extra", summary="Aviso preventivo de horas extra")
 def avisar_horas_extra(db: Session = Depends(get_db), ahora: datetime | None = None,
-                       _=Depends(MONITOREO)):
+                       _=Depends(VER)):
     return {"avisos": motor.avisar_horas_extra(db, ahora)}
 
 
@@ -339,7 +554,7 @@ def bitacora(jornada_id: int, db: Session = Depends(get_db),
 
 @router.get("/alertas", summary="Alertas abiertas de la central")
 def alertas(db: Session = Depends(get_db), solo_abiertas: bool = True,
-            _=Depends(MONITOREO)):
+            _=Depends(VER)):
     consulta = db.query(m.Alerta)
     if solo_abiertas:
         consulta = consulta.filter(m.Alerta.atendida.is_(False))
@@ -351,7 +566,7 @@ def alertas(db: Session = Depends(get_db), solo_abiertas: bool = True,
 @router.post("/alertas/{alerta_id}/atender", summary="La central atiende una alerta")
 def atender_alerta(alerta_id: int, resolucion: str,
                    db: Session = Depends(get_db),
-                   usuario: m.Usuario = Depends(MONITOREO)):
+                   usuario: m.Usuario = Depends(ATENDER)):
     alerta = db.get(m.Alerta, alerta_id)
     if not alerta:
         raise HTTPException(404, f"No existe la alerta {alerta_id}")

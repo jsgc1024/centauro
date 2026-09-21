@@ -8,7 +8,8 @@ Lo delicado no es cambiar el nombre de quien va: son los viaticos. La
 persona que sale se queda con dinero que ya recibio y tiene que
 comprobarlo; la que entra necesita dinero nuevo para dar continuidad.
 """
-from datetime import datetime
+import calendar
+from datetime import date, datetime, timedelta
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -23,21 +24,40 @@ CON_DINERO = (m.EstatusViatico.TRANSFERIDO, m.EstatusViatico.EN_COMPROBACION)
 SIN_DINERO = (m.EstatusViatico.ASIGNADO, m.EstatusViatico.SOLICITADO)
 
 
-def _solo_eventual(desde: m.Jornada) -> None:
-    """Este motor es de eventual. El implantado tiene el suyo.
+def ultimo_dia_del_mes(fecha: date) -> date:
+    """El tope de un cambio de implantado sin fecha de fin.
 
-    No es una separacion de gusto: el implantado reutiliza el mismo
-    equipo mes tras mes, asi que un cambio "de aqui en adelante" barreria
-    todas las jornadas abiertas —el mes en curso y el siguiente, si ya se
-    genero— y abriria decenas de viaticos de un solo clic. Su reemplazo
-    va dia por dia, en `implantado.cambiar_personal`, y ahi es donde hay
-    que hacerlo.
+    Vive aqui, al lado del candado que lo exige, y no en el implantado:
+    escrito en dos lugares es como el umbral de silencio, que acabo
+    diciendo 60 en una pantalla y 120 en la otra.
+    """
+    return fecha.replace(day=calendar.monthrange(fecha.year, fecha.month)[1])
+
+
+def _tramo_con_fin(desde: m.Jornada, hasta: m.Jornada | None) -> None:
+    """El implantado no admite un cambio sin fecha de fin.
+
+    Antes este candado decia "implantado prohibido" y mandaba a cada tipo
+    de servicio a su propio motor. Dos motores para la misma regla se
+    separan con el tiempo, y se separaron: el del implantado mutaba la
+    asignacion y el que trabajo media jornada cobraba cero.
+
+    Lo que el candado protegia era otra cosa, y esa sigue en pie: el
+    implantado reutiliza el mismo equipo mes tras mes, asi que un cambio
+    "de aqui en adelante" barreria todas las jornadas abiertas —el mes en
+    curso y el siguiente, si ya se genero— y abriria decenas de viaticos
+    de un solo clic. Con fecha de fin eso no puede pasar, y la fecha la
+    pone `implantado.cambiar_recurso`: el ultimo dia del mes en curso.
+
+    El eventual sigue entrando sin fin, porque una contingencia no lo
+    tiene: nadie sabe cuando vuelve el que salio.
     """
     servicio = desde.equipo.servicio if desde.equipo else None
-    if servicio and servicio.tipo == m.TipoServicio.IMPLANTADO:
+    if servicio and servicio.tipo == m.TipoServicio.IMPLANTADO and hasta is None:
         raise HTTPException(409, {
-            "mensaje": ("El cambio de recurso de un implantado se hace desde "
-                        "su propio calendario, dia por dia."),
+            "mensaje": ("El cambio de un implantado tiene que decir hasta que "
+                        "dia llega. Sin fin se llevaria tambien los meses que "
+                        "ya esten abiertos."),
             "servicio_id": servicio.id,
         })
 
@@ -120,7 +140,6 @@ def reemplazar_personal(db: Session, desde_jornada_id: int, sale_persona_id: int
     desde = db.get(m.Jornada, desde_jornada_id)
     if not desde:
         raise HTTPException(404, f"No existe la jornada {desde_jornada_id}")
-    _solo_eventual(desde)
     if sale_persona_id == entra_persona_id:
         raise HTTPException(409, "La persona que entra es la misma que sale")
 
@@ -133,6 +152,7 @@ def reemplazar_personal(db: Session, desde_jornada_id: int, sale_persona_id: int
         raise HTTPException(404, f"No existe la jornada {hasta_jornada_id}")
     if hasta and hasta.fecha < desde.fecha:
         raise HTTPException(409, "El ultimo dia del cambio es anterior al primero")
+    _tramo_con_fin(desde, hasta)
 
     # La hora que parte el dia. Si el consultor no dijo cual, se propone
     # la ultima marca de quien sale; si tampoco hay marcas, la de ahora.
@@ -242,7 +262,6 @@ def reemplazar_vehiculo(db: Session, desde_jornada_id: int, sale_vehiculo_id: in
     desde = db.get(m.Jornada, desde_jornada_id)
     if not desde:
         raise HTTPException(404, f"No existe la jornada {desde_jornada_id}")
-    _solo_eventual(desde)
     if sale_vehiculo_id == entra_vehiculo_id:
         raise HTTPException(409, "La unidad que entra es la misma que sale")
 
@@ -255,6 +274,7 @@ def reemplazar_vehiculo(db: Session, desde_jornada_id: int, sale_vehiculo_id: in
         raise HTTPException(404, f"No existe la jornada {hasta_jornada_id}")
     if hasta and hasta.fecha < desde.fecha:
         raise HTTPException(409, "El ultimo dia del cambio es anterior al primero")
+    _tramo_con_fin(desde, hasta)
 
     momento = reloj.ahora_de_la_jornada(db, desde, relevado_en)
     cambiadas, partidas, choques = [], [], []
@@ -410,6 +430,346 @@ def _mover_viaticos(db: Session, jornadas: list[m.Jornada],
 
     return {"a_comprobar": a_comprobar, "cancelados": cancelados,
             "propuestos": propuestos}
+
+
+# ==================================================================
+# El regreso: el titular vuelve
+# ==================================================================
+
+def regresar(db: Session, reemplazo_id: int, desde: date,
+             hecho_por_id: int | None = None,
+             relevado_en: datetime | None = None) -> dict:
+    """El titular vuelve. Cierra el movimiento, no abre otro.
+
+    Marta se enferma el 10 y Luis la cubre. Marta se recupera, avisa al
+    consultor y regresa el 25; Luis trabaja hasta el 24 por orden del
+    consultor. Eso es un solo hecho —"Luis cubrio a Marta del 10 al
+    24"— y asi tiene que leerse en el historial y en el corte del mes.
+    Si el regreso abriera su propio movimiento, el mismo mes mostraria
+    dos cambios cruzados y nadie sabria cual cierra a cual.
+
+    El regreso no pide motivo: el motivo es el del movimiento que cierra.
+    Lo que si queda es quien lo ordeno y cuando.
+
+    Por dentro es el mismo relevo de siempre, con los nombres al reves,
+    asi que si Luis alcanzo a trabajar la manana del 25 ese dia se parte
+    y los dos cobran su parte. El movimiento que ese relevo abre se borra
+    aqui mismo: el hecho es el cierre del primero.
+    """
+    r = db.get(m.ReemplazoRecurso, reemplazo_id)
+    if not r:
+        raise HTTPException(404, f"No existe el cambio {reemplazo_id}")
+    arranco = db.get(m.Jornada, r.desde_jornada_id)
+    if not arranco:
+        raise HTTPException(404, "El cambio apunta a un dia que ya no existe")
+    if desde <= arranco.fecha:
+        raise HTTPException(409, {
+            "mensaje": ("El regreso tiene que caer despues del dia en que "
+                        "arranco el cambio. Si fue un error, se deshace."),
+            "arranco": arranco.fecha.isoformat()})
+
+    vuelve = _primer_dia_abierto(db, arranco.equipo_id, desde)
+    if not vuelve:
+        raise HTTPException(409, "No hay dias abiertos de ese dia en adelante")
+
+    if r.regreso_en:
+        return _mover_el_regreso(db, r, arranco, vuelve, hecho_por_id,
+                                 relevado_en)
+
+    fin = db.get(m.Jornada, r.hasta_jornada_id) if r.hasta_jornada_id else None
+    if fin and vuelve.fecha > fin.fecha:
+        raise HTTPException(409, {
+            "mensaje": ("Ese cambio ya termino por su cuenta: no hay nada "
+                        "que cerrar."),
+            "termino": fin.fecha.isoformat()})
+
+    titular, cubre = _quienes(r)
+    hecho = _relevar_al_reves(db, r, vuelve, fin, cubre, titular,
+                              hecho_por_id, relevado_en)
+    return _firmar_el_cierre(db, r, arranco, vuelve, hecho, hecho_por_id)
+
+
+def _primer_dia_abierto(db: Session, equipo_id: int,
+                        desde: date) -> m.Jornada | None:
+    """El primer dia que todavia se puede mover, de esa fecha en adelante.
+
+    El consultor dice "vuelve el sabado" y el sabado no hay jornada: su
+    primer dia es el lunes. Traducirlo aqui evita que el calendario de la
+    pantalla tenga que saber que dias opera cada servicio.
+    """
+    return (db.query(m.Jornada)
+            .filter(m.Jornada.equipo_id == equipo_id,
+                    m.Jornada.fecha >= desde,
+                    m.Jornada.estatus.notin_([m.EstatusJornada.CANCELADA,
+                                              m.EstatusJornada.TERMINADA]))
+            .order_by(m.Jornada.fecha).first())
+
+
+def _quienes(r: m.ReemplazoRecurso) -> tuple[int | None, int | None]:
+    """El que sale y el que entra, sea persona o unidad."""
+    if r.tipo == m.TipoRecurso.PERSONAL:
+        return r.sale_persona_id, r.entra_persona_id
+    return r.sale_vehiculo_id, r.entra_vehiculo_id
+
+
+def _asignacion_de(r: m.ReemplazoRecurso):
+    """La tabla de asignaciones que le toca y su columna de recurso."""
+    if r.tipo == m.TipoRecurso.PERSONAL:
+        return m.AsignacionPersonal, m.AsignacionPersonal.persona_id
+    return m.AsignacionVehiculo, m.AsignacionVehiculo.vehiculo_id
+
+
+def _como_se_llama(db: Session, r: m.ReemplazoRecurso,
+                   recurso_id: int | None) -> str | None:
+    if not recurso_id:
+        return None
+    if r.tipo == m.TipoRecurso.PERSONAL:
+        persona = db.get(m.Persona, recurso_id)
+        return persona.nombre if persona else None
+    unidad = db.get(m.Vehiculo, recurso_id)
+    return unidad.placa if unidad else None
+
+
+def _se_partio(db: Session, r: m.ReemplazoRecurso, jornada: m.Jornada) -> bool:
+    """Si el dia del regreso quedo repartido entre los dos."""
+    sale, entra = _quienes(r)
+    if r.tipo == m.TipoRecurso.PERSONAL:
+        return (db.query(m.AsignacionPersonal.id)
+                .filter(m.AsignacionPersonal.jornada_id == jornada.id,
+                        m.AsignacionPersonal.persona_id == entra,
+                        m.AsignacionPersonal.relevado_por_id == sale,
+                        m.AsignacionPersonal.relevado_en.isnot(None))
+                .first()) is not None
+    return (db.query(m.AsignacionVehiculo.id)
+            .filter(m.AsignacionVehiculo.jornada_id == jornada.id,
+                    m.AsignacionVehiculo.vehiculo_id == entra,
+                    m.AsignacionVehiculo.relevado_por_vehiculo_id == sale,
+                    m.AsignacionVehiculo.relevado_en.isnot(None))
+            .first()) is not None
+
+
+def _relevar_al_reves(db: Session, r: m.ReemplazoRecurso, desde: m.Jornada,
+                      hasta: m.Jornada | None, sale: int, entra: int,
+                      hecho_por_id: int | None,
+                      relevado_en: datetime | None) -> dict:
+    """El mismo relevo de siempre, con los nombres al reves."""
+    motor = (reemplazar_personal if r.tipo == m.TipoRecurso.PERSONAL
+             else reemplazar_vehiculo)
+    llaves = ({"sale_persona_id": sale, "entra_persona_id": entra}
+              if r.tipo == m.TipoRecurso.PERSONAL
+              else {"sale_vehiculo_id": sale, "entra_vehiculo_id": entra})
+    return motor(db, desde_jornada_id=desde.id, motivo=r.motivo,
+                 hecho_por_id=hecho_por_id, motivo_tipo=r.motivo_tipo,
+                 hasta_jornada_id=hasta.id if hasta else None,
+                 relevado_en=relevado_en, **llaves)
+
+
+def _dinero_trabado(db: Session, r: m.ReemplazoRecurso, equipo_id: int,
+                    desde: date, hasta: date) -> list[m.AsignacionViatico]:
+    """Los viaticos de ese tramo que ya no se pueden desandar.
+
+    El mismo candado que usa `deshacer`: en cuanto alguien pidio el
+    dinero o lo transfirio, el movimiento dejo de vivir solo en una
+    tabla. Hay una solicitud, una transferencia y un plazo corriendo.
+
+    La unidad no mueve viaticos: el combustible y las casetas siguen
+    siendo del conductor, que es el mismo.
+    """
+    if r.tipo != m.TipoRecurso.PERSONAL:
+        return []
+    personas = [r.sale_persona_id, r.entra_persona_id]
+    tocados = (db.query(m.AsignacionViatico)
+               .join(m.Jornada, m.AsignacionViatico.jornada_id == m.Jornada.id)
+               .filter(m.Jornada.equipo_id == equipo_id,
+                       m.Jornada.fecha >= desde, m.Jornada.fecha <= hasta,
+                       m.AsignacionViatico.persona_id.in_(personas))
+               .all())
+    return [v for v in tocados
+            if v.estatus not in SIN_TOCAR or v.comprobantes
+            or float(v.monto_comprobado or 0) > 0]
+
+
+def _mover_el_regreso(db: Session, r: m.ReemplazoRecurso, arranco: m.Jornada,
+                      vuelve: m.Jornada, hecho_por_id: int | None,
+                      relevado_en: datetime | None) -> dict:
+    """El titular dijo otra fecha despues de que ya se capturo el regreso.
+
+    Juan dijo el 25, el consultor lo capturo, y el 24 avisa que mejor el
+    28. El movimiento no se duplica: se recorre otra vez y se vuelve a
+    firmar, para que el mes siga leyendo un solo hecho.
+
+    Por dentro es el mismo relevo, en el sentido que toque: si se atrasa,
+    el que cubria recupera los dias que ya habian vuelto al titular; si
+    se adelanta, el titular se lleva unos dias mas.
+
+    Dos cosas lo bloquean, y las dos son la misma: que el dinero ya se
+    haya movido. Un viatico pedido, transferido o comprobado no se
+    desanda a mano --eso seria peor que el error-- y lo que corresponde
+    es un cambio nuevo, con su rastro.
+    """
+    fin = db.get(m.Jornada, r.hasta_jornada_id) if r.hasta_jornada_id else None
+    if not fin:
+        raise HTTPException(409, "Ese cambio no tiene ultimo dia que mover")
+
+    # Si el dia del regreso se partio, ese dia ya esta repartido entre los
+    # dos y tiene su hora. Moverlo seria rehacer una nomina.
+    if _se_partio(db, r, fin):
+        raise HTTPException(409, {
+            "mensaje": ("El dia del regreso se partio: ese dia ya esta "
+                        "repartido entre los dos, con su hora. Para "
+                        "cambiarlo hay que hacer un cambio nuevo."),
+            "dia": fin.fecha.isoformat(),
+        })
+
+    vuelve_hoy = _primer_dia_abierto(db, arranco.equipo_id,
+                                     fin.fecha + timedelta(days=1))
+    if not vuelve_hoy:
+        raise HTTPException(409, "Ya no quedan dias abiertos despues de ese cambio")
+    if vuelve.fecha == vuelve_hoy.fecha:
+        raise HTTPException(409, {
+            "mensaje": "El titular ya regresa ese dia.",
+            "regresa": vuelve_hoy.fecha.isoformat()})
+
+    titular, cubre = _quienes(r)
+    if vuelve.fecha > vuelve_hoy.fecha:
+        # Se atrasa: el que cubria recupera los dias que ya eran del titular.
+        hasta = (db.query(m.Jornada)
+                 .filter(m.Jornada.equipo_id == arranco.equipo_id,
+                         m.Jornada.fecha >= vuelve_hoy.fecha,
+                         m.Jornada.fecha < vuelve.fecha,
+                         m.Jornada.estatus.notin_([m.EstatusJornada.CANCELADA,
+                                                   m.EstatusJornada.TERMINADA]))
+                 .order_by(m.Jornada.fecha.desc()).first())
+        if not hasta:
+            raise HTTPException(409, "No hay dias abiertos que recuperar")
+        _no_pasarse_del_tope(arranco, hasta)
+        _no_con_dinero(_dinero_trabado(db, r, arranco.equipo_id,
+                                       vuelve_hoy.fecha, hasta.fecha))
+        hecho = _relevar_al_reves(db, r, vuelve_hoy, hasta, titular, cubre,
+                                  hecho_por_id, relevado_en)
+        cerrado = _firmar_el_cierre(db, r, arranco, vuelve, hecho, hecho_por_id)
+        # Esos dias no volvieron al titular: se los llevo el que cubre.
+        cerrado["jornadas_recuperadas"] = cerrado.pop("jornadas_devueltas")
+        cerrado["jornadas_devueltas"] = []
+        return cerrado
+
+    # Se adelanta: el titular se lleva unos dias mas.
+    _no_con_dinero(_dinero_trabado(db, r, arranco.equipo_id, vuelve.fecha,
+                                   fin.fecha))
+    hecho = _relevar_al_reves(db, r, vuelve, fin, cubre, titular,
+                              hecho_por_id, relevado_en)
+    cerrado = _firmar_el_cierre(db, r, arranco, vuelve, hecho, hecho_por_id)
+    cerrado["jornadas_recuperadas"] = []
+    return cerrado
+
+
+def _no_con_dinero(trabados: list[m.AsignacionViatico]) -> None:
+    if trabados:
+        raise HTTPException(409, {
+            "mensaje": ("El dinero de esos dias ya se movio, asi que el "
+                        "regreso no se puede correr. Si hay que cambiarlo, "
+                        "se hace un cambio nuevo, con su rastro."),
+            "viaticos": [v.id for v in trabados],
+        })
+
+
+def _no_pasarse_del_tope(arranco: m.Jornada, hasta: m.Jornada) -> None:
+    """Atrasar un regreso no puede saltarse el tope del mes.
+
+    Es el mismo candado de siempre visto por el otro lado: si el regreso
+    se corre al 2 de octubre, el que cubre se quedaria con dias de
+    octubre que nadie pidio.
+    """
+    servicio = arranco.equipo.servicio if arranco.equipo else None
+    if servicio and servicio.tipo == m.TipoServicio.IMPLANTADO:
+        tope = ultimo_dia_del_mes(arranco.fecha)
+        if hasta.fecha > tope:
+            raise HTTPException(409, {
+                "mensaje": ("Ese regreso se pasa del mes. El cambio termina "
+                            "el ultimo dia del mes; para seguir despues hay "
+                            "que pedirlo otra vez."),
+                "tope": tope.isoformat(),
+            })
+
+
+def _firmar_el_cierre(db: Session, r: m.ReemplazoRecurso, arranco: m.Jornada,
+                      vuelve: m.Jornada, hecho: dict,
+                      hecho_por_id: int | None) -> dict:
+    """Recorre el `hasta` del movimiento y lo firma.
+
+    El relevo que acaba de correr abrio su propio movimiento; ese se
+    borra aqui, porque el hecho es el cierre del primero y no otro
+    cambio.
+    """
+    partidas = hecho["jornadas_partidas"]
+    nuevo = db.get(m.ReemplazoRecurso, hecho["reemplazo_id"])
+    # La propuesta se rescata antes de borrar el movimiento temporal: es
+    # el unico lugar donde quedo escrita, y sin ella no se puede saber
+    # despues si el consultor corrigio la hora del regreso.
+    propuesta = nuevo.hora_propuesta if nuevo else None
+    if nuevo:
+        db.delete(nuevo)
+
+    # Hasta que dia se queda el que cubrio. Si el dia del regreso se
+    # partio, ese dia todavia lo trabajo el: cuenta como suyo.
+    if vuelve.fecha.isoformat() in partidas:
+        ultimo = vuelve
+    else:
+        ultimo = (db.query(m.Jornada)
+                  .filter(m.Jornada.equipo_id == arranco.equipo_id,
+                          m.Jornada.fecha >= arranco.fecha,
+                          m.Jornada.fecha < vuelve.fecha,
+                          m.Jornada.estatus != m.EstatusJornada.CANCELADA)
+                  .order_by(m.Jornada.fecha.desc()).first()) or arranco
+
+    # Los dias se recuentan mirando las asignaciones, no restando: un
+    # dia partido sigue siendo suyo y una jornada cancelada en medio no
+    # lo era.
+    tabla, columna = _asignacion_de(r)
+    _, cubre = _quienes(r)
+    cubiertos = (db.query(tabla.id)
+                 .join(m.Jornada, tabla.jornada_id == m.Jornada.id)
+                 .filter(m.Jornada.equipo_id == arranco.equipo_id,
+                         m.Jornada.fecha >= arranco.fecha,
+                         m.Jornada.fecha <= ultimo.fecha,
+                         columna == cubre)
+                 .count())
+
+    r.hasta_jornada_id = ultimo.id
+    r.jornadas_afectadas = cubiertos
+    r.regreso_en = reloj.ahora_de_la_jornada(db, vuelve)
+    r.regreso_por_id = hecho_por_id
+    # Se vuelve a escribir cada vez: si el regreso se corrio y ya no
+    # parte ningun dia, tampoco hay propuesta que guardar.
+    r.hora_propuesta_regreso = propuesta
+    db.flush()
+
+    sale_id, _ = _quienes(r)
+    return {
+        "cerrado": r.id,
+        "servicio_id": r.servicio_id,
+        "tipo": r.tipo.value,
+        "regresa": _como_se_llama(db, r, sale_id),
+        "sale": _como_se_llama(db, r, cubre),
+        "desde": arranco.fecha.isoformat(),
+        "hasta": ultimo.fecha.isoformat(),
+        "dias_cubiertos": cubiertos,
+        "jornadas_devueltas": hecho["jornadas_afectadas"],
+        # Los que el que cubria recupera cuando el regreso se atrasa. La
+        # primera vez siempre va vacia; la forma es una sola.
+        "jornadas_recuperadas": [],
+        # Si el que cubria alcanzo a trabajar la manana del dia del
+        # regreso, ese dia lo cobran los dos.
+        "jornadas_partidas": partidas,
+        "jornadas_con_choque": hecho["jornadas_con_choque"],
+        # La hora que el sistema propone para partir ese dia: la ultima
+        # marca del que cubria. El consultor la confirma o la corrige.
+        "hora_propuesta": hecho.get("hora_propuesta"),
+        "viaticos": hecho["viaticos"],
+        # La unidad que vuelve cambia de manos otra vez: si nadie la
+        # recibe, un golpe en ella se queda sin dueno.
+        "revision_pendiente": hecho.get("revision_pendiente"),
+    }
 
 
 # ==================================================================

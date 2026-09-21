@@ -234,3 +234,90 @@ def test_el_dia_de_implantado_se_paga_con_la_tabla_de_implantado(
         assert float(pago["monto"]) == 1234, pago
     finally:
         db.close()
+
+
+def test_una_jornada_no_se_le_puede_pagar_dos_veces_a_la_misma_persona(
+        cliente, sesion, datos):
+    """El candado, ahora en la base y no solo en Python.
+
+    `jornadas_pendientes` saca lo que ya se pago y lo descuenta, y entre
+    leer eso y escribir el corte hay una rendija: dos cortes calculados
+    al mismo tiempo leen los dos que la jornada esta libre. La misma
+    semana ya chocaba --`nomina_semanal` es unica por pais y fecha-- y
+    dos semanas distintas del mismo pais no.
+
+    Aqui se simula el final de esa carrera sin hilos: el renglon del
+    segundo corte ya existe y se intenta colgarle la jornada que el
+    primero ya pago. La base lo rechaza.
+    """
+    from datetime import timedelta
+
+    import pytest
+    from sqlalchemy.exc import IntegrityError
+
+    from app import models as m
+    from app.db import SessionLocal
+
+    _dos_dias_con_dos_roles(cliente, sesion, datos)
+    n = _corte(cliente, sesion("finanzas"), datos)
+
+    db = SessionLocal()
+    try:
+        pagado = (db.query(m.ConceptoNomina)
+                  .join(m.RenglonNomina,
+                        m.ConceptoNomina.renglon_id == m.RenglonNomina.id)
+                  .filter(m.RenglonNomina.nomina_id == n["id"],
+                          m.ConceptoNomina.jornada_id.isnot(None)).first())
+        assert pagado is not None
+        # La persona baja al concepto: es lo que hace que el candado
+        # quepa en una sola tabla.
+        renglon = db.get(m.RenglonNomina, pagado.renglon_id)
+        assert pagado.persona_id == renglon.persona_id
+
+        # Otro corte, otra semana, el mismo pais y la misma persona.
+        otra = m.NominaSemanal(
+            pais_id=datos["mx"]["id"],
+            fecha_corte=db.get(m.NominaSemanal, n["id"]).fecha_corte
+            + timedelta(days=7),
+            moneda=m.Moneda.MXN)
+        db.add(otra)
+        db.flush()
+        otro_renglon = m.RenglonNomina(nomina_id=otra.id,
+                                       persona_id=pagado.persona_id)
+        db.add(otro_renglon)
+        db.flush()
+
+        db.add(m.ConceptoNomina(
+            renglon_id=otro_renglon.id, persona_id=pagado.persona_id,
+            jornada_id=pagado.jornada_id, descripcion="el mismo dia otra vez",
+            monto=pagado.monto))
+        with pytest.raises(IntegrityError):
+            db.flush()
+    finally:
+        db.rollback()
+        db.close()
+
+
+def test_los_ajustes_no_se_estorban_entre_si(cliente, sesion, datos):
+    """Un ajuste no cuelga de ninguna jornada, y ahi `jornada_id` va en
+    nulo. Postgres no compara nulos entre si, asi que la restriccion no
+    le estorba: una persona puede arrastrar varios ajustes en el mismo
+    corte sin que la base los confunda con un dia pagado dos veces."""
+    from app import models as m
+    from app.db import SessionLocal
+
+    _dos_dias_con_dos_roles(cliente, sesion, datos)
+    n = _corte(cliente, sesion("finanzas"), datos)
+
+    db = SessionLocal()
+    try:
+        renglon = (db.query(m.RenglonNomina)
+                   .filter_by(nomina_id=n["id"]).first())
+        for cuantos in range(2):
+            db.add(m.ConceptoNomina(
+                renglon_id=renglon.id, persona_id=renglon.persona_id,
+                jornada_id=None, descripcion=f"ajuste {cuantos}", monto=100))
+        db.flush()          # no revienta: los dos van con la jornada en nulo
+    finally:
+        db.rollback()
+        db.close()

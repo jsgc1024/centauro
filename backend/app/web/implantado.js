@@ -9,14 +9,31 @@
    el trato, que no cambia, y la plantilla del primer mes. */
 import { api, sesion } from "./api.js";
 import { catalogos } from "./catalogos.js";
-import { campo, dinero, entrada, estatus, etiqueta, h, lista, mensaje, telefono, vaciar } from "./util.js";
+import { aviso, buscador, campo, coincide, conAyuda, dinero, entrada,
+         estatus, etiqueta, h, lista, mensaje, telefono,
+         vaciar } from "./util.js";
 import { buscadorDeLugar } from "./mapa.js";
+import { bloqueRevisionUnidad } from "./servicio.js";
 import { IDIOMAS, idioma, t } from "./idioma.js";
 
 const TONO_ESTATUS = {
-  borrador: "", solicitado: "info", cotizado: "", autorizado: "ok", planeado: "alerta",
-  asignado: "ok", en_curso: "alerta", terminado: "", cerrado: "ok",
-  cancelado: "grave",
+  /* El semaforo del servicio, de izquierda a derecha en el tiempo.
+
+     Azul es "listo y esperando": el equipo esta completo y el dia
+     todavia no llega. Verde es "el equipo ya esta con el principal",
+     que es el estado bueno de verdad y el que la pantalla debe hacer
+     saltar. Ambar es lo que le falta algo.
+
+     Y por eso `cerrado` se apaga a gris: un servicio terminado no
+     necesita atencion, y dejarlo en verde hacia que el color mas fuerte
+     de la lista lo llevaran los que ya no importan --con doscientos
+     servicios cerrados, el verde dejaba de querer decir nada--. */
+  borrador: "", solicitado: "", cotizado: "", autorizado: "info",
+  planeado: "alerta",
+  asignado: "azul",
+  arribado: "arribo",
+  en_curso: "ok",
+  terminado: "cafe", cerrado: "negro", cancelado: "grave",
 };
 
 /* Hasta que dia de la semana llega cada esquema. En JavaScript el
@@ -50,7 +67,12 @@ function widgetCalendario(alPicar = null) {
 
   /* cubiertos: fecha ISO -> quien la cubre. Vacio en el alta, porque
      todavia no hay nadie asignado a ningun dia. */
-  function pintar(fechaISO, diasServicio, cubiertos = {}) {
+  function pintar(fechaISO, diasServicio, cubiertos = {},
+                  turno = "natural", cancelados = []) {
+    /* Los dias que se sacaron del servicio. El color entre semana no
+       sale de que exista la jornada sino de que el dia este contratado,
+       asi que sin esta lista un dia cancelado seguia en verde. */
+    const fuera = new Set(cancelados);
     vaciar(rejilla);
     vaciar(titulo);
     if (!fechaISO) {
@@ -91,11 +113,20 @@ function widgetCalendario(alPicar = null) {
       let tono = "gris";
       let titulo_ = t("imp_dia_sin_servicio");
 
-      if (quien) {
+      // Un dia cancelado manda sobre todo lo demas: salio del servicio.
+      if (fuera.has(iso)) {
+        titulo_ = t("imp_dia_cancelado");
+      } else if (quien) {
         tono = "verde";
         titulo_ = quien;
       } else if (numero < desde) {
         titulo_ = t("imp_dia_antes");
+      } else if (turno === "12x36") {
+        /* En 12x36 no hay fin de semana que decidir: entre las dos
+           cubren los siete dias, asi que del dia que arranca en
+           adelante el mes va entero en verde. */
+        tono = "verde";
+        titulo_ = t("imp_dia_cubierto");
       } else if (semana < 5) {
         tono = "verde";
         titulo_ = t("imp_dia_cubierto");
@@ -135,7 +166,8 @@ function widgetCalendario(alPicar = null) {
    nombre y cada placa se ofrecen con cuantos de los dias verdes del
    calendario puede de verdad. */
 function widgetPlantilla(cat, ciudadId, alCambiar = () => {},
-                         disponibilidad = () => null) {
+                         disponibilidad = () => null,
+                         turno = () => "natural") {
   const gente = [];
   const flota = [];
   const cuerpoGente = h("tbody");
@@ -228,11 +260,41 @@ function widgetPlantilla(cat, ciudadId, alCambiar = () => {},
   }
 
   function ponerOpciones(control, opciones) {
+    // La lista completa se guarda aparte: el buscador pinta un
+    // subconjunto y sin esto cada filtro se comeria lo que quedo fuera.
+    control.todas = opciones;
+    pintarOpciones(control);
+  }
+
+  function pintarOpciones(control) {
     const antes = control.value;
-    control.replaceChildren(...opciones.map(
+    const texto = (control.buscador ? control.buscador.value : "")
+      .trim().toLowerCase();
+    const cabe = (o) => !texto
+      || String(o.texto).toLowerCase().includes(texto)
+      // Lo ya elegido nunca se filtra: un buscador que deselecciona a
+      // quien ya estaba puesto hace perder trabajo sin avisar.
+      || String(o.valor) === String(antes);
+
+    const visibles = (control.todas || []).filter(cabe);
+    control.replaceChildren(...visibles.map(
       o => h("option", { value: o.valor }, o.texto)));
     control.value = [...control.options].some(o => o.value === antes)
       ? antes : "";
+  }
+
+  /* El buscador va ARRIBA de la lista, no en su lugar.
+
+     Escribir tres letras deja la lista en dos renglones; borrarlas la
+     devuelve entera. Quien no se acuerda del nombre abre el
+     desplegable como siempre. */
+  function conBuscador(control) {
+    const buscar = h("input", { type: "search", autocomplete: "off",
+      clase: "chico", style: "width:100%;margin-bottom:4px",
+      placeholder: t("imp_buscar_nombre") });
+    control.buscador = buscar;
+    buscar.addEventListener("input", () => pintarOpciones(control));
+    return h("div", {}, buscar, control);
   }
 
   /* Al cambiar la ciudad, la fecha o los dias, las listas se rehacen.
@@ -248,6 +310,12 @@ function widgetPlantilla(cat, ciudadId, alCambiar = () => {},
       ponerOpciones(f.unidad, opcionesUnidad(f.categoria.value));
       ponerOpciones(f.conductor, opcionesConductor());
     }
+    // Y las del turno, que viven fuera de las tablas.
+    ponerOpciones(tCategoria, opcionesPerfil());
+    ponerOpciones(tPrimera, opcionesDelTurno(tCategoria.value));
+    ponerOpciones(tSegunda, opcionesDelTurno(tCategoria.value));
+    ponerOpciones(tCatUnidad, opcionesCategoria());
+    ponerOpciones(tUnidad, opcionesUnidad(tCatUnidad.value));
   }
 
   function agregarPersona() {
@@ -259,9 +327,10 @@ function widgetPlantilla(cat, ciudadId, alCambiar = () => {},
     const persona = lista("persona_id", opcionesPersona(""),
                           { onchange: () => cambio() });
 
+    persona.todas = opcionesPersona("");
     const fila = h("tr", {},
       h("td", {}, perfil),
-      h("td", {}, persona),
+      h("td", {}, conBuscador(persona)),
       h("td", {}, h("button", { clase: "claro chico", type: "button",
         onclick: () => quitar() }, t("quitar"))));
 
@@ -275,6 +344,7 @@ function widgetPlantilla(cat, ciudadId, alCambiar = () => {},
 
     gente.push(registro);
     cuerpoGente.append(fila);
+    verTurno();
     cambio();
   }
 
@@ -289,9 +359,10 @@ function widgetPlantilla(cat, ciudadId, alCambiar = () => {},
     const conductor = lista("lleva_id", opcionesConductor(),
                             { onchange: () => cambio() });
 
+    unidad.todas = opcionesUnidad("");
     const fila = h("tr", {},
       h("td", {}, categoria),
-      h("td", {}, unidad),
+      h("td", {}, conBuscador(unidad)),
       h("td", {}, conductor),
       h("td", {}, h("button", { clase: "claro chico", type: "button",
         onclick: () => quitar() }, t("quitar"))));
@@ -317,8 +388,12 @@ function widgetPlantilla(cat, ciudadId, alCambiar = () => {},
   }
 
   /* Lo que se manda: una linea por persona, con la unidad que lleva —si
-     lleva alguna—. Sale de la liga que vive en la unidad. */
+     lleva alguna—. Sale de la liga que vive en la unidad.
+
+     En 12x36 sale de la otra caja: ahi la categoria es una sola para las
+     dos y la unidad tambien, asi que no hay liga que resolver. */
   function valor() {
+    if (turno() === "12x36") return valorDelTurno();
     return gente
       .filter(f => f.persona.value)
       .map(f => {
@@ -332,8 +407,11 @@ function widgetPlantilla(cat, ciudadId, alCambiar = () => {},
       });
   }
 
-  const unidades = () => [...new Set(flota.filter(f => f.unidad.value)
-                                          .map(f => Number(f.unidad.value)))];
+  const unidades = () => (
+    turno() === "12x36"
+      ? (Number(tUnidad.value) ? [Number(tUnidad.value)] : [])
+      : [...new Set(flota.filter(f => f.unidad.value)
+                         .map(f => Number(f.unidad.value)))]);
 
   /* Una ciudad sin gente de seguridad deja los selectores vacios, y un
      selector vacio no explica nada: lo dice. */
@@ -351,8 +429,83 @@ function widgetPlantilla(cat, ciudadId, alCambiar = () => {},
     avisoVacio.replaceChildren(...falta.map(x => h("div", {}, x)));
   }
 
-  const nodo = h("div", {},
-    avisoVacio,
+  /* ------------------------------------------------ el turno de 12x36
+
+     Se arma distinto, y es a proposito. En un implantado natural la
+     plantilla puede ser un conductor y un agente, y cada renglon lleva
+     su rol. Aqui las dos personas son de la MISMA categoria --es
+     regla-- asi que la categoria se elige una vez y no dos, y lo que se
+     agrega son las dos que se van a alternar. La unidad es opcional; si
+     la hay, corre el mes entero y la maneja quien trabaja ese dia. */
+
+  const tCategoria = lista("rol_turno", opcionesPerfil(), {
+    onchange: () => {
+      ponerOpciones(tPrimera, opcionesDelTurno(tCategoria.value));
+      ponerOpciones(tSegunda, opcionesDelTurno(tCategoria.value));
+      cambio();
+    } });
+  const opcionesDelTurno = (rolId) => (
+    rolId ? opcionesPersona(rolId)
+          : [{ valor: "", texto: t("imp_turno_falta_categoria") }]);
+  const tPrimera = lista("persona_turno_1", opcionesDelTurno(""),
+                         { onchange: () => cambio() });
+  const tSegunda = lista("persona_turno_2", opcionesDelTurno(""),
+                         { onchange: () => cambio() });
+  const tEmpieza1 = h("input", { type: "radio", name: "empieza_turno",
+                                 checked: "checked",
+                                 onchange: () => cambio() });
+  const tEmpieza2 = h("input", { type: "radio", name: "empieza_turno",
+                                 onchange: () => cambio() });
+  const tCatUnidad = lista("categoria_turno", opcionesCategoria(), {
+    onchange: () => {
+      ponerOpciones(tUnidad, opcionesUnidad(tCatUnidad.value));
+      cambio();
+    } });
+  const tUnidad = lista("unidad_turno", opcionesUnidad(""),
+                        { onchange: () => cambio() });
+
+  const conEmpieza = (etiqueta, control, radio) => h("div", { clase: "campo" },
+    h("label", {}, etiqueta),
+    h("div", { clase: "fila", style: "gap:10px;align-items:center" },
+      control,
+      h("label", { clase: "casilla", style: "margin:0;white-space:nowrap" },
+        radio, t("imp_col_empieza"))));
+
+  const cajaTurno = h("div", { hidden: true },
+    h("div", { clase: "campo" },
+      h("label", {}, t("imp_turno_categoria")), tCategoria),
+    h("div", { clase: "rejilla dos" },
+      conEmpieza(t("imp_turno_primera"), tPrimera, tEmpieza1),
+      conEmpieza(t("imp_turno_segunda"), tSegunda, tEmpieza2)),
+    h("div", { clase: "rejilla dos" },
+      h("div", { clase: "campo" },
+        h("label", {}, t("imp_col_categoria")), tCatUnidad),
+      h("div", { clase: "campo" },
+        h("label", {}, t("imp_turno_unidad")), tUnidad)),
+    h("div", { clase: "gris chico" }, t("imp_turno_armar_pie")));
+
+  function valorDelTurno() {
+    const rol = Number(tCategoria.value) || null;
+    const unidad = Number(tUnidad.value) || null;
+    return [[tPrimera, tEmpieza1], [tSegunda, tEmpieza2]]
+      .filter(([quien]) => quien.value)
+      .map(([quien, marca]) => ({
+        persona_id: Number(quien.value),
+        rol_id: rol,
+        vehiculo_id: unidad,
+        empieza: marca.checked,
+      }));
+  }
+
+  const cajaNatural = h("div", {});
+
+  function verTurno() {
+    const hay = turno() === "12x36";
+    cajaTurno.hidden = !hay;
+    cajaNatural.hidden = hay;
+  }
+
+  cajaNatural.append(
     h("table", { clase: "lista" },
       h("thead", {}, h("tr", {},
         h("th", {}, t("imp_col_rol")),
@@ -375,10 +528,14 @@ function widgetPlantilla(cat, ciudadId, alCambiar = () => {},
       h("button", { clase: "claro chico", type: "button",
         onclick: () => agregarUnidad() }, t("imp_agregar_unidad"))));
 
+  const nodo = h("div", {}, avisoVacio, cajaTurno, cajaNatural);
+
   revisarCatalogo();
 
+  verTurno();
+
   return { nodo, agregar: agregarPersona, agregarUnidad, repintar,
-           valor, unidades };
+           valor, unidades, verTurno };
 }
 
 /* Por donde opera el servicio. No es un punto: es un pedazo de ciudad,
@@ -500,27 +657,54 @@ export async function carteraImplantados(main) {
   }
 
   const vacio = () => h("span", { clase: "gris" }, "—");
-  const cuerpo = h("tbody");
-  for (const s of servicios) {
-    cuerpo.append(h("tr", { clase: "clic",
-      onclick: () => (location.hash = `#/implantado/${s.servicio_id}`) },
-      h("td", {}, h("b", {}, s.folio),
-        h("div", { clase: "gris chico" }, s.ciudad || "")),
-      h("td", {}, s.cliente || vacio()),
-      h("td", {}, s.ejecutivo || vacio()),
-      h("td", {}, s.titular || vacio()),
-      h("td", {}, s.unidad || vacio()),
-      h("td", {}, s.ultimo_mes || vacio()),
-      h("td", {}, etiqueta(estatus(s.estatus), TONO_ESTATUS[s.estatus] || ""))));
-  }
 
-  main.append(h("table", { clase: "lista" },
-    h("thead", {}, h("tr", {},
-      h("th", {}, t("col_folio")), h("th", {}, t("col_cliente")),
-      h("th", {}, t("col_ejecutivo")), h("th", {}, t("col_titular")),
-      h("th", {}, t("col_unidad")), h("th", {}, t("col_ultimo_mes")),
-      h("th", {}, t("col_estatus")))),
-    cuerpo));
+  /* Por folio, cliente, ciudad, ejecutivo, titular o unidad: el
+     implantado se busca por quien lo cubre tanto como por su folio,
+     porque asi es como se pregunta por telefono. */
+  const zona = h("div");
+  let q = "";
+  const caja = buscador(t("bus_ayuda_implantado"), (texto) => {
+    q = texto;
+    dibujar();
+  });
+  main.append(
+    h("div", { clase: "tarjeta lisa", style: "margin-bottom:16px" },
+      campo(t("bus_buscar"), caja)),
+    zona);
+  dibujar();
+
+  function dibujar() {
+    const filas = servicios.filter(
+      s => coincide(q, s.folio, s.cliente, s.ciudad, s.ejecutivo, s.titular,
+                    s.unidad, estatus(s.estatus)));
+    if (!filas.length) {
+      return zona.replaceChildren(
+        aviso(t("bus_nada").replace("{q}", q.trim())));
+    }
+
+    const cuerpo = h("tbody");
+    for (const s of filas) {
+      cuerpo.append(h("tr", { clase: "clic",
+        onclick: () => (location.hash = `#/implantado/${s.servicio_id}`) },
+        h("td", {}, h("b", {}, s.folio),
+          h("div", { clase: "gris chico" }, s.ciudad || "")),
+        h("td", {}, s.cliente || vacio()),
+        h("td", {}, s.ejecutivo || vacio()),
+        h("td", {}, s.titular || vacio()),
+        h("td", {}, s.unidad || vacio()),
+        h("td", {}, s.ultimo_mes || vacio()),
+        h("td", {}, etiqueta(estatus(s.estatus),
+                             TONO_ESTATUS[s.estatus] || ""))));
+    }
+
+    zona.replaceChildren(h("table", { clase: "lista" },
+      h("thead", {}, h("tr", {},
+        h("th", {}, t("col_folio")), h("th", {}, t("col_cliente")),
+        h("th", {}, t("col_ejecutivo")), h("th", {}, t("col_titular")),
+        h("th", {}, t("col_unidad")), h("th", {}, t("col_ultimo_mes")),
+        h("th", {}, t("col_estatus")))),
+      cuerpo));
+  }
 }
 
 /* ------------------------------------------------------------ alta */
@@ -561,6 +745,47 @@ export async function nuevoImplantado(main) {
 
   const ciudades = lista("plaza_id", [], {
     onchange: () => { verBuscadorCiudad(); traerDisponibilidad(); revisar(); } });
+
+  /* Como se cubre el puesto. Son dos operaciones distintas y de aqui
+     sale el calendario del mes, asi que se dice desde el alta y no
+     despues: en 12x36 el mes entero queda cubierto --dos personas de la
+     misma categoria alternandose dia con dia-- y en 12 horas naturales
+     manda lo que digan los dias del acuerdo. */
+  const turno = lista("turno", [
+    { valor: "natural", texto: t("imp_turno_natural") },
+    { valor: "12x36", texto: t("imp_turno_12x36") },
+  ], { onchange: () => {
+    verTurno();
+    roster.verTurno();
+    // Cambiar de turno cambia que dias tiene el mes: el calendario de
+    // muestra y la disponibilidad salen de ahi.
+    pintarMes();
+    traerDisponibilidad();
+  } });
+
+  const pieTurno = h("div", { clase: "gris chico", style: "margin-top:4px" });
+
+  function verTurno() {
+    const es12x36 = turno.value === "12x36";
+    /* El aviso de "en construccion" se quito el 21 de septiembre: el
+       calendario, la alternancia, los candados, el cobro del mes entero
+       y los viaticos por persona ya estan construidos y probados. Un
+       aviso que sobrevive a lo que anunciaba hace que nadie se atreva a
+       usar la opcion. */
+    pieTurno.replaceChildren(
+      ...(es12x36 ? [h("div", {}, t("imp_turno_pie"))] : []));
+    /* Los dias de la semana no son una eleccion en 12x36: la escala
+       cubre los siete. Se fija en "todos" y se traba, en vez de
+       esconderlo: escondido, el consultor no sabe que dias quedaron, y
+       de este dato salen la disponibilidad del mes y el color del
+       calendario. */
+    if (es12x36) diasServicio.value = "todos";
+    diasServicio.disabled = es12x36;
+    pieDias.replaceChildren(
+      ...(es12x36 ? [h("div", {}, t("imp_dias_fijos"))] : []));
+  }
+
+  const pieDias = h("div", { clase: "gris chico", style: "margin-top:4px" });
 
   // "nueva" no es una ciudad: es la opcion de dar de alta una.
   const ciudadElegida = () => (ciudades.value && ciudades.value !== "nueva"
@@ -726,6 +951,18 @@ export async function nuevoImplantado(main) {
   const ejecutivoCorreo = entrada("ejecutivo_correo", { type: "email" });
   const ejecutivoTelefono = telefono("ejecutivo_telefono");
 
+  /* En que idioma lee cada uno, igual que en el eventual. El vacio del
+     solicitante no es "sin idioma": es "el de su pais", y lo resuelve
+     el servidor con el pais del servicio. */
+  const idiomaEjecutivo = h("select", { name: "idioma_ejecutivo" },
+    ...IDIOMAS.map(i => h("option", {
+      value: i.codigo, selected: i.codigo === "en" || undefined },
+      `${i.bandera} ${i.nombre}`)));
+  const idiomaSolicitante = h("select", { name: "idioma_solicitante" },
+    h("option", { value: "" }, t("idioma_del_pais")),
+    ...IDIOMAS.map(i => h("option", { value: i.codigo },
+                          `${i.bandera} ${i.nombre}`)));
+
   function clavesDeTelefono() {
     const pais = cat.paises.find(p => String(p.id) === String(paises.value));
     const clave = (pais && pais.lada) || "+52";
@@ -800,7 +1037,8 @@ export async function nuevoImplantado(main) {
      el mes que esta vendiendo. */
   const calendario = widgetCalendario();
   const pintarMes = () => calendario.pintar(fechaInicio.value,
-                                            diasServicio.value);
+                                            diasServicio.value, {},
+                                            turno.value);
 
   /* ================================================ precios */
 
@@ -829,7 +1067,7 @@ export async function nuevoImplantado(main) {
   }
 
   const roster = widgetPlantilla(cat, () => ciudadElegida(), () => revisar(),
-                                 () => libres);
+                                 () => libres, () => turno.value);
   const plantilla = () => roster.valor();
   const unidades = () => roster.unidades();
   const repintarPlantilla = () => roster.repintar();
@@ -861,7 +1099,14 @@ export async function nuevoImplantado(main) {
   function faltaDeLaAsignacion() {
     const falta = [];
     if (!modalidadId) falta.push(t("imp_falta_modalidad"));
-    if (!plantilla().length) falta.push(t("imp_falta_plantilla"));
+    // El 12x36 se cubre con dos. Decirlo aqui y no despues de guardar:
+    // el servidor tambien lo revisa, pero enterarse al final de la
+    // captura es enterarse tarde.
+    if (turno.value === "12x36") {
+      if (plantilla().length !== 2) falta.push(t("imp_falta_dos"));
+    } else if (!plantilla().length) {
+      falta.push(t("imp_falta_plantilla"));
+    }
     return falta;
   }
 
@@ -902,6 +1147,8 @@ export async function nuevoImplantado(main) {
       ejecutivo_apellidos: ejecutivoApellidos.value.trim() || null,
       ejecutivo_correo: ejecutivoCorreo.value.trim() || null,
       ejecutivo_telefono: ejecutivoTelefono.valor(),
+      idioma_ejecutivo: idiomaEjecutivo.value,
+      idioma_solicitante: idiomaSolicitante.value || null,
       acuerdo: {
         cubre: cubre.value.trim() || null,
         no_cubre: noCubre.value.trim() || null,
@@ -910,6 +1157,7 @@ export async function nuevoImplantado(main) {
           d => d.valor === diasServicio.value) || {}).texto || null,
         fecha_inicio: fechaInicio.value || null,
         dias_servicio: diasServicio.value,
+        turno: turno.value,
         origen_direccion: lugar.direccion || null,
         origen_lat: lugar.lat,
         origen_lon: lugar.lon,
@@ -1019,7 +1267,9 @@ export async function nuevoImplantado(main) {
         campo(t("pais"), paises)),
       h("div", { clase: "rejilla tres" },
         h("div", { clase: "campo" },
-          h("label", {}, t("ciudad_opera")), ciudades, cajaCiudad)),
+          h("label", {}, t("ciudad_opera")), ciudades, cajaCiudad),
+        h("div", { clase: "campo" },
+          h("label", {}, t("imp_turno")), turno, pieTurno)),
 
       h("h4", { clase: "grupo" }, t("quien_solicita")),
       campo(t("elegir_solicitante"), solicitanteElegido),
@@ -1034,7 +1284,14 @@ export async function nuevoImplantado(main) {
         campo(t("nombre"), ejecutivoNombre),
         campo(t("apellido"), ejecutivoApellidos),
         campo(t("correo_campo"), ejecutivoCorreo),
-        campo(t("telefono"), ejecutivoTelefono))),
+        campo(t("telefono"), ejecutivoTelefono)),
+
+      h("h4", { clase: "grupo" }, t("idioma_titulo")),
+      h("p", { clase: "gris chico", style: "margin:0 0 12px" },
+        t("idioma_sub")),
+      h("div", { clase: "rejilla tres" },
+        campo(t("idioma_principal"), idiomaEjecutivo),
+        campo(t("idioma_solicitante"), idiomaSolicitante))),
 
     h("div", { clase: "tarjeta" },
       h("h4", {}, t("imp_trato")),
@@ -1049,13 +1306,15 @@ export async function nuevoImplantado(main) {
         campo(t("imp_geocerca"), punto.metros)),
       h("div", { clase: "rejilla tres" },
         campo(t("imp_fecha_inicio"), fechaInicio),
-        campo(t("imp_dias_semana"), diasServicio),
+        h("div", { clase: "campo" },
+          h("label", {}, t("imp_dias_semana")), diasServicio, pieDias),
         campo(t("imp_hora"), horaPresentacion)),
       campo(t("imp_zona"), zona.nodo),
       h("div", { clase: "rejilla dos" },
         campo(t("imp_cubre"), cubre),
         campo(t("imp_no_cubre"), noCubre)),
-      h("h4", { clase: "grupo" }, t("imp_reporta")),
+      conAyuda("h4", t("imp_reporta"), "ay_imp_reporta",
+               { clase: "grupo" }),
       h("div", { clase: "rejilla cuatro" },
         campo(t("nombre"), reportaNombre),
         campo(t("apellido"), reportaApellidos),
@@ -1110,6 +1369,11 @@ export async function nuevoImplantado(main) {
    cosas: muestra lo que ya hay y, si el mes no se ha abierto, lo abre
    desde aqui sin volver a capturar nada. */
 
+function nombreDelTurno(codigo) {
+  if (codigo === "12x36") return t("imp_turno_12x36");
+  return t("imp_turno_natural");
+}
+
 function renglon(etiqueta_, valor) {
   if (!valor) return null;
   return h("div", { clase: "dato" },
@@ -1144,14 +1408,20 @@ export async function pantallaImplantado(main, servicioId) {
     h("div", { clase: "acciones", style: "margin:0 0 16px" },
       h("button", { clase: "claro chico", type: "button",
         onclick: () => (location.hash = "#/implantados") },
-        t("imp_volver"))));
+        t("imp_volver")),
+      /* El otro lado del mismo servicio: el calendario, quien va cada
+         dia y los cambios de recurso. Sin esto hay que salirse a la
+         cartera para pasar de una pantalla a la otra. */
+      h("button", { clase: "claro chico", type: "button",
+        onclick: () => (location.hash = `#/servicio/${servicioId}`) },
+        t("imp_ver_operacion"))));
 
   /* --------------------------------------------------------- cliente */
 
   const consultor = cat.consultores.find(
     c => String(c.id) === String(servicio.consultor_id));
 
-  main.append(h("div", { clase: "tarjeta" },
+  main.append(...[h("div", { clase: "tarjeta" },
     h("h4", {}, t("cliente")),
     h("div", { clase: "rejilla tres" },
       renglon(t("cliente"), ficha.cliente),
@@ -1160,7 +1430,7 @@ export async function pantallaImplantado(main, servicioId) {
     h("div", { clase: "rejilla tres" },
       renglon(t("quien_solicita"), servicio.solicitante_completo),
       renglon(t("ejecutivo_principal"), servicio.ejecutivo_completo),
-      renglon(t("telefono"), servicio.ejecutivo_telefono))));
+      renglon(t("telefono"), servicio.ejecutivo_telefono)))].filter(Boolean));
 
   /* --------------------------------------------------------- acuerdo */
 
@@ -1175,17 +1445,25 @@ export async function pantallaImplantado(main, servicioId) {
   main.append(tarjetaAcuerdo);
 
   function verAcuerdo() {
-    tarjetaAcuerdo.replaceChildren(
+    tarjetaAcuerdo.replaceChildren(...[
       h("div", { clase: "cabeza-servicio" },
-        h("h4", { style: "margin:0" }, t("imp_trato")),
+        conAyuda("h4", t("imp_trato"), "ay_imp_trato", { style: "margin:0" }),
         h("button", { clase: "claro chico", type: "button",
           onclick: () => editarAcuerdo() }, t("imp_editar"))),
       h("div", { clase: "rejilla dos" },
         renglon(t("imp_punto_fijo"), acuerdo.origen_direccion),
         renglon(t("imp_zona"), acuerdo.zona_operacion)),
+      /* La hora del encuentro se leia solo en el alta. Quien abre el
+         trato para saber a que hora es no tenia donde verla. */
+      h("div", { clase: "rejilla dos" },
+        renglon(t("imp_hora_encuentro"),
+                acuerdo.hora_presentacion
+                  ? acuerdo.hora_presentacion.slice(0, 5) : null)),
       arranque(servicioId, acuerdo),
       h("div", { clase: "rejilla dos" },
         renglon(t("imp_dias_semana"), acuerdo.dias_semana),
+        renglon(t("imp_turno"), nombreDelTurno(acuerdo.turno))),
+      h("div", { clase: "rejilla dos" },
         renglon(t("ejecutivo_principal"), ficha.ejecutivo)),
       h("div", { clase: "rejilla dos" },
         renglon(t("imp_cubre"), acuerdo.cubre),
@@ -1198,7 +1476,7 @@ export async function pantallaImplantado(main, servicioId) {
       /* El tabulador es parte del trato, no de la operacion del mes:
          por eso vive aqui y no en el panel de viaticos. Ahi se usa;
          aqui se acuerda. */
-      bloqueTabulador(servicioId));
+      bloqueTabulador(servicioId)].filter(Boolean));
   }
 
   function editarAcuerdo() {
@@ -1237,6 +1515,13 @@ export async function pantallaImplantado(main, servicioId) {
       reportaTelefono.poner(acuerdo.reporta_a_telefono);
     }
 
+    /* La hora vive en el contrato del mes, no en el acuerdo: se manda
+       aparte y solo si se movio, porque mover la hora mueve los dias
+       del mes que todavia no arrancan. */
+    const horaEncuentro = h("input", { type: "time",
+      value: (acuerdo.hora_presentacion || "").slice(0, 5) });
+    const horaOriginal = horaEncuentro.value;
+
     const boton = h("button", { type: "button",
                                 onclick: () => guardar() }, t("imp_guardar"));
 
@@ -1244,7 +1529,8 @@ export async function pantallaImplantado(main, servicioId) {
       const lugar = punto.valor();
       boton.disabled = true;
       try {
-        await api.put(`/implantados/${servicioId}/acuerdo`, {
+        const guardado = await api.put(
+          `/implantados/${servicioId}/acuerdo`, {
           cubre: cubre.value.trim() || null,
           no_cubre: noCubre.value.trim() || null,
           zona_operacion: zona.valor(),
@@ -1262,7 +1548,33 @@ export async function pantallaImplantado(main, servicioId) {
           reporta_a_correo: reportaCorreo.value.trim() || null,
           protocolo_contacto: protocolo.value.trim() || null,
         });
-        mensaje(t("imp_acuerdo_corregido"));
+        if (horaEncuentro.value && horaEncuentro.value !== horaOriginal) {
+          const hecho = await api.put(
+            `/implantados/${servicioId}/hora-presentacion`,
+            { hora: `${horaEncuentro.value}:00` });
+          if (hecho.dias_trabados.length) {
+            mensaje(t("imp_hora_trabados")
+                      .replace("{n}", hecho.dias_trabados.length), "alerta");
+          }
+        }
+        /* Los dias contratados del mes cambian con el arranque, y eso
+           es lo que se factura: se dice en pantalla, no en silencio. */
+        const ajuste = guardado.contrato_ajustado;
+        if (ajuste && ajuste.dias_base !== ajuste.dias_base_antes) {
+          mensaje(t("imp_base_cambio")
+                    .replace("{p}", ajuste.periodo)
+                    .replace("{a}", ajuste.dias_base_antes)
+                    .replace("{b}", ajuste.dias_base), "alerta");
+        }
+        mensaje(guardado.dias_actualizados.length
+          ? t("imp_acuerdo_bajado")
+              .replace("{n}", guardado.dias_actualizados.length)
+          : t("imp_acuerdo_corregido"));
+        if (await resolverDiasFuera(servicioId, guardado.dias_fuera)) return;
+        if (await resolverDiasQueVuelven(servicioId,
+                                         guardado.dias_que_vuelven)) return;
+        if (await resolverDiasQueFaltan(servicioId,
+                                        guardado.dias_que_faltan)) return;
         location.reload();
       } catch (err) {
         mensaje(err.message, "grave");
@@ -1276,6 +1588,7 @@ export async function pantallaImplantado(main, servicioId) {
         h("button", { clase: "claro chico", type: "button",
           onclick: () => verAcuerdo() }, t("cancelar"))),
       campo(t("imp_punto_fijo"), punto.direccion),
+      campo(t("imp_hora_encuentro"), horaEncuentro),
       punto.resultados,
       punto.cajaMapa,
       h("div", { clase: "rejilla tres" },
@@ -1289,7 +1602,8 @@ export async function pantallaImplantado(main, servicioId) {
       h("div", { clase: "rejilla dos" },
         campo(t("imp_cubre"), cubre),
         campo(t("imp_no_cubre"), noCubre)),
-      h("h4", { clase: "grupo" }, t("imp_reporta")),
+      conAyuda("h4", t("imp_reporta"), "ay_imp_reporta",
+               { clase: "grupo" }),
       h("div", { clase: "rejilla cuatro" },
         campo(t("nombre"), reportaNombre),
         campo(t("apellido"), reportaApellidos),
@@ -1399,20 +1713,30 @@ async function pintarMesDelServicio(main, servicioId, ficha) {
 
   const pestanas = h("div", { clase: "acciones", style: "margin:0 0 14px" });
   const cuerpo = h("div", {});
-  tarjeta.append(
+  tarjeta.append(...[
     h("div", { clase: "rejilla tres" },
       renglon(t("col_titular"), ficha.titular),
       renglon(t("col_unidad"), ficha.unidad),
       renglon(t("col_ultimo_mes"), ficha.ultimo_mes)),
-    periodos.length > 1 ? pestanas : null,
-    cuerpo);
+    pestanas,
+    cuerpo].filter(Boolean));
 
+  /* Los meses abiertos, siempre a la vista y con su nombre.
+
+     Se pintaban solo cuando habia mas de uno y sin decir que eran: dos
+     botones sueltos que dicen "09/2026" y "10/2026" no se leen como un
+     selector de mes, y quien acababa de abrir octubre seguia viendo
+     septiembre sin saber por donde cambiarlo. Con uno solo tambien se
+     dice: asi se sabe que mes se esta mirando. */
   function pintarPestanas() {
-    pestanas.replaceChildren(...periodos.map(p => h("button", {
-      type: "button",
-      clase: p === actual ? "chico" : "claro chico",
-      onclick: () => { actual = p; pintarPestanas(); pintar(); },
-    }, p.periodo)));
+    pestanas.replaceChildren(
+      h("span", { clase: "chico gris", style: "margin-right:4px" },
+        t("imp_mes_visto")),
+      ...periodos.map(p => h("button", {
+        type: "button",
+        clase: p === actual ? "chico" : "claro chico",
+        onclick: () => { actual = p; pintarPestanas(); pintar(); },
+      }, p.periodo)));
   }
 
   async function pintar() {
@@ -1436,7 +1760,20 @@ async function pintarMesDelServicio(main, servicioId, ficha) {
       (fecha) => fichaDelDia(servicioId, fecha, fichaDia));
     const primero = datos.dias.find(d => d.estado !== "sin_servicio");
     calendario.pintar(primero ? primero.fecha : datos.dias[0].fecha,
-                      datos.dias_servicio, cubiertos);
+                      datos.dias_servicio, cubiertos, datos.turno,
+                      datos.cancelados || []);
+
+    /* Y si el mes que se esta viendo es el corriente, el dia de hoy se
+       abre solo. En un implantado casi toda pregunta es sobre hoy o
+       sobre ayer --es un servicio continuo, no un evento-- y obligar a
+       buscar la fecha en la rejilla es un clic de mas treinta veces al
+       mes. Si hoy no cae en este mes, o cae en un dia sin servicio, no
+       se abre nada: mejor vacio que abriendo el dia equivocado. */
+    const hoyISO = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+      .toISOString().slice(0, 10);
+    if (datos.dias.some(d => d.fecha === hoyISO && d.estado !== "sin_servicio")) {
+      fichaDelDia(servicioId, hoyISO, fichaDia);
+    }
 
     const porCubrir = datos.dias.filter(d => d.estado === "por_cubrir");
     // Los viaticos van antes del calendario: el consultor decide el
@@ -1537,12 +1874,12 @@ function bloqueHoja(servicioId, estatus) {
       location.reload();
     } catch (err) {
       const d = err.detalle || {};
-      traba.replaceChildren(
+      traba.replaceChildren(...[
         h("b", {}, err.message),
         d.que_hacer ? h("div", { clase: "chico" }, d.que_hacer) : null,
         d.dias && d.dias.length
           ? h("div", { clase: "chico ambar" }, d.dias.join(" · "))
-          : null);
+          : null].filter(Boolean));
       traba.hidden = false;
       mensaje(err.message, "grave");
       liberar.disabled = false;
@@ -1550,7 +1887,7 @@ function bloqueHoja(servicioId, estatus) {
   }
 
   return h("div", { clase: "tarjeta" },
-    h("h4", {}, t("ts_titulo")),
+    conAyuda("h4", t("ts_titulo"), "ay_imp_hoja"),
     h("p", { clase: "gris chico", style: "margin:0 0 10px" },
       t("imp_ts_nota")),
     /* Liberar la hoja es decir que el servicio ya esta armado: ahi pasa
@@ -1686,7 +2023,7 @@ async function fichaDelDia(servicioId, fecha, caja) {
     }
   }
 
-  caja.replaceChildren(
+  caja.replaceChildren(...[
     h("div", { clase: "cabeza-servicio" },
       h("div", {},
         h("b", { style: "text-transform:capitalize" }, comoSeLee),
@@ -1709,7 +2046,21 @@ async function fichaDelDia(servicioId, fecha, caja) {
 
     h("div", { clase: "acciones", style: "margin-top:14px" },
       filas.length ? boton : null,
-      dia.se_puede_cerrar ? cerrar : null));
+      dia.se_puede_cerrar ? cerrar : null)].filter(Boolean));
+
+  /* Quien iba, arriba; que paso, abajo. Son las dos mitades de la misma
+     pregunta y hasta hoy vivian en dos pantallas distintas.
+
+     Se pide DESPUES de pintar lo demas y se agrega cuando llega: lo de
+     arriba ya se puede leer y no tiene por que esperar a la bitacora.
+     Y solo cuando el dia existe de verdad: un dia sin servicio no tiene
+     jornada, asi que no tiene nada que contar. */
+  if (dia.jornada_id) {
+    const zona = h("div", { clase: "bit_del_dia" });
+    caja.append(zona);
+    const { bitacoraDelDia } = await import("./bitacora.js");
+    zona.append(await bitacoraDelDia(dia.jornada_id));
+  }
 }
 
 /* El mes que no existe todavia: se arma aqui, con lo que ya dice el
@@ -1717,7 +2068,8 @@ async function fichaDelDia(servicioId, fecha, caja) {
 function armarPrimerMes(main, servicioId, acuerdo, servicio, cat) {
   let libres = null;
   const roster = widgetPlantilla(cat, () => servicio.plaza_id,
-                                 () => revisar(), () => libres);
+                                 () => revisar(), () => libres,
+                                 () => acuerdo.turno || "natural");
 
   (async () => {
     if (!acuerdo.fecha_inicio) return;
@@ -1778,18 +2130,20 @@ function armarPrimerMes(main, servicioId, acuerdo, servicio, cat) {
   }
 
   main.append(h("div", { clase: "tarjeta" },
-    h("h4", {}, t("imp_asignacion")),
+    conAyuda("h4", t("imp_asignacion"), "ay_imp_plantilla"),
     h("p", { clase: "gris chico", style: "margin:0 0 12px" },
       t("imp_plantilla_sub")),
     roster.nodo,
-    h("h4", { clase: "grupo" }, t("imp_calendario")),
+    conAyuda("h4", t("imp_calendario"), "ay_imp_calendario",
+             { clase: "grupo" }),
     calendario.nodo,
     h("div", { clase: "minimo-caja", style: "margin-top:14px" },
       h("h4", {}, t("imp_falta")), faltantes),
     error,
     h("div", { clase: "acciones", style: "margin-top:14px" }, boton)));
 
-  calendario.pintar(acuerdo.fecha_inicio, acuerdo.dias_servicio);
+  calendario.pintar(acuerdo.fecha_inicio, acuerdo.dias_servicio, {},
+                    acuerdo.turno);
   roster.agregar();
   revisar();
 }
@@ -2093,7 +2447,16 @@ function bloqueTaller(servicioId, periodo, alGuardar) {
         });
         mensaje(`${r.taller.placa} ${t("imp_taller_hecho")} ${r.entra} `
                 + `(${r.dias_cambiados})`);
-        caja.hidden = true;
+        /* La unidad que se va al taller cambia de manos, y la que entra
+           tambien. Se dice aqui y no en un aviso que se va solo: el
+           consultor acaba de hacer el cambio y tiene a la gente a la
+           mano para encargarlo. */
+        const pendiente = bloqueRevisionUnidad(r.revision_pendiente);
+        if (pendiente) {
+          caja.replaceChildren(pendiente);
+        } else {
+          caja.hidden = true;
+        }
         alGuardar();
       } catch (err) {
         decir(err.message);
@@ -2102,7 +2465,8 @@ function bloqueTaller(servicioId, periodo, alGuardar) {
     }
 
     caja.replaceChildren(h("div", { clase: "tarjeta lisa" },
-      h("h4", { style: "margin:0 0 2px" }, t("imp_taller")),
+      conAyuda("h4", t("imp_taller"), "ay_imp_taller",
+               { style: "margin:0 0 2px" }),
       h("p", { clase: "gris chico", style: "margin:0 0 12px" },
         t("imp_taller_sub")),
       h("div", { clase: "rejilla tres" },
@@ -2284,6 +2648,98 @@ const NOMBRE_CONCEPTO = {
   otros: "imp_tab_otros",
 };
 
+/* Los dias que quedaron antes del nuevo arranque.
+
+   Cambiar la fecha de inicio no mueve los dias ya generados: se
+   crearon al abrir el mes y siguen ahi con su gente. Antes no se decia
+   nada y el agente seguia viendo en su app un dia que para el consultor
+   ya no existia. Se pregunta una vez, con las fechas y los nombres
+   enfrente, y lo que ya arranco ni se ofrece. */
+/* Los que se habian cancelado y vuelven a caer dentro del arranque.
+
+   La vuelta de `resolverDiasFuera`. Sin esto, quien corrige la fecha
+   hacia atras ve dias grises dentro de su propio rango contratado sin
+   pista de por que. No se reviven solos: un dia puede estar cancelado
+   porque el cliente no lo pidio. */
+/* Los dias que el contrato reclama y no estan.
+
+   Se borraron al correr el arranque hacia adelante y la fecha nueva los
+   vuelve a pedir. El calendario los pinta verdes igual --entre semana el
+   color sale del rango contratado-- asi que el hueco no se ve hasta que
+   alguien busca quien trabaja ese dia. */
+async function resolverDiasQueFaltan(servicioId, faltan) {
+  if (!faltan || !faltan.length) return false;
+  if (!confirm(`${t("imp_dias_faltan").replace("{n}", faltan.length)}`
+               + `\n\n${faltan.join("\n")}`)) {
+    return false;
+  }
+  const [anio, mes] = faltan[0].split("-");
+  try {
+    await api.post(
+      `/implantados/${servicioId}/mes/${Number(anio)}/${Number(mes)}/completar`,
+      {});
+  } catch (err) {
+    mensaje(err.message, "grave");
+    return false;
+  }
+  location.reload();
+  return true;
+}
+
+async function resolverDiasQueVuelven(servicioId, vuelven) {
+  if (!vuelven || !vuelven.length) return false;
+
+  const comoSeLee = (d) => (d.personal.length
+    ? [d.fecha, "(" + d.personal.join(", ") + ")"].join(" ")
+    : d.fecha);
+  if (!confirm(`${t("imp_dias_vuelven").replace("{n}", vuelven.length)}`
+               + `\n\n${vuelven.map(comoSeLee).join("\n")}`)) {
+    return false;
+  }
+
+  for (const d of vuelven) {
+    try {
+      await api.post(`/implantados/${servicioId}/dia/${d.fecha}/reactivar`, {});
+    } catch (err) {
+      mensaje(`${d.fecha}: ${err.message}`, "grave");
+    }
+  }
+  location.reload();
+  return true;
+}
+
+async function resolverDiasFuera(servicioId, fuera) {
+  if (!fuera || !fuera.length) return false;
+
+  const cerrables = fuera.filter(d => d.se_puede_cerrar);
+  const trabados = fuera.filter(d => !d.se_puede_cerrar);
+  const comoSeLee = (d) => (d.personal.length
+    ? [d.fecha, "(" + d.personal.join(", ") + ")"].join(" ")
+    : d.fecha);
+
+  if (trabados.length) {
+    mensaje(`${t("imp_dias_fuera_trabados")} `
+            + trabados.map(comoSeLee).join(" · "), "alerta");
+  }
+  if (!cerrables.length) return false;
+
+  const cuales = cerrables.map(comoSeLee).join("\n");
+  if (!confirm(`${t("imp_dias_fuera").replace("{n}", cerrables.length)}`
+               + `\n\n${cuales}`)) {
+    return false;
+  }
+
+  for (const d of cerrables) {
+    try {
+      await api.borrar(`/implantados/${servicioId}/dia/${d.fecha}`);
+    } catch (err) {
+      mensaje(`${d.fecha}: ${err.message}`, "grave");
+    }
+  }
+  location.reload();
+  return true;
+}
+
 function bloqueTabulador(servicioId) {
   const caja = h("div", { clase: "minimo-caja", style: "margin-top:16px" });
   pintarTabulador(caja, servicioId);
@@ -2331,7 +2787,7 @@ async function pintarTabulador(caja, servicioId) {
     sincronizar();
 
     filas.push({ concepto: r.concepto, va, monto, abierto, nota });
-    cuerpo.append(h("tr", {},
+    cuerpo.append(...[h("tr", {},
       h("td", {}, va),
       h("td", {},
         h("div", {}, t(NOMBRE_CONCEPTO[r.concepto] || "imp_tab_otros")),
@@ -2341,14 +2797,22 @@ async function pintarTabulador(caja, servicioId) {
           : null),
       h("td", { style: "text-align:right" }, monto),
       h("td", { style: "text-align:center" }, abierto),
-      h("td", {}, nota)));
+      h("td", {}, nota))].filter(Boolean));
   }
 
   const guardar = h("button", { clase: "claro chico", type: "button",
     onclick: (e) => mandar(e) }, t("imp_tab_guardar"));
+  /* El porque, pegado al boton.
+
+     El aviso de arriba se va solo a los pocos segundos: quien apretaba
+     y no veia pasar nada se quedaba mirando un boton mudo, sin saber si
+     el sistema no lo dejo, si fallo la red o si ya habia guardado. Aqui
+     se queda escrito hasta que se resuelva. */
+  const porque = h("div", { clase: "chico", style: "margin-top:8px" });
 
   async function mandar(e) {
     e.target.disabled = true;
+    porque.replaceChildren();
     try {
       const r = await api.put(`/implantados/${servicioId}/tabulador`, {
         renglones: filas.map(f => ({
@@ -2364,12 +2828,14 @@ async function pintarTabulador(caja, servicioId) {
       await pintarTabulador(caja, servicioId);
     } catch (err) {
       mensaje(err.message, "grave");
+      porque.replaceChildren(aviso(err.message, "grave"));
       e.target.disabled = false;
     }
   }
 
-  caja.replaceChildren(
-    h("h4", { style: "margin:0 0 2px" }, t("imp_tabulador")),
+  caja.replaceChildren(...[
+    conAyuda("h4", t("imp_tabulador"), "ay_imp_tabulador",
+             { style: "margin:0 0 2px" }),
     h("p", { clase: "gris chico", style: "margin:0 0 10px" }, t("imp_tab_sub")),
     datos.capturado
       ? null
@@ -2387,5 +2853,6 @@ async function pintarTabulador(caja, servicioId) {
       guardar,
       h("span", { clase: "chico" },
         h("b", {}, `${t("imp_tab_total")} `
-                   + dinero(datos.total_dia, moneda)))));
+                   + dinero(datos.total_dia, moneda)))),
+    porque].filter(Boolean));
 }

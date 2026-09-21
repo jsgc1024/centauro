@@ -11,7 +11,9 @@ from datetime import datetime
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app import correo_html
 from app import models as m
+from app import textos_aviso as ta
 from app.experiencia import horas_acumuladas
 from app.operacion import distancia_metros
 from app.presentacion import llegada_del_equipo
@@ -440,6 +442,10 @@ def armar(db: Session, equipo_id: int) -> dict:
         "ejecutivo_telefono": equipo.ejecutivo_telefono_efectivo,
         "solicitante": servicio.solicitante_completo,
         "solicitante_telefono": servicio.solicitante_telefono,
+        # Como se presenta el equipo. Solo el eventual la lleva: el
+        # implantado la acuerda una vez y no servicio por servicio.
+        "vestimenta": (servicio.vestimenta
+                       if servicio.tipo == m.TipoServicio.EVENTUAL else None),
         "senal": ({"texto": servicio.senal_texto,
                    "imagen": servicio.senal_imagen,
                    "nota": servicio.senal_nota}
@@ -458,15 +464,55 @@ def armar(db: Session, equipo_id: int) -> dict:
     return poner_lada(contenido, pais.lada if pais else None)
 
 
+def _ficha_del_ts(contenido: dict, equipo: m.Equipo, version: int,
+                  motivo: str | None, idioma: str | None = None) -> list:
+    """La ficha del correo del task sheet.
+
+    Lo que el cliente necesita leer cuando cambia no es que hay version
+    nueva: es QUE cambio. Por eso el motivo sube a la ficha en vez de
+    quedarse al final del parrafo.
+
+    Y el primer dia con su hora y su punto, que es lo que va a buscar
+    el que lo abre --si el correo ya lo dice, no tiene que abrir el
+    adjunto para saber a que hora bajar.
+    """
+    pares = [(ta.t(idioma, "version"), str(version))]
+    if motivo:
+        # El motivo lo escribio una persona: va como lo escribio.
+        pares.append((ta.t(idioma, "que_cambio"), motivo))
+    if contenido.get("equipos_del_servicio", 1) > 1:
+        pares.append((ta.t(idioma, "equipo"), equipo.alias))
+    dias = contenido.get("dias") or []
+    if dias:
+        primero = dias[0]
+        pares.append((ta.t(idioma, "primer_dia"),
+                      f"{primero.get('fecha')} · {primero.get('presentacion')}"))
+        if primero.get("origen"):
+            pares.append((ta.t(idioma, "punto"), primero["origen"]))
+    for persona in (dias[0].get("personal") if dias else []) or []:
+        puesto = ta.puesto_en(idioma, persona.get("puesto"))
+        pares.append((ta.t(idioma, "equipo"),
+                      f"{persona.get('nombre')}"
+                      + (f" · {puesto}" if puesto else ""),
+                      persona.get("telefono")))
+    return pares
+
+
 def publicar(db: Session, equipo_id: int, publicado_por_id: int,
              motivo: str | None = None, forzar: bool = False,
-             avisar: bool = True) -> m.TaskSheet:
+             avisar: bool = False) -> m.TaskSheet:
     """Congela una version del task sheet de ese equipo.
 
-    avisar deja registrado el correo al solicitante y al ejecutivo. Al
-    confirmar la asignacion no se avisa: el consultor manda el TS el
-    mismo, sobre la cadena de correo donde se pidio el servicio, y un
-    aviso que nadie manda solo ensucia el expediente.
+    **Publicar no avisa.** Decision de Salvador (20 sep): el task sheet
+    se corrige varias veces mientras se arma --se mueve la hora, entra
+    otra unidad, se cambia una nota-- y un correo por cada version le
+    ensena al cliente a no abrir ninguno. Cuando el cuarto dice "task
+    sheet v4" ya nadie lo mira, y el que importaba era ese.
+
+    `avisar` lo prende quien publica, con la casilla de la pantalla,
+    cuando el cambio de verdad le sirve al cliente: otra hora de
+    presentacion, otro punto, otra persona. Quien sabe si el cambio
+    importa es el consultor, no el sistema.
     """
     contenido = armar(db, equipo_id)
     equipo = db.get(m.Equipo, equipo_id)
@@ -493,25 +539,32 @@ def publicar(db: Session, equipo_id: int, publicado_por_id: int,
     db.flush()
 
     servicio = equipo.servicio
-    cual = (f"del servicio" if contenido["equipos_del_servicio"] == 1
-            else f"del equipo {equipo.alias}")
-    aviso = (f"Se comparte el task sheet {cual}."
-             if version == 1 else
-             f"Se actualizo el task sheet {cual} (version {version})."
-             + (f" Cambio: {motivo}" if motivo else ""))
+    varios = contenido["equipos_del_servicio"] > 1
 
     for destinatario in ((m.Destinatario.SOLICITANTE, m.Destinatario.EJECUTIVO)
                          if avisar else ()):
+        # Cada uno en su idioma: el principal suele leer ingles y quien
+        # pidio el servicio, el del pais.
+        lengua = ta.idioma_de(db, servicio, destinatario)
         correo = (servicio.solicitante_correo
                   if destinatario == m.Destinatario.SOLICITANTE
                   else equipo.ejecutivo_correo_efectivo)
+        cual = (ta.t(lengua, "ts_del_equipo", alias=equipo.alias) if varios
+                else ta.t(lengua, "ts_del_servicio"))
         db.add(m.Notificacion(
             servicio_id=servicio_id, destinatario=destinatario,
             canal=m.Canal.CORREO, correo=correo,
-            asunto=(f"{servicio.folio} {equipo.alias}: task sheet v{version}"
-                    if contenido["equipos_del_servicio"] > 1
-                    else f"{servicio.folio}: task sheet v{version}"),
-            cuerpo=aviso))
+            idioma=lengua,
+            asunto=ta.t(lengua,
+                        "ts_asunto_equipo" if varios else "ts_asunto",
+                        folio=servicio.folio, equipo=equipo.alias,
+                        version=version),
+            cuerpo=(ta.t(lengua, "ts_cuerpo_primero", cual=cual)
+                    if version == 1
+                    else ta.t(lengua, "ts_cuerpo_nuevo", cual=cual,
+                              version=version)),
+            datos=correo_html.guardar_datos(_ficha_del_ts(
+                contenido, equipo, version, motivo, lengua))))
 
     db.commit()
     db.refresh(ficha)

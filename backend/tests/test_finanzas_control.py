@@ -160,3 +160,116 @@ def test_el_historial_se_puede_buscar_por_folio(cliente, sesion, datos):
                     headers=f).json()
     folios = {d["folio"] for p in r["paises"] for d in p["depositos"]}
     assert folios == {servicio["folio"]}, folios
+
+
+def test_lo_de_afuera_se_cuenta_por_persona_y_servicio(cliente, sesion, datos):
+    """La deuda es una sola, aunque el servicio dure tres dias.
+
+    Cada dia se juzgaba solo: un gasto cargado en el dia 1 dejaba ese
+    dia fuera de la lista y los otros dos enteros, asi que finanzas leia
+    una deuda mas grande que la real y salia a perseguir dinero que ya
+    estaba comprobado. Es la pantalla de quien paga: aqui la resta tiene
+    que cuadrar.
+    """
+    from ayudas import (asignar, crear_servicio, depositar_de_verdad,
+                        jornada, manana)
+
+    h = sesion("consultor")
+    f = sesion("finanzas")
+    juan = datos["personal"]["Juan Ramirez"]["id"]
+    servicio = crear_servicio(
+        cliente, h, datos,
+        [jornada(manana(940 + i), datos["modalidades"]["full_day"]["id"])
+         for i in range(3)])
+    for j in servicio["equipos"][0]["jornadas"]:
+        asignar(cliente, h, j["id"], persona_id=juan)
+
+    equipo_id = servicio["equipos"][0]["id"]
+    cliente.post(f"/viaticos/equipos/{equipo_id}/persona",
+                 json={"persona_id": juan, "monto": "3000"}, headers=h)
+    depositar_de_verdad(cliente, sesion, equipo_id, juan)
+
+    mios = cliente.get("/campo/mis-viaticos", headers=sesion("juan")).json()
+    fila = next(s for s in mios["servicios"]
+                if s["folio"] == servicio["folio"])
+    cliente.post(f"/campo/viaticos/{fila['dias'][0]['viatico_id']}/comprobante",
+                 json={"concepto": "combustible", "tipo": "nota",
+                       "monto": "2800"}, headers=sesion("juan"))
+
+    afuera = cliente.get("/viaticos/finanzas/por-comprobar", headers=f).json()
+    suyos = [x for p in afuera["paises"] for x in p["personas"]
+             if x["folio"] == servicio["folio"]]
+    assert len(suyos) == 1, "tres dias, tres renglones: la deuda es una"
+    x = suyos[0]
+    assert x["dias"] == 3
+    assert float(x["entregado"]) == 3000
+    assert float(x["comprobado"]) == 2800
+    assert float(x["pendiente"]) == 200
+
+
+def test_el_implantado_deposita_un_mes_a_la_vez(cliente, sesion, datos):
+    """Cada deposito corresponde a su mes.
+
+    La bandeja agrupaba por equipo y persona, y en un implantado el
+    equipo abarca meses enteros: septiembre y octubre caian en el mismo
+    renglon, se depositaban de un golpe y la pantalla del consultor los
+    mostraba partidos despues, sin que nadie hubiera decidido ese
+    reparto.
+    """
+    from datetime import date
+
+    h = sesion("consultor")
+    f = sesion("finanzas")
+    juan = datos["personal"]["Juan Ramirez"]["id"]
+
+    servicio = cliente.post("/servicios", json={
+        "cliente_id": datos["cliente_id"], "pais_id": datos["mx"]["id"],
+        "plaza_id": datos["cdmx"]["id"], "tipo": "implantado",
+        "consultor_id": datos["personal"]["Ana Solis"]["id"],
+        "equipos": []}, headers=h).json()
+
+    # Dos meses abiertos, con su plantilla.
+    for anio, mes in ((2029, 1), (2029, 2)):
+        contrato = cliente.post("/implantados/contratos", json={
+            "servicio_id": servicio["id"], "anio": anio, "mes": mes,
+            "modalidad_id": datos["modalidades"]["full_day"]["id"],
+            "esquema": "por_dia", "incluye_fines_de_semana": False,
+            "hora_presentacion": "08:00:00", "titular_id": juan,
+            "vehiculo_id": datos["suburban"]["id"],
+            "precio_mes_vehiculo": "66000", "precio_dia_personal": "2900",
+            "precio_dia_adicional": "3500"}, headers=h).json()
+        cliente.post(
+            f"/implantados/contratos/{contrato['contrato_id']}/generar-mes",
+            headers=h)
+        r = cliente.post(
+            f"/implantados/{servicio['id']}/viaticos/{anio}/{mes}/persona",
+            json={"persona_id": juan, "monto": "1000"}, headers=h)
+        assert r.status_code == 200, r.text
+        cliente.post(
+            f"/implantados/{servicio['id']}/viaticos/{anio}/{mes}/solicitar",
+            json={"persona_id": juan}, headers=h)
+
+    bandeja = cliente.get("/viaticos/finanzas/bandeja", headers=f).json()
+    suyos = [d for p in bandeja["paises"] for d in p["depositos"]
+             if d["servicio_id"] == servicio["id"]]
+    assert len(suyos) == 2, "los dos meses cayeron en un solo deposito"
+    assert {d["periodo"] for d in suyos} == {"01/2029", "02/2029"}
+
+    # Y depositar uno no da por depositado el otro.
+    enero = next(d for d in suyos if d["periodo"] == "01/2029")
+    import io as _io
+
+    from ayudas import PIXEL
+
+    r = cliente.post(
+        "/viaticos/finanzas/depositar", headers=f,
+        data={"equipo_id": enero["equipo_id"], "persona_id": juan,
+              "anio": 2029, "mes": 1, "referencia": "SPEI-1"},
+        files={"archivo": ("dep.png", _io.BytesIO(PIXEL), "image/png")})
+    assert r.status_code == 200, r.text
+
+    quedan = cliente.get("/viaticos/finanzas/bandeja", headers=f).json()
+    suyos = [d for p in quedan["paises"] for d in p["depositos"]
+             if d["servicio_id"] == servicio["id"]]
+    assert len(suyos) == 1, "se depositaron los dos meses de un golpe"
+    assert suyos[0]["periodo"] == "02/2029"
