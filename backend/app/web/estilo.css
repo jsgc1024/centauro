@@ -424,7 +424,7 @@ img.senal-previa {
                 padding: 10px 12px; position: relative; cursor: pointer; }
 .senal-opcion:has(input:checked) { border-color: var(--centauro);
                                    box-shadow: 0 0 0 2px rgba(27, 21, 70, .12); }
-.senal-opcion input { margin: 0 2px 0 0; vertical-align: -1px; }
+.senal-opcion input { width: auto; padding: 0; margin: 0 6px 0 0; vertical-align: -1px; }
 .senal-etiqueta { position: absolute; top: -9px; right: 10px; background: var(--centauro);
                   color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .6px;
                   padding: 2px 8px; border-radius: 999px; text-transform: uppercase; }

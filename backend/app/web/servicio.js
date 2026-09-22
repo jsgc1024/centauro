@@ -2377,8 +2377,10 @@ function bloqueSenal(servicio, vista) {
      y la frase que va a leer en su hoja. */
   const telefono = h("div", { clase: "senal-telefono" });
   const frase = h("div", { clase: "chico gris", style: "margin-top:8px" });
+  const nombre = h("div", { clase: "chico gris", style: "margin:-6px 0 12px" });
   const pintarPrevia = () => {
     const c = colorElegido();
+    nombre.textContent = nombreColor();
     telefono.style.background = c ? c.hex : "";
     telefono.style.color = c ? c.letra : "";
     const palabra = h("b", {}, texto.value.trim());
@@ -2409,11 +2411,7 @@ function bloqueSenal(servicio, vista) {
   texto.addEventListener("input", pintarPrevia);
 
   const etiquetaTexto = h("label", {}, t("srv_palabra_senal"));
-  const cajaColor = h("div", { clase: "senal-armado" },
-    h("div", {},
-      campo(t("srv_elige_color"), circulos),
-      h("div", { clase: "chico gris" }, nombreColor())),
-    telefono);
+  const cajaColor = h("div", {}, campo(t("srv_elige_color"), circulos), nombre);
   const cajaTexto = h("div", { clase: "campo" }, etiquetaTexto, texto);
   const cajaImagen = h("div", {},
     campo(t("srv_archivo"), archivo),
@@ -2423,6 +2421,7 @@ function bloqueSenal(servicio, vista) {
 
   const acomodar = () => {
     cajaColor.hidden = !comoColor.checked;
+    telefono.hidden = !comoColor.checked;
     frase.hidden = !comoColor.checked;
     cajaTexto.hidden = !(comoColor.checked || comoTexto.checked);
     etiquetaTexto.textContent = comoColor.checked
@@ -2496,9 +2495,12 @@ function bloqueSenal(servicio, vista) {
       opcion(comoColor, t("srv_color"), t("srv_color_pie"), true),
       opcion(comoTexto, t("srv_texto"), t("srv_texto_pie"), false),
       opcion(comoImagen, t("srv_imagen"), t("srv_imagen_pie"), false)),
-    cajaColor, cajaTexto, cajaImagen,
-    campo(t("srv_nota_senal"), nota),
-    frase,
+    /* Lo que se captura a la izquierda; el telefono, como lo vera el
+       principal, a la derecha y solo cuando la senal es de color. */
+    h("div", { clase: "senal-armado" },
+      h("div", {}, cajaColor, cajaTexto, cajaImagen,
+        campo(t("srv_nota_senal"), nota), frase),
+      telefono),
     h("div", { clase: "acciones", style: "margin-top:10px" },
       guardar,
       (actual.texto || actual.imagen || actual.color) ? quitar : ""));
