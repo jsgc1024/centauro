@@ -150,6 +150,7 @@ def confirmar_recurso(jornada_id: int, db: Session = Depends(get_db),
     # el dato, y es lo que la distingue de la que registra la central.
     asignacion.confirmado_en = reloj.ahora_de_la_jornada(
         db, asignacion.jornada)
+    programacion.confirmar_si_todos(asignacion.jornada)
     db.commit()
     return {"resultado": "confirmado", "persona": asignacion.persona.nombre}
 
@@ -193,6 +194,7 @@ def confirmar_a_mano(jornada_id: int, datos: s.ConfirmarAManoIn,
     asignacion.confirmado_en = reloj.ahora_de_la_jornada(db, jornada)
     asignacion.confirmado_por_id = usuario.persona_id
     asignacion.nota_confirmacion = (datos.nota or "").strip() or None
+    programacion.confirmar_si_todos(jornada)
     auditoria.registrar(db, usuario, jornada.equipo.servicio,
                         "confirmacion por telefono",
                         f"{jornada.fecha} {asignacion.persona.nombre}"

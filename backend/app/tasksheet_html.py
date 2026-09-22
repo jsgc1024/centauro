@@ -369,10 +369,24 @@ def _senal(senal: dict | None, contenido: dict, t: dict) -> str:
     if not senal:
         return ""
 
-    imagen = (f'<img class="senal-imagen" src="{senal["imagen"]}" alt="">'
-              if senal.get("imagen") else "")
-    texto = (f'<div class="senal-texto">{_esc(senal["texto"])}</div>'
-             if senal.get("texto") else "")
+    color = senal.get("color")
+    if color:
+        # El color llena un bloque con la palabra encima, si la hay, y
+        # debajo la frase que el principal va a leer: "su equipo lo
+        # espera con la pantalla del telefono en naranja".
+        nombre = t.get(f"color_{color['clave']}", color["clave"])
+        palabra = _esc(senal["texto"]) if senal.get("texto") else ""
+        frase = t["sign_color"].replace("{color}", nombre)
+        if palabra:
+            frase += t["sign_color_word"].replace("{word}", palabra)
+        imagen = (f'<div class="senal-color" style="background:{color["hex"]};'
+                  f'color:{color["letra"]}">{palabra}</div>')
+        texto = f'<div class="senal-frase">{frase}.</div>'
+    else:
+        imagen = (f'<img class="senal-imagen" src="{senal["imagen"]}" alt="">'
+                  if senal.get("imagen") else "")
+        texto = (f'<div class="senal-texto">{_esc(senal["texto"])}</div>'
+                 if senal.get("texto") else "")
     nota = (f'<div class="senal-nota">{_esc(senal["nota"])}</div>'
             if senal.get("nota") else "")
 
@@ -604,6 +618,11 @@ def render(contenido: dict, version: int, actualizado: str | None = None,
   .senal-texto {{ font-size: 58px; font-weight: 750; line-height: 1.1;
                  letter-spacing: -.5px; word-break: break-word;
                  color: var(--centauro); }}
+  .senal-color {{ height: 300px; border-radius: 16px; display: grid;
+                 place-items: center; font-size: 64px; font-weight: 800;
+                 letter-spacing: -1px; word-break: break-word; padding: 0 20px;
+                 -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
+  .senal-frase {{ font-size: 15px; margin-top: 14px; color: var(--centauro); }}
   .senal-nota {{ color: #5b646d; font-size: 13px; margin-bottom: 16px; }}
   .senal-pie {{ font-size: 11px; color: #78828c; }}
   @media (max-width: 640px) {{

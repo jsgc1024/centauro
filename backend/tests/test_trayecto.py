@@ -433,6 +433,15 @@ def test_la_central_asienta_lo_que_le_contestaron_por_telefono(
     assert via.por_telefono_por_id, "no dice quién lo registró"
     assert via.por_telefono_nota == "va en Periferico"
 
+    # Y la alerta de "no contesta" se cierra de verdad --la fila, no solo
+    # la bandera-- con lo que contestó. Antes solo se bajaba la bandera y
+    # la alerta seguía abierta en la central, tapando la siguiente.
+    alertas = _alertas(j)
+    assert alertas and all(a.atendida for a in alertas), \
+        "habló con la central y la alerta sigue abierta"
+    assert any("va en camino" in (a.resolucion or "") for a in alertas), \
+        [a.resolucion for a in alertas]
+
     # Y la banda lo dice con nombre y hora: lo dicho por teléfono no se
     # puede confundir nunca con una posición del GPS.
     banda = cliente.get("/central/camino", headers=central).json()

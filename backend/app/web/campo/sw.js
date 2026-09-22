@@ -17,7 +17,7 @@
    activarse, el trabajador nuevo borra los caches con otro nombre. Sin
    subirla, el telefono que ya tenia la app instalada seguiria sirviendo
    el armazon viejo del cache. */
-const CACHE = "centauro-campo-v6";
+const CACHE = "centauro-campo-v7";
 const ARMAZON = [
   "/app/",
   "/app/index.html",
@@ -51,7 +51,11 @@ self.addEventListener("install", (e) => {
 self.addEventListener("activate", (e) => {
   e.waitUntil(caches.keys()
     .then((llaves) => Promise.all(
-      llaves.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      /* El cache de la senal del principal es de la app, no del
+         armazon: cambiar de version no lo tira. Se necesita justo
+         donde no hay red para volver a bajarla. */
+      llaves.filter((k) => k !== CACHE && k !== "centauro-senal")
+            .map((k) => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
 

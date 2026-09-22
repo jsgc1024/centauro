@@ -416,6 +416,29 @@ img.senal-previa {
   background: #fff;
 }
 
+/* La senal: las tres formas como tarjetas, la recomendada marcada; los
+   colores en circulos grandes, el elegido con su anillo; y el telefono
+   como lo vera el principal. */
+.senal-opciones { display: flex; gap: 10px; margin: 8px 0 14px; }
+.senal-opcion { flex: 1; border: 1.5px solid var(--linea); border-radius: 10px;
+                padding: 10px 12px; position: relative; cursor: pointer; }
+.senal-opcion:has(input:checked) { border-color: var(--centauro);
+                                   box-shadow: 0 0 0 2px rgba(27, 21, 70, .12); }
+.senal-opcion input { margin: 0 2px 0 0; vertical-align: -1px; }
+.senal-etiqueta { position: absolute; top: -9px; right: 10px; background: var(--centauro);
+                  color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .6px;
+                  padding: 2px 8px; border-radius: 999px; text-transform: uppercase; }
+.senal-armado { display: flex; gap: 22px; align-items: flex-start; }
+.senal-armado > div:first-child { flex: 1; min-width: 0; }
+.senal-colores { display: flex; flex-wrap: wrap; gap: 10px; }
+.senal-color { width: 44px; height: 44px; border-radius: 50%; border: 0; padding: 0;
+               cursor: pointer; font-weight: 800; font-size: 18px; }
+.senal-color.sel { box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--centauro); }
+.senal-telefono { width: 118px; height: 236px; border-radius: 18px; border: 6px solid #111;
+                  display: grid; place-items: center; text-align: center; padding: 8px;
+                  font-weight: 800; font-size: 20px; line-height: 1.05; word-break: break-word;
+                  background: var(--suave); flex: 0 0 auto; }
+
 /* "Aborda" y su selector en un solo renglon, debajo de la persona. */
 .abordo {
   display: flex; align-items: center; gap: 6px; margin-top: 5px;

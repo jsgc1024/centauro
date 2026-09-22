@@ -3277,6 +3277,60 @@ de un nombre que no es el suyo; se dibuja el enlace tal cual.
 De paso quedó arreglado que estando dentro de un servicio el botón
 siguiera encendido: `#/servicio/12` no empieza con `#/servicios`.
 
+## 48. Los estatus que nadie escribía
+
+Al revisar la cadena de estatus para la prueba 360 (21 sep) salieron
+dos valores del catálogo que ningún proceso escribía.
+
+- **`confirmada`, de la jornada.** Cada asignación guardaba su
+  `confirmado`, pero el día se quedaba en `planeada` hasta que alguien
+  llegaba al punto. Ahora sube a `confirmada` cuando **toda** su gente
+  viva confirmó —desde la app, con una posición de "voy en camino", por
+  teléfono con la central o registrada a mano—. Solo hacia adelante,
+  como el servicio con `evaluar`: un relevo que entra sin confirmar se
+  ve en su renglón, el día no regresa. Un día de implantado que se
+  rehace por un cambio del acuerdo sí vuelve a `planeada`: la gente
+  nueva no ha confirmado nada.
+
+- **`cotizado`, del servicio.** Decisión de Salvador (21 sep): *«en
+  teoría, Odoo nos dará la cotización confirmada; de ahí se levanta el
+  servicio»*. El rato entre "se cotizó" y "el cliente autorizó" vive en
+  Odoo, así que aquí el servicio nace ya `autorizado` y `cotizado` queda
+  **reservado**: en el catálogo, para que un dato viejo no truene, pero
+  sin nadie que lo escriba.
+
+Y una regla que ya existía y ahora tiene prueba: **el implantado no
+llega a café.** Cerrar un día, abrir el mes que sigue o cerrar el último
+día del mes lo deja en curso; `terminado` es del eventual. El implantado
+se apaga cancelándolo o cuando finanzas aprueba su cierre.
+
+## 49. La señal, en el teléfono y de color
+
+Decisión de Salvador, 22 de septiembre. La señal con la que el principal
+reconoce al equipo ya existía —palabra o imagen, capturada en el
+servicio y puesta en el task sheet—, pero se quedaba en el papel. Dos
+cosas cambian:
+
+- **La app la levanta.** En la tarjeta del día (hoy y mañana), junto al
+  ejecutivo, un botón la abre a pantalla completa: fondo del color o
+  blanco, la imagen o la palabra ocupando todo, girado igual, y la
+  pantalla no se apaga mientras está abierta. La imagen se baja al
+  cargar el día con red y se guarda en el teléfono (`caches`, que el
+  trabajador de fondo respeta al cambiar de versión): a la salida del
+  filtro no hay barras. Solo la ve quien va en ese servicio; el token
+  nunca va en la dirección.
+
+- **Un color como señal, y es la opción recomendada.** Una pantalla de
+  un solo color se distingue a veinte metros sin leer nada; con una
+  palabra encima si se quiere. La paleta —ocho colores, con el color de
+  la letra decidido por color— vive en `app/senal.py` y es la única
+  copia: la consola la recibe con la vista previa, la app con la ficha
+  del día, y la hoja del principal nombra el color en su idioma («su
+  equipo lo espera con la pantalla del teléfono en naranja»). Se
+  guarda la **clave**, no el hex: el día que llegue el manual de marca
+  con los colores secundarios, se cambian los hex ahí y nada más.
+  Propuesta y pantallas en `PROPUESTA_SENAL_COLOR.md`.
+
 ## 14. Lo que falta
 
 ### Abierto

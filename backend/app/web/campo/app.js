@@ -396,6 +396,10 @@ async function pantallaHoy() {
   const hoy = datos.hoy || [];
   const manana = datos.manana || [];
 
+  /* Con red, la senal se guarda en el telefono desde ahora: donde se
+     usa --a la salida del filtro-- ya no hay con que bajarla. */
+  if (!r.de_memoria) guardarSenales([...hoy, ...manana]);
+
   /* Se pico "Confirmo que voy" en la notificacion. El trabajador de
      fondo no puede hablar con el servidor --el permiso de la sesion
      vive aqui-- asi que abre la app con esta marca y la app lo hace.
@@ -532,6 +536,7 @@ function tarjetaHoy(f) {
       h("div", { clase: "dato" },
         h("span", { clase: "clave" }, t("cmp_ejecutivo")),
         f.ejecutivo || "—"),
+      senalDelDia(f),
       /* Como hay que ir vestido. Si el servicio no trae codigo no se
          pinta el renglon: un servicio sin acuerdo no es "casual". */
       f.vestimenta
@@ -768,6 +773,10 @@ function tarjetaManana(f) {
             h("span", { clase: "clave" }, t("cmp_vestimenta")),
             t(`vest_${f.vestimenta}`)))
       : null,
+    /* La senal tambien: la noche anterior es cuando se ve por primera
+       vez, y abrirla con red es lo que la deja guardada en el telefono
+       para la manana siguiente. */
+    f.senal ? h("div", { clase: "marco" }, senalDelDia(f)) : null,
     /* El inventario de la unidad tambien vive aqui. Decision de
        Salvador, 20 sep.
 
@@ -1017,6 +1026,181 @@ function mensajeCorto(texto) {
 function enCola(jornada_id, tipo) {
   return pendientes().some(x => x.jornada_id === jornada_id
     && x.cuerpo && x.cuerpo.tipo === tipo);
+}
+
+/* ------------------------------------------------------- la senal */
+
+/* La senal con la que el principal reconoce al equipo: una palabra, una
+   imagen o las dos. La captura el consultor en el servicio y sale en el
+   task sheet; aqui es lo que se levanta en la pantalla a la salida del
+   filtro. Pedido de Salvador, 22 sep.
+
+   La imagen NO viaja dentro de la ficha del dia --puede pesar megas y
+   la ficha vive en localStorage, que no los aguanta--. Se baja aparte,
+   con la sesion puesta, y se guarda en `caches`, que si aguanta y que
+   el trabajador de fondo respeta al cambiar de version (ver sw.js).
+   Donde se usa no hay barras: por eso se baja al cargar el dia y no al
+   abrirla. */
+const SENAL_CACHE = "centauro-senal";
+const senalesEnMemoria = new Map();
+const SENAL_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+  + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+  + '<rect x="3" y="4" width="18" height="12" rx="2"/>'
+  + '<path d="M12 16v4M8 20h8"/></svg>';
+
+function rutaDeLaSenal(servicioId) {
+  return `/campo/servicios/${servicioId}/senal/imagen`;
+}
+
+async function cacheDeSenales() {
+  try { return ("caches" in window) ? await caches.open(SENAL_CACHE) : null; }
+  catch { return null; }
+}
+
+/* Baja la imagen con la sesion puesta --una etiqueta <img> no manda el
+   token, y el token nunca va en la direccion-- y la guarda. */
+async function bajarSenal(servicioId) {
+  const ruta = rutaDeLaSenal(servicioId);
+  const cab = sesion.token ? { Authorization: `Bearer ${sesion.token}` } : {};
+  const r = await fetch(ruta, { headers: cab });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const blob = await r.blob();
+  senalesEnMemoria.set(servicioId, blob);
+  const cache = await cacheDeSenales();
+  if (cache) {
+    try {
+      await cache.put(ruta, new Response(blob, {
+        headers: { "Content-Type": blob.type || "image/jpeg" } }));
+    } catch { /* sin espacio: se queda en memoria mientras la app viva */ }
+  }
+  return blob;
+}
+
+/* Primero lo guardado, luego la red. Sin ninguna de las dos, null. */
+async function traerSenal(servicioId) {
+  if (senalesEnMemoria.has(servicioId)) return senalesEnMemoria.get(servicioId);
+  const cache = await cacheDeSenales();
+  if (cache) {
+    const guardada = await cache.match(rutaDeLaSenal(servicioId));
+    if (guardada) {
+      const blob = await guardada.blob();
+      senalesEnMemoria.set(servicioId, blob);
+      return blob;
+    }
+  }
+  try { return await bajarSenal(servicioId); } catch { return null; }
+}
+
+function guardarSenales(fichas) {
+  for (const f of fichas) {
+    if (!f.senal || !f.senal.imagen) continue;
+    traerSenal(f.servicio_id).catch(() => {});
+  }
+}
+
+/* El renglon de la tarjeta: el icono, y debajo la nota del consultor
+   --"a la salida del filtro"-- o, si no dejo nota, cuando se usa. */
+function senalDelDia(f) {
+  if (!f.senal) return null;
+  /* Con color, el boton trae el punto del color y su nombre: se sabe
+     que buscar antes de abrirla. */
+  const color = f.senal.color;
+  const detalle = [color ? t(`color_${color.clave}`) : null,
+                   f.senal.texto || null].filter(Boolean);
+  return h("div", { clase: "dato" },
+    h("span", { clase: "clave" }, t("cmp_senal")),
+    h("button", { clase: "claro chico senal-boton",
+                  onclick: (e) => { e.preventDefault(); abrirSenal(f); } },
+      color ? h("span", { clase: "senal-punto", style: `background:${color.hex}` })
+            : h("span", { clase: "senal-icono", html: SENAL_SVG }),
+      [t("cmp_senal_ver"), ...detalle].join(" · ")),
+    h("div", { clase: "chico gris", style: "margin-top:6px" },
+      f.senal.nota || t("cmp_senal_pie")));
+}
+
+let senalAbierta = null;
+
+/* A pantalla completa: blanco, y la imagen ocupando todo lo que el
+   telefono de, vertical u horizontal. Si solo hay palabra, la palabra
+   en letras enormes; si hay las dos, la imagen arriba y la palabra
+   abajo. Mientras esta abierta la pantalla no se apaga: el equipo la
+   sostiene en alto esperando a que salga el principal. */
+async function abrirSenal(f) {
+  cerrarSenal();
+  const pantalla = h("div", { clase: "senal-pantalla", onclick: cerrarSenal });
+  const cerrar = h("button", {
+    clase: "senal-cerrar", "aria-label": t("cmp_senal_cerrar"),
+    onclick: (e) => { e.stopPropagation(); cerrarSenal(); } }, "✕");
+  pantalla.append(cerrar);
+  document.body.append(pantalla);
+  document.body.classList.add("senal-abierta");
+  const abierta = { nodo: pantalla, url: null, candado: null, alGirar: null };
+  senalAbierta = abierta;
+
+  /* El color llena la pantalla; la letra encima viene decidida con el
+     color, para que se lea sobre amarillo igual que sobre morado. */
+  if (f.senal.color) {
+    pantalla.style.background = f.senal.color.hex;
+    pantalla.style.color = f.senal.color.letra;
+  }
+
+  try {
+    if (navigator.wakeLock) {
+      abierta.candado = await navigator.wakeLock.request("screen");
+    }
+  } catch { /* sin permiso o sin soporte: se muestra igual */ }
+
+  const partes = [];
+  if (f.senal.imagen) {
+    const espera = h("div", { clase: "senal-texto chico" }, t("cmp_senal_cargando"));
+    pantalla.append(espera);
+    const blob = await traerSenal(f.servicio_id);
+    if (senalAbierta !== abierta) return;        // la cerraron mientras cargaba
+    espera.remove();
+    if (blob) {
+      abierta.url = URL.createObjectURL(blob);
+      partes.push(h("img", {
+        clase: "senal-imagen" + (f.senal.texto ? " con-texto" : ""),
+        src: abierta.url, alt: f.senal.texto || "" }));
+    } else {
+      partes.push(h("div", { clase: "senal-aviso" }, t("cmp_senal_sin_guardar")));
+    }
+  }
+  if (f.senal.texto) {
+    partes.push(h("div", {
+      clase: "senal-texto" + (f.senal.imagen ? " con-imagen" : "") }, f.senal.texto));
+  }
+  pantalla.append(...partes);
+
+  if (f.senal.texto && !f.senal.imagen) {
+    const texto = pantalla.querySelector(".senal-texto");
+    abierta.alGirar = () => ajustarSenal(texto);
+    window.addEventListener("resize", abierta.alGirar);
+    ajustarSenal(texto);
+  }
+}
+
+/* La palabra lo mas grande que quepa, y no mas. */
+function ajustarSenal(nodo) {
+  if (!nodo) return;
+  let tam = Math.round(Math.min(window.innerWidth, window.innerHeight) * 0.34);
+  nodo.style.fontSize = `${tam}px`;
+  const cabe = () => nodo.scrollHeight <= window.innerHeight * 0.88;
+  while (!cabe() && tam > 28) {
+    tam -= 4;
+    nodo.style.fontSize = `${tam}px`;
+  }
+}
+
+function cerrarSenal() {
+  if (!senalAbierta) return;
+  const { nodo, url, candado, alGirar } = senalAbierta;
+  senalAbierta = null;
+  nodo.remove();
+  document.body.classList.remove("senal-abierta");
+  if (alGirar) window.removeEventListener("resize", alGirar);
+  if (url) URL.revokeObjectURL(url);
+  if (candado) candado.release().catch(() => {});
 }
 
 /* ------------------------------------------------------- el panico */

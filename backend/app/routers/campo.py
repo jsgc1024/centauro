@@ -9,11 +9,13 @@ con media barra de senal.
 Cada quien ve solo lo suyo. Eso no es una comodidad: la ficha del dia
 trae el nombre del ejecutivo al que se protege.
 """
+import base64
 import logging
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -21,6 +23,7 @@ from app import auth
 from app import models as m
 from app import reloj
 from app import revision as revision_unidad
+from app import senal as senal_motor
 from app import trayecto
 from app import tasksheet
 from app import devoluciones as devoluciones_motor
@@ -152,6 +155,20 @@ def _ficha(db: Session, jornada: m.Jornada, persona_id: int,
         # anterior, que es cuando se decide que ponerse.
         "vestimenta": (servicio.vestimenta
                        if servicio.tipo == m.TipoServicio.EVENTUAL else None),
+        # La senal con la que el principal reconoce al equipo. Solo lo
+        # ligero: el texto, la nota y si hay imagen. La imagen va aparte
+        # (`/campo/servicios/{id}/senal/imagen`) porque puede pesar
+        # megas y esta ficha se guarda en el telefono para leerse sin
+        # senal: meterla aqui reventaria esa memoria.
+        "senal": ({"texto": servicio.senal_texto,
+                   "nota": servicio.senal_nota,
+                   "imagen": bool(servicio.senal_imagen),
+                   # El color viene resuelto --hex y letra-- para que el
+                   # telefono lo pinte sin conocer la paleta.
+                   "color": senal_motor.color(servicio.senal_color)}
+                  if (servicio.senal_texto or servicio.senal_imagen
+                      or servicio.senal_color)
+                  else None),
         "equipo": jornada.equipo.alias,
         "equipo_id": jornada.equipo_id,
         "estatus": jornada.estatus.value,
@@ -214,6 +231,47 @@ def _ficha(db: Session, jornada: m.Jornada, persona_id: int,
                         for p in paradas],
         },
     }
+
+
+@router.get("/servicios/{servicio_id}/senal/imagen",
+            summary="La imagen de la senal, para levantarla en el telefono")
+def imagen_de_la_senal(servicio_id: int, db: Session = Depends(get_db),
+                       usuario: m.Usuario = Depends(CAMPO)):
+    """Lo que el equipo levanta en la pantalla cuando sale el principal.
+
+    Va como imagen de verdad --no como data URI dentro de un JSON-- para
+    que la app la guarde en el telefono y la abra sin senal: a la salida
+    del filtro de un aeropuerto no hay barras, y ese es exactamente el
+    momento en que se necesita.
+
+    Solo para quien va en ese servicio. La senal identifica al equipo
+    ante el principal; en manos de otro es una forma de hacerse pasar
+    por el equipo.
+    """
+    servicio = db.get(m.Servicio, servicio_id)
+    if not servicio:
+        raise HTTPException(404, f"No existe el servicio {servicio_id}")
+    va = (db.query(m.AsignacionPersonal)
+          .join(m.Jornada, m.AsignacionPersonal.jornada_id == m.Jornada.id)
+          .join(m.Equipo, m.Jornada.equipo_id == m.Equipo.id)
+          .filter(m.Equipo.servicio_id == servicio.id,
+                  m.AsignacionPersonal.persona_id == usuario.persona_id)
+          .first())
+    if not va:
+        raise HTTPException(403, "No vas en ese servicio")
+    if not servicio.senal_imagen:
+        raise HTTPException(404, "Ese servicio no tiene imagen de senal")
+
+    imagen = servicio.senal_imagen
+    if not imagen.startswith("data:"):
+        # Se capturo como enlace: que el telefono la traiga de ahi.
+        return RedirectResponse(imagen, status_code=307)
+    tipo, _, contenido = imagen.partition(";base64,")
+    return Response(content=base64.b64decode(contenido),
+                    media_type=tipo[len("data:"):] or "image/jpeg",
+                    # La app la guarda ella misma en el telefono; el
+                    # navegador no tiene que guardar nada por su cuenta.
+                    headers={"Cache-Control": "private, no-store"})
 
 
 @router.get("/mi-dia", summary="El dia del equipo, completo")

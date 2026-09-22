@@ -29,6 +29,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app import models as m
+from app import programacion
 from app import push
 from app import reloj
 from app.operacion import distancia_metros
@@ -117,6 +118,7 @@ def registrar(db: Session, jornada_id: int, persona_id: int,
                   .first())
     if asignacion and not asignacion.confirmado:
         asignacion.confirmado = True
+        programacion.confirmar_si_todos(jornada)
 
     distancia = _distancia(jornada, lat, lon)
     if distancia is None:
@@ -256,12 +258,20 @@ def dijo_que_va(db: Session, jornada_id: int, persona_id: int,
     via.por_telefono_en = ahora
     via.por_telefono_por_id = quien_id
     via.por_telefono_nota = (nota or "").strip()[:200] or None
-    # La alerta que estaba abierta ya se atendio: se le hablo. Si vuelve
-    # a callarse, que vuelva a sonar.
+    # La alerta que estaba abierta ya se atendio: se le hablo. Se cierra
+    # de verdad --la fila, no solo la bandera-- con lo que contesto. Y
+    # si vuelve a callarse, que vuelva a sonar: por eso la bandera se
+    # baja tambien.
     via.alertado = False
     via.sin_avanzar = 0
+    resolver_alertas(
+        db, jornada_id, persona_id,
+        f"La central hablo con el a las {ahora:%H:%M}: dijo que va en camino"
+        + (f" ({via.por_telefono_nota})" if via.por_telefono_nota else "")
+        + ".")
     if not asignacion.confirmado:
         asignacion.confirmado = True
+        programacion.confirmar_si_todos(jornada)
     db.commit()
     return {"estado": via.estado,
             "vigilancia_vuelve_en": MINUTOS_DE_GRACIA_POR_TELEFONO}
@@ -362,8 +372,40 @@ def _ya_marco_llegada(db: Session, jornada: m.Jornada, persona_id: int) -> bool:
                 .first())
 
 
-def cerrar(db: Session, jornada_id: int, persona_id: int) -> None:
-    """Llego: se apaga el camino.
+def resolver_alertas(db: Session, jornada_id: int, persona_id: int,
+                     resolucion: str) -> int:
+    """Las alertas del camino que los hechos ya contestaron.
+
+    La alerta del trayecto lleva persona: dice "Juan no contesta". Cuando
+    Juan marca su llegada, o la central habla con el, esa alerta ya no
+    dice nada verdadero. Y hasta hoy nadie la cerraba: lo unico que pone
+    `atendida` en todo el sistema es el boton de la central.
+
+    Lo grave no era el renglon rojo que miente --que ya es malo-- sino
+    que TAPABA al siguiente: `revisar_standby` no apila una segunda
+    alerta de silencio sobre una abierta, asi que un "no contesta" de
+    las siete de la manana, resuelto por la llegada de las nueve,
+    callaba el silencio de verdad de las once y media, con el principal
+    en el coche. Lo cazo el recorrido 360 el 21 de septiembre: dos
+    reglas correctas por separado, estorbandose.
+
+    Se cierra con la resolucion escrita y sin nombre de quien atendio:
+    nadie de la central la atendio, la contesto el hecho.
+    """
+    abiertas = (db.query(m.Alerta)
+                .filter_by(jornada_id=jornada_id, persona_id=persona_id,
+                           tipo=m.TipoAlerta.SIN_REPORTE, atendida=False)
+                .all())
+    for alerta in abiertas:
+        alerta.atendida = True
+        alerta.resolucion = resolucion[:400]
+    return len(abiertas)
+
+
+def cerrar(db: Session, jornada_id: int, persona_id: int,
+           cuando: datetime | None = None, a_mano: bool = False) -> None:
+    """Llego: se apaga el camino, y con el la alerta que decia que no
+    contestaba.
 
     Se llama desde el hito de llegada, no desde el reloj: marcar la
     llegada pone la jornada EN_CURSO y `pulsar` ya no la mira, asi que
@@ -374,6 +416,13 @@ def cerrar(db: Session, jornada_id: int, persona_id: int) -> None:
            .filter_by(jornada_id=jornada_id, persona_id=persona_id).first())
     if via and via.estado != m.EstadoTrayecto.LLEGO:
         via.estado = m.EstadoTrayecto.LLEGO.value
+    hora = f" a las {cuando:%H:%M}" if cuando else ""
+    resolver_alertas(
+        db, jornada_id, persona_id,
+        ("Se resolvio sola: la central asento su llegada al punto"
+         if a_mano else
+         "Se resolvio sola: marco su llegada al punto desde la app")
+        + hora + ".")
 
 
 def en_camino(db: Session, jornada_id: int) -> list[dict]:

@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app import auditoria, auth, imagenes
+from app import senal as senal_motor
 from app import implantado
 from app import hoja_implantado as hoja_imp
 from app import hoja_implantado_html as hoja_html
@@ -479,21 +480,35 @@ LIMITE_IMAGEN = imagenes.LIMITE
 def definir_senal(servicio_id: int, datos: s.SenalIn,
                   db: Session = Depends(get_db),
                   usuario: m.Usuario = Depends(ARMAR)):
-    """Una palabra, una imagen o ambas. Se imprime en una hoja aparte para
-    que el equipo la muestre al salir el ejecutivo del filtro o en el lobby."""
+    """Un color de la paleta --con palabra encima o sin ella--, una
+    palabra sola, o una imagen. Sale en el task sheet, para que el
+    principal sepa que buscar, y en el telefono del equipo, que la
+    levanta al salir el ejecutivo del filtro o en el lobby.
+
+    La imagen que ya estaba se conserva si no viene otra: asi, despues
+    de subirla, se puede mandar solo la nota.
+    """
     servicio = _servicio(db, servicio_id)
-    if not datos.texto and not datos.imagen:
-        raise HTTPException(400, "Indica al menos una palabra o una imagen")
+    if not (datos.texto or datos.imagen or datos.color
+            or servicio.senal_imagen):
+        raise HTTPException(400, "Indica un color, una palabra o una imagen")
+    if datos.color and datos.color not in senal_motor.COLORES:
+        raise HTTPException(400, {
+            "mensaje": "Ese color no esta en la paleta",
+            "colores": list(senal_motor.COLORES)})
 
     servicio.senal_texto = datos.texto
+    servicio.senal_color = datos.color
     if datos.imagen:
         servicio.senal_imagen = datos.imagen
     servicio.senal_nota = datos.nota
 
     auditoria.registrar(db, usuario, servicio, "definir senal",
-                        datos.texto or "imagen")
+                        " ".join(x for x in (datos.color, datos.texto) if x)
+                        or "imagen")
     db.commit()
     return {"resultado": "senal guardada", "texto": servicio.senal_texto,
+            "color": servicio.senal_color,
             "tiene_imagen": bool(servicio.senal_imagen),
             "nota": "Recuerda volver a publicar el task sheet para que la incluya"}
 
@@ -607,6 +622,7 @@ def quitar_senal(servicio_id: int, db: Session = Depends(get_db),
                  usuario: m.Usuario = Depends(ARMAR)):
     servicio = _servicio(db, servicio_id)
     servicio.senal_texto = servicio.senal_imagen = servicio.senal_nota = None
+    servicio.senal_color = None
     auditoria.registrar(db, usuario, servicio, "quitar senal", None)
     db.commit()
 

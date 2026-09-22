@@ -85,6 +85,12 @@ TEXTOS = {
         "sign_title": "Identification sign",
         "sign_footer": "Your security team will display this sign.",
         "sign_look": "Please look for it on arrival.",
+        "sign_color": "Your team will be waiting with the phone screen in {color}",
+        "sign_color_word": " and the word {word}",
+        "color_naranja": "orange", "color_amarillo": "yellow",
+        "color_verde": "green", "color_turquesa": "turquoise",
+        "color_azul": "blue", "color_morado": "purple",
+        "color_magenta": "magenta", "color_rojo": "red",
         "privacy": ("Confidential document. It contains security details and the "
                     "executive's movements. Do not share outside the authorized "
                     "personnel of this service."),
@@ -177,6 +183,12 @@ TEXTOS = {
         "sign_title": "Señal de identificación",
         "sign_footer": "Su equipo de seguridad mostrará esta señal.",
         "sign_look": "Búsquela al salir.",
+        "sign_color": "Su equipo lo espera con la pantalla del teléfono en {color}",
+        "sign_color_word": " y la palabra {word}",
+        "color_naranja": "naranja", "color_amarillo": "amarillo",
+        "color_verde": "verde", "color_turquesa": "turquesa",
+        "color_azul": "azul", "color_morado": "morado",
+        "color_magenta": "magenta", "color_rojo": "rojo",
         "privacy": ("Documento confidencial. Contiene datos de seguridad y "
                     "movimientos del ejecutivo. No compartir fuera de las "
                     "personas autorizadas del servicio."),
@@ -266,6 +278,12 @@ TEXTOS = {
         "sign_title": "Sinal de identificação",
         "sign_footer": "Sua equipe de segurança mostrará este sinal.",
         "sign_look": "Procure por ele na chegada.",
+        "sign_color": "Sua equipe o espera com a tela do telefone em {color}",
+        "sign_color_word": " e a palavra {word}",
+        "color_naranja": "laranja", "color_amarillo": "amarelo",
+        "color_verde": "verde", "color_turquesa": "turquesa",
+        "color_azul": "azul", "color_morado": "roxo",
+        "color_magenta": "magenta", "color_rojo": "vermelho",
         "privacy": ("Documento confidencial. Contém dados de segurança e "
                     "movimentos do executivo. Não compartilhar fora das pessoas "
                     "autorizadas do serviço."),

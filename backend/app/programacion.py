@@ -124,6 +124,32 @@ def evaluar(servicio: m.Servicio) -> list[str]:
     return []
 
 
+def confirmar_si_todos(jornada: m.Jornada) -> bool:
+    """El dia pasa a *confirmada* cuando ya confirmo toda su gente.
+
+    `confirmada` existia en el catalogo de la jornada y no lo escribia
+    nadie: cada asignacion guardaba su `confirmado` y el dia se quedaba
+    en `planeada` hasta que alguien llegaba al punto. La regla es la
+    misma que la de `evaluar` con el servicio: sube cuando ya no falta
+    nada, y no baja. Si despues entra un relevo sin confirmar, su renglon
+    lo dice; el dia no regresa.
+
+    Cuenta la gente viva del dia --la relevada ya no va--. Un dia sin
+    nadie no se confirma solo. Y solo sube desde `planeada`: uno que el
+    reloj ya puso proximo a iniciar va mas adelante, no atras.
+
+    Lo llaman los cuatro lugares donde alguien confirma: la app, la
+    posicion del "voy en camino", lo dicho por telefono y la central.
+    """
+    if jornada.estatus != m.EstatusJornada.PLANEADA:
+        return False
+    vivos = [a for a in jornada.personal if a.persona_id and not a.relevado_en]
+    if not vivos or not all(a.confirmado for a in vivos):
+        return False
+    jornada.estatus = m.EstatusJornada.CONFIRMADA
+    return True
+
+
 def estado(servicio: m.Servicio) -> dict:
     pendientes = faltantes(servicio)
     sin_recursos = faltantes_de_recursos(servicio)

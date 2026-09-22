@@ -917,10 +917,12 @@ class PublicarTaskSheetIn(Base):
 
 
 class SenalIn(Base):
-    """La senal puede ser una palabra o una imagen; tambien las dos."""
+    """La senal: un color de la paleta (con palabra encima o sin ella),
+    una palabra sola, o una imagen."""
     texto: str | None = None
     imagen: str | None = None      # data URI o URL
     nota: str | None = None
+    color: str | None = None       # clave de la paleta (app/senal.py)
 
 
 # ================================================================ ODOO

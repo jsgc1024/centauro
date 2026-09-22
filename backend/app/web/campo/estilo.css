@@ -118,6 +118,43 @@ label { display: block; font-size: 13px; color: var(--gris);
         margin-bottom: 6px; }
 .campo { margin-bottom: 14px; }
 
+/* La senal a pantalla completa: blanco y nada mas. Encima de todo, la
+   barra y el panico incluidos: mientras se levanta, no hay otra cosa
+   que hacer con el telefono. */
+.senal-pantalla {
+  position: fixed; inset: 0; z-index: 60;
+  background: #fff; color: #000;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 10px;
+  padding: 12px;
+  padding-top: max(12px, env(safe-area-inset-top));
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+body.senal-abierta { overflow: hidden; }
+.senal-imagen {
+  max-width: 100%; max-height: 100%; min-height: 0;
+  object-fit: contain;
+}
+.senal-imagen.con-texto { max-height: 72%; }
+.senal-texto {
+  width: 100%; text-align: center;
+  font-weight: 800; line-height: 1; word-break: break-word;
+  font-size: clamp(36px, 15vw, 220px);
+}
+.senal-texto.con-imagen { font-size: clamp(24px, 9vw, 80px); }
+.senal-texto.chico { font-size: 16px; font-weight: 500; color: var(--gris); }
+.senal-aviso { font-size: 16px; color: var(--grave); text-align: center; max-width: 320px; }
+.senal-cerrar {
+  position: absolute; right: 10px; top: max(10px, env(safe-area-inset-top));
+  width: 44px; min-height: 44px; padding: 0; border-radius: 999px;
+  background: rgba(127, 127, 127, .22); color: inherit; font-size: 20px;
+}
+.senal-punto { display: inline-block; width: 14px; height: 14px; border-radius: 50%;
+               flex: 0 0 auto; }
+.senal-boton { display: inline-flex; align-items: center; gap: 8px; margin-top: 4px; }
+.senal-icono { display: inline-flex; width: 18px; height: 18px; }
+.senal-icono svg { width: 100%; height: 100%; }
+
 /* La franja de deshacer: justo encima de la barra, que es donde el
    pulgar acaba de estar. Nunca encima del boton de panico. */
 .deshacer {

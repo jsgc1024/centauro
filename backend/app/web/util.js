@@ -189,6 +189,8 @@ export function etiqueta(texto, tono = "") {
 const ESTATUS = {
   borrador: "est_borrador",
   solicitado: "est_solicitado",
+  // Reservado: la cotizacion vive en Odoo y el servicio llega ya
+  // autorizado. Se traduce por si un dato viejo lo trae.
   cotizado: "est_cotizado",
   autorizado: "est_autorizado",
   planeado: "est_planeado",
@@ -206,6 +208,12 @@ const ESTATUS = {
   transferido: "est_transferido",
   en_comprobacion: "est_en_comprobacion",
   devuelto: "est_devuelto",
+  // Los del dia. `arribado` y `en_curso` son los mismos de arriba.
+  planeada: "est_planeada",
+  confirmada: "est_confirmada",
+  proxima_a_iniciar: "est_proxima_a_iniciar",
+  terminada: "est_terminada",
+  cancelada: "est_cancelada",
 };
 
 export function estatus(codigo) {

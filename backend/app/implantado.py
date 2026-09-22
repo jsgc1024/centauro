@@ -1447,7 +1447,11 @@ def rehacer_dias(db: Session, contrato: m.ContratoImplantado) -> int:
             continue
         if jornada.fecha <= hoy:
             continue           # lo que ya paso se queda como quedo
-        if jornada.estatus != m.EstatusJornada.PLANEADA:
+        # Un dia que su gente ya confirmo cuenta igual que uno planeado:
+        # todavia no arranca y lo que se rehace es su plantilla. Vuelve a
+        # planeada porque la gente que entra no ha confirmado nada.
+        if jornada.estatus not in (m.EstatusJornada.PLANEADA,
+                                   m.EstatusJornada.CONFIRMADA):
             continue
         # Un dia con cambio ya fue decidido a mano: no se pisa.
         if any(a.reemplaza_a_id for a in jornada.personal):
@@ -1458,6 +1462,7 @@ def rehacer_dias(db: Session, contrato: m.ContratoImplantado) -> int:
         for a in list(jornada.vehiculos):
             db.delete(a)
         db.flush()
+        jornada.estatus = m.EstatusJornada.PLANEADA
         if es_12x36:
             _asignar_turno(db, jornada, contrato,
                            de_quien_es(pareja, arranque, inicio, jornada.fecha))

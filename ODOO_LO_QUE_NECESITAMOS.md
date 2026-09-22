@@ -258,10 +258,15 @@ POST /odoo/acuerdos
 | `lineas[].cantidad` | sí | cuántos de ese perfil ese día |
 | `lineas[].precio_unitario` | sí | lo que se le cobra al cliente |
 
-**Qué pasa al recibirlo.** El servicio **nace en Centauro**, en borrador,
-con su cliente, su ejecutivo y su línea base cargada. El consultor lo
-abre y arma el equipo; nadie vuelve a capturar el encabezado ni el
-precio.
+**Qué pasa al recibirlo.** El servicio **nace en Centauro** ya
+**autorizado**, con su cliente, su ejecutivo y su línea base cargada. El
+consultor lo abre y arma el equipo; nadie vuelve a capturar el
+encabezado ni el precio.
+
+**El estatus `cotizado` no existe en Centauro.** Entre "se cotizó" y "el
+cliente autorizó" todo pasa en Odoo, y aquí no hay nada que mostrar en
+ese rato. El catálogo conserva el valor por si algún día la cotización
+vuelve a vivir aquí, pero ningún proceso lo escribe.
 
 **Por qué el renglón por día y por perfil, y no el total.** El
 comparativo del cierre no compara totales: compara renglón contra

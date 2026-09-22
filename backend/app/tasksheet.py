@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app import correo_html
 from app import models as m
+from app import senal as senal_motor
 from app import textos_aviso as ta
 from app.experiencia import horas_acumuladas
 from app.operacion import distancia_metros
@@ -448,8 +449,13 @@ def armar(db: Session, equipo_id: int) -> dict:
                        if servicio.tipo == m.TipoServicio.EVENTUAL else None),
         "senal": ({"texto": servicio.senal_texto,
                    "imagen": servicio.senal_imagen,
-                   "nota": servicio.senal_nota}
-                  if (servicio.senal_texto or servicio.senal_imagen) else None),
+                   "nota": servicio.senal_nota,
+                   "color": senal_motor.color(servicio.senal_color)}
+                  if (servicio.senal_texto or servicio.senal_imagen
+                      or servicio.senal_color) else None),
+        # La paleta viaja con la vista para que la consola la dibuje sin
+        # otra consulta y sin una copia propia de los colores.
+        "senal_colores": senal_motor.paleta(),
         # La ciudad donde opera ESTE equipo: en un proyecto que va de
         # Mexico a Monterrey, cada hoja dice su ciudad.
         "plaza": db.get(m.Plaza, equipo.ciudad_id).nombre,

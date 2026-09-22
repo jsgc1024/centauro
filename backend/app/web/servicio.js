@@ -2326,23 +2326,40 @@ function bloqueVestimenta(servicio) {
 
 /* ----------------------------------------------------------- la senal */
 
-/* Lo que el equipo levanta cuando el ejecutivo sale del filtro. Puede ser
-   una palabra (su apellido) o una imagen (el logo del cliente, que se
-   reconoce de mas lejos). Se imprime a pagina completa: es una o la otra,
-   nunca las dos, asi que al guardar una se quita la que estaba. */
+/* Lo que el equipo levanta cuando el ejecutivo sale del filtro. Tres
+   formas, y una recomendada: un COLOR --una pantalla de un solo color se
+   distingue a veinte metros sin leer nada--, con una palabra encima si
+   se quiere; una PALABRA sola en letras grandes; o una IMAGEN del
+   cliente. Pedido de Salvador, 22 sep. Es una forma a la vez: al
+   guardar una se quita la que estaba. */
 function bloqueSenal(servicio, vista) {
   const actual = vista.senal || {};
+  const colores = vista.senal_colores || [];
   const zona = h("div", { style: "margin-top:16px" });
 
+  /* Tres formas, y una recomendada. Un servicio nuevo abre en Color; uno
+     que ya tenia palabra o imagen abre en la suya. */
+  const comoColor = h("input", { type: "radio", name: "senal_como" });
   const comoTexto = h("input", { type: "radio", name: "senal_como" });
   const comoImagen = h("input", { type: "radio", name: "senal_como" });
-  if (actual.imagen) comoImagen.checked = true; else comoTexto.checked = true;
+  if (actual.imagen) comoImagen.checked = true;
+  else if (actual.texto && !actual.color) comoTexto.checked = true;
+  else comoColor.checked = true;
+
+  let elegido = (actual.color && actual.color.clave)
+    || (colores.length ? colores[0].clave : null);
+  const colorElegido = () => colores.find(c => c.clave === elegido) || null;
+  const nombreColor = () => {
+    const c = colorElegido();
+    return c ? t(`color_${c.clave}`) : "";
+  };
 
   /* La senal se imprime tal cual se escribe: si el consultor la quiere
      en mayusculas, asi se queda. */
   const texto = entrada("texto", {
     placeholder: "MR. BROOKS", "data-crudo": "",
     value: actual.texto || "" });
+  const nota = entrada("nota", { value: actual.nota || "", maxlength: 200 });
 
   const archivo = h("input", { type: "file", accept:
     "image/png,image/jpeg,image/webp,image/svg+xml" });
@@ -2356,7 +2373,48 @@ function bloqueSenal(servicio, vista) {
     previa.hidden = false;
   });
 
-  const cajaTexto = h("div", {}, campo(t("srv_palabra_senal"), texto));
+  /* El telefono como lo vera el principal, en vivo mientras se elige,
+     y la frase que va a leer en su hoja. */
+  const telefono = h("div", { clase: "senal-telefono" });
+  const frase = h("div", { clase: "chico gris", style: "margin-top:8px" });
+  const pintarPrevia = () => {
+    const c = colorElegido();
+    telefono.style.background = c ? c.hex : "";
+    telefono.style.color = c ? c.letra : "";
+    const palabra = h("b", {}, texto.value.trim());
+    telefono.replaceChildren(palabra);
+    const dice = t("srv_senal_frase").replace("{color}", nombreColor().toLowerCase())
+      + (texto.value.trim()
+         ? t("srv_senal_frase_palabra").replace("{palabra}", texto.value.trim())
+         : "") + ".";
+    const renglon = h("b", {}, dice);
+    frase.replaceChildren(`${t("srv_senal_hoja")} `, renglon);
+  };
+  const circulos = h("div", { clase: "senal-colores" });
+  const pintarCirculos = () => {
+    const botones = colores.map(c => h("button", {
+      type: "button",
+      clase: "senal-color" + (c.clave === elegido ? " sel" : ""),
+      style: `background:${c.hex};color:${c.letra}`,
+      title: t(`color_${c.clave}`), "aria-label": t(`color_${c.clave}`),
+      onclick: (e) => {
+        e.preventDefault();
+        elegido = c.clave;
+        pintarCirculos();
+        pintarPrevia();
+      } }, c.clave === elegido ? "✓" : ""));
+    circulos.replaceChildren(...botones);
+  };
+  pintarCirculos();
+  texto.addEventListener("input", pintarPrevia);
+
+  const etiquetaTexto = h("label", {}, t("srv_palabra_senal"));
+  const cajaColor = h("div", { clase: "senal-armado" },
+    h("div", {},
+      campo(t("srv_elige_color"), circulos),
+      h("div", { clase: "chico gris" }, nombreColor())),
+    telefono);
+  const cajaTexto = h("div", { clase: "campo" }, etiquetaTexto, texto);
   const cajaImagen = h("div", {},
     campo(t("srv_archivo"), archivo),
     h("div", { clase: "chico gris" },
@@ -2364,16 +2422,23 @@ function bloqueSenal(servicio, vista) {
     previa);
 
   const acomodar = () => {
-    cajaTexto.hidden = !comoTexto.checked;
+    cajaColor.hidden = !comoColor.checked;
+    frase.hidden = !comoColor.checked;
+    cajaTexto.hidden = !(comoColor.checked || comoTexto.checked);
+    etiquetaTexto.textContent = comoColor.checked
+      ? t("srv_palabra_encima") : t("srv_palabra_senal");
     cajaImagen.hidden = !comoImagen.checked;
+    pintarPrevia();
   };
-  comoTexto.addEventListener("change", acomodar);
-  comoImagen.addEventListener("change", acomodar);
+  for (const r of [comoColor, comoTexto, comoImagen])
+    r.addEventListener("change", acomodar);
   acomodar();
 
   const guardar = h("button", { clase: "claro chico", onclick: async (e) => {
     e.preventDefault();
     const f = archivo.files && archivo.files[0];
+    if (comoColor.checked && !elegido)
+      return mensaje(t("srv_elige_color"), "alerta");
     if (comoTexto.checked && !texto.value.trim())
       return mensaje(t("srv_escribe_senal"), "alerta");
     if (comoImagen.checked && !f && !actual.imagen)
@@ -2381,16 +2446,22 @@ function bloqueSenal(servicio, vista) {
 
     e.target.disabled = true;
     try {
-      // Se limpia primero: la hoja imprime una sola senal, no las dos.
+      // Se limpia primero: una senal a la vez.
       await api.borrar(`/servicios/${servicio.id}/senal`);
-      if (comoTexto.checked) {
+      const cuerpo = { nota: nota.value.trim() || null };
+      if (comoColor.checked) {
         await api.put(`/servicios/${servicio.id}/senal`,
-                      { texto: texto.value.trim() });
+                      { ...cuerpo, color: elegido,
+                        texto: texto.value.trim() || null });
+      } else if (comoTexto.checked) {
+        await api.put(`/servicios/${servicio.id}/senal`,
+                      { ...cuerpo, texto: texto.value.trim() });
       } else if (f) {
         await api.subir(`/servicios/${servicio.id}/senal/imagen`, f);
+        await api.put(`/servicios/${servicio.id}/senal`, cuerpo);
       } else {
         await api.put(`/servicios/${servicio.id}/senal`,
-                      { imagen: actual.imagen });
+                      { ...cuerpo, imagen: actual.imagen });
       }
       mensaje(t("srv_senal_guardada"));
     } catch (err) { mensaje(err.message, "grave"); }
@@ -2403,23 +2474,34 @@ function bloqueSenal(servicio, vista) {
     try {
       await api.borrar(`/servicios/${servicio.id}/senal`);
       texto.value = "";
+      nota.value = "";
       previa.hidden = true;
+      pintarPrevia();
       mensaje(t("srv_senal_quitada"));
     } catch (err) { mensaje(err.message, "grave"); }
     e.target.disabled = false;
   } }, t("srv_quitar_senal"));
 
+  const opcion = (radio, titulo, pie, recomendada) =>
+    h("label", { clase: "senal-opcion" + (recomendada ? " recomendada" : "") },
+      recomendada ? h("span", { clase: "senal-etiqueta" }, t("srv_senal_recomendada")) : null,
+      h("div", {}, radio, " ", h("b", {}, titulo)),
+      h("div", { clase: "chico gris" }, pie));
+
   zona.append(
     conAyuda("h4", t("srv_senal"), "ay_srv_senal", { clase: "grupo" }),
     h("div", { clase: "chico gris", style: "margin-bottom:8px" },
       t("srv_senal_pie")),
-    h("div", { clase: "acciones", style: "margin-bottom:6px" },
-      h("label", { clase: "casilla" }, comoTexto, t("srv_texto")),
-      h("label", { clase: "casilla" }, comoImagen, t("srv_imagen"))),
-    cajaTexto, cajaImagen,
+    h("div", { clase: "senal-opciones" },
+      opcion(comoColor, t("srv_color"), t("srv_color_pie"), true),
+      opcion(comoTexto, t("srv_texto"), t("srv_texto_pie"), false),
+      opcion(comoImagen, t("srv_imagen"), t("srv_imagen_pie"), false)),
+    cajaColor, cajaTexto, cajaImagen,
+    campo(t("srv_nota_senal"), nota),
+    frase,
     h("div", { clase: "acciones", style: "margin-top:10px" },
       guardar,
-      (actual.texto || actual.imagen) ? quitar : ""));
+      (actual.texto || actual.imagen || actual.color) ? quitar : ""));
   return zona;
 }
 /* ------------------------------------------------------------ a bordo */

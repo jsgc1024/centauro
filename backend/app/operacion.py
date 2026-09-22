@@ -515,7 +515,7 @@ def registrar_hito(db: Session, jornada_id: int, persona_id: int,
         # Se importa aqui adentro: trayecto usa `distancia_metros` de
         # este archivo, y arriba seria un circulo.
         from app import trayecto
-        trayecto.cerrar(db, jornada.id, persona_id)
+        trayecto.cerrar(db, jornada.id, persona_id, cuando=ahora)
         # Cada uno en su idioma: el principal suele ser extranjero y
         # quien pidio el servicio suele ser del pais. Son dos correos
         # distintos, no el mismo mandado dos veces.
@@ -1285,7 +1285,7 @@ def registrar_hito_a_mano(db: Session, jornada_id: int,
 
     # El camino al punto se apaga: ya llego, aunque la marca no sea suya.
     from app import trayecto
-    trayecto.cerrar(db, jornada_id, persona_id)
+    trayecto.cerrar(db, jornada_id, persona_id, cuando=momento, a_mano=True)
 
     db.flush()
     return {"resultado": "marca registrada a mano",

@@ -501,6 +501,12 @@ class EstatusServicio(str, enum.Enum):
     # "Borrador" decia que alguien estaba escribiendo; "solicitado" dice
     # que hay un compromiso con el cliente esperando gente.
     SOLICITADO = "solicitado"
+    # Reservado: hoy no lo escribe nadie. La cotizacion se hace y se
+    # autoriza en Odoo (decision de Salvador, 21 sep), asi que el
+    # servicio que llega de alla nace ya `autorizado`; el rato entre
+    # "se cotizo" y "el cliente dijo que si" no pasa aqui. Se queda en
+    # el catalogo para que un dato viejo no truene y por si algun dia
+    # la cotizacion vuelve a vivir en Centauro.
     COTIZADO = "cotizado"
     AUTORIZADO = "autorizado"
     PLANEADO = "planeado"
@@ -639,6 +645,10 @@ class Servicio(Base):
     senal_texto: Mapped[str | None] = mapped_column(String(80), nullable=True)
     senal_imagen: Mapped[str | None] = mapped_column(Text, nullable=True)
     senal_nota: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # La clave del color de la paleta (`senal.py`), no el hex: el nombre
+    # sale en la hoja del principal en su idioma, y el hex puede cambiar
+    # el dia que llegue el manual de marca sin tocar ningun servicio.
+    senal_color: Mapped[str | None] = mapped_column(String(12), nullable=True)
     # Referencia cruzada: extension abierta como servicio nuevo por choque de recursos.
     servicio_origen_id: Mapped[int | None] = mapped_column(ForeignKey("servicio.id"), nullable=True)
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
