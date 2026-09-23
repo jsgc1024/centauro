@@ -97,10 +97,13 @@ const MENU = [
      de operacion, y se toma mirando la misma cartera. */
   { ruta: "/equipo", texto: "nav_personal", grupo: "nav_operaciones_ep",
     cuenta: "rec_personal", quienes: CONSULTA },
-  /* El bono del mes vencido: se calcula el dia 3 y se deposita el 5.
-     Va junto a la nomina porque es dinero, y aparte porque no viaja
-     en el corte semanal: la fecha es fija y el corte cae donde cae. */
-  { ruta: "/bonos", texto: "nav_bonos", grupo: "nav_administrativa",
+  /* El desempeno del personal y su bono del mes vencido, que se
+     calcula el dia 3 y se deposita el 5. Va en Operaciones EP
+     --decision de Salvador, 23 sep--, junto a Personal: lo que mide
+     es como trabajo la gente en la calle, y lo consulta quien decide
+     a quien se manda. Estaba junto a la nomina porque el bono es
+     dinero. */
+  { ruta: "/bonos", texto: "nav_bonos", grupo: "nav_operaciones_ep",
     cuenta: "rec_bonos", quienes: DESEMPENO },
   /* La voz del cliente. Una calificacion baja abre revision y hasta
      hoy nadie podia verla: el motor llevaba meses escrito sin pantalla.

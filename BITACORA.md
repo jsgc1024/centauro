@@ -3486,6 +3486,14 @@ Ahora el corte y el resumen salen de la misma lista,
 `jornadas_del_mes`. La prueba abre el mes que sigue y revisa que cada
 resumen cuente solo sus días y cuadre con el corte.
 
+## 55. Desempeño, en Operaciones EP
+
+Decisión de Salvador, 23 de septiembre: el botón de Desempeño pasa de
+Gestión Administrativa a Operaciones EP, junto a Personal. Estaba con
+la nómina porque el bono es dinero; lo que mide es cómo trabajó la
+gente en la calle, y lo consulta quien decide a quién se manda. Quién
+lo ve no cambia.
+
 ## 14. Lo que falta
 
 ### Abierto
