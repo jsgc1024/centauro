@@ -57,6 +57,7 @@ backend/reconocimiento_odoo.txt
 # para deshacer y la hoja de RH (esa lleva datos personales).
 backend/odoo_plan.json
 backend/odoo_cambios_*.json
+backend/odoo_plan_hoja.json
 backend/Personal_de_seguridad_para_RH_*.xlsx
 
 # El detalle de la ultima lectura del personal de Odoo: lleva nombres.
