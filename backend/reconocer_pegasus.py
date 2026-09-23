@@ -2,30 +2,35 @@
 """Reconocimiento de Pegasus (el GPS de las unidades), de SOLO LECTURA.
 
 Antes de construir nada con el GPS de las unidades hay que ver que da de
-verdad la plataforma de DCT: que campos trae cada unidad, si la placa
-viene y como viene escrita, cada cuanto reporta, que eventos manda
---encendido, apagado, exceso de velocidad, panico--, en que unidades
-vienen la velocidad y la distancia, y si las horas vienen en UTC o en
-hora local.
+verdad la plataforma: si la placa viene y como viene escrita, cada cuanto
+reporta cada unidad, que eventos manda --encendido, apagado, exceso de
+velocidad, panico--, en que unidades vienen la velocidad y la distancia,
+y si las horas vienen en UTC o en hora local.
+
+Solo mira el grupo de Proteccion Ejecutiva ("2025 P.E.", decision de
+Salvador, 23 sep): el gateway es el de Centauro Satelital y trae las
+unidades de otras areas y de clientes, que aqui no tienen nada que
+hacer. De los demas grupos no se imprime ni el nombre.
 
 Lo que NO hace, y esta amarrado en el codigo:
   * No escribe nada en Pegasus. Despues de entrar solo hace GET a las
     rutas de LECTURAS; cualquier otra truena antes de salir a la red.
-  * No imprime ni guarda la clave, coordenadas, direcciones, placas
-    completas, nombres, telefonos, VIN ni IMEI. De la placa solo sale su
-    forma ("AAA-999-A"); de la posicion, cuanto hace que la reporto.
-  * Seis llamadas en total: los limites de Pegasus son de cientos por
-    hora y aqui no se gasta ni una de mas.
+  * No pide coordenadas, y si llegan no las imprime ni las guarda; nada
+    de direcciones, placas completas, nombres, telefonos, VIN ni IMEI.
+    De la placa solo sale su forma ("AAA-999-A"); de la posicion, cuanto
+    hace que la reporto.
+  * Pocas llamadas y espaciadas: los limites de Pegasus son de tres por
+    segundo y unos cientos por hora.
 
 Se corre desde la raiz del proyecto:
 
     docker compose run --rm api python reconocer_pegasus.py
 
 Pide el sitio, el usuario y la clave (la clave no se ve al escribirla);
-tambien los lee de PEGASUS_SITIO, PEGASUS_USUARIO y PEGASUS_CLAVE si
-estan en el entorno. La clave no se guarda en ningun lado. El detalle
-queda en backend/reconocimiento_pegasus.txt, que no va a git; en la
-terminal sale solo el resumen.
+tambien los lee de PEGASUS_SITIO, PEGASUS_USUARIO, PEGASUS_CLAVE y
+PEGASUS_GRUPO si estan en el entorno. La clave no se guarda en ningun
+lado. El detalle queda en backend/reconocimiento_pegasus.txt, que no va
+a git; en la terminal sale solo el resumen.
 """
 import collections
 import getpass
@@ -33,22 +38,32 @@ import os
 import re
 import statistics
 import sys
+import time
 from datetime import datetime, timezone
 
 import httpx
 
 SALIDA = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                       "reconocimiento_pegasus.txt")
+GRUPO = "2025 P.E."
+POR_LLAMADA = 25          # unidades por consulta de eventos (limite de Pegasus)
+PAUSA = 0.5               # segundos entre llamadas: tope de 3 por segundo
+KM_POR_MILLA = 1.609344
 
 # Lo unico que este script le pide a Pegasus despues de entrar.
-LECTURAS = {"/user", "/vehicles", "/rawdata", "/counters", "/trips"}
+LECTURAS = {"/user", "/groups", "/vehicles", "/rawdata", "/counters",
+            "/trips"}
+
+# Los campos de evento que se piden. Sin coordenadas: para esta prueba
+# no hacen falta y asi ni siquiera viajan.
+CAMPOS_EVENTO = "vid,event_time,system_time,label,code,type,mph,head,io_ign"
 
 # Nunca se imprime su valor: solo que existe y de que tipo es.
 DELICADOS = re.compile(
     r"(^|_)(lat|lon|lng|loc|location|coords?|coordinates|geo|address|"
     r"direccion|street|city|state|zip|plate|placa|license|vin|imei|esn|"
-    r"serial|phone|tel|mobile|email|mail|name|nombre|driver|asset|"
-    r"password|pass|token|auth|key|secret|user(name)?)($|_)",
+    r"serial|phone|tel|mobile|email|mail|name|nombre|alias|description|"
+    r"driver|asset|password|pass|token|auth|key|secret|user(name)?)($|_)",
     re.IGNORECASE)
 
 # Campos cuyo valor si ayuda a entender y no dice nada de nadie.
@@ -57,7 +72,7 @@ CLAROS = re.compile(
     r"sats?|valid|online|io_\w+|ecu_\w+|event_time|system_time|\w*_time|"
     r"\w*time\w*|temp\d*|dev_\w+|vehicle_\w+|vo|ce|cl|odometer|distance|"
     r"dist\w*|duration|fuel\w*|battery\w*|make|model|year|set|page|pages|"
-    r"total|state|status|trip\w*|moving|ign\w*)$",
+    r"total|status|trip\w*|moving|ign\w*|epoch\w*|age)$",
     re.IGNORECASE)
 
 
@@ -68,9 +83,9 @@ class Pegasus:
             sitio = "https://" + sitio
         self.sitio = sitio
         self.base = sitio + "/api"
-        self.http = httpx.Client(timeout=60, headers={
+        self.http = httpx.Client(timeout=90, headers={
             "Accept": "application/json",
-            "User-Agent": "centauro-reconocimiento/1.0"})
+            "User-Agent": "centauro-reconocimiento/2.0"})
         self.llamadas = 0
         self.fallas = []
 
@@ -97,9 +112,11 @@ class Pegasus:
             raise SystemExit("Pegasus contesto sin sesion ('auth').")
         self.http.headers["Authenticate"] = token
 
-    def leer(self, ruta: str, **params):
+    def leer(self, ruta: str, callar=False, **params):
         if ruta not in LECTURAS:
             raise RuntimeError(f"{ruta} no esta entre las lecturas permitidas")
+        if self.llamadas:
+            time.sleep(PAUSA)
         self.llamadas += 1
         try:
             r = self.http.get(f"{self.base}{ruta}", params=params)
@@ -107,7 +124,8 @@ class Pegasus:
             self.fallas.append(f"{ruta}: {type(e).__name__}")
             return None
         if r.status_code != 200:
-            self.fallas.append(f"{ruta}: {r.status_code} {_corto(r.text)}")
+            if not callar:
+                self.fallas.append(f"{ruta}: {r.status_code} {_corto(r.text)}")
             return None
         try:
             return r.json()
@@ -137,7 +155,8 @@ def lista_de(respuesta) -> list:
     if isinstance(respuesta, list):
         return respuesta
     if isinstance(respuesta, dict):
-        for llave in ("data", "events", "trips", "counters", "results"):
+        for llave in ("data", "events", "trips", "counters", "results",
+                      "groups"):
             if isinstance(respuesta.get(llave), list):
                 return respuesta[llave]
     return []
@@ -175,10 +194,10 @@ def tipo(valor) -> str:
 
 def mostrar(ruta: str, valor):
     """El valor si es claro; si no, solo su tipo."""
-    hoja = ruta.split(".")[-1].replace("[]", "")
-    if DELICADOS.search(hoja):
+    partes = [p.replace("[]", "") for p in ruta.split(".")]
+    if any(DELICADOS.search(p) for p in partes):
         return f"<{tipo(valor)}>"
-    if CLAROS.match(hoja) and not isinstance(valor, (dict, list)):
+    if CLAROS.match(partes[-1]) and not isinstance(valor, (dict, list)):
         return valor
     return f"<{tipo(valor)}>"
 
@@ -203,9 +222,9 @@ def momento(valor) -> datetime | None:
 
 
 def mas_reciente(obj) -> datetime | None:
-    """La hora mas nueva que traiga el objeto en un campo *time*."""
+    """La hora mas nueva que traiga el objeto en un campo de hora."""
     fechas = [momento(v) for r, v in recorrer(obj)
-              if "time" in r.split(".")[-1].lower()]
+              if re.search(r"time|epoch|date", r.split(".")[-1], re.I)]
     fechas = [f for f in fechas if f]
     return max(fechas) if fechas else None
 
@@ -224,8 +243,21 @@ def estructura(objetos: list) -> list[str]:
             if r not in ejemplo or ejemplo[r] in (None, "", []):
                 ejemplo[r] = v
     n = max(len(objetos), 1)
-    return [f"  {r:<44} {presencia[r]:>5}/{n:<5} {mostrar(r, ejemplo[r])!s:.60}"
+    return [f"  {r:<48} {presencia[r]:>5}/{n:<5} {mostrar(r, ejemplo[r])!s:.60}"
             for r in sorted(presencia)]
+
+
+def en_tandas(ids: list, n: int = POR_LLAMADA):
+    for i in range(0, len(ids), n):
+        yield ids[i:i + n]
+
+
+def normal(nombre: str) -> str:
+    return re.sub(r"[\s.\-_]", "", str(nombre or "")).lower()
+
+
+def mediana(valores):
+    return statistics.median(valores) if valores else None
 
 
 # ------------------------------------------------------------ el reconocimiento
@@ -236,6 +268,7 @@ def main():
     usuario = os.environ.get("PEGASUS_USUARIO") or input("Usuario: ")
     clave = os.environ.get("PEGASUS_CLAVE") or getpass.getpass(
         "Clave (no se ve al escribirla): ")
+    grupo_buscado = os.environ.get("PEGASUS_GRUPO") or GRUPO
     p = Pegasus(sitio)
     p.entrar(usuario.strip(), clave)
     del clave
@@ -247,183 +280,215 @@ def main():
         detalle.append(linea)
 
     ahora = datetime.now(timezone.utc)
-    ambos(f"Reconocimiento de Pegasus -- {ahora:%Y-%m-%d %H:%M} UTC")
+    ambos(f"Reconocimiento de Pegasus, grupo «{grupo_buscado}» -- "
+          f"{ahora:%Y-%m-%d %H:%M} UTC")
     ambos()
 
-    # --- quien entro: solo que permisos trae, nunca quien es
-    yo = p.leer("/user")
-    if isinstance(yo, dict):
-        detalle.append("USUARIO (campos, sin valores personales)")
-        detalle.extend(estructura([yo]))
-        detalle.append("")
+    # --- el grupo: solo el de Proteccion Ejecutiva
+    grupos = [g for g in lista_de(p.leer("/groups", set=1000))
+              if isinstance(g, dict)]
+    grupo = next((g for g in grupos
+                  if normal(g.get("name")) == normal(grupo_buscado)), None)
+    if grupo is None:
+        # De los demas grupos no se dice el nombre: solo los que se
+        # parecen, por si el nombre trae otro espacio u otro punto.
+        parecidos = [g.get("name") for g in grupos
+                     if re.search(r"p\.?\s*e\.?\b|protec", str(g.get("name")),
+                                  re.I)]
+        ambos(f"No encontre el grupo «{grupo_buscado}» entre {len(grupos)} "
+              "grupos.")
+        if parecidos:
+            ambos("  Se parecen: " + " | ".join(map(str, parecidos[:10])))
+        cerrar(p, resumen, detalle)
+        return
+    gid = grupo.get("id")
+    ambos(f"GRUPO: id {gid}")
 
-    # --- las unidades
-    datos = p.leer("/vehicles", set=1000)
-    unidades = lista_de(datos)
-    tiene_equipo = any(isinstance(u, dict) and isinstance(u.get("device"), dict)
-                       for u in unidades)
-    if unidades and not tiene_equipo:
-        # Sin el equipo no hay ultima posicion: se pide con el.
-        otra = lista_de(p.leer("/vehicles", set=1000,
-                               select="id,name,info,device"))
-        if otra:
-            unidades = otra
-    total = (datos.get("total") if isinstance(datos, dict) else None) or len(unidades)
-    ambos(f"UNIDADES: {total}")
+    # --- sus unidades, con lo ultimo que reporto cada equipo
+    unidades = []
+    for select in ("id,name,info,device:latest", "id,name,info,device:latest.loc",
+                   None):
+        params = {"groups": gid, "set": 1000}
+        if select:
+            params["select"] = select
+        unidades = [u for u in lista_de(p.leer("/vehicles", callar=bool(select),
+                                               **params))
+                    if isinstance(u, dict)]
+        if unidades:
+            break
+    ambos(f"UNIDADES DEL GRUPO: {len(unidades)}")
+    if not unidades:
+        cerrar(p, resumen, detalle)
+        return
 
     placas = collections.Counter()
-    nombres = collections.Counter()
     marcas = collections.Counter()
+    sin_placa = []
     edades = collections.Counter()
-    en_linea = collections.Counter()
-    adelantadas = 0
-    recientes = []
+    ultimas = []
     for u in unidades:
-        if not isinstance(u, dict):
-            continue
         info = u.get("info") if isinstance(u.get("info"), dict) else {}
-        placas[forma(info.get("license_plate") or info.get("plate"))] += 1
-        nombres[forma(u.get("name"))] += 1
+        placa = info.get("license_plate")
+        placas[forma(placa)] += 1
+        if not str(placa or "").strip():
+            sin_placa.append(u.get("id"))
         if info.get("make"):
-            marcas[str(info.get("make")).strip().title()] += 1
+            marcas[f"{str(info['make']).strip().title()} "
+                   f"{str(info.get('model') or '').strip().title()}".strip()] += 1
         equipo = u.get("device") if isinstance(u.get("device"), dict) else {}
-        conexion = equipo.get("connection") if isinstance(
-            equipo.get("connection"), dict) else {}
-        if "online" in conexion:
-            en_linea["en linea" if conexion.get("online") else "sin linea"] += 1
-        ultima = mas_reciente(equipo) or mas_reciente(u)
+        ultima = mas_reciente(equipo)
         if ultima is None:
             edades["sin hora"] += 1
             continue
+        ultimas.append(ultima)
         minutos = (ahora - ultima).total_seconds() / 60
-        if minutos < -5:
-            adelantadas += 1
-        recientes.append((ultima, u.get("id")))
         edades["menos de 10 min" if minutos < 10 else
                "menos de 1 hora" if minutos < 60 else
                "menos de 24 horas" if minutos < 1440 else
-               "mas de 24 horas"] += 1
+               "de 1 a 7 dias" if minutos < 10080 else
+               "mas de 7 dias"] += 1
 
-    con_placa = sum(n for f, n in placas.items() if f != "(vacia)")
+    con_placa = len(unidades) - len(sin_placa)
     ambos(f"  con placa: {con_placa} de {len(unidades)}")
     ambos("  como viene escrita la placa: " + ", ".join(
-        f"{f} x{n}" for f, n in placas.most_common(6)))
-    ambos("  como viene el nombre:        " + ", ".join(
-        f"{f} x{n}" for f, n in nombres.most_common(6)))
+        f"{f} x{n}" for f, n in placas.most_common(8)))
+    if sin_placa:
+        ambos("  sin placa (id interno de Pegasus, para capturarla alla): "
+              + ", ".join(str(i) for i in sin_placa[:40]))
     if marcas:
-        ambos("  marcas: " + ", ".join(f"{m} x{n}" for m, n in marcas.most_common(8)))
-    if recientes:
-        mas_nueva = max(r[0] for r in recientes)
-        ambos(f"  la que reporto mas reciente: hace "
-              f"{(ahora - mas_nueva).total_seconds() / 60:.0f} min "
-              "(si da ~360 con unidades andando, las horas vienen en hora "
-              "de Mexico y no en UTC)")
+        ambos("  unidades: " + ", ".join(
+            f"{m} x{n}" for m, n in marcas.most_common(10)))
     ambos("  ultimo reporte: " + ", ".join(
         f"{k} {edades[k]}" for k in ("menos de 10 min", "menos de 1 hora",
-                                     "menos de 24 horas", "mas de 24 horas",
-                                     "sin hora") if edades[k]))
-    if en_linea:
-        ambos("  conexion: " + ", ".join(f"{k} {n}" for k, n in en_linea.items()))
-    if adelantadas:
-        ambos(f"  OJO: {adelantadas} unidades reportan horas en el futuro; "
-              "las horas podrian venir en hora local, no en UTC")
+                                     "menos de 24 horas", "de 1 a 7 dias",
+                                     "mas de 7 dias", "sin hora")
+        if edades[k]))
+    if ultimas:
+        mas_nueva = (ahora - max(ultimas)).total_seconds() / 60
+        ambos(f"  la que reporto mas reciente: hace {mas_nueva:.0f} min"
+              + ("  <- parece hora de Mexico, no UTC"
+                 if 330 <= mas_nueva <= 390 else ""))
     ambos()
-    detalle.append("CAMPOS DE UNA UNIDAD (presencia / ejemplo tapado)")
-    detalle.extend(estructura([u for u in unidades if isinstance(u, dict)]))
+    detalle.append("CAMPOS DE UNA UNIDAD CON SU ULTIMO REPORTE "
+                   "(presencia / ejemplo tapado)")
+    detalle.extend(estructura(unidades))
     detalle.append("")
 
-    # --- las cinco que reportaron mas reciente: su ultimo dia
-    recientes.sort(key=lambda x: x[0], reverse=True)
-    elegidas = [str(i) for _, i in recientes[:5] if i is not None]
-    if not elegidas:
-        elegidas = [str(u.get("id")) for u in unidades[:5]
-                    if isinstance(u, dict) and u.get("id") is not None]
-    if not elegidas:
-        ambos("Sin unidades con identificador: no se piden eventos.")
-        cerrar(p, resumen, detalle)
-        return
-    ids = ",".join(elegidas)
-    ambos(f"EL ULTIMO DIA DE {len(elegidas)} UNIDADES (las que reportaron mas reciente)")
+    ids = [str(u.get("id")) for u in unidades if u.get("id") is not None]
 
-    crudo = p.leer("/rawdata", vehicles=ids, duration="P1D")
-    eventos = [e for e in lista_de(crudo) if isinstance(e, dict)]
-    ambos(f"  eventos: {len(eventos)}")
+    # --- el ultimo dia de eventos, en tandas de 25 unidades
+    eventos = []
+    for tanda in en_tandas(ids):
+        crudo = p.leer("/rawdata", vehicles=",".join(tanda), duration="P1D",
+                       fields=CAMPOS_EVENTO)
+        eventos.extend(e for e in lista_de(crudo) if isinstance(e, dict))
+    activas = {e.get("vid") for e in eventos}
+    ambos(f"EVENTOS DEL ULTIMO DIA: {len(eventos)}, de {len(activas)} unidades")
     if eventos:
         etiquetas = collections.Counter(
             f"{e.get('label')} (codigo {e.get('code')}, tipo {e.get('type')})"
             for e in eventos)
-        ambos("  eventos por etiqueta:")
-        for etiqueta, n in etiquetas.most_common(25):
+        ambos("  por etiqueta:")
+        for etiqueta, n in etiquetas.most_common(30):
             ambos(f"    {etiqueta}: {n}")
-        velocidades = [e[c] for e in eventos for c in ("mph", "kph", "speed")
-                       if isinstance(e.get(c), (int, float))]
-        campos_vel = sorted({c for e in eventos for c in ("mph", "kph", "speed")
-                             if c in e})
-        if velocidades:
-            ambos(f"  velocidad en {', '.join(campos_vel)}: maxima "
-                  f"{max(velocidades)}, mediana {statistics.median(velocidades)}")
-        distancias = sorted({r for e in eventos[:50] for r, _ in recorrer(e)
-                             if re.search(r"dist|odom|(^|\.)vo$", r)})
-        if distancias:
-            ambos("  campos de distancia: " + ", ".join(distancias))
+        mph = [e["mph"] for e in eventos
+               if isinstance(e.get("mph"), (int, float))]
+        if mph:
+            ambos(f"  velocidad (mph): maxima {max(mph)} "
+                  f"= {max(mph) * KM_POR_MILLA:.0f} km/h; en movimiento, "
+                  f"mediana {mediana([v for v in mph if v > 0]) or 0} mph")
+        encendido = collections.Counter(str(e.get("io_ign")) for e in eventos)
+        if encendido:
+            ambos("  encendido (io_ign): " + ", ".join(
+                f"{k} {n}" for k, n in encendido.most_common()))
         # Cada cuanto reporta, unidad por unidad.
         por_unidad = collections.defaultdict(list)
         for e in eventos:
             m = momento(e.get("event_time"))
             if m:
-                por_unidad[e.get("vid")].append(
-                    (m, (e.get("mph") or e.get("kph") or e.get("speed") or 0) > 0))
-        andando, parado = [], []
+                por_unidad[e.get("vid")].append((m, (e.get("mph") or 0) > 0))
+        andando, parado, retraso = [], [], []
         for marcas_ in por_unidad.values():
             marcas_.sort()
             for (a, mov), (b, _) in zip(marcas_, marcas_[1:]):
                 (andando if mov else parado).append((b - a).total_seconds())
+        for e in eventos:
+            a, b = momento(e.get("event_time")), momento(e.get("system_time"))
+            if a and b:
+                retraso.append((b - a).total_seconds())
         if andando:
-            ambos(f"  cada cuanto reporta andando: {statistics.median(andando):.0f} s "
+            ambos(f"  cada cuanto reporta andando: {mediana(andando):.0f} s "
                   "(mediana)")
         if parado:
-            ambos(f"  cada cuanto reporta parado:  {statistics.median(parado):.0f} s "
+            ambos(f"  cada cuanto reporta parado:  {mediana(parado):.0f} s "
                   "(mediana)")
+        if retraso:
+            ambos(f"  cuanto tarda en llegar a Pegasus: {mediana(retraso):.0f} s "
+                  f"(mediana), {max(retraso):.0f} s el peor")
         horas = [momento(e.get("event_time")) for e in eventos]
-        futuras = sum(1 for h in horas if h and (h - ahora).total_seconds() > 300)
-        if futuras:
-            ambos(f"  OJO: {futuras} eventos con hora en el futuro: "
-                  "event_time vendria en hora local")
+        horas = [h for h in horas if h]
+        if horas:
+            ultimo = (ahora - max(horas)).total_seconds() / 60
+            ambos(f"  el evento mas reciente: hace {ultimo:.0f} min"
+                  + ("  <- parece hora de Mexico, no UTC"
+                     if 330 <= ultimo <= 390 else ""))
         detalle.append("CAMPOS DE UN EVENTO (presencia / ejemplo tapado)")
         detalle.extend(estructura(eventos))
         detalle.append("")
     ambos()
 
     # --- la distancia y las horas de motor de ese dia
-    cuentas = p.leer("/counters", vehicles=ids, duration="P1D")
-    if cuentas is not None:
-        filas = lista_de(cuentas)
-        if not filas and isinstance(cuentas, dict):
-            # {id_unidad: {contadores}} o un solo objeto.
+    filas = []
+    for tanda in en_tandas(ids):
+        cuentas = p.leer("/counters", vehicles=",".join(tanda), duration="P1D")
+        filas_ = lista_de(cuentas)
+        if not filas_ and isinstance(cuentas, dict):
             if cuentas and all(isinstance(v, dict) for v in cuentas.values()):
-                filas = [{"vid": k, **v} for k, v in cuentas.items()]
+                filas_ = [{"vid": k, **v} for k, v in cuentas.items()]
             else:
-                filas = [cuentas]
-        ambos("CONTADORES DEL ULTIMO DIA (por unidad, id interno)")
-        for f in filas[:5]:
-            if not isinstance(f, dict):
-                continue
-            numeros = {r: v for r, v in recorrer(f)
-                       if isinstance(v, (int, float)) and not isinstance(v, bool)
-                       and re.search(r"dist|ign|idle|fuel|(^|\.)(vo|ce|cl)$", r)}
-            ident = f.get("vid") or f.get("id") or f.get("vehicle") or "?"
-            ambos(f"  unidad {ident}: " + ", ".join(
-                f"{r}={v}" for r, v in sorted(numeros.items())[:10]))
-        detalle.append("CAMPOS DE LOS CONTADORES")
-        detalle.extend(estructura([f for f in filas if isinstance(f, dict)]))
-        detalle.append("")
-        ambos()
+                filas_ = [cuentas]
+        filas.extend(f for f in filas_ if isinstance(f, dict))
+    anduvieron = [f for f in filas
+                  if isinstance(f.get("dev_dist"), (int, float)) and f["dev_dist"] > 0]
+    ambos(f"KILOMETROS DEL ULTIMO DIA: {len(anduvieron)} de {len(filas)} unidades "
+          "se movieron")
+    for f in sorted(anduvieron, key=lambda f: -f["dev_dist"])[:15]:
+        motor = f.get("dev_ign") or f.get("ignition") or 0
+        ambos(f"  unidad {f.get('vid')}: {f['dev_dist'] / 1000:.1f} km, "
+              f"{motor / 3600:.1f} h de motor")
+    if anduvieron:
+        ambos(f"  en total: {sum(f['dev_dist'] for f in anduvieron) / 1000:.0f} km")
+    detalle.append("CAMPOS DE LOS CONTADORES")
+    detalle.extend(estructura(filas))
+    detalle.append("")
+    ambos()
 
     # --- los viajes: arranque, llegada, duracion, distancia
-    viajes = [v for v in lista_de(p.leer("/trips", vehicles=ids,
-                                         duration="P1D")) if isinstance(v, dict)]
+    viajes = []
+    for tanda in en_tandas(ids):
+        viajes.extend(v for v in lista_de(p.leer(
+            "/trips", vehicles=",".join(tanda), duration="P1D"))
+            if isinstance(v, dict))
     ambos(f"VIAJES DEL ULTIMO DIA: {len(viajes)}")
     if viajes:
+        dur = [v["duration"] / 60 for v in viajes
+               if isinstance(v.get("duration"), (int, float))]
+        dist = [v["distance"] / 1000 for v in viajes
+                if isinstance(v.get("distance"), (int, float))]
+        if dur:
+            ambos(f"  duracion: mediana {mediana(dur):.0f} min")
+        if dist:
+            ambos(f"  distancia: mediana {mediana(dist):.1f} km, "
+                  f"la mas larga {max(dist):.1f} km")
+        andando = sum(1 for v in viajes if v.get("moving"))
+        ambos(f"  en curso ahora: {andando}")
+        fines = [momento(v.get("end_time")) for v in viajes]
+        fines = [f for f in fines if f]
+        if fines:
+            ultimo = (ahora - max(fines)).total_seconds() / 60
+            ambos(f"  el viaje que termino mas reciente: hace {ultimo:.0f} min"
+                  + ("  <- parece hora de Mexico, no UTC"
+                     if 330 <= ultimo <= 390 else ""))
         detalle.append("CAMPOS DE UN VIAJE (presencia / ejemplo tapado)")
         detalle.extend(estructura(viajes))
         detalle.append("")
