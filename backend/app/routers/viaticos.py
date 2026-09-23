@@ -6,10 +6,12 @@ from decimal import Decimal, ROUND_FLOOR
 
 from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query,
                      Response, UploadFile)
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app import auditoria
 from app import auth
+from app import bolson as motor_bolson
 from app import depositos as motor_depositos
 from app import devoluciones as devoluciones_motor
 from app import imagenes
@@ -304,19 +306,33 @@ def _comprobado(v: m.AsignacionViatico) -> Decimal:
                 if not c.rechazado), Decimal("0"))
 
 
+class MotivoIn(BaseModel):
+    motivo: str
+
+
 @router.post("/{viatico_id}/rechazar-comprobante/{comprobante_id}",
              summary="El consultor rechaza un gasto que no aplica")
-def rechazar_comprobante(viatico_id: int, comprobante_id: int, motivo: str,
+def rechazar_comprobante(viatico_id: int, comprobante_id: int,
+                         motivo: str | None = None,
+                         datos: MotivoIn | None = None,
                          db: Session = Depends(get_db),
-                         usuario: m.Usuario = Depends(CONSULTOR)):
+                         usuario: m.Usuario = Depends(CIERRA)):
     """Un gasto que no corresponde al servicio deja de contar como
     comprobado. Eso abre una diferencia que el conductor tiene que cubrir,
-    o que el consultor manda a descuento al cerrar."""
+    o que el consultor manda a descuento al cerrar.
+
+    El motivo llega en el cuerpo; en la direccion se sigue aceptando por
+    lo que ya lo mandaba asi. Es lo que la persona lee en su telefono."""
+    motivo = ((datos.motivo if datos else None) or motivo or "").strip()
+    if len(motivo) < 3:
+        raise HTTPException(400, {
+            "mensaje": "Escribe por que no aplica",
+            "que_hacer": "Es lo que la persona lee en su telefono."})
     v = _obtener(db, viatico_id)
     comprobante = next((c for c in v.comprobantes if c.id == comprobante_id), None)
     if not comprobante:
         raise HTTPException(404, "Ese comprobante no pertenece a esta asignacion")
-    if v.estatus == m.EstatusViatico.CERRADO:
+    if v.estatus in (m.EstatusViatico.CERRADO, m.EstatusViatico.DEVUELTO):
         raise HTTPException(409, "Los viaticos ya estan cerrados")
 
     comprobante.rechazado = True
@@ -349,7 +365,7 @@ def rechazar_comprobante(viatico_id: int, comprobante_id: int, motivo: str,
              summary="El consultor cierra por el conductor y manda a descuento")
 def cerrar_con_descuento(viatico_id: int, datos: s.CierreConDescuentoIn,
                          db: Session = Depends(get_db),
-                         usuario: m.Usuario = Depends(CONSULTOR)):
+                         usuario: m.Usuario = Depends(CIERRA)):
     """Cuando el conductor no puede resolver su comprobacion.
 
     Lo que quedo sin cubrir se le descuenta de su proxima nomina. El
@@ -359,6 +375,23 @@ def cerrar_con_descuento(viatico_id: int, datos: s.CierreConDescuentoIn,
     v = _obtener(db, viatico_id)
     if v.estatus == m.EstatusViatico.CERRADO:
         raise HTTPException(409, "Ya estaba cerrado")
+    # Decision de Salvador (23 sep): solo despues de su plazo --antes
+    # todavia puede comprobar-- y solo sobre dinero que ya se deposito.
+    if v.estatus not in (m.EstatusViatico.TRANSFERIDO,
+                         m.EstatusViatico.EN_COMPROBACION):
+        raise HTTPException(409, {
+            "mensaje": "Ese dinero todavia no se deposita",
+            "que_hacer": "Lo que no salio del banco no se descuenta."})
+    momento = reloj.ahora_de_la_jornada(db, v.jornada)
+    if not v.limite_comprobacion or momento < v.limite_comprobacion:
+        raise HTTPException(409, {
+            "mensaje": ("Todavia esta en plazo para comprobar"
+                        if v.limite_comprobacion else
+                        "Su plazo para comprobar todavia no arranca"),
+            "que_hacer": ("Cuando venza su plazo, lo que falte se puede "
+                          "descontar."),
+            "hasta": (v.limite_comprobacion.isoformat()
+                      if v.limite_comprobacion else None)})
 
     v.monto_comprobado = _comprobado(v)
     pendiente = (Decimal(str(v.monto_total)) - Decimal(str(v.monto_comprobado))
@@ -418,7 +451,7 @@ def cerrar_con_descuento(viatico_id: int, datos: s.CierreConDescuentoIn,
 
 @router.post("/{viatico_id}/cerrar", summary="El consultor verifica y cierra")
 def cerrar(viatico_id: int, db: Session = Depends(get_db),
-           usuario: m.Usuario = Depends(CONSULTOR)):
+           usuario: m.Usuario = Depends(CIERRA)):
     """Si falto dinero, el consultor solicita viaticos adicionales.
     Si sobro, se devuelve con comprobante."""
     v = _obtener(db, viatico_id)
@@ -463,15 +496,71 @@ def cerrar(viatico_id: int, db: Session = Depends(get_db),
 def validar_comprobante(viatico_id: int, comprobante_id: int,
                         observacion: str | None = None,
                         db: Session = Depends(get_db),
-                        _=Depends(CONSULTOR)):
+                        _=Depends(CIERRA)):
     v = _obtener(db, viatico_id)
     comprobante = next((c for c in v.comprobantes if c.id == comprobante_id), None)
     if not comprobante:
         raise HTTPException(404, "Ese comprobante no pertenece a esta asignacion")
+    if v.estatus in (m.EstatusViatico.CERRADO, m.EstatusViatico.DEVUELTO):
+        raise HTTPException(409, "Los viaticos ya estan cerrados")
+    if comprobante.rechazado:
+        raise HTTPException(409, {
+            "mensaje": "Ese comprobante ya se rechazo",
+            "que_hacer": "Si era bueno, que la persona lo vuelva a subir."})
     comprobante.validado = True
     comprobante.observacion = observacion
     db.commit()
     return {"resultado": "validado", "comprobante_id": comprobante_id}
+
+
+# ---------------------------------------------------------------- el bolson
+
+# El dinero de una persona en el servicio es uno solo: se deposita junto
+# y se gasta junto. Por dentro vive dia por dia, pero se revisa y se
+# cierra por persona (`app.bolson`). Cualquiera de sus viaticos nombra
+# el bolson: el servidor junta los demas.
+
+@router.post("/{viatico_id}/bolson/cerrar",
+             summary="Cerrar todo el dinero de una persona en el servicio")
+def cerrar_bolson(viatico_id: int, db: Session = Depends(get_db),
+                  usuario: m.Usuario = Depends(CIERRA)):
+    """Cuando todo lo depositado quedo comprobado o devuelto y cada
+    ticket tiene su revision. Si falta o sobra, dice que hacer."""
+    return motor_bolson.cerrar(db, _obtener(db, viatico_id), usuario)
+
+
+@router.post("/{viatico_id}/bolson/cerrar-con-descuento",
+             summary="Cerrar con descuento lo que una persona no comprobo")
+def cerrar_bolson_con_descuento(viatico_id: int,
+                                datos: s.CierreConDescuentoIn,
+                                db: Session = Depends(get_db),
+                                usuario: m.Usuario = Depends(CIERRA)):
+    """Solo despues de su plazo y solo sobre lo que se le deposito
+    (decision de Salvador, 23 sep). Lo descontado entra al siguiente
+    corte de nomina, en un solo ajuste."""
+    return motor_bolson.cerrar_con_descuento(
+        db, _obtener(db, viatico_id), datos, usuario)
+
+
+@router.get("/{viatico_id}/comprobantes/{comprobante_id}/imagen",
+            summary="La foto del ticket")
+def ver_imagen_comprobante(viatico_id: int, comprobante_id: int,
+                           db: Session = Depends(get_db),
+                           usuario: m.Usuario = Depends(auth.usuario_actual)):
+    """La ve quien revisa el dinero, y la persona la suya."""
+    v = _obtener(db, viatico_id)
+    if usuario.rol == m.Rol.PERSONAL_SEGURIDAD:
+        if v.persona_id != usuario.persona_id:
+            raise HTTPException(403, "Solo puedes ver tus propios comprobantes")
+    elif not auth.puede_el_usuario(db, usuario, "viaticos.ver"):
+        raise HTTPException(403, "Tu rol no puede ver comprobantes")
+    comprobante = next((c for c in v.comprobantes if c.id == comprobante_id),
+                       None)
+    if not comprobante:
+        raise HTTPException(404, "Ese comprobante no pertenece a esta asignacion")
+    if not comprobante.imagen:
+        raise HTTPException(404, "Ese comprobante no trae foto")
+    return _imagen(comprobante.imagen)
 
 
 @router.post("/{viatico_id}/devolver",

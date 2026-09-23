@@ -10,7 +10,7 @@ Sancion escalonada por incidencia:
   - grave:       la gestiona Recursos Humanos, quita todas las estrellas
 """
 import calendar
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from fastapi import HTTPException
@@ -316,42 +316,106 @@ def medir_seguimiento(db: Session, jornadas: list[m.Jornada], persona_id: int) -
     return {"valor": valor.quantize(Decimal("0.01")), "detalle": detalle}
 
 
-def medir_cierre_viaticos(db: Session, jornadas: list[m.Jornada],
-                          persona_id: int) -> dict:
-    """Dentro de 24 horas y sin desviaciones detectadas."""
-    ids = [j.id for j in jornadas]
-    if not ids:
-        return {"valor": CERO, "aplica": False, "detalle": "Sin jornadas este mes"}
+DIAS_CORTOS = ["lun", "mar", "mie", "jue", "vie", "sab", "dom"]
 
-    viaticos = (db.query(m.AsignacionViatico)
-                .filter(m.AsignacionViatico.jornada_id.in_(ids),
-                        m.AsignacionViatico.persona_id == persona_id).all())
-    if not viaticos:
-        return {"valor": CERO, "aplica": False,
-                "detalle": "No se le asignaron viaticos este mes: el criterio no aplica"}
 
-    bien = 0
-    problemas = []
-    for v in viaticos:
-        cerrado = v.estatus == m.EstatusViatico.CERRADO
-        cuadra = (Decimal(str(v.monto_total)) - Decimal(str(v.monto_comprobado))
-                  - Decimal(str(v.monto_devuelto))) == CERO
-        a_tiempo = True
-        if v.limite_comprobacion and v.jornada.fin_real:
-            a_tiempo = v.limite_comprobacion >= v.jornada.fin_real + timedelta(hours=24)
-        if cerrado and cuadra and a_tiempo:
+def _cuando(momento: datetime) -> str:
+    """"jue 17 a las 23:40"."""
+    return (f"{DIAS_CORTOS[momento.weekday()]} {momento.day} a las "
+            f"{momento:%H:%M}")
+
+
+def medir_cierre_viaticos(db: Session, persona_id: int, anio: int,
+                          mes: int) -> dict:
+    """Comprobar el dinero a tiempo (decision de Salvador, 23 sep).
+
+    A tiempo es haber terminado de comprobar antes de su plazo: lo
+    comprobado valido y lo devuelto alcanzaron lo depositado antes de
+    T0 + 24 h. Se mide cuando termino de comprobar, no el dia de cada
+    jornada: hasta aqui se comparaba el plazo contra el fin del dia mas
+    24 horas, que desde los dos relojes es siempre igual o mayor, y el
+    criterio no media nada.
+
+    Cada dinero cuenta en el mes en que cae su plazo: el del servicio
+    del 30 de septiembre que vence el 1 de octubre cuenta en octubre. El
+    cierre con descuento no es a tiempo: es lo que pasa cuando no se
+    comprobo. Se mide por servicio --por mes en el implantado--, porque
+    el dinero de una persona en un servicio es uno solo (`app.bolson`).
+    """
+    from app import bolson
+    from app import reloj
+
+    desde, hasta = _rango(anio, mes)
+    inicio = datetime.combine(desde, time.min)
+    fin = datetime.combine(hasta + timedelta(days=1), time.min)
+    # Con margen hacia atras: el plazo que manda es el ultimo del dinero,
+    # y un dia puede traer el suyo del mes anterior.
+    candidatos = (db.query(m.AsignacionViatico)
+                  .filter(m.AsignacionViatico.persona_id == persona_id,
+                          m.AsignacionViatico.estatus
+                          != m.EstatusViatico.CANCELADO,
+                          m.AsignacionViatico.limite_comprobacion
+                          >= inicio - timedelta(days=45),
+                          m.AsignacionViatico.limite_comprobacion < fin)
+                  .all())
+    bolsones: dict[tuple, list] = {}
+    for v in candidatos:
+        servicio = v.jornada.equipo.servicio
+        clave = (servicio.id,
+                 (v.jornada.fecha.year, v.jornada.fecha.month)
+                 if servicio.tipo == m.TipoServicio.IMPLANTADO else None)
+        bolsones.setdefault(clave, []).append(v)
+
+    medidos, bien, problemas = 0, 0, []
+    for suyos in bolsones.values():
+        # El bolson completo, no solo lo que traia plazo en la ventana.
+        suyos = bolson.de_la_persona(db, suyos[0])
+        limites = [v.limite_comprobacion for v in suyos
+                   if v.limite_comprobacion]
+        plazo = max(limites) if limites else None
+        if not plazo or not (inicio <= plazo < fin):
+            continue
+        cuenta = bolson.cuenta(suyos)
+        if cuenta["depositado"] <= 0:
+            continue
+        servicio = suyos[0].jornada.equipo.servicio
+        pais = db.get(m.Pais, servicio.pais_id)
+        if cuenta["estatus"] == "con_descuento":
+            medidos += 1
+            problemas.append(f"{servicio.folio}: se cerro con descuento")
+            continue
+        termino = bolson.termino_de_comprobar(suyos, pais)
+        if termino is None and reloj.ahora_en(pais) < plazo:
+            # Sigue en plazo: todavia puede comprobar. Una evaluacion a
+            # medio mes no lo cuenta como tarde; la del dia 3 ya lo ve
+            # vencido o terminado.
+            continue
+        medidos += 1
+        if termino and termino <= plazo:
             bien += 1
+        elif termino:
+            horas = int((termino - plazo).total_seconds() // 3600)
+            tarde = (f"{horas} hora(s) despues" if horas >= 1
+                     else "minutos despues")
+            problemas.append(
+                f"{servicio.folio}: termino de comprobar el "
+                f"{_cuando(termino)}, {tarde} de su plazo "
+                f"({plazo:%H:%M})")
         else:
-            motivo = ("no cerrado" if not cerrado else
-                      "cerrado con descuento" if v.cerrado_con_descuento else
-                      "no cuadra" if not cuadra else "fuera de plazo")
-            problemas.append(f"{v.jornada.fecha:%d/%m} ({motivo})")
+            problemas.append(
+                f"{servicio.folio}: no termino de comprobar; su plazo "
+                f"vencio el {_cuando(plazo)}")
 
-    valor = Decimal(bien) / Decimal(len(viaticos)) * 100
-    detalle = f"{bien} de {len(viaticos)} cierres correctos"
+    if not medidos:
+        return {"valor": CERO, "aplica": False,
+                "detalle": ("No tuvo dinero que comprobar con plazo en este "
+                            "mes: el criterio no aplica")}
+    valor = Decimal(bien) / Decimal(medidos) * 100
+    detalle = f"{bien} de {medidos} a tiempo"
     if problemas:
-        detalle += f". {', '.join(problemas[:5])}"
-    return {"valor": valor.quantize(Decimal("0.01")), "detalle": detalle}
+        detalle += ". " + ". ".join(problemas[:3])
+    return {"valor": valor.quantize(Decimal("0.01")),
+            "detalle": detalle[:400]}
 
 
 def medir_capacitacion(db: Session, persona_id: int, anio: int,
@@ -453,7 +517,8 @@ def evaluar(db: Session, persona_id: int, anio: int, mes: int,
             margen_minutos=int(puntual.tolerancia_minutos) if puntual else 0,
             margen_ocasiones=int(puntual.tolerancia_ocasiones) if puntual else 0),
         m.CodigoCriterio.SEGUIMIENTO_APP: medir_seguimiento(db, jornadas, persona_id),
-        m.CodigoCriterio.CIERRE_VIATICOS: medir_cierre_viaticos(db, jornadas, persona_id),
+        m.CodigoCriterio.CIERRE_VIATICOS: medir_cierre_viaticos(
+            db, persona_id, anio, mes),
         m.CodigoCriterio.ENTREGA_UNIDAD: medir_entrega_unidad(db, jornadas, persona_id),
         m.CodigoCriterio.RECOMPRA: medir_recompra(db, jornadas, persona_id),
         # Vacio no es reprobado. Mientras Odoo no mande la capacitacion

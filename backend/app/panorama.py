@@ -374,55 +374,125 @@ def _dia(db: Session, relojes: reloj.Relojes) -> list[dict]:
 # ==================================================================
 
 def _dinero(db: Session, ahora: datetime, relojes: reloj.Relojes) -> dict:
-    viaticos = db.query(m.AsignacionViatico).all()
+    from app import bolson
+    from app import cierre as motor_cierre
+    from app import facturacion
 
-    por_transferir = [v for v in viaticos
-                      if v.estatus in (m.EstatusViatico.ASIGNADO,
-                                       m.EstatusViatico.SOLICITADO)]
-    en_comprobacion = [v for v in viaticos
-                       if v.estatus == m.EstatusViatico.EN_COMPROBACION]
-    # El plazo de comprobacion se vence a la hora de alla.
-    vencidos = [
-        v for v in en_comprobacion
-        if v.limite_comprobacion and v.limite_comprobacion < relojes.ahora(
-            reloj.pais_de_la_jornada(v.jornada))]
+    por_transferir = (db.query(m.AsignacionViatico)
+                      .filter(m.AsignacionViatico.estatus.in_(
+                          (m.EstatusViatico.ASIGNADO,
+                           m.EstatusViatico.SOLICITADO)))
+                      .all())
+
+    # Lo que esta afuera sin comprobar, persona por persona y servicio
+    # por servicio (seccion 59): lo depositado que no se ha comprobado ni
+    # devuelto. Antes contaba solo lo que ya traia un ticket --quien no
+    # habia subido nada no aparecia-- y el monto completo, no lo que
+    # faltaba.
+    abiertos = (db.query(m.AsignacionViatico)
+                .filter(m.AsignacionViatico.estatus.in_(
+                    (m.EstatusViatico.TRANSFERIDO,
+                     m.EstatusViatico.EN_COMPROBACION)))
+                .all())
+    vistos, afuera, vencido, personas, detalle = set(), CERO, CERO, set(), []
+    for v in abiertos:
+        servicio = v.jornada.equipo.servicio
+        clave = (servicio.id, v.persona_id,
+                 (v.jornada.fecha.year, v.jornada.fecha.month)
+                 if servicio.tipo == m.TipoServicio.IMPLANTADO else None)
+        if clave in vistos:
+            continue
+        vistos.add(clave)
+        c = bolson.cuenta(bolson.de_la_persona(db, v))
+        if c["estatus"] != "abierto" or c["falta"] <= 0:
+            continue
+        afuera += c["falta"]
+        personas.add(v.persona_id)
+        # El plazo de comprobacion se vence a la hora de alla.
+        if c["limite"] and c["limite"] < relojes.del_servicio(servicio):
+            vencido += c["falta"]
+            detalle.append({"viatico_id": v.id, "persona": v.persona.nombre,
+                            "folio": servicio.folio, "monto": c["falta"],
+                            "vencio": c["limite"].isoformat()})
 
     corte = lunes_de(ahora.date())
     nomina = db.query(m.NominaSemanal).filter_by(fecha_corte=corte).first()
 
-    cierres = db.query(m.Cierre).all()
-    abiertos = [c for c in cierres if c.estatus == m.EstatusCierre.ABIERTO]
-    cierres_vencidos = [c for c in abiertos
-                        if c.limite_consultor < relojes.ahora(
-                            c.servicio.pais_id if c.servicio else None)]
+    # El camino al cobro: cuantos servicios --y meses de implantado-- hay
+    # en cada fase, y lo que vence primero.
+    vivos = (db.query(m.Cierre)
+             .filter(m.Cierre.estatus.notin_((m.EstatusCierre.APROBADO,
+                                              m.EstatusCierre.FACTURADO)))
+             .all())
+    comprobacion = [c for c in vivos if c.estatus == m.EstatusCierre.ABIERTO]
+    sin_visto = [c for c in vivos if c.estatus in (
+        m.EstatusCierre.SIN_VISTO_BUENO, m.EstatusCierre.EN_REVISION_IA,
+        m.EstatusCierre.DEVUELTO_A_OPERACION)]
+    en_facturacion = [c for c in vivos
+                      if c.estatus == m.EstatusCierre.ENVIADO_FINANZAS]
+
+    def restante(c):
+        limite = motor_cierre.limite_vigente(c)
+        if not limite:
+            return None
+        return int((limite[1] - relojes.del_servicio(c.servicio))
+                   .total_seconds() // 60)
+
+    fuera = [c for c in sin_visto if (restante(c) or 0) < 0]
+    primero = sorted(((restante(c), c) for c in sin_visto
+                      if restante(c) is not None), key=lambda x: x[0])
+    consultores = {p.id: p.nombre for p in db.query(m.Persona).filter(
+        m.Persona.id.in_({c.servicio.consultor_id for _, c in primero
+                          if c.servicio.consultor_id} or {0})).all()}
+    por_facturar = facturacion.por_facturar(db)
 
     return {
         "por_depositar": {
             "monto": sum((_d(v.monto_total) for v in por_transferir), CERO),
             "cuantos": len(por_transferir)},
         "afuera_sin_comprobar": {
-            "monto": sum((_d(v.monto_total) for v in en_comprobacion), CERO),
-            "personas": len({v.persona_id for v in en_comprobacion}),
-            "vencido": sum((_d(v.monto_total) for v in vencidos), CERO),
-            "detalle_vencido": [
-                {"viatico_id": v.id, "persona": v.persona.nombre,
-                 "monto": _d(v.monto_total),
-                 "vencio": v.limite_comprobacion.isoformat()}
-                for v in vencidos]},
+            "monto": afuera,
+            "personas": len(personas),
+            "vencido": vencido,
+            "detalle_vencido": detalle},
         "nomina_de_la_semana": {
             "fecha_corte": corte.isoformat(),
             # En clave, no en español: la consola habla tres idiomas.
             "estatus": nomina.estatus.value if nomina else "sin_calcular",
             "total": _d(nomina.total) if nomina else CERO,
             "personas": len(nomina.renglones) if nomina else 0},
+        "camino": {
+            "comprobacion": {"cuantos": len(comprobacion)},
+            "sin_visto_bueno": {"cuantos": len(sin_visto),
+                                "fuera_de_plazo": len(fuera)},
+            "en_facturacion": {
+                "cuantos": len(en_facturacion),
+                "monto": sum((_d(c.total_ejecutado) for c in en_facturacion),
+                             CERO)},
+            "por_facturar": {"cuantos": len(por_facturar)},
+        },
+        "vence_primero": [{
+            "cierre_id": c.id, "servicio_id": c.servicio_id,
+            "folio": c.servicio.folio, "tipo": c.servicio.tipo.value,
+            "contrato_id": c.contrato_id,
+            "mes": c.contrato.mes if c.contrato_id else None,
+            "anio": c.contrato.anio if c.contrato_id else None,
+            "consultor": consultores.get(c.servicio.consultor_id),
+            "minutos": minutos,
+            "regresado": c.estatus == m.EstatusCierre.DEVUELTO_A_OPERACION,
+        } for minutos, c in primero[:5]],
+        # Se conserva para quien ya lo leia: ahora con los relojes de la
+        # seccion 50 --el vencido es el del consultor, no el de la
+        # comprobacion--.
         "cierres": {
-            "abiertos": len(abiertos),
-            "vencidos": len(cierres_vencidos),
-            "esperando_finanzas": len([c for c in cierres
-                                       if c.estatus == m.EstatusCierre.ENVIADO_FINANZAS]),
+            "abiertos": len(comprobacion),
+            "vencidos": len(fuera),
+            "esperando_finanzas": len(en_facturacion),
             "devueltos": [{"servicio": c.servicio.folio,
+                           "periodo": (f"{c.contrato.mes:02d}/{c.contrato.anio}"
+                                       if c.contrato_id else None),
                            "motivo": c.devuelto_motivo}
-                          for c in cierres
+                          for c in vivos
                           if c.estatus == m.EstatusCierre.DEVUELTO_A_OPERACION]},
     }
 

@@ -19,7 +19,6 @@ nomina o la asignacion siguen su camino igual.
 """
 import json
 from datetime import timedelta
-from decimal import Decimal
 import logging
 
 from sqlalchemy.orm import Session
@@ -375,10 +374,12 @@ def avisar_comprobante_rechazado(db: Session, viatico, comprobante) -> dict:
     Lleva el motivo tal cual lo escribio el consultor: un rechazo sin
     razon no se puede corregir, solo se puede discutir.
     """
-    falta = (Decimal(str(viatico.monto_total))
-             - Decimal(str(viatico.monto_comprobado))
-             - Decimal(str(viatico.monto_devuelto)))
-    limite = viatico.limite_comprobacion
+    # Lo que falta es de todo su dinero en el servicio, no del dia del
+    # ticket: es la misma cuenta que ve en su tarjeta (seccion 59).
+    from app import bolson
+    cuenta = bolson.cuenta(bolson.de_la_persona(db, viatico))
+    falta = cuenta["falta"]
+    limite = cuenta["limite"]
     motivo = (comprobante.motivo_rechazo or "").strip()
     concepto = getattr(comprobante.concepto, "value", comprobante.concepto)
 
@@ -386,10 +387,14 @@ def avisar_comprobante_rechazado(db: Session, viatico, comprobante) -> dict:
     if motivo:
         partes.append(f"{motivo}.")
     if falta > 0:
+        # Sin limite el servicio no ha terminado: decir que el plazo
+        # "sigue corriendo" era falso y asustaba de mas.
         partes.append(f"Te faltan {_peso(falta, viatico.moneda)} por "
-                      f"comprobar")
-        partes.append(f"hasta el {limite:%d/%m a las %H:%M}."
-                      if limite else "y el plazo sigue corriendo.")
+                      f"comprobar hasta el {limite:%d/%m a las %H:%M}."
+                      if limite else
+                      f"Te faltan {_peso(falta, viatico.moneda)} por "
+                      "comprobar. El plazo de 24 horas corre cuando "
+                      "termine el servicio.")
     return avisar(
         db, viatico.persona_id,
         titulo="Te rechazaron un comprobante",

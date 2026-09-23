@@ -3,6 +3,7 @@ import { api, sesion } from "./api.js";
 import { cartera, nuevoServicio } from "./consultor.js";
 import { detener, tableroCentral } from "./central.js";
 import { bandejaFinanzas } from "./finanzas.js";
+import { pantallaFacturacion } from "./facturacion.js";
 import { pantallaNomina } from "./nomina.js";
 import { pantallaBonos } from "./bonos.js";
 import { pantallaEncuestas } from "./encuestas.js";
@@ -92,6 +93,11 @@ const MENU = [
      —viaticos y compras— y la nomina del personal de seguridad. */
   { ruta: "/finanzas", texto: "nav_finanzas", grupo: "nav_administrativa",
     cuenta: "rec_finanzas", quienes: DINERO },
+  /* Lo que ya tiene el visto bueno del consultor y espera a finanzas:
+     aprobarlo, regresarlo o reintentar su factura (seccion 59). Existian
+     los endpoints y no la pantalla. */
+  { ruta: "/facturacion", texto: "nav_facturacion", grupo: "nav_administrativa",
+    cuenta: "rec_facturacion", quienes: DINERO },
   { ruta: "/nomina", texto: "nav_nomina", grupo: "nav_administrativa",
     cuenta: "rec_nomina", quienes: DINERO },
   /* El personal va en Operaciones EP: a quien se manda es una decision
@@ -413,6 +419,7 @@ const RUTAS = [
   [/^#\/central$/, tableroCentral, MONITOREO],
   [/^#\/equipo$/, pantallaPersonal, CONSULTA],
   [/^#\/finanzas$/, bandejaFinanzas, DINERO],
+  [/^#\/facturacion$/, pantallaFacturacion, DINERO],
   [/^#\/nomina$/, pantallaNomina, DINERO],
   [/^#\/bonos$/, pantallaBonos, DESEMPENO],
   [/^#\/encuestas$/, pantallaEncuestas, VOZ_CLIENTE],

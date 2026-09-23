@@ -285,11 +285,13 @@ function dineroBloque(d) {
   const cuerpo = h("tbody");
   cuerpo.append(cifra(t("pan_por_depositar_c"),
     dinero(d.por_depositar.monto),
-    t("pan_solicitudes").replace("{n}", d.por_depositar.cuantos)));
+    Number(d.por_depositar.cuantos) === 1 ? t("pan_solicitud_uno")
+      : t("pan_solicitudes").replace("{n}", d.por_depositar.cuantos)));
 
   const a = d.afuera_sin_comprobar;
   cuerpo.append(cifra(t("fin_afuera"), dinero(a.monto),
-    t("pan_personas_n").replace("{n}", a.personas)
+    (Number(a.personas) === 1 ? t("pan_persona_uno")
+      : t("pan_personas_n").replace("{n}", a.personas))
     + (Number(a.vencido) ? ` · ${dinero(a.vencido)} ${t("pan_vencido_suelto")}` : ""),
     Number(a.vencido) ? "rojo" : ""));
 
@@ -299,14 +301,10 @@ function dineroBloque(d) {
     + t(ESTATUS_NOMINA[n.estatus] || "pan_n_sin_calcular")));
 
   const c = d.cierres;
-  cuerpo.append(cifra(t("pan_cierres_c"), c.abiertos,
-    c.vencidos ? t("pan_vencidos_n").replace("{n}", c.vencidos)
-               : t("pan_sin_vencidos"),
-    c.vencidos ? "rojo" : ""));
-
   const caja = h("div", { clase: "tarjeta" },
     conAyuda("h3", t("pan_dinero"), "ay_pan_dinero"),
-    h("table", {}, cuerpo));
+    h("table", {}, cuerpo),
+    caminoAlCobro(d));
 
   if (c.devueltos.length) {
     caja.append(h("div", { style: "margin-top:12px" },
@@ -316,6 +314,61 @@ function dineroBloque(d) {
           h("li", {}, `${x.servicio}: ${x.motivo || t("pan_sin_motivo")}`)))));
   }
   return caja;
+}
+
+/* El camino al cobro (seccion 59): cuantos servicios --y meses de
+   implantado-- hay en cada fase del cierre, y lo que vence primero. Lo
+   que antes decia "cierres abiertos" contaba los que el personal
+   todavia comprobaba y los juzgaba con el reloj del consultor. */
+const MESES_PAN = ["bon_mes_1", "bon_mes_2", "bon_mes_3", "bon_mes_4",
+                   "bon_mes_5", "bon_mes_6", "bon_mes_7", "bon_mes_8",
+                   "bon_mes_9", "bon_mes_10", "bon_mes_11", "bon_mes_12"];
+
+function caminoAlCobro(d) {
+  const c = d.camino;
+  if (!c) return null;
+  const celda = (titulo, cifra_, pie, tono = "") => h("div", {},
+    h("div", { clase: "chico gris" }, titulo),
+    h("div", { clase: "cifra", style: tono }, cifra_),
+    pie);
+  const fuera = c.sin_visto_bueno.fuera_de_plazo;
+  const grid = h("div", { clase: "camino" },
+    celda(t("pan_camino_comprobacion"), c.comprobacion.cuantos,
+          h("div", { clase: "chico gris" }, t("pan_camino_el_personal"))),
+    celda(t("est_sin_visto_bueno"), c.sin_visto_bueno.cuantos,
+          fuera ? h("div", { clase: "chico rojo" },
+                    t("pan_camino_fuera").replace("{n}", fuera))
+                : h("div", { clase: "chico gris" }, t("pan_camino_del_consultor"))),
+    celda(t("est_en_facturacion"), c.en_facturacion.cuantos,
+          h("div", { clase: "chico gris num" }, dinero(c.en_facturacion.monto))),
+    celda(t("pan_camino_por_facturar"), c.por_facturar.cuantos,
+          h("div", { clase: "chico gris" }, t("pan_camino_sin_factura")),
+          c.por_facturar.cuantos ? "color:var(--alerta)" : ""));
+
+  const lista = (d.vence_primero || []).map(x => {
+    const mes = x.mes ? ` · ${t(MESES_PAN[x.mes - 1]).toLowerCase()}` : "";
+    const tiempo = x.minutos < 0
+      ? h("span", { clase: "rojo" }, t("pan_fuera_desde").replace(
+          "{q}", cuanto(-x.minutos)))
+      : h("span", { style: x.minutos < 12 * 60
+                      ? "color:var(--alerta);font-weight:650" : "" },
+          t("pan_vence_en").replace("{q}", cuanto(x.minutos)));
+    return h("li", {}, `${x.folio}${mes} · ${x.consultor || "—"}`
+      + (x.regresado ? ` · ${t("pan_regresado")}` : "") + " · ", tiempo);
+  });
+  return h("div", {},
+    conAyuda("h4", t("pan_camino"), "ay_pan_camino",
+             { style: "margin:16px 0 4px" }),
+    grid,
+    lista.length ? h("div", {},
+      h("h4", { style: "margin:16px 0 4px" }, t("pan_vence_primero")),
+      h("ul", { clase: "chico", style: "margin:0;padding-left:18px" }, ...lista))
+      : "");
+}
+
+function cuanto(minutos) {
+  if (minutos < 60) return t("cie_n_min").replace("{n}", minutos);
+  return t("cie_n_h").replace("{n}", Math.floor(minutos / 60));
 }
 
 /* ------------------------------------------------ la calidad del reporte

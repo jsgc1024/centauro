@@ -10,6 +10,7 @@ import { aviso, buscador, campo, coincide, conAyuda, datosDeFormulario,
          dinero, entrada, estatus, etiqueta, fecha, h, hora, lista,
          mensaje, plegable, telefono, textoDe, vaciar } from "./util.js";
 import { IDIOMAS, t } from "./idioma.js";
+import { queda } from "./cierre.js";
 
 /* Google cobra por sesion: todas las teclas de una misma busqueda mas el
    lugar que se elija cuentan como una. Se renueva al cerrar cada una. */
@@ -53,8 +54,12 @@ const TONO_ESTATUS = {
 /* ------------------------------------------------------------ cartera */
 
 export async function cartera(main) {
-  const [servicios, cat] = await Promise.all([
-    api.get("/servicios"), catalogos()]);
+  /* Los relojes del cierre se piden aparte y no frenan la lista: quien
+     no puede ver el cierre ve la cartera igual, sin relojes. */
+  const [servicios, cat, relojes] = await Promise.all([
+    api.get("/servicios"), catalogos(),
+    api.get("/cierre/relojes").catch(() => [])]);
+  const relojDe = new Map(relojes.map(r => [r.servicio_id, r]));
   const cliente = (id) => {
     const c = cat.clientes.find(x => x.id === id);
     return c ? c.nombre : "—";
@@ -106,7 +111,8 @@ export async function cartera(main) {
         h("td", {}, s.ejecutivo_completo
           || h("span", { clase: "gris" }, t("sin_ejecutivo"))),
         h("td", {}, s.tipo),
-        h("td", {}, etiqueta(estatus(s.estatus), TONO_ESTATUS[s.estatus] || "")),
+        h("td", {}, etiqueta(estatus(s.estatus), TONO_ESTATUS[s.estatus] || ""),
+          relojDeCartera(relojDe.get(s.id), s)),
         h("td", { clase: "num" }, s.equipos ? s.equipos.length : 1),
       ));
     }
@@ -118,6 +124,30 @@ export async function cartera(main) {
         h("th", {}, t("col_estatus")), h("th", {}, t("col_equipos")))),
       cuerpo));
   }
+}
+
+/* Junto al estatus, el tiempo que queda (seccion 59): el del personal
+   mientras comprueba, el del consultor sin visto bueno, y el de volver a
+   mandarlo si finanzas lo regreso. Fuera de plazo, en rojo. */
+function relojDeCartera(r, servicio) {
+  if (!r || !r.reloj) return null;
+  const min = r.reloj.minutos;
+  const mio = sesion.usuario && servicio.consultor_id === sesion.usuario.persona_id;
+  let texto;
+  let color = "";
+  if (r.fase === "comprobacion") {
+    texto = t("cie_cartera_comprobando").replace("{q}", queda(min));
+  } else if (min < 0) {
+    texto = t("cie_fuera_de_plazo");
+    color = "color:var(--grave);font-weight:650";
+  } else {
+    texto = (r.fase === "devuelto" ? t("cie_cartera_regresado")
+             : mio ? t("cie_cartera_te_quedan") : t("cie_cartera_quedan"))
+      .replace("{q}", queda(min));
+    color = "color:var(--alerta);font-weight:650";
+  }
+  return h("div", { clase: "chico" + (color ? "" : " gris"),
+                    style: "margin-top:5px;" + color }, texto);
 }
 
 /* ------------------------------------------------------------ alta */

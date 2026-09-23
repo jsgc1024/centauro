@@ -2090,6 +2090,10 @@ class Cotizacion(Base):
     tarifario_id: Mapped[int] = mapped_column(ForeignKey("tarifario.id"))
     moneda: Mapped[Moneda] = mapped_column(Enum(Moneda))
     tipo_cambio: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
+    # Como se le cobran los gastos al cliente (seccion 59). Verdadero: a
+    # precio alzado, el monto fijo de sus renglones de gastos (tipo
+    # VIATICOS), se gaste mas o menos; sin renglones, van dentro del
+    # precio. Falso: gastos netos, lo comprobado valido, con desglose.
     viaticos_incluidos: Mapped[bool] = mapped_column(Boolean, default=True)
     total: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
     estatus: Mapped[EstatusCotizacion] = mapped_column(
@@ -2211,6 +2215,29 @@ class Cierre(Base):
     factura_odoo: Mapped[str | None] = mapped_column(String(60), nullable=True)
     factura_error: Mapped[str | None] = mapped_column(String(400),
                                                       nullable=True)
+    # Cuantas veces se intento mandar la factura y cuando fue la ultima:
+    # la bandeja de "por facturar" dice "3 intentos, el ultimo a las
+    # 09:40", que es lo que decide si se reintenta o se llama a sistemas.
+    factura_intentos: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0"))
+    factura_intento_en: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True)
+    # La factura que se anulo cuando finanzas regreso el servicio con
+    # la factura ya hecha (decision 4 de Salvador, 23 sep). Con el nuevo
+    # visto bueno sale otra, y esta viaja con ella para que en Odoo se
+    # sepa cual sustituye.
+    factura_anulada: Mapped[str | None] = mapped_column(String(60),
+                                                        nullable=True)
+
+    # El primer visto bueno. Si finanzas lo regresa, el consultor tiene
+    # 24 horas desde el regreso (`devuelto_en`) para volver a mandarlo,
+    # y lo "en plazo" de aquel primer visto bueno se queda como estaba
+    # (decision 1 de Salvador, 23 sep): `enviado_en` es el ultimo envio,
+    # este es el que juzgo el plazo.
+    visto_bueno_en: Mapped[datetime | None] = mapped_column(DateTime,
+                                                            nullable=True)
+    devuelto_en: Mapped[datetime | None] = mapped_column(DateTime,
+                                                         nullable=True)
 
     servicio: Mapped[Servicio] = relationship()
     contrato: Mapped["ContratoImplantado | None"] = relationship()
@@ -2302,11 +2329,16 @@ class ContratoImplantado(Base):
     precio_dia_personal: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     precio_dia_adicional: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     precio_mes_completo: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
-    # Como se cobran los viaticos: dentro del precio del mes, o aparte,
-    # por lo comprobado. La misma opcion que la cotizacion del eventual
-    # (seccion 57); pasa sola al mes siguiente.
+    # Como se le cobran los gastos al cliente (seccion 59). Verdadero:
+    # un monto fijo a precio alzado --`gastos_mes`, se gaste mas o
+    # menos; vacio o en cero, los gastos ya van dentro del precio--.
+    # Falso: gastos netos, lo comprobado valido, con su desglose. La
+    # columna conserva el nombre de la seccion 57, cuando la opcion se
+    # decia "incluidos o aparte". Pasa sola al mes siguiente.
     viaticos_incluidos: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default=text("true"))
+    gastos_mes: Mapped[float | None] = mapped_column(Numeric(12, 2),
+                                                     nullable=True)
 
     generado: Mapped[bool] = mapped_column(Boolean, default=False)
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

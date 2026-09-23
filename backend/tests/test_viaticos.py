@@ -295,6 +295,19 @@ def _viatico_transferido(cliente, sesion, datos, offset):
     return viatico, j, persona
 
 
+def _plazo_vencido(viatico_id, horas=1):
+    """Su plazo para comprobar ya paso. Cerrar con descuento solo se
+    puede despues del plazo (decision de Salvador, 23 sep)."""
+    from datetime import datetime, timedelta
+
+    from app import models as m
+    from app.db import SessionLocal
+    with SessionLocal() as db:
+        v = db.get(m.AsignacionViatico, viatico_id)
+        v.limite_comprobacion = datetime.now() - timedelta(hours=horas)
+        db.commit()
+
+
 def test_un_gasto_rechazado_deja_de_contar_como_comprobado(cliente, sesion, datos):
     viatico, _, _ = _viatico_transferido(cliente, sesion, datos, 300)
     h = sesion("consultor")
@@ -317,6 +330,7 @@ def test_un_gasto_rechazado_deja_de_contar_como_comprobado(cliente, sesion, dato
 def test_el_consultor_cierra_y_manda_a_descuento(cliente, sesion, datos):
     """El conductor no pudo resolver: el consultor cierra por el."""
     viatico, j, persona = _viatico_transferido(cliente, sesion, datos, 310)
+    _plazo_vencido(viatico["id"])
     h = sesion("consultor")
 
     r = cliente.post(f"/viaticos/{viatico['id']}/cerrar-con-descuento",
@@ -340,6 +354,7 @@ def test_el_consultor_cierra_y_manda_a_descuento(cliente, sesion, datos):
 def test_la_empresa_puede_absorber_pero_tiene_que_decir_por_que(cliente, sesion,
                                                                 datos):
     viatico, _, _ = _viatico_transferido(cliente, sesion, datos, 320)
+    _plazo_vencido(viatico["id"])
     h = sesion("consultor")
 
     sin_motivo = cliente.post(f"/viaticos/{viatico['id']}/cerrar-con-descuento",
@@ -360,6 +375,7 @@ def test_la_empresa_puede_absorber_pero_tiene_que_decir_por_que(cliente, sesion,
 
 def test_no_se_puede_descontar_mas_de_lo_pendiente(cliente, sesion, datos):
     viatico, _, _ = _viatico_transferido(cliente, sesion, datos, 330)
+    _plazo_vencido(viatico["id"])
     r = cliente.post(f"/viaticos/{viatico['id']}/cerrar-con-descuento",
                      json={"motivo": "Prueba", "monto_descuento": "999999"},
                      headers=sesion("consultor"))
@@ -368,6 +384,7 @@ def test_no_se_puede_descontar_mas_de_lo_pendiente(cliente, sesion, datos):
 
 def test_si_todo_cuadra_no_aplica_el_cierre_con_descuento(cliente, sesion, datos):
     viatico, _, _ = _viatico_transferido(cliente, sesion, datos, 340)
+    _plazo_vencido(viatico["id"])
     h = sesion("consultor")
     total = Decimal(str(viatico["monto_total"]))
     cliente.post(f"/viaticos/{viatico['id']}/comprobantes",

@@ -3372,7 +3372,8 @@ implantado; la consola con la fase y sus relojes, la app con
 «por comprobar» sin fecha hasta el término, la bandeja de finanzas,
 el panorama, el bono de puntualidad contra el nuevo límite y el
 candado de cerrar con descuento antes de que venza el plazo del
-personal.
+personal. *Hecho: el cierre por mes en la sección 56; lo demás, en la
+59.*
 
 ## 51. El personal, leído de Odoo
 
@@ -3537,6 +3538,7 @@ cadena la recorre cada mes de contrato.
 Los viáticos por comprobar todavía no van en la factura del mes —la
 del eventual tampoco los lleva—: entran con la factura en Odoo.
 Queda para la sesión 3: la consola y la app con la fase y sus relojes.
+*Hecho en la sección 59.*
 
 ## 57. Los viáticos en la factura, según la cotización
 
@@ -3560,6 +3562,8 @@ opciones distintas.
   mes siguen la misma regla.
 
 La opción todavía no se ve en la consola: llega con las pantallas.
+*Sección 59: ya se ve, y «incluidos» quedó como precio alzado —si la
+cotización trae monto de gastos, ese monto se factura—.*
 
 ## 58. El acceso por correo: la invitación y la recuperación
 
@@ -3608,6 +3612,93 @@ Decisión de Salvador, 23 de septiembre, después de ver las pantallas:
 Mientras el correo no esté encendido todo funciona igual y la pantalla
 lo dice: el enlace lo entrega administración, copiándolo del renglón.
 
+## 59. El cierre en pantalla: visto bueno, facturación y el dinero del personal
+
+Decisiones de Salvador, 23 de septiembre, después de ver los seis
+tableros: «de acuerdo, adelante». Tercera y última sesión del cierre en
+dos relojes (secciones 50 y 56).
+
+- **Una sola tarjeta, «Visto bueno y facturación».** La misma en el
+  servicio eventual y en el mes del implantado (`cierre.js`). Dice en
+  qué fase va —comprobación, visto bueno, facturación, cerrado— y el
+  reloj de esa fase diciendo de quién es: el del personal mientras
+  comprueba, el del consultor sin visto bueno, y el del regreso cuando
+  finanzas lo devuelve. Debajo, lo cotizado contra lo ejecutado con los
+  gastos en su propio renglón, lo que hay que corregir antes de mandarlo
+  y el dinero del personal. La cartera de servicios y la de implantados
+  dicen la fase y cuánto le queda a cada uno (`/cierre/relojes`,
+  `periodos[].reloj`).
+- **El dinero de una persona es uno solo** (`app/bolson.py`). Lo que se
+  le depositó en un servicio —en el implantado, en un mes— se revisa y
+  se cierra junto, no día por día: un ticket cargado el lunes cubre lo
+  que se le depositó para el martes. Contado por día nunca cuadraba y
+  el comparativo inventaba dos desviaciones por un dinero que estaba
+  bien. El consultor ve a cada persona con lo depositado, lo comprobado
+  y lo que falta; cada ticket con su foto, para validarlo o rechazarlo
+  con motivo; y el botón para cerrar su dinero cuando cuadra. Si algo lo
+  frena, lo dice en palabras y qué hacer.
+- **Cerrar con descuento** (decisión 2): solo cuando ya venció el plazo
+  de esa persona —antes todavía puede comprobar— y solo sobre lo que se
+  le depositó. Por omisión se le descuenta todo lo que falta; la empresa
+  puede absorber una parte, diciendo por qué. Sale un solo ajuste de
+  nómina por lo que faltó.
+- **Los gastos, con los dos tratos de Salvador.** A **precio alzado**
+  el cliente pidió un monto fijo desde la propuesta: la cotización lo
+  lleva en sus renglones de gastos y la factura cobra ese monto en su
+  propio renglón, se gaste más o menos; lo que sobra es margen y lo que
+  se pasa lo absorbe Centauro. Hasta hoy ese monto no llegaba a la
+  factura. Sin renglones de gastos, van dentro del precio y no se suma
+  nada. Con **gastos netos** se factura lo comprobado válido y el
+  cliente recibe el **desglose de gastos** al final, con los
+  comprobantes, en su idioma (`/desglose-gastos`). En los dos tratos el
+  personal comprueba todo igual: es el control de la casa. La columna
+  se sigue llamando `viaticos_incluidos`: verdadero es precio alzado.
+- **La comisión no cambia de regla**: sobre lo facturado menos los
+  viáticos comprobados. La tarjeta la dice desde el visto bueno —lo que
+  va a ser, o que se pierde si salió fuera de plazo—. La ve su consultor
+  y la ven finanzas y dirección; otro consultor puede abrir el servicio,
+  pero no su comisión: la misma regla que el corte.
+- **El implantado: «Términos del mes».** Cómo se cobra, los precios, y
+  los gastos del servicio con su monto del mes (`gastos_mes`). Se
+  corrigen hasta el visto bueno y pasan solos al mes siguiente.
+- **Cuando finanzas lo regresa** (decisiones 1 y 4): tiene que decir
+  por qué; el consultor lo lee en su tarjeta y le llega un aviso. Tiene
+  24 horas desde el regreso, y lo «en plazo» de su primer visto bueno se
+  queda —ni se pierde por la vuelta ni se limpia un «fuera de plazo»—.
+  Si la factura ya había salido, se anula, y la del nuevo visto bueno
+  lleva el folio de la anulada (`sustituye_a`) para que en Odoo se sepa
+  cuál reemplaza. Solo se regresa lo que está en facturación.
+- **La pantalla de Facturación** (finanzas y dirección). Por aprobar:
+  lo que ya tiene visto bueno, con lo cotizado, lo ejecutado y los
+  gastos, para aprobarlo y cerrarlo —ahí nace la comisión— o regresarlo.
+  Por facturar: lo que Odoo no aceptó, qué pasó en una palabra —sin
+  conexión, rechazada, sin respuesta, falta un dato—, cuántos intentos
+  y «Mandar otra vez». Cerrados: lo del mes, con su factura y su
+  comisión. Aprobar no espera a la factura.
+- **El panorama: el camino al cobro.** Cuántos servicios y meses hay en
+  cada fase, cuántos van fuera de plazo, lo que vence primero y lo que
+  finanzas regresó. «Afuera sin comprobar» ahora cuenta lo que falta de
+  cada persona, aunque no haya subido un solo ticket; antes contaba el
+  monto completo y solo de quien ya había subido algo.
+- **La app.** Cada servicio en «Mis viáticos» dice cuánto le queda:
+  «vence mañana a las 06:52 · te quedan 20 h». Antes del término no hay
+  plazo que mostrar.
+- **El bono «Comprobar el dinero a tiempo»** (decisión 3): a tiempo es
+  haber terminado de comprobar antes del plazo, medido cuando terminó y
+  no el día de cada jornada. Cada dinero cuenta en el mes en que cae su
+  plazo, y cerrar con descuento no es a tiempo. Lo que sigue en plazo
+  todavía no se mide.
+- **De paso.** Enviar a finanzas aceptaba la hora por parámetro también
+  en producción: ahora solo en desarrollo (`reloj.de_prueba`). Los
+  textos que manda el servidor en clave se dicen en el idioma de la
+  pantalla, y el revisor ya no amenaza la comisión de un servicio
+  regresado: lo que corre es el reloj del regreso.
+
+La migración `f2a9c4e71b36` agrega al cierre el primer visto bueno, el
+regreso, los intentos de factura y la factura anulada, y al mes del
+implantado su monto de gastos. Los cierres ya enviados toman su envío
+como primer visto bueno.
+
 ## 14. Lo que falta
 
 ### Abierto
@@ -3617,6 +3708,15 @@ contraseñas, los puestos configurables, las 43 puertas mudadas a
 actividades y la bitácora de catálogos— salió de aquí; si algo de eso se
 busca, está en las secciones 15 y 16.*
 
+- **Odoo: dos datos para cuando se conecte la facturación** (sección 59).
+  El acuerdo autorizado que manda Odoo (`ODOO_LO_QUE_NECESITAMOS.md`,
+  5b) solo trae renglones de recurso y vehículo; a precio alzado tiene
+  que traer también el monto fijo de gastos, como renglón `viaticos`:
+  sin él, ese servicio se factura sin sus gastos. Y la factura que sale
+  después de un regreso lleva `sustituye_a` con el folio de la anulada:
+  Centauro la da por anulada, pero en Odoo alguien tiene que cancelarla
+  —quien reciba las facturas, o finanzas a mano—. Hoy no muerde: sin
+  conexión no sale ninguna factura.
 - **El correo: falta el proveedor y el dominio.** El despachador ya
   existe (sección 29): SMTP, apagado por omisión, con reintentos y con
   el error del proveedor escrito al lado. Lo que falta es **tuyo**: a qué

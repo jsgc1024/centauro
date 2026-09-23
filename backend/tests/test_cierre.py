@@ -200,12 +200,16 @@ def test_recotizar_crea_version_nueva(cliente, sesion, datos):
 # ------------------------------------ como se le factura el viatico al cliente
 
 def test_viaticos_incluidos_no_se_suman_a_la_factura(cliente, sesion, datos):
-    """Si iban dentro del precio, la comprobacion no mueve la factura."""
+    """Si iban dentro del precio, la comprobacion no mueve la factura.
+
+    Desde la seccion 59 es el precio alzado sin monto de gastos en la
+    cotizacion: el monto fijo es cero, asi que no se suma nada."""
     servicio, _ = _servicio_ejecutado(cliente, sesion, datos, offset=400)
     comparativo = cliente.get(f"/cierre/servicio/{servicio['id']}/comparativo",
                               headers=sesion("consultor")).json()
-    assert comparativo["viaticos"]["modo_cobro"] == "incluidos_en_cotizacion"
+    assert comparativo["viaticos"]["modo_cobro"] == "precio_alzado"
     assert comparativo["viaticos"]["facturable_al_cliente"] == 0
+    assert comparativo["gastos"]["a_facturar"] == 0
 
 
 def test_autorizar_tarde_no_regresa_el_servicio_al_principio(cliente, sesion,

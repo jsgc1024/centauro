@@ -15,6 +15,7 @@ import { aviso, buscador, campo, coincide, conAyuda, dinero, entrada,
 import { buscadorDeLugar } from "./mapa.js";
 import { bloqueRevisionUnidad } from "./servicio.js";
 import { IDIOMAS, idioma, t } from "./idioma.js";
+import { queda, tarjetaCierre } from "./cierre.js";
 
 const TONO_ESTATUS = {
   /* El semaforo del servicio, de izquierda a derecha en el tiempo.
@@ -692,7 +693,7 @@ export async function carteraImplantados(main) {
         h("td", {}, s.ejecutivo || vacio()),
         h("td", {}, s.titular || vacio()),
         h("td", {}, s.unidad || vacio()),
-        h("td", {}, s.ultimo_mes || vacio()),
+        h("td", {}, mesesDeCartera(s.periodos) || s.ultimo_mes || vacio()),
         h("td", {}, etiqueta(estatus(s.estatus),
                              TONO_ESTATUS[s.estatus] || ""))));
     }
@@ -701,10 +702,47 @@ export async function carteraImplantados(main) {
       h("thead", {}, h("tr", {},
         h("th", {}, t("col_folio")), h("th", {}, t("col_cliente")),
         h("th", {}, t("col_ejecutivo")), h("th", {}, t("col_titular")),
-        h("th", {}, t("col_unidad")), h("th", {}, t("col_ultimo_mes")),
+        h("th", {}, t("col_unidad")), h("th", {}, t("col_meses")),
         h("th", {}, t("col_estatus")))),
       cuerpo));
   }
+}
+
+/* Cada mes con su fase (seccion 59): el implantado nunca termina, asi
+   que lo que se pregunta es en que va cada mes --julio cerrado, agosto
+   esperando el visto bueno, septiembre en curso--. Los ultimos tres,
+   del mas viejo al mas nuevo, con el reloj del que lo tenga. */
+const FASE_DEL_MES = {
+  comprobacion: ["cie_fase_comprobacion", ""],
+  sin_visto_bueno: ["est_sin_visto_bueno", "alerta"],
+  devuelto: ["cie_mes_regresado", "alerta"],
+  en_facturacion: ["est_en_facturacion", "cafe"],
+  aprobado: ["est_cerrado", "negro"],
+  facturado: ["est_cerrado", "negro"],
+};
+const SIN_CIERRE = {
+  en_curso: ["est_en_curso", "ok"],
+  por_empezar: ["cie_mes_por_empezar", ""],
+  dias_sin_cerrar: ["cie_mes_dias_sin_cerrar", "alerta"],
+  sin_nada: ["cie_mes_sin_nada", ""],
+};
+
+function mesesDeCartera(periodos) {
+  if (!periodos || !periodos.length) return null;
+  const meses = t("f_meses").split(",");
+  return h("div", {}, ...periodos.slice(-3).map(p => {
+    const [clave, tono] = p.fase ? (FASE_DEL_MES[p.fase] || [p.fase, ""])
+                                 : (SIN_CIERRE[p.sin_cierre] || ["est_en_curso", "ok"]);
+    const r = p.reloj;
+    const reloj = !r ? null : h("span", {
+      clase: "chico" + (r.minutos < 0 || p.fase !== "comprobacion" ? "" : " gris"),
+      style: r.minutos < 0 ? "color:var(--grave);font-weight:650"
+           : p.fase === "comprobacion" ? "" : "color:var(--alerta);font-weight:650",
+    }, queda(r.minutos));
+    return h("div", { clase: "mes-fase" },
+      h("b", {}, (meses[p.mes - 1] || "").toUpperCase()),
+      etiqueta(t(clave), tono), reloj);
+  }));
 }
 
 /* ------------------------------------------------------------ alta */
@@ -1390,6 +1428,10 @@ export async function pantallaImplantado(main, servicioId) {
   ]);
 
   const ficha = cartera.find(x => String(x.servicio_id) === String(servicioId));
+  const paisDelServicio = cat.paises.find(p => p.id === servicio.pais_id);
+  if (ficha && paisDelServicio) {
+    monedas[ficha.servicio_id] = paisDelServicio.moneda_local;
+  }
   if (!ficha) {
     main.append(h("div", { clase: "tarjeta" },
       h("div", { clase: "vacio" }, t("imp_no_existe"))));
@@ -1695,7 +1737,10 @@ function sinLlavesDeBase(acuerdo) {
 async function pintarMesDelServicio(main, servicioId, ficha) {
   const tarjeta = h("div", { clase: "tarjeta" },
     h("h4", {}, t("imp_asignacion")));
-  main.append(tarjeta);
+  /* Los terminos y el cierre del mes que se esta viendo van en sus
+     propias tarjetas, debajo: cambian con la pestana del mes. */
+  const delMes = h("div");
+  main.append(tarjeta, delMes);
 
   const periodos = ficha.periodos && ficha.periodos.length
     ? ficha.periodos
@@ -1775,6 +1820,25 @@ async function pintarMesDelServicio(main, servicioId, ficha) {
       fichaDelDia(servicioId, hoyISO, fichaDia);
     }
 
+    delMes.replaceChildren(
+      tarjetaTerminos(datos.contrato_id, actual, () => pintarCierre()),
+      h("div"));
+    const pintarCierre = () => {
+      delMes.lastChild.replaceWith(tarjetaCierre({
+        titulo: `${t("cie_cierre_del_mes")} · ${nombreDelMes(actual)}`,
+        ayuda: "ay_imp_cierre_mes",
+        rutas: {
+          estado: `/implantados/contratos/${datos.contrato_id}/cierre/estado`,
+          revision: `/implantados/contratos/${datos.contrato_id}/cierre/revision`,
+          viaticos: `/implantados/contratos/${datos.contrato_id}/cierre/viaticos`,
+          desglose: `/implantados/contratos/${datos.contrato_id}/desglose-gastos`,
+        },
+        esMes: true, lugar: ficha.ciudad || "",
+        moneda: monedaDe(ficha),
+      }));
+    };
+    pintarCierre();
+
     const porCubrir = datos.dias.filter(d => d.estado === "por_cubrir");
     // Los viaticos van antes del calendario: el consultor decide el
     // dinero del mes mirando a su gente, no dia por dia.
@@ -1799,6 +1863,129 @@ async function pintarMesDelServicio(main, servicioId, ficha) {
 
   pintarPestanas();
   await pintar();
+}
+
+const MESES_LARGOS = ["bon_mes_1", "bon_mes_2", "bon_mes_3", "bon_mes_4",
+                      "bon_mes_5", "bon_mes_6", "bon_mes_7", "bon_mes_8",
+                      "bon_mes_9", "bon_mes_10", "bon_mes_11", "bon_mes_12"];
+
+function nombreDelMes(p) {
+  return `${MESES_LARGOS[p.mes - 1] ? t(MESES_LARGOS[p.mes - 1]) : p.mes} ${p.anio}`;
+}
+
+/* La moneda del implantado sale de su pais; la cartera no la trae, asi
+   que se toma de los catalogos ya cargados. */
+let monedas = {};
+function monedaDe(ficha) {
+  return monedas[ficha.servicio_id] || "MXN";
+}
+
+/* Los terminos del mes: como se cobra y como se cobran los gastos
+   (seccion 59). Hasta hoy solo se capturaban al abrir el primer mes, y
+   sin ellos el visto bueno de un mes cobrado por dia nunca pasaba.
+   Pasan solos al mes siguiente; con el visto bueno dado ya no se tocan,
+   porque la factura del mes salio con esos precios. */
+function tarjetaTerminos(contratoId, periodo, alGuardar) {
+  const caja = h("div", { clase: "tarjeta" },
+    conAyuda("h3", `${t("cie_terminos_del_mes")} · ${nombreDelMes(periodo)}`,
+             "ay_imp_terminos"));
+  if (!contratoId) return caja;
+
+  const pintar = async () => {
+    let x;
+    try {
+      x = await api.get(`/implantados/contratos/${contratoId}/terminos`);
+    } catch (err) {
+      caja.append(aviso(err.message, "alerta"));
+      return;
+    }
+    const nombre = `terminos-${contratoId}`;
+    const radio = (grupo, valor, marcado, texto) => {
+      const control = h("input", { type: "radio", name: `${nombre}-${grupo}`,
+                                   value: valor });
+      control.checked = marcado;
+      if (!x.editable) control.disabled = true;
+      return h("label", { clase: "opcion" }, control, " ", texto);
+    };
+    const porDia = radio("esquema", "por_dia", x.esquema === "por_dia",
+                         t("cie_por_dia_trabajado"));
+    const mesCompleto = radio("esquema", "mes_completo",
+                              x.esquema === "mes_completo",
+                              t("cie_precio_fijo_por_mes"));
+    const alzado = radio("gastos", "alzado", x.viaticos_incluidos,
+                         t("cie_gastos_opcion_alzado"));
+    const netos = radio("gastos", "netos", !x.viaticos_incluidos,
+                        t("cie_gastos_opcion_netos"));
+
+    const numero = (valor) => {
+      const control = entrada("precio", { type: "number", min: "0", step: "1",
+        clase: "num",
+        value: valor === null || valor === undefined ? "" : String(Number(valor)) });
+      if (!x.editable) control.disabled = true;
+      return control;
+    };
+    const dia = numero(x.precio_dia_personal);
+    const adicional = numero(x.precio_dia_adicional);
+    const vehiculo = numero(x.precio_mes_vehiculo);
+    const completo = numero(x.precio_mes_completo);
+    const gastos = numero(x.gastos_mes);
+
+    const campoDe = (texto, control) => h("div", { clase: "campo" },
+      h("label", {}, texto), control);
+    const deDia = [campoDe(t("cie_personal_por_dia"), dia),
+                   campoDe(t("cie_dia_adicional"), adicional),
+                   campoDe(t("cie_vehiculo_al_mes"), vehiculo)];
+    const deMes = campoDe(t("cie_precio_del_mes"), completo);
+    const deGastos = campoDe(t("cie_gastos_del_mes"), gastos);
+    const rejilla = h("div", { clase: "rejilla cuatro" });
+    const acomodar = () => {
+      const esDia = porDia.querySelector("input").checked;
+      const esAlzado = alzado.querySelector("input").checked;
+      rejilla.replaceChildren(...(esDia ? deDia : [deMes]),
+                              esAlzado ? deGastos : h("div"));
+    };
+    for (const r of [porDia, mesCompleto, alzado, netos]) {
+      r.querySelector("input").addEventListener("change", acomodar);
+    }
+    acomodar();
+
+    const valor = (control) => (control.value === "" ? null : Number(control.value));
+    const guardar = h("button", { clase: "chico", type: "button",
+      onclick: async (e) => {
+        e.target.disabled = true;
+        try {
+          const esDia = porDia.querySelector("input").checked;
+          const esAlzado = alzado.querySelector("input").checked;
+          await api.put(`/implantados/contratos/${contratoId}/terminos`, {
+            esquema: esDia ? "por_dia" : "mes_completo",
+            precio_dia_personal: valor(dia),
+            precio_dia_adicional: valor(adicional),
+            precio_mes_vehiculo: valor(vehiculo),
+            precio_mes_completo: valor(completo),
+            viaticos_incluidos: esAlzado,
+            gastos_mes: esAlzado ? valor(gastos) : null,
+          });
+          mensaje(t("cie_terminos_guardados"));
+          if (alGuardar) alGuardar();
+        } catch (err) { mensaje(err.message, "grave"); }
+        e.target.disabled = false;
+      } }, t("cie_guardar_terminos"));
+
+    caja.replaceChildren(caja.firstChild,
+      h("div", { clase: "rejilla dos", style: "margin-bottom:12px" },
+        h("div", {}, h("label", {}, t("cie_como_se_cobra")),
+          h("div", { clase: "bloque-radio" }, porDia, mesCompleto)),
+        h("div", {}, h("label", {}, t("cie_gastos_del_servicio")),
+          h("div", { clase: "bloque-radio" }, alzado, netos))),
+      rejilla,
+      h("p", { clase: "gris chico", style: "margin:10px 0 12px" },
+        t("cie_terminos_pie")),
+      x.editable
+        ? h("div", { clase: "acciones" }, guardar)
+        : aviso(t("cie_terminos_cerrados"), "alerta"));
+  };
+  pintar();
+  return caja;
 }
 
 function periodoSuelto(texto) {

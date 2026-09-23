@@ -43,7 +43,8 @@ from app import models as m
 from app import nomina
 from app import reloj
 from app import viaticos as motor_viaticos
-from app.revisor import AVISO, GRAVE, INFO
+from app.revisor import (AVISO, GRAVE, INFO, observaciones_del_dinero,
+                         observaciones_del_plazo)
 
 CERO = Decimal("0")
 
@@ -302,36 +303,26 @@ def estado(db: Session, contrato: m.ContratoImplantado,
     base = {"contrato_id": contrato.id, "periodo": periodo(contrato),
             "momento": ahora.isoformat()}
     if fila is None:
-        return {**base, "existe": False, "cierre_id": None, "estatus": None,
-                "fase": None, "abierto_en": None, "comprobacion_hasta": None,
-                "visto_bueno_desde": None, "limite": None,
-                "minutos_restantes": None, "viaticos_abiertos": None,
-                "motivo": None, "factura": None, "factura_error": None,
-                "dentro_de_plazo": None, "total": None}
+        return {**base, **motor.VACIO}
+    return {**base, **motor.ficha_del_cierre(db, fila, ahora)}
 
-    def iso(momento):
-        return momento.isoformat() if momento else None
 
-    return {
-        **base,
-        "existe": True,
-        "cierre_id": fila.id,
-        "estatus": fila.estatus.value,
-        "fase": motor.FASES.get(fila.estatus),
-        "abierto_en": iso(fila.abierto_en),
-        "comprobacion_hasta": iso(fila.comprobacion_hasta),
-        "visto_bueno_desde": iso(fila.visto_bueno_desde),
-        "limite": iso(fila.limite_consultor),
-        "minutos_restantes": int(
-            (fila.limite_consultor - ahora).total_seconds() / 60),
-        "viaticos_abiertos": viaticos_abiertos(db, contrato),
-        "motivo": fila.motivo_apertura,
-        "factura": fila.factura_odoo,
-        "factura_error": fila.factura_error,
-        "dentro_de_plazo": fila.dentro_de_plazo,
-        # Lo que se mando a facturar; antes del visto bueno no hay cifra.
-        "total": str(fila.total_ejecutado) if fila.enviado_en else None,
-    }
+def relojes_de(db: Session, contratos: list,
+               ahora: datetime | None = None) -> dict:
+    """La fase y el reloj de varios meses de una vez, para la cartera:
+    {contrato_id: {"fase", "reloj"}}. El mes sin cierre no aparece."""
+    ids = [c.id for c in contratos]
+    if not ids:
+        return {}
+    salida = {}
+    for fila in (db.query(m.Cierre)
+                 .filter(m.Cierre.contrato_id.in_(ids)).all()):
+        momento = reloj.ahora_del_servicio(db, fila.servicio, ahora)
+        salida[fila.contrato_id] = {
+            "fase": motor.FASES.get(fila.estatus),
+            "reloj": motor.reloj_de(fila, momento),
+            "dentro_de_plazo": fila.dentro_de_plazo}
+    return salida
 
 
 def fases_de(db: Session, contratos: list) -> dict:
@@ -425,9 +416,12 @@ def comparar(db: Session, contrato: m.ContratoImplantado) -> dict:
                          + (f", {_d(v.monto_absorbido)} absorbido por la "
                             "empresa" if _d(v.monto_absorbido) else ""))
 
-    # Los que se cobran aparte, si los terminos del mes asi lo dicen
-    # (seccion 57): lo comprobado valido. Incluidos, van en el precio.
-    por_cobrar = CERO if contrato.viaticos_incluidos else comprobado
+    # Los gastos del mes, segun el trato de sus terminos (seccion 59): a
+    # precio alzado, el monto fijo del mes, se gaste mas o menos --sin
+    # monto, van dentro del precio--; netos, lo comprobado valido.
+    alzado = contrato.viaticos_incluidos
+    fijo = _d(contrato.gastos_mes)
+    por_cobrar = fijo if alzado else comprobado
 
     return {
         "servicio": contrato.servicio.folio,
@@ -446,10 +440,12 @@ def comparar(db: Session, contrato: m.ContratoImplantado) -> dict:
                      "pendiente": asignado - comprobado - devuelto,
                      "descontado_al_personal": descontado,
                      "absorbido_por_la_empresa": absorbido,
-                     "modo_cobro": ("incluidos_en_el_precio"
-                                    if contrato.viaticos_incluidos
-                                    else "por_comprobar"),
+                     "modo_cobro": motor.modo_de_gastos(alzado),
+                     "gastos_cotizados": fijo,
                      "facturable_al_cliente": por_cobrar},
+        "gastos": {"modo": motor.modo_de_gastos(alzado),
+                   "cotizado": fijo if alzado else CERO,
+                   "comprobado": comprobado, "a_facturar": por_cobrar},
         # Lo que sale en la factura del mes: el servicio y, si se cobran
         # aparte, los viaticos comprobados.
         "a_facturar": {"servicio": trabajado, "viaticos": por_cobrar,
@@ -506,20 +502,11 @@ def revisar(db: Session, contrato: m.ContratoImplantado,
                 "accion": "Pide a la central que registre el corte con "
                           "justificacion."})
 
-    # El dinero que nadie cerro. Grave por lo mismo que en el eventual:
-    # con el visto bueno el gasto desaparece de la app de quien lo debe.
-    abiertos = [v for v in viaticos_del_mes(db, contrato)
-                if v.estatus not in motor.VIATICO_RESUELTO]
-    if abiertos:
-        quienes = sorted({v.persona.nombre for v in abiertos if v.persona})
-        observaciones.append({
-            "nivel": GRAVE, "asunto": "Viaticos sin cerrar",
-            "mensaje": (f"{len(abiertos)} viatico(s) abiertos"
-                        + (f": {', '.join(quienes)}" if quienes else "")),
-            "accion": ("Cierralos cuando esten comprobados. Si alguien no "
-                       "comprobo, cierralo con descuento: con el visto "
-                       "bueno el gasto desaparece de su app y ya no puede "
-                       "hacer nada.")})
+    # El dinero que nadie cerro, persona por persona. Grave por lo mismo
+    # que en el eventual: con el visto bueno el gasto desaparece de la
+    # app de quien lo debe.
+    observaciones.extend(observaciones_del_dinero(
+        viaticos_del_mes(db, contrato), ahora))
 
     ids = [j.id for j in dias]
     if ids:
@@ -558,19 +545,7 @@ def revisar(db: Session, contrato: m.ContratoImplantado,
             "accion": "El visto bueno se abre cuando venza ese plazo, o "
                       "antes si todos los viaticos del mes ya cerraron."})
     else:
-        restante = (fila.limite_consultor - ahora).total_seconds() / 3600
-        if restante < 0:
-            observaciones.append({
-                "nivel": AVISO, "asunto": "Plazo vencido",
-                "mensaje": (f"Se pasaron {abs(restante):.1f} h del limite de "
-                            "24 horas"),
-                "accion": "El mes se factura igual; la comision del mes se "
-                          "pierde si no se cerro a tiempo."})
-        elif restante < 6:
-            observaciones.append({
-                "nivel": AVISO, "asunto": "Plazo por vencer",
-                "mensaje": f"Quedan {restante:.1f} h para cerrar y facturar",
-                "accion": "Cierra pronto para no perder la comision."})
+        observaciones.extend(observaciones_del_plazo(fila, ahora, del_mes=True))
 
     graves = [o for o in observaciones if o["nivel"] == GRAVE]
     return {
@@ -613,7 +588,8 @@ def enviar_a_finanzas(db: Session, cierre: m.Cierre, usuario: m.Usuario,
         raise HTTPException(409, {
             "mensaje": ("Todavia corre la comprobacion de viaticos del personal"
                         if cierre.estatus == m.EstatusCierre.ABIERTO
-                        else f"El cierre esta en {cierre.estatus.value}"),
+                        else f"El cierre del mes esta en "
+                             f"{motor.nombre_estatus(cierre.estatus)}"),
             "hasta": (cierre.comprobacion_hasta.isoformat()
                       if cierre.comprobacion_hasta else None),
             "observaciones": [],
@@ -630,10 +606,8 @@ def enviar_a_finanzas(db: Session, cierre: m.Cierre, usuario: m.Usuario,
     comparativo = revision["comparativo"]
     cierre.total_cotizado = comparativo["contratado"]["importe"]
     cierre.total_ejecutado = comparativo["a_facturar"]["total"]
-    cierre.estatus = m.EstatusCierre.ENVIADO_FINANZAS
-    cierre.enviado_en = momento
+    motor.dar_visto_bueno(cierre, momento)
     cierre.cerrado_por_id = usuario.persona_id
-    cierre.dentro_de_plazo = momento <= cierre.limite_consultor
     auditoria.registrar(db, usuario, cierre.servicio, "enviar a finanzas",
                         f"{periodo(contrato)}: contratado "
                         f"{cierre.total_cotizado}, trabajado "
@@ -750,7 +724,9 @@ def armar_factura(db: Session, cierre: m.Cierre) -> dict:
     if a_facturar["viaticos"]:
         conceptos.append({
             "tipo": "viaticos",
-            "descripcion": f"Viaticos comprobados {de_que}",
+            "descripcion": (f"Gastos a precio alzado {de_que}"
+                            if contrato.viaticos_incluidos
+                            else f"Gastos comprobados {de_que}"),
             "cantidad": 1, "precio": str(a_facturar["viaticos"]),
             "importe": str(a_facturar["viaticos"])})
 
@@ -767,4 +743,6 @@ def armar_factura(db: Session, cierre: m.Cierre) -> dict:
                   or datetime.now()).date().isoformat(),
         "total": str(a_facturar["total"]),
         "conceptos": conceptos,
+        # La que se anulo cuando finanzas regreso el mes: esta la sustituye.
+        "sustituye_a": cierre.factura_anulada,
     }

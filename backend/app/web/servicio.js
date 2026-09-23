@@ -8,6 +8,7 @@ import { aviso, campo, conAyuda, dinero, entrada, estatus, etiqueta, fecha,
          h, hora, lista, mensaje, plegable, sinTildes,
          telefono } from "./util.js";
 import { IDIOMAS, idioma, t } from "./idioma.js";
+import { tarjetaCierre } from "./cierre.js";
 
 export async function pantallaServicio(main, servicioId) {
   const [servicio, cat] = await Promise.all([
@@ -28,180 +29,42 @@ export async function pantallaServicio(main, servicioId) {
   main.append(await bloqueTaskSheet(servicio));
   main.append(bloqueCambios(cambios));
   main.append(await bloqueRevisiones(servicio));
-  main.append(await bloqueVistoBueno(servicio));
+  main.append(await bloqueVistoBueno(servicio, cat));
 }
 
-/* ------------------------------------------- el visto bueno del consultor
+/* ------------------------------------------- visto bueno y facturacion
 
-   El ultimo paso del servicio y el unico con reloj: el consultor tiene
-   24 horas para revisar y mandar a facturar, y de ese plazo depende su
-   comision.
-
-   El reloj se pinta corriendo porque un plazo que no se ve no se
-   siente. Decirlo solo en horas --"te quedan 6"-- deja al que entra a
-   las 23:40 creyendo que tiene toda la noche.
-
-   La cuenta sale de la resta entre el limite y el momento, los dos en
-   hora del pais del servicio y los dos mandados por el servidor. Si
-   saliera del reloj de esta maquina, un consultor con la laptop en
-   otro huso --o simplemente mal puesta-- veria un plazo que no es el
-   suyo. */
-async function bloqueVistoBueno(servicio) {
-  /* Antes de que el servicio termine no hay nada que revisar, y despues
-     de cerrado ya no hay nada que hacer aqui. */
+   El ultimo paso del servicio: la comprobacion del personal, el visto
+   bueno del consultor, la facturacion y el cierre de finanzas, cada uno
+   con su reloj. La tarjeta vive en `cierre.js` porque el mes del
+   implantado lleva la misma (seccion 59). */
+async function bloqueVistoBueno(servicio, cat) {
+  /* Antes de que el servicio termine no hay nada que revisar. */
   if (!["terminado", "sin_visto_bueno", "en_facturacion", "cerrado",
         "cancelado"].includes(servicio.estatus)) {
     return h("div", {});
   }
-
-  /* El reloj se pide APARTE de la revision.
-
-     Hubo un tiempo en que la revision reventaba entera sin cotizacion
-     autorizada y el consultor se quedaba sin reloj justo cuando mas
-     falta hace. Hoy ya no: la revision lo reporta como observacion. El
-     reloj se sigue pidiendo aparte porque es lo unico que esta pantalla
-     no puede dejar de pintar --si manana la revision se cae por otra
-     razon, el plazo se ve igual--. */
-  const caja = h("div", { clase: "tarjeta" },
-    conAyuda("h3", t("srv_visto_bueno"), "ay_srv_visto_bueno"));
-
-  let c = {};
-  try {
-    c = await api.get(`/cierre/servicio/${servicio.id}/estado`);
-  } catch (err) {
-    caja.append(aviso(err.message, "alerta"));
-    return caja;
-  }
-
   /* El cancelado solo tiene cierre si habia algo que cerrar: dinero
      afuera o dias trabajados. Sin cierre no hay nada que pintar. */
-  if (!c.existe && servicio.estatus === "cancelado") return h("div", {});
-
-  let r = null;
-  let fallo = null;
-  try {
-    r = await api.get(`/cierre/servicio/${servicio.id}/revision`);
-  } catch (err) { fallo = err.message; }
-
-  if (c.factura) {
-    caja.append(h("p", { clase: "verde" },
-      t("srv_ya_facturado").replace("{f}", c.factura)));
-    return caja;
+  if (servicio.estatus === "cancelado") {
+    const c = await api.get(`/cierre/servicio/${servicio.id}/estado`)
+      .catch(() => null);
+    if (!c || !c.existe) return h("div", {});
   }
-  /* Ya con visto bueno --o devuelto por finanzas, que es lo unico que
-     regresa aqui-- no hay reloj que correr. */
-  if (c.estatus && !["abierto", "sin_visto_bueno",
-                     "devuelto_a_operacion"].includes(c.estatus)) {
-    caja.append(h("p", { clase: "gris" },
-      t("srv_cierre_en").replace("{e}", estatus(c.estatus))));
-    if (c.factura_error) {
-      caja.append(aviso(c.factura_error, "alerta"));
-    }
-    return caja;
-  }
-
-  /* El primer reloj: la comprobacion del personal. El boton no se
-     ofrece todavia; el servidor tampoco lo aceptaria. */
-  if (c.estatus === "abierto") {
-    const cuenta = h("div", { clase: "reloj-cierre" });
-    pintarReloj(cuenta, c.comprobacion_hasta, c.momento);
-    caja.append(cuenta, h("p", { clase: "gris chico" },
-      t("srv_fase_comprobacion")));
-    return caja;
-  }
-
-  const reloj = h("div", { clase: "reloj-cierre" });
-  pintarReloj(reloj, c.limite, c.momento);
-
-  const boton = h("button", { onclick: (e) => mandar(e) },
-    t("srv_dar_visto_bueno"));
-  const zona = h("div", { style: "margin-top:10px" });
-
-  async function mandar(e) {
-    if (!confirm(t("srv_confirmar_visto"))) return;
-    e.target.disabled = true;
-    try {
-      const envio = await api.post(`/cierre/${c.cierre_id}/enviar-finanzas`, {});
-      mensaje(t("srv_enviado_finanzas"));
-      zona.replaceChildren(h("div", { clase: "chico gris" },
-        envio.comision_consultor || ""));
-      setTimeout(() => location.reload(), 1200);
-    } catch (err) {
-      mensaje(err.message, "grave");
-      e.target.disabled = false;
-    }
-  }
-
-  const faltan = ((r && r.observaciones) || [])
-    .filter(o => o.nivel === "corregir");
-  caja.append(
-    reloj,
-    h("p", { clase: "gris chico" }, t("srv_visto_pie")),
-    /* Lo que impide revisar se dice con el reloj a la vista, no en su
-       lugar: son dos cosas distintas y las dos hacen falta. */
-    observaciones(fallo, faltan),
-    /* El boton se ofrece siempre que el cierre este abierto. Lo que
-       frena es el servidor, con la misma regla para todos: una pantalla
-       que esconde el boton deja al consultor sin saber que le falta. */
-    boton, zona);
-  return caja;
-}
-
-/* Lo que impide revisar, o lo que falta por corregir. Uno u otro: si no
-   se pudo revisar, la lista de observaciones no existe todavia. El
-   reloj se pinta igual, arriba, porque son dos cosas distintas y las
-   dos hacen falta. */
-function observaciones(fallo, faltan) {
-  if (fallo) return aviso(fallo, "alerta");
-  if (!faltan.length) {
-    return h("p", { clase: "verde chico" }, t("srv_sin_observaciones"));
-  }
-  return h("div", {},
-    aviso(t("srv_antes_de_enviar").replace("{n}", faltan.length), "alerta"),
-    h("ul", { clase: "minimo", style: "display:block;padding-left:18px" },
-      /* El texto sale de `mensaje`, que es la llave que manda el
-         revisor. La pantalla leia `detalle`, que no existe: toda
-         observacion grave se pintaba como "Asunto:" y nada mas, que es
-         justo lo que hay que saber para arreglarla. Y la accion debajo,
-         porque decir que algo esta mal sin decir que hacer obliga a
-         abrir otra pantalla para averiguarlo. */
-      ...faltan.map(o => h("li", { style: "margin-bottom:6px" },
-        h("b", {}, o.asunto), ": ",
-        h("span", { clase: "chico" }, o.mensaje || o.detalle || ""),
-        o.accion ? h("div", { clase: "chico gris" }, o.accion) : null))));
-}
-
-/* La cuenta regresiva, cada segundo. `desde` es el ahora del servidor:
-   el navegador solo mide cuanto ha pasado desde que llego la respuesta,
-   que es lo unico que su reloj puede saber bien. */
-function pintarReloj(nodo, limite, desde) {
-  if (!limite) {
-    nodo.replaceChildren(h("span", { clase: "gris" }, t("srv_sin_plazo")));
-    return;
-  }
-  const fin = new Date(limite).getTime();
-  const base = new Date(desde).getTime();
-  const arranque = Date.now();
-
-  const latir = () => {
-    if (!nodo.isConnected) return;          // la pantalla ya cambio
-    const ahora = base + (Date.now() - arranque);
-    const faltan = Math.floor((fin - ahora) / 1000);
-    if (faltan <= 0) {
-      nodo.className = "reloj-cierre vencido";
-      nodo.replaceChildren(h("span", {}, t("srv_plazo_vencido")));
-      return;
-    }
-    const hh = String(Math.floor(faltan / 3600)).padStart(2, "0");
-    const mm = String(Math.floor((faltan % 3600) / 60)).padStart(2, "0");
-    const ss = String(faltan % 60).padStart(2, "0");
-    nodo.className = "reloj-cierre" + (faltan < 3600 ? " apurado" : "");
-    nodo.replaceChildren(
-      h("span", { clase: "num" }, `${hh}:${mm}:${ss}`),
-      h("span", { clase: "chico gris" }, " " + t("srv_para_cerrar")));
-    setTimeout(latir, 1000);
-  };
-  latir();
+  const plaza = cat.plazas.find(p => p.id === servicio.plaza_id);
+  const pais = cat.paises.find(p => p.id === servicio.pais_id);
+  const base = `/cierre/servicio/${servicio.id}`;
+  return tarjetaCierre({
+    titulo: t("srv_visto_bueno"), ayuda: "ay_srv_visto_bueno",
+    rutas: { estado: `${base}/estado`, revision: `${base}/revision`,
+             viaticos: `${base}/viaticos`,
+             desglose: `${base}/desglose-gastos` },
+    esMes: false,
+    lugar: plaza ? plaza.nombre : (pais ? pais.nombre : ""),
+    moneda: (pais && pais.moneda_local) || "MXN",
+    /* El estatus del encabezado cambia con el visto bueno. */
+    alCambiar: () => setTimeout(() => location.reload(), 1200),
+  });
 }
 
 /* ------------------------------------------------------------ encabezado */

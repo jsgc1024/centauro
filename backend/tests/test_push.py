@@ -357,6 +357,12 @@ def test_el_comprobante_rechazado_le_avisa_con_el_motivo(cliente, sesion,
     siempre lo que pasó es que el ticket salió borroso."""
     _, viatico, juan = _viatico_solicitado(cliente, sesion, datos)
     _telefono(db, juan, "https://push.example/comprobante")
+    # Depositado: lo que le falta se cuenta de lo que ya salio del banco,
+    # igual que en su tarjeta (seccion 59).
+    from app import models as m
+    db.get(m.AsignacionViatico, viatico["id"]).estatus = (
+        m.EstatusViatico.TRANSFERIDO)
+    db.commit()
 
     subido = cliente.post(
         f"/viaticos/{viatico['id']}/comprobantes", headers=sesion("juan"),
@@ -379,6 +385,10 @@ def test_el_comprobante_rechazado_le_avisa_con_el_motivo(cliente, sesion,
     assert "no se alcanza a leer" in cuerpos
     # Y lo que le falta por comprobar, que es lo que se le va a descontar.
     assert "por comprobar" in cuerpos
+    # El servicio todavia no termina: su plazo no corre. Antes decia que
+    # "sigue corriendo", y no era cierto.
+    assert "corre cuando termine el servicio" in cuerpos
+    assert "sigue corriendo" not in cuerpos
 
 
 def test_un_aviso_que_falla_no_tumba_el_deposito(cliente, sesion, datos, db,

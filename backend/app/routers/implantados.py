@@ -6,12 +6,17 @@ from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi.responses import HTMLResponse
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app import auditoria, auth
+from app import bolson
+from app import desglose
 from app import disponibilidad as disp
 from app import cierre_mes
+from app import comisiones
+from app import reloj
 from app import implantado as motor
 from app import tasksheet
 from app import viaticos_implantado as viaticos
@@ -43,8 +48,10 @@ class ContratoIn(BaseModel):
     precio_dia_personal: Decimal | None = None
     precio_dia_adicional: Decimal | None = None
     precio_mes_completo: Decimal | None = None
-    # Dentro del precio, o aparte por lo comprobado (seccion 57).
+    # Como se cobran los gastos (seccion 59): a precio alzado con su monto
+    # fijo del mes, o netos, por lo comprobado.
     viaticos_incluidos: bool = True
+    gastos_mes: Decimal | None = None
 
 
 class DiaAdicionalIn(BaseModel):
@@ -148,23 +155,139 @@ def cierre(contrato_id: int, db: Session = Depends(get_db), _=Depends(LECTURA)):
 @router.get("/contratos/{contrato_id}/cierre/estado",
             summary="El reloj del cierre del mes")
 def estado_del_cierre(contrato_id: int, db: Session = Depends(get_db),
-                      ahora: datetime | None = None, _=Depends(LECTURA)):
+                      ahora: datetime | None = None,
+                      usuario: m.Usuario = Depends(LECTURA)):
     """En que fase va el mes --comprobacion, sin visto bueno, en
     facturacion-- con sus relojes (seccion 56). El visto bueno y la
     aprobacion del mes van por las mismas rutas del cierre: `/cierre/
     {cierre_id}/enviar-finanzas` y `/cierre/{cierre_id}/aprobar`."""
-    return cierre_mes.estado(db, cierre_mes.contrato_o_404(db, contrato_id),
-                             ahora)
+    return comisiones.solo_la_suya(cierre_mes.estado(
+        db, cierre_mes.contrato_o_404(db, contrato_id), ahora), usuario)
 
 
 @router.get("/contratos/{contrato_id}/cierre/revision",
             summary="Revision del mes antes del visto bueno")
 def revision_del_mes(contrato_id: int, db: Session = Depends(get_db),
-                     ahora: datetime | None = None, _=Depends(LECTURA)):
+                     ahora: datetime | None = None,
+                     usuario: m.Usuario = Depends(LECTURA)):
     """Lo que el consultor tiene que resolver antes del visto bueno del
     mes: el comparativo contra el contrato, el dinero y las marcas."""
-    return cierre_mes.revisar(db, cierre_mes.contrato_o_404(db, contrato_id),
-                              ahora)
+    return comisiones.solo_la_suya(cierre_mes.revisar(
+        db, cierre_mes.contrato_o_404(db, contrato_id), ahora), usuario)
+
+
+@router.get("/contratos/{contrato_id}/cierre/viaticos",
+            summary="El dinero del personal del mes, persona por persona")
+def viaticos_del_mes(contrato_id: int, db: Session = Depends(get_db),
+                     _=Depends(auth.puede("viaticos.ver"))):
+    """La misma revision que la del eventual, con el dinero del mes."""
+    contrato = cierre_mes.contrato_o_404(db, contrato_id)
+    ahora = reloj.ahora_del_servicio(db, contrato.servicio)
+    return {"momento": ahora.isoformat(), "periodo": cierre_mes.periodo(contrato),
+            "personas": bolson.revision(
+                cierre_mes.viaticos_del_mes(db, contrato), ahora)}
+
+
+@router.get("/contratos/{contrato_id}/desglose-gastos",
+            response_class=HTMLResponse,
+            summary="El desglose de gastos del mes para el cliente")
+def desglose_del_mes(contrato_id: int, idioma: str | None = None,
+                     db: Session = Depends(get_db),
+                     _=Depends(auth.puede("cierre.ver"))):
+    """Lo comprobado valido del mes, gasto por gasto, con sus
+    comprobantes y en el idioma del cliente (seccion 59)."""
+    contrato = cierre_mes.contrato_o_404(db, contrato_id)
+    servicio = contrato.servicio
+    cierre = cierre_mes.cierre_de(db, contrato)
+    plaza = db.get(m.Plaza, servicio.plaza_id)
+    pais = db.get(m.Pais, servicio.pais_id)
+    return HTMLResponse(desglose.render(
+        servicio, plaza.nombre if plaza else None,
+        cierre_mes.viaticos_del_mes(db, contrato),
+        idioma if idioma in desglose.TEXTOS
+        else desglose.idioma_del_cliente(db, servicio),
+        pais.moneda_local.value if pais else None,
+        factura=cierre.factura_odoo if cierre else None,
+        periodo=(contrato.anio, contrato.mes)))
+
+
+class TerminosDelMesIn(BaseModel):
+    """Como se cobra el mes. Lo que no venga se queda vacio: la pantalla
+    manda los terminos completos."""
+    esquema: m.EsquemaCotizacionImplantado
+    precio_dia_personal: Decimal | None = Field(default=None, ge=0)
+    precio_dia_adicional: Decimal | None = Field(default=None, ge=0)
+    precio_mes_vehiculo: Decimal | None = Field(default=None, ge=0)
+    precio_mes_completo: Decimal | None = Field(default=None, ge=0)
+    # Seccion 59: verdadero, a precio alzado con su monto fijo del mes;
+    # falso, gastos netos con desglose al final.
+    viaticos_incluidos: bool = True
+    gastos_mes: Decimal | None = Field(default=None, ge=0)
+
+
+def _terminos(db: Session, contrato: m.ContratoImplantado) -> dict:
+    pais = db.get(m.Pais, contrato.servicio.pais_id)
+    return {
+        "contrato_id": contrato.id,
+        "periodo": cierre_mes.periodo(contrato),
+        "anio": contrato.anio, "mes": contrato.mes,
+        "esquema": contrato.esquema.value,
+        "precio_dia_personal": contrato.precio_dia_personal,
+        "precio_dia_adicional": contrato.precio_dia_adicional,
+        "precio_mes_vehiculo": contrato.precio_mes_vehiculo,
+        "precio_mes_completo": contrato.precio_mes_completo,
+        "viaticos_incluidos": contrato.viaticos_incluidos,
+        "modo_gastos": ("precio_alzado" if contrato.viaticos_incluidos
+                        else "netos"),
+        "gastos_mes": contrato.gastos_mes,
+        "moneda": pais.moneda_local.value if pais else None,
+        # Con el visto bueno dado ya no se cambian: la factura del mes
+        # salio, o esta por salir, con estos precios.
+        "editable": not cierre_mes.con_visto_bueno(db, contrato),
+    }
+
+
+@router.get("/contratos/{contrato_id}/terminos",
+            summary="Como se cobra el mes")
+def ver_terminos(contrato_id: int, db: Session = Depends(get_db),
+                 _=Depends(LECTURA)):
+    return _terminos(db, cierre_mes.contrato_o_404(db, contrato_id))
+
+
+@router.put("/contratos/{contrato_id}/terminos",
+            summary="Corregir como se cobra el mes")
+def guardar_terminos(contrato_id: int, datos: TerminosDelMesIn,
+                     db: Session = Depends(get_db),
+                     usuario: m.Usuario = Depends(CONSULTOR)):
+    """Los precios del mes y el trato de sus gastos. Hasta hoy solo se
+    capturaban al abrir el primer mes, y sin ellos el visto bueno de un
+    mes cobrado por dia nunca pasaba (seccion 59). Pasan solos al mes
+    siguiente; con el visto bueno del mes dado ya no se tocan."""
+    contrato = cierre_mes.contrato_o_404(db, contrato_id)
+    if cierre_mes.con_visto_bueno(db, contrato):
+        raise HTTPException(409, {
+            "mensaje": (f"El mes {cierre_mes.periodo(contrato)} ya tiene "
+                        "visto bueno: sus terminos ya no se cambian"),
+            "que_hacer": ("La factura del mes salio con estos precios. Si "
+                          "hay que corregirla, finanzas lo regresa.")})
+    antes = _terminos(db, contrato)
+    for campo, valor in datos.model_dump().items():
+        setattr(contrato, campo, valor)
+    db.flush()
+    despues = _terminos(db, contrato)
+    cambios = [f"{k}: {antes[k]} -> {despues[k]}"
+               for k in ("esquema", "precio_dia_personal",
+                         "precio_dia_adicional", "precio_mes_vehiculo",
+                         "precio_mes_completo", "modo_gastos", "gastos_mes")
+               if str(antes[k]) != str(despues[k])]
+    if cambios:
+        auditoria.registrar(db, usuario, contrato.servicio,
+                            "terminos del mes",
+                            (f"{cierre_mes.periodo(contrato)}: "
+                             + "; ".join(cambios))[:400])
+    db.commit()
+    db.refresh(contrato)
+    return _terminos(db, contrato)
 
 
 @router.get("/contratos", summary="Contratos implantados")
@@ -279,8 +402,10 @@ class MesImplantadoIn(BaseModel):
     precio_dia_personal: Decimal | None = None
     precio_dia_adicional: Decimal | None = None
     precio_mes_completo: Decimal | None = None
-    # Dentro del precio, o aparte por lo comprobado (seccion 57).
+    # Como se cobran los gastos (seccion 59): a precio alzado con su monto
+    # fijo del mes, o netos, por lo comprobado.
     viaticos_incluidos: bool = True
+    gastos_mes: Decimal | None = None
 
 
 class AltaImplantadoIn(BaseModel):
@@ -327,9 +452,11 @@ class AltaImplantadoIn(BaseModel):
     precio_dia_personal: Decimal | None = None
     precio_dia_adicional: Decimal | None = None
     precio_mes_completo: Decimal | None = None
-    # Como se cobran los viaticos, la misma opcion que la cotizacion del
-    # eventual: dentro del precio, o aparte por lo comprobado (seccion 57).
+    # Como se cobran los gastos, la misma opcion que la cotizacion del
+    # eventual (seccion 59): a precio alzado con su monto fijo del mes, o
+    # netos, por lo comprobado.
     viaticos_incluidos: bool = True
+    gastos_mes: Decimal | None = None
 
     acuerdo: AcuerdoIn = AcuerdoIn()
 
@@ -459,6 +586,7 @@ def _abrir_mes(db: Session, usuario: m.Usuario, servicio: m.Servicio,
         precio_dia_adicional=datos.precio_dia_adicional,
         precio_mes_completo=datos.precio_mes_completo,
         viaticos_incluidos=datos.viaticos_incluidos,
+        gastos_mes=datos.gastos_mes,
         dias_base=len(motor.dias_del_mes(
             inicio.year, inicio.month, dias_servicio, inicio.day,
             (acuerdo.turno if acuerdo and acuerdo.turno
@@ -641,7 +769,8 @@ def cartera(db: Session = Depends(get_db), _=Depends(LECTURA)):
                  .order_by(m.ContratoImplantado.anio.desc(),
                            m.ContratoImplantado.mes.desc()).all())
         ultimo = meses[0] if meses else None
-        fases = cierre_mes.fases_de(db, meses)
+        relojes = cierre_mes.relojes_de(db, meses)
+        hoy = reloj.hoy_en(db.get(m.Pais, s_.pais_id))
         salida.append({
             "servicio_id": s_.id, "folio": s_.folio,
             "cliente": s_.cliente.nombre if s_.cliente else None,
@@ -657,13 +786,37 @@ def cartera(db: Session = Depends(get_db), _=Depends(LECTURA)):
             # pestanas del mes y el boton, sin otra vuelta al servidor.
             "periodos": [{"anio": c.anio, "mes": c.mes,
                           "periodo": f"{c.mes:02d}/{c.anio}",
+                          "contrato_id": c.id,
                           # En que va el cierre de cada mes; vacio
-                          # mientras se trabaja (seccion 56).
-                          "fase": fases.get(c.id)}
+                          # mientras se trabaja (seccion 56). Con su
+                          # reloj, si corre uno (seccion 59).
+                          "fase": (relojes.get(c.id) or {}).get("fase"),
+                          "reloj": (relojes.get(c.id) or {}).get("reloj"),
+                          "sin_cierre": (None if c.id in relojes
+                                         else _sin_cierre(db, c, hoy))}
                          for c in reversed(meses)],
             "siguiente": motor.estado_desde(ultimo, s_),
         })
     return salida
+
+
+def _sin_cierre(db: Session, contrato: m.ContratoImplantado,
+                hoy: date) -> str:
+    """Como va un mes que todavia no tiene cierre.
+
+    Por empezar, si es de despues; en curso, si es este. Uno que ya paso
+    sin cierre tiene dias sin cerrar --su reloj no arranca hasta que se
+    cierre su ultimo dia-- o no tuvo nada que cerrar.
+    """
+    clave, hoy_clave = contrato.anio * 100 + contrato.mes, hoy.year * 100 + hoy.month
+    if clave > hoy_clave:
+        return "por_empezar"
+    if clave == hoy_clave:
+        return "en_curso"
+    pendientes = any(j.estatus not in (m.EstatusJornada.TERMINADA,
+                                       m.EstatusJornada.CANCELADA)
+                     for j in cierre_mes._dias(db, contrato))
+    return "dias_sin_cerrar" if pendientes else "sin_nada"
 
 
 def _contrato_vigente(db: Session, servicio_id: int):
@@ -816,7 +969,8 @@ def guardar_acuerdo(servicio_id: int, datos: AcuerdoIn,
 @router.get("/{servicio_id}/mes/{anio}/{mes}",
             summary="El mes dia por dia: quien va y que cambio")
 def panel_del_mes(servicio_id: int, anio: int, mes: int,
-                  db: Session = Depends(get_db), _=Depends(LECTURA)):
+                  db: Session = Depends(get_db),
+                  usuario: m.Usuario = Depends(LECTURA)):
     """Lo que el consultor mira todos los dias de un implantado.
 
     El eventual se arma y se ejecuta; el implantado ya esta armado y lo
@@ -910,8 +1064,10 @@ def panel_del_mes(servicio_id: int, anio: int, mes: int,
         "dias_sin_abrir": sin_abrir,
         "cambios": cambios,
         "resumen": motor.resumen_mensual(db, contrato.id) if contrato else None,
-        # El cierre del mes: su fase y sus relojes (seccion 56).
-        "cierre": cierre_mes.estado(db, contrato) if contrato else None,
+        # El cierre del mes: su fase y sus relojes (seccion 56). La
+        # comision, solo si es suya (seccion 59).
+        "cierre": (comisiones.solo_la_suya(cierre_mes.estado(db, contrato),
+                                           usuario) if contrato else None),
     }
 
 
@@ -1007,6 +1163,8 @@ def calendario(servicio_id: int, anio: int, mes: int,
     return {
         "servicio_id": servicio.id, "folio": servicio.folio,
         "periodo": f"{mes:02d}/{anio}",
+        # El mes de contrato: de el cuelgan sus terminos y su cierre.
+        "contrato_id": contrato.id,
         # El equipo es uno solo en el implantado, y de el cuelgan los
         # viaticos del mes: el panel lo necesita para pedirlos.
         "equipo_id": equipo.id if equipo else None,

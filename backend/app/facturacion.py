@@ -37,8 +37,28 @@ from app.config import settings
 registro = logging.getLogger("centauro.facturacion")
 
 
+SIN_CONEXION = ("Odoo no esta configurado en este servidor. "
+                "Queda por facturar.")
+
+
 def hay_conexion() -> bool:
     return bool(settings.odoo_url)
+
+
+def que_paso(error: str | None) -> str | None:
+    """Por que no salio la factura, en una palabra que la pantalla sabe
+    decir en tres idiomas: sin conexion, Odoo la rechazo, Odoo no
+    contesto, o falta un dato de este lado."""
+    if not error:
+        return None
+    if error == SIN_CONEXION:
+        return "sin_conexion"
+    if "Client error" in error or "Odoo contesto sin folio" in error:
+        return "rechazada"
+    if ("Server error" in error or "timed out" in error.lower()
+            or "connect" in error.lower() or "timeout" in error.lower()):
+        return "sin_respuesta"
+    return "falta_dato"
 
 
 def armar(db: Session, cierre: m.Cierre) -> dict:
@@ -73,14 +93,16 @@ def armar(db: Session, cierre: m.Cierre) -> dict:
         "importe": str(linea["importe"]),
         "horas_extra": linea.get("horas_extra") or 0,
     } for linea in ejecutado["detalle"]]
-    # Los viaticos, en su propio renglon, cuando la cotizacion los cobra
-    # aparte: lo comprobado valido (seccion 57). Incluidos, ya van en el
-    # precio y no se suman.
+    # Los gastos, en su propio renglon (seccion 59): a precio alzado, el
+    # monto fijo de la propuesta; netos, lo comprobado valido. Un precio
+    # alzado sin monto quiere decir que van dentro del precio: no se suma.
     viaticos = motor_cierre.viaticos_por_cobrar(db, servicio.id, cotizacion)
     if viaticos:
         conceptos.append({"fecha": None, "equipo": None,
                           "tipo": "viaticos",
-                          "descripcion": "Viaticos comprobados",
+                          "descripcion": ("Gastos a precio alzado"
+                                          if cotizacion.viaticos_incluidos
+                                          else "Gastos comprobados"),
                           "cantidad": 1, "importe": str(viaticos),
                           "horas_extra": 0})
 
@@ -98,6 +120,9 @@ def armar(db: Session, cierre: m.Cierre) -> dict:
                   or datetime.now()).date().isoformat(),
         "total": str(ejecutado["total"] + viaticos),
         "conceptos": conceptos,
+        # Si finanzas regreso el servicio con la factura ya hecha, esa se
+        # anulo: esta la sustituye (seccion 59).
+        "sustituye_a": cierre.factura_anulada,
     }
 
 
@@ -121,9 +146,14 @@ def enviar(db: Session, cierre: m.Cierre) -> dict:
         return {"resultado": "no se factura",
                 "motivo": f"el cierre esta en {cierre.estatus.value}"}
 
+    # Cada intento se cuenta: la bandeja dice "3 intentos, el ultimo a
+    # las 09:40", que es lo que decide si se reintenta o se llama a
+    # sistemas.
+    cierre.factura_intentos = (cierre.factura_intentos or 0) + 1
+    cierre.factura_intento_en = datetime.now()
+
     if not hay_conexion():
-        cierre.factura_error = ("Odoo no esta configurado en este servidor. "
-                                "Queda por facturar.")
+        cierre.factura_error = SIN_CONEXION
         db.flush()
         return {"resultado": "sin conexion", "motivo": cierre.factura_error}
 
@@ -173,7 +203,7 @@ def enviar(db: Session, cierre: m.Cierre) -> dict:
 
 
 def por_facturar(db: Session) -> list[dict]:
-    """Lo aprobado que todavia no tiene factura.
+    """Lo que ya tiene visto bueno y todavia no tiene factura.
 
     Es la bandeja que faltaba: sin ella, un servicio aprobado cuyo envio
     fallo se queda esperando para siempre y nadie se entera hasta que el
@@ -184,18 +214,128 @@ def por_facturar(db: Session) -> list[dict]:
                                            m.EstatusCierre.APROBADO)),
                      m.Cierre.facturado_en.is_(None))
              .order_by(m.Cierre.enviado_en).all())
-    return [{
+    return [renglon(db, c) for c in filas]
+
+
+def renglon(db: Session, c: m.Cierre) -> dict:
+    """Un cierre como lo lee finanzas en su bandeja."""
+    def iso(momento):
+        return momento.isoformat() if momento else None
+
+    servicio = c.servicio
+    consultor = (db.get(m.Persona, servicio.consultor_id)
+                 if servicio.consultor_id else None)
+    # En que moneda se factura: la de la cotizacion en el eventual, la
+    # del pais en el mes del implantado.
+    moneda = None
+    if not c.contrato_id:
+        from app import cotizacion as cot
+        vigente = cot.vigente(db, servicio.id)
+        moneda = vigente.moneda.value if vigente else None
+    if moneda is None:
+        pais = db.get(m.Pais, servicio.pais_id)
+        moneda = pais.moneda_local.value if pais else None
+    return {
         "cierre_id": c.id,
         "estatus": c.estatus.value,
-        "enviado_en": c.enviado_en.isoformat() if c.enviado_en else None,
+        "enviado_en": iso(c.enviado_en),
+        "visto_bueno_en": iso(c.visto_bueno_en or c.enviado_en),
+        "dentro_de_plazo": c.dentro_de_plazo,
         "servicio_id": c.servicio_id,
-        "folio": c.servicio.folio,
+        "tipo": servicio.tipo.value,
+        "folio": servicio.folio,
         # El mes, en el implantado: el mismo folio factura mes con mes.
+        "contrato_id": c.contrato_id,
         "periodo": (f"{c.contrato.mes:02d}/{c.contrato.anio}"
                     if c.contrato_id else None),
-        "cliente": (c.servicio.cliente.nombre
-                    if c.servicio.cliente else None),
+        "anio": c.contrato.anio if c.contrato_id else None,
+        "mes": c.contrato.mes if c.contrato_id else None,
+        "cliente": servicio.cliente.nombre if servicio.cliente else None,
+        "consultor": consultor.nombre if consultor else None,
+        "consultor_id": servicio.consultor_id,
         "total": str(c.total_ejecutado),
-        "aprobado_en": c.aprobado_en.isoformat() if c.aprobado_en else None,
+        "moneda": moneda,
+        "aprobado_en": iso(c.aprobado_en),
+        "factura": c.factura_odoo,
+        "factura_anulada": c.factura_anulada,
         "error": c.factura_error,
-    } for c in filas]
+        "que_paso": que_paso(c.factura_error),
+        "intentos": c.factura_intentos or 0,
+        "ultimo_intento": iso(c.factura_intento_en),
+        "devuelto_en": iso(c.devuelto_en),
+    }
+
+
+# ---------------------------------------------------------------- la bandeja
+
+def gastos_del_cierre(db: Session, cierre: m.Cierre) -> dict:
+    """Cuanto de lo que se factura son gastos, y con que trato: la
+    bandeja dice "con $1,750 de gastos" y si van a precio alzado."""
+    from decimal import Decimal
+
+    if cierre.contrato_id:
+        from app import cierre_mes
+        contrato = cierre.contrato
+        alzado = contrato.viaticos_incluidos
+        if alzado:
+            monto = Decimal(str(contrato.gastos_mes or 0))
+        else:
+            monto = sum((Decimal(str(v.monto_comprobado or 0))
+                         for v in cierre_mes.viaticos_del_mes(db, contrato)),
+                        Decimal("0"))
+    else:
+        from app import cotizacion as cot
+        vigente = cot.vigente(db, cierre.servicio_id)
+        if not vigente:
+            return {"modo": None, "monto": Decimal("0")}
+        alzado = vigente.viaticos_incluidos
+        monto = motor_cierre.viaticos_por_cobrar(db, cierre.servicio_id,
+                                                 vigente)
+    return {"modo": motor_cierre.modo_de_gastos(alzado), "monto": monto}
+
+
+def bandeja(db: Session, ahora: datetime | None = None) -> dict:
+    """La pantalla de Facturacion de finanzas, completa.
+
+    Por aprobar: lo que ya tiene el visto bueno del consultor. Por
+    facturar: lo que Odoo no acepto, con lo que dijo. Cerrados: lo que
+    finanzas ya cerro este mes. Un implantado va por mes.
+    """
+    from decimal import Decimal
+    from app import comisiones
+
+    ahora = ahora or datetime.now()
+    primero = ahora.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    def con_gastos(c):
+        return {**renglon(db, c), "gastos": gastos_del_cierre(db, c)}
+
+    aprobar = (db.query(m.Cierre)
+               .filter(m.Cierre.estatus == m.EstatusCierre.ENVIADO_FINANZAS)
+               .order_by(m.Cierre.enviado_en).all())
+    cerrados = (db.query(m.Cierre)
+                .filter(m.Cierre.estatus.in_((m.EstatusCierre.APROBADO,
+                                              m.EstatusCierre.FACTURADO)),
+                        m.Cierre.aprobado_en >= primero)
+                .order_by(m.Cierre.aprobado_en.desc()).all())
+    facturar = por_facturar(db)
+
+    def suma(filas):
+        return sum((Decimal(str(c.total_ejecutado or 0)) for c in filas),
+                   Decimal("0"))
+
+    return {
+        "momento": ahora.isoformat(),
+        "odoo_configurado": hay_conexion(),
+        "resumen": {
+            "por_aprobar": {"cuantos": len(aprobar), "monto": suma(aprobar)},
+            "por_facturar": {"cuantos": len(facturar)},
+            "cerrados": {"cuantos": len(cerrados), "monto": suma(cerrados),
+                         "mes": ahora.month, "anio": ahora.year},
+        },
+        "por_aprobar": [con_gastos(c) for c in aprobar],
+        "por_facturar": facturar,
+        "cerrados": [{**renglon(db, c),
+                      "comision": comisiones.del_cierre(db, c)}
+                     for c in cerrados],
+    }

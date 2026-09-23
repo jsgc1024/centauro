@@ -436,6 +436,9 @@ def mis_viaticos(db: Session = Depends(get_db),
             # Desde ahi, esto es historia para el agente.
             "visto_bueno": _con_visto_bueno(
                 db, servicio.id, jornada.fecha if por_mes else None),
+            # La hora de alla, para decir "te quedan 5 h" con el reloj
+            # del pais del servicio y no con el del telefono.
+            "momento": relojes.de_la_jornada(jornada).isoformat(),
         })
         monto = Decimal(str(v.monto_total or 0))
         comprobado = Decimal(str(v.monto_comprobado or 0))
@@ -528,6 +531,12 @@ def mis_viaticos(db: Session = Depends(get_db),
         # no un sobre que la persona tenga que respetar.
         f["por_comprobar"] = max(
             f["entregado"] - f["comprobado"] - f["devuelto"], Decimal("0"))
+        # Cuanto le queda (seccion 59). Sin limite, el servicio no ha
+        # terminado: el plazo de 24 horas corre al terminar, no antes.
+        f["minutos"] = (int((datetime.fromisoformat(f["limite"])
+                             - datetime.fromisoformat(f["momento"]))
+                            .total_seconds() // 60)
+                        if f["limite"] else None)
 
     # Lo cerrado se va abajo. La pantalla mostraba TODO lo que esa
     # persona ha recibido en su vida, sin corte: al ano son doscientos

@@ -661,16 +661,21 @@ AYUDA_POR_PANTALLA = {
     "categorias.js": 2,
     "central.js": 5,
     "consultor.js": 4,
+    "facturacion.js": 1,
     "finanzas.js": 5,
-    "implantado.js": 8,
+    "implantado.js": 9,
     "nomina.js": 3,
-    "panorama.js": 5,
-    "servicio.js": 10,
+    "panorama.js": 6,
+    "servicio.js": 9,
 
     # --- las que no, y por que
     "api.js": 0,        # habla con el servidor; no pinta nada
     "app.js": 0,        # el armazon: la barra, las rutas, la entrada
     "catalogos.js": 0,  # tablas de catalogo: la columna se llama como lo que trae
+    # La tarjeta de visto bueno y facturacion lleva su "?", pero la clave
+    # la pone quien la pinta --servicio.js el del eventual, implantado.js
+    # el del mes-- porque cada una explica otra cosa.
+    "cierre.js": 0,
     "codigo.js": 0,     # cuatro digitos y una contrasena nueva; no hay alcance que explicar
     # Antes de entrar: crear la contrasena con el enlace del correo y
     # pedir ese enlace. Sus reglas van escritas en la misma tarjeta.

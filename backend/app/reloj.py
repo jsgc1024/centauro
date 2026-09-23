@@ -181,6 +181,17 @@ def ahora_de_la_persona(db: Session, persona: m.Persona | None,
     return ahora_en(db.get(m.Pais, pais_id) if pais_id else None, ahora)
 
 
+def de_prueba(ahora: datetime | None) -> datetime | None:
+    """El `ahora` que llega por parametro, solo fuera de produccion.
+
+    Existe para que las pruebas muevan el reloj. En produccion se
+    ignora: el visto bueno "en plazo" decide una comision, y no puede
+    decidirlo quien escribe una hora en la direccion.
+    """
+    from app.config import es_desarrollo, settings
+    return ahora if es_desarrollo(settings) else None
+
+
 def margen_de_paises(db: Session) -> timedelta:
     """La mayor diferencia horaria entre los países activos.
 

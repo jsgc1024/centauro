@@ -164,6 +164,90 @@ def generar_del_mes(db: Session, cierre: m.Cierre) -> m.ComisionConsultor:
     return comision
 
 
+def del_cierre(db: Session, cierre: m.Cierre) -> dict | None:
+    """La comision del consultor por ese cierre, para su tarjeta.
+
+    Si finanzas ya lo cerro, la que se genero. Si todavia esta en
+    facturacion, lo que va a ser --o que se pierde, si el visto bueno
+    salio fuera de plazo--: el consultor quiere saber cuanto le toca
+    antes de que finanzas lo cierre. Antes del visto bueno no hay cifra.
+    """
+    servicio = cierre.servicio
+    if not servicio or not servicio.consultor_id:
+        return None
+    consulta = db.query(m.ComisionConsultor).filter_by(
+        consultor_id=servicio.consultor_id)
+    if cierre.contrato_id:
+        generada = consulta.filter_by(contrato_id=cierre.contrato_id).first()
+    else:
+        generada = consulta.filter_by(servicio_id=servicio.id,
+                                      contrato_id=None).first()
+    if generada:
+        return {"generada": True, "estatus": generada.estatus.value,
+                "monto": generada.monto, "base": generada.base,
+                "porcentaje": float(generada.porcentaje),
+                "moneda": generada.moneda.value, "motivo": generada.motivo}
+    if not cierre.enviado_en or cierre.estatus not in (
+            m.EstatusCierre.ENVIADO_FINANZAS, m.EstatusCierre.APROBADO,
+            m.EstatusCierre.FACTURADO):
+        return None
+    if cierre.dentro_de_plazo is False:
+        return {"generada": False, "estatus": "se_pierde", "monto": CERO,
+                "base": None, "porcentaje": None, "moneda": None,
+                "motivo": "El visto bueno salio fuera de plazo"}
+    try:
+        pct = _porcentaje(db, servicio.pais_id, servicio.tipo)
+    except HTTPException:
+        return None
+    if cierre.contrato_id:
+        from app import cierre_mes
+        viaticos = cierre_mes.viaticos_del_mes(db, cierre.contrato)
+        pais = db.get(m.Pais, servicio.pais_id)
+        moneda = pais.moneda_local.value if pais else None
+    else:
+        viaticos = motor_cierre.viaticos_del_servicio(db, servicio.id)
+        from app import cotizacion as cot
+        vigente = cot.vigente(db, servicio.id)
+        moneda = vigente.moneda.value if vigente else None
+    comprobado = sum((Decimal(str(v.monto_comprobado or 0))
+                      for v in viaticos), CERO)
+    base = Decimal(str(cierre.total_ejecutado or 0)) - comprobado
+    return {"generada": False, "estatus": "por_generar",
+            "monto": (base * pct / Decimal("100")).quantize(Decimal("0.01")),
+            "base": base, "porcentaje": float(pct), "moneda": moneda,
+            "motivo": None}
+
+
+def solo_la_suya(datos, usuario: m.Usuario):
+    """Un consultor ve su comision, no la de otro.
+
+    La misma regla que su corte ("Solo puedes ver tu propio corte"): la
+    tarjeta del cierre y la bandeja de facturacion traen la comision, y
+    un consultor puede abrir el servicio de un companero. Se apaga en
+    todo renglon cuya comision sea de otro; los demas roles la ven como
+    antes. Devuelve los mismos datos, ya limpios.
+    """
+    if usuario is None or usuario.rol != m.Rol.CONSULTOR:
+        return datos
+
+    def limpiar(x):
+        if isinstance(x, dict):
+            if x.get("comision") is not None:
+                duenio = x.get("consultor_id")
+                if duenio is None and isinstance(x.get("consultor"), dict):
+                    duenio = x["consultor"].get("id")
+                if duenio != usuario.persona_id:
+                    x["comision"] = None
+            for valor in x.values():
+                limpiar(valor)
+        elif isinstance(x, list):
+            for valor in x:
+                limpiar(valor)
+
+    limpiar(datos)
+    return datos
+
+
 def resolver_retenida(db: Session, comision_id: int, se_paga: bool,
                       resolucion: str) -> m.ComisionConsultor:
     """En incidencia grave no hay regla automatica: decide el director general."""

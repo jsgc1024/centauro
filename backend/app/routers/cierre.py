@@ -3,10 +3,13 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app import auditoria, auth
+from app import bolson
+from app import desglose
 from app import facturacion
 from app import encuestas as motor_encuestas
 from app import nomina
@@ -28,6 +31,9 @@ COTIZA = auth.puede("cierre.cotizar")
 CONSULTOR = auth.puede("cierre.cerrar")
 FINANZAS = auth.puede("cierre.facturar")
 LECTURA = auth.puede("cierre.ver")
+# Quien trae dinero encima y cuanto no lo ve cualquiera: la misma puerta
+# que el panel de viaticos del equipo.
+DINERO = auth.puede("viaticos.ver")
 
 
 class LineaIn(BaseModel):
@@ -166,19 +172,97 @@ def rentabilidad(servicio_id: int, db: Session = Depends(get_db),
 @router.get("/cierre/servicio/{servicio_id}/estado",
             summary="El reloj del consultor, sin el comparativo")
 def estado_del_cierre(servicio_id: int, db: Session = Depends(get_db),
-                      ahora: datetime | None = None, _=Depends(LECTURA)):
+                      ahora: datetime | None = None,
+                      usuario: m.Usuario = Depends(LECTURA)):
     """La pantalla lo pide aparte porque la revision revienta cuando no
     hay cotizacion autorizada, y el plazo corre igual."""
-    return motor.estado(db, servicio_id, ahora)
+    return motor_comisiones.solo_la_suya(
+        motor.estado(db, servicio_id, ahora), usuario)
 
 
 @router.get("/cierre/servicio/{servicio_id}/revision",
             summary="Revision automatica antes de enviar a finanzas")
 def revision(servicio_id: int, db: Session = Depends(get_db),
-             ahora: datetime | None = None, _=Depends(LECTURA)):
+             ahora: datetime | None = None,
+             usuario: m.Usuario = Depends(LECTURA)):
     """Acompana al consultor durante sus 24 horas y hace el primer filtro
     del comparativo para finanzas."""
-    return revisor.revisar(db, servicio_id, ahora)
+    return motor_comisiones.solo_la_suya(
+        revisor.revisar(db, servicio_id, ahora), usuario)
+
+
+@router.get("/cierre/servicio/{servicio_id}/viaticos",
+            summary="El dinero del personal, persona por persona")
+def viaticos_del_servicio(servicio_id: int, db: Session = Depends(get_db),
+                          _=Depends(DINERO)):
+    """Para revisar antes del visto bueno: por persona lo depositado, lo
+    comprobado y lo que falta; cada ticket con su foto, y lo que se puede
+    hacer con ese dinero (cerrar, o cerrar con descuento si ya vencio su
+    plazo). El dinero de una persona es uno solo (`app.bolson`)."""
+    servicio = db.get(m.Servicio, servicio_id)
+    if not servicio:
+        raise HTTPException(404, f"No existe el servicio {servicio_id}")
+    ahora = reloj.ahora_del_servicio(db, servicio)
+    viaticos = motor.viaticos_del_servicio(db, servicio_id)
+    return {"momento": ahora.isoformat(),
+            "personas": bolson.revision(viaticos, ahora)}
+
+
+@router.get("/cierre/servicio/{servicio_id}/desglose-gastos",
+            response_class=HTMLResponse,
+            summary="El desglose de gastos para el cliente")
+def desglose_del_servicio(servicio_id: int, idioma: str | None = None,
+                          db: Session = Depends(get_db), _=Depends(LECTURA)):
+    """Lo comprobado valido, gasto por gasto y con sus comprobantes, en
+    el idioma del cliente. Es lo que se le manda con la factura cuando
+    paga los gastos netos (seccion 59)."""
+    servicio = db.get(m.Servicio, servicio_id)
+    if not servicio:
+        raise HTTPException(404, f"No existe el servicio {servicio_id}")
+    cierre = (db.query(m.Cierre)
+              .filter_by(servicio_id=servicio_id, contrato_id=None).first())
+    plaza = db.get(m.Plaza, servicio.plaza_id)
+    vigente = cotmotor.vigente(db, servicio_id)
+    pais = db.get(m.Pais, servicio.pais_id)
+    moneda = (vigente.moneda.value if vigente else
+              pais.moneda_local.value if pais else None)
+    return HTMLResponse(desglose.render(
+        servicio, plaza.nombre if plaza else None,
+        motor.viaticos_del_servicio(db, servicio_id),
+        idioma if idioma in desglose.TEXTOS
+        else desglose.idioma_del_cliente(db, servicio),
+        moneda, factura=cierre.factura_odoo if cierre else None))
+
+
+@router.get("/cierre/relojes",
+            summary="El reloj del cierre de cada eventual, para la cartera")
+def relojes(db: Session = Depends(get_db), _=Depends(LECTURA)):
+    """Junto al estatus, el tiempo que queda: el del personal mientras
+    comprueba y el del consultor sin visto bueno. Uno por servicio, solo
+    los que tienen un reloj corriendo."""
+    relojes_ = reloj.Relojes(db)
+    salida = []
+    for fila in (db.query(m.Cierre)
+                 .filter(m.Cierre.contrato_id.is_(None),
+                         m.Cierre.estatus.in_((
+                             m.EstatusCierre.ABIERTO,
+                             m.EstatusCierre.SIN_VISTO_BUENO,
+                             m.EstatusCierre.EN_REVISION_IA,
+                             m.EstatusCierre.DEVUELTO_A_OPERACION)))
+                 .all()):
+        ahora = relojes_.del_servicio(fila.servicio)
+        salida.append({"servicio_id": fila.servicio_id,
+                       "fase": motor.FASES.get(fila.estatus),
+                       "reloj": motor.reloj_de(fila, ahora)})
+    return salida
+
+
+@router.get("/cierre/facturacion",
+            summary="La bandeja de facturacion de finanzas")
+def bandeja_de_facturacion(db: Session = Depends(get_db),
+                           usuario: m.Usuario = Depends(LECTURA)):
+    """Por aprobar, por facturar y lo cerrado este mes (seccion 59)."""
+    return motor_comisiones.solo_la_suya(facturacion.bandeja(db), usuario)
 
 
 @router.post("/cierre/{cierre_id}/desviaciones/respaldar",
@@ -212,6 +296,9 @@ def enviar_finanzas(cierre_id: int, db: Session = Depends(get_db),
     cierre = db.get(m.Cierre, cierre_id)
     if not cierre:
         raise HTTPException(404, f"No existe el cierre {cierre_id}")
+    # La hora por parametro solo vale en pruebas: en produccion el plazo
+    # se juzga con el reloj del servidor, en hora del pais del servicio.
+    ahora = reloj.de_prueba(ahora)
     # El mes del implantado lleva su revision y su factura del mes;
     # lo de abajo es el eventual, sin cambios (seccion 56).
     if cierre.contrato_id:
@@ -236,7 +323,8 @@ def enviar_finanzas(cierre_id: int, db: Session = Depends(get_db),
         raise HTTPException(409, {
             "mensaje": ("Todavia corre la comprobacion de viaticos del personal"
                         if cierre.estatus == m.EstatusCierre.ABIERTO
-                        else f"El cierre esta en {cierre.estatus.value}"),
+                        else f"El cierre esta en "
+                             f"{motor.nombre_estatus(cierre.estatus)}"),
             "hasta": (cierre.comprobacion_hasta.isoformat()
                       if cierre.comprobacion_hasta else None),
             "observaciones": [],
@@ -257,10 +345,10 @@ def enviar_finanzas(cierre_id: int, db: Session = Depends(get_db),
     # viaticos aparte, lo comprobado (seccion 57).
     cierre.total_ejecutado = (comparativo["ejecutado"]["total"]
                               + comparativo["viaticos"]["facturable_al_cliente"])
-    cierre.estatus = m.EstatusCierre.ENVIADO_FINANZAS
-    cierre.enviado_en = momento
+    # El primer visto bueno juzga el plazo y se queda: si finanzas lo
+    # regreso, este envio no lo vuelve a juzgar (decision 1, 23 sep).
+    motor.dar_visto_bueno(cierre, momento)
     cierre.cerrado_por_id = usuario.persona_id
-    cierre.dentro_de_plazo = momento <= cierre.limite_consultor
     # El visto bueno es el termino general: el servicio pasa a
     # facturacion. El cancelado se queda cancelado.
     if cierre.servicio.estatus in (m.EstatusServicio.TERMINADO,
@@ -306,18 +394,13 @@ def enviar_finanzas(cierre_id: int, db: Session = Depends(get_db),
              summary="Finanzas regresa el servicio a operacion")
 def devolver(cierre_id: int, datos: DevolucionIn, db: Session = Depends(get_db),
              usuario: m.Usuario = Depends(FINANZAS)):
+    """Solo lo que esta en facturacion, con su motivo. El consultor tiene
+    24 horas desde el regreso y su primer visto bueno conserva su plazo;
+    si la factura ya habia salido, se anula (seccion 59)."""
     cierre = db.get(m.Cierre, cierre_id)
     if not cierre:
         raise HTTPException(404, f"No existe el cierre {cierre_id}")
-    cierre.estatus = m.EstatusCierre.DEVUELTO_A_OPERACION
-    cierre.devuelto_motivo = datos.motivo
-    # Vuelve al consultor: el servicio regresa a sin visto bueno.
-    if cierre.servicio.estatus == m.EstatusServicio.EN_FACTURACION:
-        cierre.servicio.estatus = m.EstatusServicio.SIN_VISTO_BUENO
-    auditoria.registrar(db, usuario, cierre.servicio, "devolver a operacion",
-                        datos.motivo)
-    db.commit()
-    return {"resultado": "devuelto a operacion", "motivo": datos.motivo}
+    return motor.regresar(db, cierre, datos.motivo, usuario)
 
 
 @router.post("/cierre/{cierre_id}/aprobar",
@@ -330,7 +413,9 @@ def aprobar(cierre_id: int, db: Session = Depends(get_db),
     if not cierre:
         raise HTTPException(404, f"No existe el cierre {cierre_id}")
     if cierre.estatus != m.EstatusCierre.ENVIADO_FINANZAS:
-        raise HTTPException(409, f"El cierre esta en {cierre.estatus.value}")
+        raise HTTPException(409, {
+            "mensaje": (f"Solo se aprueba lo que esta en facturacion; este "
+                        f"esta en {motor.nombre_estatus(cierre.estatus)}")})
     # El mes del implantado: se aprueba el mes, el servicio sigue vivo
     # y la comision es de ese mes (seccion 56).
     if cierre.contrato_id:

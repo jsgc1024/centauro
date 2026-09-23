@@ -1611,7 +1611,40 @@ const conceptos = () => [
 /* La tarjeta de un servicio en la pestana de Viaticos. Es la misma para
    lo pendiente y para lo cerrado: un viatico cerrado se lee igual, con
    sus numeros en cero y sin botones que ofrecer. */
+/* El plazo, dicho como se vive (seccion 59). Antes de terminar el
+   servicio no hay fecha: el plazo de 24 horas corre al terminar. Ya
+   terminado, cuando vence y cuanto le queda, con la hora del pais del
+   servicio. Pasado, vencido, y lo que eso quiere decir. */
+function cuandoVence(s) {
+  if (!s.limite) {
+    return { marca: h("span", { clase: "marca" }, t("cmp_en_servicio")),
+             pie: h("div", { clase: "chico gris" }, t("cmp_plazo_al_terminar")) };
+  }
+  const limite = new Date(s.limite);
+  const hoy = new Date(s.momento || Date.now());
+  const dias = Math.round((new Date(limite.toDateString())
+                           - new Date(hoy.toDateString())) / 86400000);
+  const hh = `${String(limite.getHours()).padStart(2, "0")}:`
+           + `${String(limite.getMinutes()).padStart(2, "0")}`;
+  const cuando = dias === 0 ? t("cmp_hoy") : dias === 1 ? t("cmp_manana_")
+    : dias === -1 ? t("cmp_ayer")
+    : limite.toLocaleDateString(local(), { weekday: "short", day: "numeric" });
+  const minutos = s.minutos ?? 0;
+  if (s.vencido || minutos < 0) {
+    return { marca: h("span", { clase: "marca grave" }, t("cmp_vencido")),
+             pie: h("div", { clase: "chico rojo", style: "font-weight:650" },
+               t("cmp_vencio").replace("{cuando}", cuando).replace("{hora}", hh)) };
+  }
+  const queda = minutos < 60 ? t("cmp_n_min").replace("{n}", minutos)
+                             : t("cmp_n_h").replace("{n}", Math.floor(minutos / 60));
+  return { marca: h("span", { clase: "marca alerta" }, queda),
+           pie: h("div", { clase: "chico ambar", style: "font-weight:650" },
+             t("cmp_vence").replace("{cuando}", cuando).replace("{hora}", hh)
+               .replace("{queda}", queda)) };
+}
+
 function tarjetaViatico(s) {
+  const plazo = s.por_comprobar > 0 ? cuandoVence(s) : null;
   return h("div", { clase: `caja ${s.vencido ? "urgente" : ""}` },
       h("div", { clase: "fila separa" },
         /* El periodo, cuando la tarjeta es de un implantado: dos meses
@@ -1619,7 +1652,7 @@ function tarjetaViatico(s) {
         h("div", {}, h("b", {}, s.folio),
           s.periodo ? h("span", { clase: "marca" }, s.periodo) : null,
           h("div", { clase: "chico gris" }, s.cliente || "")),
-        s.vencido ? h("span", { clase: "marca grave" }, t("cmp_vencido")) : null),
+        plazo ? plazo.marca : null),
       h("div", { clase: "marco" },
         renglon(t("cmp_te_depositaron"),
                 `$${s.entregado.toLocaleString(local())}`),
@@ -1652,11 +1685,7 @@ function tarjetaViatico(s) {
                     `$${s.devolucion_en_revision.toLocaleString(local())}`,
                     "ambar")
           : null),
-      s.limite
-        ? h("div", { clase: "chico gris" },
-            t("cmp_fecha_limite").replace("{fecha}",
-              new Date(s.limite).toLocaleDateString(local())))
-        : null,
+      plazo ? plazo.pie : null,
       ...depositos(s),
       s.por_comprobar > 0 ? comprobar(s) : null,
       s.por_devolver > 0 ? devolver(s) : null);

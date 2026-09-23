@@ -117,22 +117,52 @@ def _clave(linea) -> tuple:
     return (linea["fecha"], linea["equipo"], linea["tipo"], linea["referencia_id"])
 
 
-def _viatico_facturable(cotizacion, comprobado: Decimal) -> Decimal:
-    """Cuanto de viaticos se le suma a la factura del cliente.
+# ---------------------------------------------------------------- gastos
 
-    Si la cotizacion los llevaba incluidos, el cliente ya los pago dentro
-    del precio: no se le suma nada, pase lo que pase con la comprobacion.
-    Si se cobran por comprobar, se le factura lo comprobado valido, que ya
-    excluye lo rechazado.
+# Como se le cobran los gastos al cliente (decision de Salvador, 23 sep;
+# seccion 59). Son sus dos tratos:
+#
+# * A precio alzado: el cliente pidio un monto fijo desde la propuesta y
+#   la cotizacion lo lleva en sus renglones de gastos. Se factura ese
+#   monto, se gaste mas o menos: lo que sobra es margen y lo que se pasa
+#   lo absorbe Centauro. Sin renglones de gastos, los gastos van dentro
+#   del precio y no se suma nada.
+# * Gastos netos: se factura lo comprobado valido y el cliente recibe el
+#   desglose al final.
+#
+# En los dos el personal comprueba todo igual: es el control de la casa.
+# La columna se sigue llamando `viaticos_incluidos` (seccion 57, cuando
+# se decia "incluidos o aparte"): verdadero es precio alzado.
+PRECIO_ALZADO = "precio_alzado"
+NETOS = "netos"
+
+
+def modo_de_gastos(incluidos: bool) -> str:
+    return PRECIO_ALZADO if incluidos else NETOS
+
+
+def gastos_cotizados(cotizacion) -> Decimal:
+    """El monto fijo de gastos de la propuesta: sus renglones de gastos."""
+    return sum((_d(l.subtotal) for l in cotizacion.lineas
+                if l.tipo == m.TipoLinea.VIATICOS), CERO)
+
+
+def _viatico_facturable(cotizacion, comprobado: Decimal) -> Decimal:
+    """Cuanto de gastos lleva la factura del cliente.
+
+    A precio alzado, el monto fijo de la cotizacion, pase lo que pase
+    con la comprobacion --hasta la seccion 59 ese monto no llegaba a la
+    factura: el servicio se cobraba sin los gastos--. Netos, lo
+    comprobado valido, que ya excluye lo rechazado.
     """
     if cotizacion.viaticos_incluidos:
-        return CERO
+        return gastos_cotizados(cotizacion)
     return comprobado
 
 
 def _viaticos_del_comparativo(cotizacion, asignado, comprobado, devuelto,
                               rechazado, descontado, absorbido) -> dict:
-    incluidos = cotizacion.viaticos_incluidos
+    alzado = cotizacion.viaticos_incluidos
     return {
         "asignado": asignado,
         "comprobado": comprobado,
@@ -142,32 +172,92 @@ def _viaticos_del_comparativo(cotizacion, asignado, comprobado, devuelto,
         "rechazado_no_facturable": rechazado,
         "descontado_al_personal": descontado,
         "absorbido_por_la_empresa": absorbido,
-        "modo_cobro": "incluidos_en_cotizacion" if incluidos else "por_comprobar",
+        "modo_cobro": modo_de_gastos(alzado),
+        "gastos_cotizados": gastos_cotizados(cotizacion),
         "facturable_al_cliente": _viatico_facturable(cotizacion, comprobado),
         "nota_facturacion": (
-            "Los viaticos van dentro del precio cotizado: la factura no "
-            "cambia por lo que haya pasado con la comprobacion."
-            if incluidos else
-            "Se factura lo comprobado valido. Lo rechazado no se le cobra "
-            "al cliente."),
+            "A precio alzado se factura el monto fijo de la propuesta, se "
+            "gaste mas o menos. Si no lleva monto, los gastos van dentro "
+            "del precio."
+            if alzado else
+            "Gastos netos: se factura lo comprobado valido. Lo rechazado y "
+            "lo que se desconto al personal no se le cobra al cliente."),
     }
 
 
 def viaticos_por_cobrar(db: Session, servicio_id: int,
                         cotizacion) -> Decimal:
-    """Los viaticos que se le cobran al cliente aparte (seccion 57).
+    """Los gastos que lleva la factura del cliente (seccion 59).
 
-    Lo dice la cotizacion, y son dos opciones distintas: incluidos, el
-    cliente ya los paga dentro del precio y la factura no suma nada;
-    por comprobar, se le factura lo comprobado valido --sin lo
-    rechazado ni lo enviado a descuento, que no es gasto del servicio--.
+    A precio alzado, el monto fijo de la cotizacion; netos, lo
+    comprobado valido --sin lo rechazado ni lo enviado a descuento, que
+    no es gasto del servicio--.
     """
+    if cotizacion.viaticos_incluidos:
+        return gastos_cotizados(cotizacion)
     comprobado = sum((_d(v.monto_comprobado) for v in (
         db.query(m.AsignacionViatico)
         .join(m.Jornada, m.AsignacionViatico.jornada_id == m.Jornada.id)
         .join(m.Equipo, m.Jornada.equipo_id == m.Equipo.id)
         .filter(m.Equipo.servicio_id == servicio_id).all())), CERO)
-    return _viatico_facturable(cotizacion, comprobado)
+    return comprobado
+
+
+def viaticos_del_servicio(db: Session, servicio_id: int) -> list:
+    """Todo el dinero del servicio, dia por dia y persona por persona."""
+    return (db.query(m.AsignacionViatico)
+            .join(m.Jornada, m.AsignacionViatico.jornada_id == m.Jornada.id)
+            .join(m.Equipo, m.Jornada.equipo_id == m.Equipo.id)
+            .filter(m.Equipo.servicio_id == servicio_id).all())
+
+
+def desviaciones_del_dinero(viaticos: list) -> list[dict]:
+    """Lo que el dinero del servicio le dice a finanzas, persona por persona.
+
+    El dinero de cada persona es un solo bolson (`bolson`): lo que falta
+    se cuenta por persona y no por dia. Contado por dia, un ticket
+    cargado el lunes dejaba al martes "sin comprobar" y al lunes
+    "comprobado de mas": dos desviaciones por un dinero que cuadraba.
+    """
+    from app import bolson
+
+    desviaciones = []
+    for suyos in bolson.agrupar(viaticos):
+        persona = suyos[0].persona
+        nombre = persona.nombre if persona else str(suyos[0].persona_id)
+        c = bolson.cuenta(suyos)
+        if c["estatus"] == "con_descuento":
+            # Ya esta resuelto: no es un pendiente, es una decision
+            # tomada. Se informa para que finanzas lo vea, pero no frena.
+            desviaciones.append({
+                "tipo": m.TipoDesviacion.VIATICO_SIN_COMPROBAR.value,
+                "descripcion": (f"{nombre}: cierre con descuento de "
+                                f"{c['descontado']}"
+                                + (f", {c['absorbido']} absorbido por la "
+                                   f"empresa" if c["absorbido"] else "")
+                                + f". {c['motivo_cierre'] or ''}").strip(),
+                "monto": c["descontado"],
+                "respaldada": True})
+            continue
+        if c["por_depositar"] > 0:
+            desviaciones.append({
+                "tipo": m.TipoDesviacion.VIATICO_NO_CERRADO.value,
+                "descripcion": (f"{nombre}: {c['por_depositar']} autorizados "
+                                "que no se depositaron"),
+                "monto": c["por_depositar"]})
+        if c["falta"] != CERO:
+            desviaciones.append({
+                "tipo": m.TipoDesviacion.VIATICO_SIN_COMPROBAR.value,
+                "descripcion": (f"{nombre}: {abs(c['falta'])} "
+                                + ("sin comprobar ni devolver"
+                                   if c["falta"] > 0 else "comprobado de mas")),
+                "monto": c["falta"]})
+        if c["estatus"] == "abierto":
+            desviaciones.append({
+                "tipo": m.TipoDesviacion.VIATICO_NO_CERRADO.value,
+                "descripcion": f"{nombre}: sus viaticos siguen sin cerrar",
+                "monto": CERO})
+    return desviaciones
 
 
 def comparar(db: Session, servicio_id: int) -> dict:
@@ -253,10 +343,7 @@ def comparar(db: Session, servicio_id: int) -> dict:
                     "monto": diferencia})
 
     # ---- viaticos
-    viaticos = (db.query(m.AsignacionViatico)
-                .join(m.Jornada, m.AsignacionViatico.jornada_id == m.Jornada.id)
-                .join(m.Equipo, m.Jornada.equipo_id == m.Equipo.id)
-                .filter(m.Equipo.servicio_id == servicio_id).all())
+    viaticos = viaticos_del_servicio(db, servicio_id)
 
     asignado = sum((_d(v.monto_total) for v in viaticos), CERO)
     comprobado = sum((_d(v.monto_comprobado) for v in viaticos), CERO)
@@ -267,41 +354,30 @@ def comparar(db: Session, servicio_id: int) -> dict:
     rechazado = sum((_d(c.monto) for v in viaticos for c in v.comprobantes
                      if c.rechazado), CERO)
 
-    for v in viaticos:
-        pendiente = _d(v.monto_total) - _d(v.monto_comprobado) - _d(v.monto_devuelto)
-        if v.cerrado_con_descuento:
-            # Ya esta resuelto: no es un pendiente, es una decision tomada.
-            # Se informa para que finanzas lo vea, pero no frena el envio.
-            desviaciones.append({
-                "tipo": m.TipoDesviacion.VIATICO_SIN_COMPROBAR.value,
-                "descripcion": (f"{v.persona.nombre}: cierre con descuento de "
-                                f"{_d(v.monto_descontado)}"
-                                + (f", {_d(v.monto_absorbido)} absorbido por la "
-                                   f"empresa" if _d(v.monto_absorbido) else "")
-                                + f". {v.motivo_cierre or ''}"),
-                "monto": _d(v.monto_descontado),
-                "respaldada": True})
-            continue
-        if pendiente != CERO:
-            desviaciones.append({
-                "tipo": m.TipoDesviacion.VIATICO_SIN_COMPROBAR.value,
-                "descripcion": f"{v.persona.nombre}: {abs(pendiente)} "
-                               f"{'sin comprobar ni devolver' if pendiente > 0 else 'comprobado de mas'}",
-                "monto": pendiente})
-        if v.estatus != m.EstatusViatico.CERRADO:
-            desviaciones.append({
-                "tipo": m.TipoDesviacion.VIATICO_NO_CERRADO.value,
-                "descripcion": f"{v.persona.nombre}: viaticos en estatus "
-                               f"{v.estatus.value}",
-                "monto": CERO})
+    desviaciones.extend(desviaciones_del_dinero(viaticos))
 
+    # La cotizacion lleva el servicio y, a precio alzado, el monto fijo de
+    # gastos. El comparativo los separa: la diferencia del servicio se
+    # mide contra el servicio, y los gastos contra su propio trato.
+    fijo = gastos_cotizados(cotizacion)
+    total_cotizado = _d(cotizacion.total)
+    servicio_cotizado = total_cotizado - fijo
+    gastos_a_facturar = _viatico_facturable(cotizacion, comprobado)
     return {
         "servicio": servicio.folio,
-        "cotizacion": {"version": cotizacion.version, "total": _d(cotizacion.total),
+        "cotizacion": {"version": cotizacion.version, "total": total_cotizado,
+                       "servicio": servicio_cotizado, "gastos": fijo,
                        "moneda": cotizacion.moneda.value,
                        "viaticos_incluidos": cotizacion.viaticos_incluidos},
-        "ejecutado": {"total": real["total"], "horas_extra": real["horas_extra"]},
-        "diferencia": real["total"] - _d(cotizacion.total),
+        "ejecutado": {"total": real["total"], "horas_extra": real["horas_extra"],
+                      "dias": len({l["fecha"] for l in real["detalle"]}),
+                      "equipos": len({l["equipo"] for l in real["detalle"]})},
+        "diferencia": real["total"] - servicio_cotizado,
+        "gastos": {"modo": modo_de_gastos(cotizacion.viaticos_incluidos),
+                   "cotizado": fijo, "comprobado": comprobado,
+                   "a_facturar": gastos_a_facturar},
+        "a_facturar": {"servicio": real["total"], "gastos": gastos_a_facturar,
+                       "total": real["total"] + gastos_a_facturar},
         "viaticos": _viaticos_del_comparativo(
             cotizacion, asignado, comprobado, devuelto, rechazado,
             descontado, absorbido),
@@ -400,7 +476,7 @@ def rentabilidad(db: Session, servicio_id: int) -> dict:
 
 def estado(db: Session, servicio_id: int,
            ahora: datetime | None = None) -> dict:
-    """El reloj del consultor, solo.
+    """El reloj del cierre del eventual, sin el comparativo.
 
     Vive aparte de la revision a proposito: **el plazo corre igual**
     --arranca cuando el servicio termina, tenga cotizacion o no-- y hay
@@ -423,18 +499,70 @@ def estado(db: Session, servicio_id: int,
     fila = (db.query(m.Cierre)
             .filter_by(servicio_id=servicio_id, contrato_id=None).first())
     if not fila:
-        return {"momento": ahora.isoformat(), "existe": False,
-                "cierre_id": None, "estatus": None, "fase": None,
-                "abierto_en": None, "comprobacion_hasta": None,
-                "visto_bueno_desde": None, "limite": None,
-                "minutos_restantes": None, "viaticos_abiertos": None,
-                "motivo": None, "factura": None, "factura_error": None}
+        return {"momento": ahora.isoformat(), **VACIO}
+    return {"momento": ahora.isoformat(), **ficha_del_cierre(db, fila, ahora)}
+
+
+# Lo que dice el reloj cuando todavia no hay cierre: el servicio no ha
+# terminado, o el mes sigue trabajandose.
+VACIO = {"existe": False, "cierre_id": None, "estatus": None, "fase": None,
+         "abierto_en": None, "comprobacion_hasta": None,
+         "visto_bueno_desde": None, "limite": None,
+         "minutos_restantes": None, "viaticos_abiertos": None,
+         "motivo": None, "factura": None, "factura_error": None,
+         "factura_anulada": None, "dentro_de_plazo": None, "total": None,
+         "visto_bueno_en": None, "enviado_en": None, "devuelto_en": None,
+         "devuelto_motivo": None, "aprobado_en": None, "reloj": None,
+         "consultor": None, "comision": None}
+
+# Cuantas horas tiene el consultor desde que finanzas le regresa el
+# servicio (decision 1 de Salvador, 23 sep).
+HORAS_REGRESO = 24
+
+
+def limite_vigente(cierre: m.Cierre) -> tuple[str, datetime] | None:
+    """El reloj que corre ahora, y de quien es.
+
+    En comprobacion corre el del personal; sin visto bueno, el del
+    consultor; regresado por finanzas, 24 horas desde el regreso. Con el
+    visto bueno dado ya no corre ninguno.
+    """
+    e = cierre.estatus
+    if e == m.EstatusCierre.ABIERTO:
+        hasta = cierre.comprobacion_hasta or cierre.limite_consultor
+        return ("personal", hasta) if hasta else None
+    if e == m.EstatusCierre.DEVUELTO_A_OPERACION and cierre.devuelto_en:
+        return ("regreso",
+                cierre.devuelto_en + timedelta(hours=HORAS_REGRESO))
+    if e in (m.EstatusCierre.SIN_VISTO_BUENO, m.EstatusCierre.EN_REVISION_IA,
+             m.EstatusCierre.DEVUELTO_A_OPERACION):
+        return ("consultor", cierre.limite_consultor)
+    return None
+
+
+def reloj_de(cierre: m.Cierre, ahora: datetime) -> dict | None:
+    vigente = limite_vigente(cierre)
+    if not vigente:
+        return None
+    quien, hasta = vigente
+    return {"quien": quien, "hasta": hasta.isoformat(),
+            "minutos": int((hasta - ahora).total_seconds() // 60)}
+
+
+def ficha_del_cierre(db: Session, fila: m.Cierre, ahora: datetime) -> dict:
+    """El cierre como lo pinta la tarjeta de visto bueno y facturacion.
+
+    Las mismas llaves para el eventual y para el mes del implantado: la
+    tarjeta es una sola. Todo en hora del pais del servicio.
+    """
+    from app import comisiones
 
     def iso(momento):
         return momento.isoformat() if momento else None
 
+    consultor = (db.get(m.Persona, fila.servicio.consultor_id)
+                 if fila.servicio and fila.servicio.consultor_id else None)
     return {
-        "momento": ahora.isoformat(),
         "existe": True,
         "cierre_id": fila.id,
         "estatus": fila.estatus.value,
@@ -446,11 +574,43 @@ def estado(db: Session, servicio_id: int,
         "limite": iso(fila.limite_consultor),
         "minutos_restantes": int(
             (fila.limite_consultor - ahora).total_seconds() / 60),
-        "viaticos_abiertos": viaticos_abiertos(db, servicio_id),
+        "viaticos_abiertos": _dinero_afuera(db, fila),
         "motivo": fila.motivo_apertura,
         "factura": fila.factura_odoo,
         "factura_error": fila.factura_error,
+        "factura_anulada": fila.factura_anulada,
+        "dentro_de_plazo": fila.dentro_de_plazo,
+        # Lo que se mando a facturar; antes del visto bueno no hay cifra.
+        "total": str(fila.total_ejecutado) if fila.enviado_en else None,
+        "visto_bueno_en": iso(fila.visto_bueno_en or fila.enviado_en),
+        "enviado_en": iso(fila.enviado_en),
+        "devuelto_en": iso(fila.devuelto_en),
+        "devuelto_motivo": fila.devuelto_motivo,
+        "aprobado_en": iso(fila.aprobado_en),
+        # El reloj que corre ahora, sea de quien sea.
+        "reloj": reloj_de(fila, ahora),
+        "consultor": ({"id": consultor.id, "nombre": consultor.nombre}
+                      if consultor else None),
+        "comision": comisiones.del_cierre(db, fila),
     }
+
+
+# Como se dice cada estatus del cierre en un mensaje. El valor de la
+# base ("enviado_finanzas") no es una frase: salia tal cual en la
+# pantalla.
+NOMBRE_ESTATUS = {
+    m.EstatusCierre.ABIERTO: "comprobacion",
+    m.EstatusCierre.SIN_VISTO_BUENO: "sin visto bueno",
+    m.EstatusCierre.EN_REVISION_IA: "sin visto bueno",
+    m.EstatusCierre.ENVIADO_FINANZAS: "facturacion: ya tiene visto bueno",
+    m.EstatusCierre.DEVUELTO_A_OPERACION: "regresado a operacion",
+    m.EstatusCierre.APROBADO: "cerrado por finanzas",
+    m.EstatusCierre.FACTURADO: "cerrado y facturado",
+}
+
+
+def nombre_estatus(estatus: m.EstatusCierre) -> str:
+    return NOMBRE_ESTATUS.get(estatus, estatus.value.replace("_", " "))
 
 
 def abrir(db: Session, servicio_id: int, abierto_en: datetime | None = None,
@@ -496,6 +656,97 @@ def abrir(db: Session, servicio_id: int, abierto_en: datetime | None = None,
     # el arranque del reloj--. Quien llama decide cuando guardar.
     db.flush()
     return cierre
+
+
+# ---------------------------------------------------------------- visto bueno y regreso
+
+def dar_visto_bueno(cierre: m.Cierre, momento: datetime) -> None:
+    """El visto bueno del consultor: pasa a facturacion.
+
+    El primero es el que juzga el plazo, y se queda (decision 1 de
+    Salvador, 23 sep): si finanzas lo regresa y el consultor lo vuelve a
+    mandar, aquel "en plazo" no se pierde por la vuelta, ni un "fuera de
+    plazo" se limpia con ella. Solo escribe; guarda quien llama.
+    """
+    cierre.enviado_en = momento
+    if cierre.visto_bueno_en is None:
+        cierre.visto_bueno_en = momento
+        cierre.dentro_de_plazo = momento <= cierre.limite_consultor
+    cierre.estatus = m.EstatusCierre.ENVIADO_FINANZAS
+
+
+def regresar(db: Session, cierre: m.Cierre, motivo: str, usuario: m.Usuario,
+             ahora: datetime | None = None) -> dict:
+    """Finanzas regresa el servicio --o el mes-- a operacion.
+
+    Solo lo que esta en facturacion: lo cerrado ya genero la comision y
+    su factura, y lo que no tiene visto bueno todavia no es de finanzas.
+    El motivo se exige porque es lo que el consultor lee en su tarjeta.
+
+    Decisiones de Salvador (23 sep): el consultor tiene 24 horas desde el
+    regreso, y lo "en plazo" de su primer visto bueno se queda. Si la
+    factura ya salio, se anula: con el nuevo visto bueno sale otra, que
+    lleva el folio de la anulada para que en Odoo se sepa cual sustituye.
+    """
+    from app import auditoria
+
+    if cierre.estatus != m.EstatusCierre.ENVIADO_FINANZAS:
+        raise HTTPException(409, {
+            "mensaje": (f"Solo se regresa lo que esta en facturacion; este "
+                        f"esta en {nombre_estatus(cierre.estatus)}"),
+            "que_hacer": ("Lo que ya se cerro se corrige con una nota de "
+                          "credito, no regresandolo.")})
+    motivo = (motivo or "").strip()
+    if len(motivo) < 10:
+        raise HTTPException(400, {
+            "mensaje": "Escribe por que se regresa",
+            "que_hacer": "Es lo que el consultor lee para corregirlo."})
+
+    momento = reloj.ahora_del_servicio(db, cierre.servicio, ahora)
+    cierre.estatus = m.EstatusCierre.DEVUELTO_A_OPERACION
+    cierre.devuelto_motivo = motivo[:500]
+    cierre.devuelto_en = momento
+    anulada = None
+    if cierre.factura_odoo:
+        anulada = cierre.factura_odoo
+        cierre.factura_anulada = cierre.factura_odoo
+        cierre.factura_odoo = None
+        cierre.facturado_en = None
+    cierre.factura_error = None
+    # Vuelve al consultor: el eventual regresa a sin visto bueno. El
+    # implantado no cambia de estatus: la fase la lleva el mes.
+    if (not cierre.contrato_id
+            and cierre.servicio.estatus == m.EstatusServicio.EN_FACTURACION):
+        cierre.servicio.estatus = m.EstatusServicio.SIN_VISTO_BUENO
+    de_que = (f"{cierre.servicio.folio} {cierre.contrato.mes:02d}/"
+              f"{cierre.contrato.anio}" if cierre.contrato_id
+              else cierre.servicio.folio)
+    auditoria.registrar(db, usuario, cierre.servicio, "devolver a operacion",
+                        (f"{de_que}: {motivo}"
+                         + (f" (factura {anulada} anulada)" if anulada
+                            else ""))[:400])
+    db.commit()
+
+    hasta = momento + timedelta(hours=HORAS_REGRESO)
+    if cierre.servicio.consultor_id:
+        from app import push
+        pantalla = (f"/consola/#/implantado/{cierre.servicio_id}"
+                    if cierre.contrato_id
+                    else f"/consola/#/servicio/{cierre.servicio_id}")
+        try:
+            push.avisar(
+                db, cierre.servicio.consultor_id,
+                titulo=f"{de_que}: finanzas lo regreso",
+                cuerpo=(f"{motivo[:140]} Tienes hasta el "
+                        f"{hasta:%d/%m a las %H:%M} para volver a mandarlo."),
+                url=pantalla, etiqueta=f"regreso-{cierre.id}")
+            db.commit()
+        except Exception:                 # noqa: BLE001
+            # Un aviso que no sale no deshace el regreso.
+            db.rollback()
+            registro.exception("no se pudo avisar el regreso de %s", de_que)
+    return {"resultado": "devuelto a operacion", "motivo": motivo,
+            "hasta": hasta.isoformat(), "factura_anulada": anulada}
 
 
 # ---------------------------------------------------------------- el segundo reloj

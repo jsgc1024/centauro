@@ -71,7 +71,15 @@ def revisar(db: Session, servicio_id: int, ahora: datetime | None = None) -> dic
     # aviso preventivo y se cobran por tarifa: se informan, no frenan el cierre.
     INFORMATIVAS = {m.TipoDesviacion.HORAS_EXTRA.value}
 
+    # El dinero del personal se dice aparte, persona por persona (abajo):
+    # repetirlo aqui como desviacion ponia dos veces el mismo pendiente
+    # en la lista, y con una accion que no era suya ("recotiza").
+    DEL_DINERO = {m.TipoDesviacion.VIATICO_SIN_COMPROBAR.value,
+                  m.TipoDesviacion.VIATICO_NO_CERRADO.value}
+
     for d in comparativo["desviaciones"]:
+        if d["tipo"] in DEL_DINERO and not d.get("respaldada"):
+            continue
         if d["tipo"] in INFORMATIVAS:
             observaciones.append({
                 "nivel": INFO, "asunto": "Horas extra",
@@ -115,25 +123,8 @@ def revisar(db: Session, servicio_id: int, ahora: datetime | None = None) -> dic
     # solo en un descuento a su nomina que el no vio venir. Si de verdad
     # no comprobo, el consultor lo cierra con descuento: eso es una
     # decision tomada, no un olvido.
-    abiertos = [v for v in (
-        db.query(m.AsignacionViatico)
-        .join(m.Jornada, m.AsignacionViatico.jornada_id == m.Jornada.id)
-        .join(m.Equipo, m.Jornada.equipo_id == m.Equipo.id)
-        .filter(m.Equipo.servicio_id == servicio_id,
-                m.AsignacionViatico.estatus.notin_(
-                    (m.EstatusViatico.CERRADO, m.EstatusViatico.DEVUELTO,
-                     m.EstatusViatico.CANCELADO)))
-        .all())]
-    if abiertos:
-        quienes = sorted({v.persona.nombre for v in abiertos if v.persona})
-        observaciones.append({
-            "nivel": GRAVE, "asunto": "Viaticos sin cerrar",
-            "mensaje": (f"{len(abiertos)} viatico(s) abiertos"
-                        + (f": {', '.join(quienes)}" if quienes else "")),
-            "accion": ("Cierralos cuando esten comprobados. Si alguien no "
-                       "comprobo, cierralo con descuento: con el visto "
-                       "bueno el gasto desaparece de su app y ya no puede "
-                       "hacer nada.")})
+    observaciones.extend(observaciones_del_dinero(
+        motor.viaticos_del_servicio(db, servicio_id), ahora))
 
     # --- marcas que la central no ha revisado
     pendientes = (db.query(m.Hito)
@@ -172,20 +163,7 @@ def revisar(db: Session, servicio_id: int, ahora: datetime | None = None) -> dic
             "accion": "El visto bueno se abre cuando venza ese plazo, o "
                       "antes si todos los viaticos ya cerraron."})
     elif registro:
-        restante = (registro.limite_consultor - ahora).total_seconds() / 3600
-        if restante < 0:
-            # Vencido no significa que no se pueda facturar: el servicio debe
-            # cobrarse igual. La consecuencia es la perdida de la comision.
-            observaciones.append({
-                "nivel": AVISO, "asunto": "Plazo vencido",
-                "mensaje": f"Se pasaron {abs(restante):.1f} h del limite de 24 horas",
-                "accion": "El servicio ya esta fuera de plazo; la comision del "
-                          "consultor se pierde si no se cerro a tiempo."})
-        elif restante < 6:
-            observaciones.append({
-                "nivel": AVISO, "asunto": "Plazo por vencer",
-                "mensaje": f"Quedan {restante:.1f} h para cerrar y facturar",
-                "accion": "Cierra pronto para no perder la comision."})
+        observaciones.extend(observaciones_del_plazo(registro, ahora))
 
     graves = [o for o in observaciones if o["nivel"] == GRAVE]
 
@@ -204,3 +182,99 @@ def revisar(db: Session, servicio_id: int, ahora: datetime | None = None) -> dic
         "observaciones": observaciones,
         "comparativo": comparativo,
     }
+
+
+def _dinero(monto, moneda) -> str:
+    return f"${monto:,.2f} {moneda or ''}".strip()
+
+
+def observaciones_del_plazo(cierre: m.Cierre, ahora: datetime,
+                            del_mes: bool = False) -> list[dict]:
+    """Lo que el revisor dice del reloj del consultor.
+
+    Regresado por finanzas corre el de 24 horas desde el regreso, y lo
+    "en plazo" de su primer visto bueno ya quedo (decision 1 de
+    Salvador, 23 sep): pasarse de ese reloj no toca la comision, solo
+    retrasa la factura. Decir otra cosa asustaria por nada.
+    """
+    vigente = motor.limite_vigente(cierre)
+    quien, hasta = vigente or ("consultor", cierre.limite_consultor)
+    restante = (hasta - ahora).total_seconds() / 3600
+    if quien == "regreso":
+        if restante < 0:
+            return [{
+                "nivel": AVISO, "asunto": "Regreso vencido",
+                "mensaje": (f"Se pasaron {abs(restante):.1f} h de las 24 horas "
+                            "desde que finanzas lo regreso"),
+                "accion": ("Mandalo de nuevo cuanto antes: lo en plazo de tu "
+                           "primer visto bueno se queda como estaba.")}]
+        if restante < 6:
+            return [{
+                "nivel": AVISO, "asunto": "Regreso por vencer",
+                "mensaje": f"Quedan {restante:.1f} h para volver a mandarlo",
+                "accion": "Corrige lo que pidio finanzas y mandalo."}]
+        return []
+    if restante < 0:
+        # Vencido no significa que no se pueda facturar: debe cobrarse
+        # igual. La consecuencia es la perdida de la comision.
+        return [{
+            "nivel": AVISO, "asunto": "Plazo vencido",
+            "mensaje": f"Se pasaron {abs(restante):.1f} h del limite de 24 horas",
+            "accion": ("El mes se factura igual; la comision del mes se "
+                       "pierde si no se cerro a tiempo." if del_mes else
+                       "El servicio ya esta fuera de plazo; la comision del "
+                       "consultor se pierde si no se cerro a tiempo.")}]
+    if restante < 6:
+        return [{
+            "nivel": AVISO, "asunto": "Plazo por vencer",
+            "mensaje": f"Quedan {restante:.1f} h para cerrar y facturar",
+            "accion": "Cierra pronto para no perder la comision."}]
+    return []
+
+
+def observaciones_del_dinero(viaticos: list, ahora: datetime) -> list[dict]:
+    """El dinero del personal que sigue sin cerrar, persona por persona.
+
+    Grave: con el visto bueno el gasto desaparece de la app de quien lo
+    debe --ya no puede hacer nada-- y un viatico abierto en ese momento
+    se volveria un descuento a su nomina que no vio venir. Si de verdad
+    no comprobo, el consultor lo cierra con descuento cuando venza su
+    plazo: eso es una decision tomada, no un olvido.
+    """
+    from app import bolson
+
+    salida = []
+    for suyos in bolson.agrupar(viaticos):
+        c = bolson.cuenta(suyos)
+        if c["estatus"] != "abierto":
+            continue
+        persona = suyos[0].persona
+        nombre = persona.nombre if persona else str(suyos[0].persona_id)
+        moneda = suyos[0].moneda.value if suyos[0].moneda else None
+        partes = []
+        if c["falta"] > 0:
+            partes.append(f"le faltan {_dinero(c['falta'], moneda)} por "
+                          "comprobar")
+        elif c["falta"] < 0:
+            partes.append(f"comprobo {_dinero(-c['falta'], moneda)} de mas")
+        if c["por_depositar"] > 0:
+            partes.append(f"{_dinero(c['por_depositar'], moneda)} autorizados "
+                          "que no se depositaron")
+        if c["devolucion_en_revision"] > 0:
+            partes.append("una devolucion de "
+                          f"{_dinero(c['devolucion_en_revision'], moneda)} "
+                          "que finanzas no confirma")
+        if c["sin_revisar"]:
+            partes.append(f"{c['sin_revisar']} comprobante(s) sin revisar")
+        if not partes:
+            partes.append("ya cuadra; falta cerrarlo")
+        vencido = c["limite"] is not None and ahora >= c["limite"]
+        salida.append({
+            "nivel": GRAVE, "asunto": "Viaticos sin cerrar",
+            "mensaje": f"{nombre}: " + "; ".join(partes),
+            "persona_id": suyos[0].persona_id,
+            "accion": ("Cierralo abajo, en Viaticos del personal."
+                       + (" Lo que no comprobo se puede cerrar con descuento: "
+                          "su plazo ya vencio." if vencido and c["falta"] > 0
+                          else ""))})
+    return salida
