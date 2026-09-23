@@ -31,6 +31,10 @@ PLAZAS = ["Ciudad de México", "Guadalajara", "Querétaro", "Monterrey"]
 DOMINIOS_RAROS = {"gamil.com", "gmial.com", "gmai.com", "gmail.con", "gmail.co",
                   "hotmial.com", "hotmal.com", "hotmail.con", "hotamil.com",
                   "yaho.com", "yahoo.con", "outlok.com", "outlook.con"}
+# Como empieza en base64 una foto de verdad: PNG, JPEG, GIF o WEBP. El
+# circulo con iniciales que Odoo le pone a quien no tiene foto es un SVG,
+# y no cuenta.
+FOTOS = ("iVBOR", "/9j/", "R0lGOD", "UklGR")
 
 
 class Odoo:
@@ -119,7 +123,7 @@ def main():
         plaza = nombre_de(e.get("work_location_id"))
         plaza = next((p for p in PLAZAS if normal(p) == normal(plaza)), "")
         trabajo, personal = texto(e.get("work_email")), texto(e.get("private_email"))
-        foto = bool(e.get("image_128"))
+        foto = texto(e.get("image_128")).startswith(FOTOS)
         falta = []
         if not plaza:
             falta.append("plaza")
@@ -215,7 +219,8 @@ def main():
         ("2. Revisar las casillas en naranja: son correos con un error de dedo probable o repetidos.", False),
         ("3. Cada persona necesita al menos un correo que funcione: con él entra a la app de campo.", False),
         ("4. Si algo ya estaba pero está mal, se corrige aquí mismo, encima.", False),
-        ("5. La foto no va en esta hoja: se sube en Odoo, en la ficha de la persona.", False),
+        ("5. La foto no va en esta hoja: se sube en Odoo, en la ficha de la persona. "
+         "El círculo con iniciales no es foto.", False),
         ("6. Guardar la hoja con el mismo nombre y avisar a Dirección: se carga a Odoo de un jalón.", False),
         ("", False),
         ("No cambiar", True),

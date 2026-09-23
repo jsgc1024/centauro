@@ -54,17 +54,20 @@ export async function pantallaCodigo(main) {
   campo.focus();
 }
 
-/* La foto y el telefono no son adorno: como no hay numero de empleado, la
-   voz es lo unico que verifica, y esto le da al consultor algo mas que
-   preguntar --"de que numero me llamas"--. El renglon de donde esta hoy
-   tambien verifica: si dice que entra a las seis y el sistema no le ve
-   nada hoy, algo no cuadra. */
+/* La foto, el telefono y el numero de empleado no son adorno: le dan al
+   consultor algo mas que la voz para saber con quien habla --"de que
+   numero me llamas", "cual es tu numero de empleado"-- y la foto de Odoo
+   para verle la cara. El renglon de donde esta hoy tambien verifica: si
+   dice que entra a las seis y el sistema no le ve nada hoy, algo no
+   cuadra. */
 function renglon(p, zona) {
   return h("div", { clase: "persona-codigo" },
     p.foto ? h("img", { clase: "foto", src: p.foto, alt: "" })
            : h("div", { clase: "foto" }),
     h("div", { clase: "datos-codigo" },
       h("h4", { style: "margin:0 0 1px" }, p.nombre),
+      p.referencia ? h("div", { clase: "chico gris" },
+        t("cod_referencia").replace("{s}", p.referencia)) : "",
       h("div", { clase: "chico gris" }, p.telefono || "—"),
       h("div", { clase: "chico gris" },
         p.hoy ? t("cod_hoy").replace("{s}", p.hoy) : t("cod_sin_hoy")),
@@ -83,6 +86,8 @@ function confirmar(zona, p) {
 
   zona.replaceChildren(h("div", { clase: "tarjeta" },
     h("h3", { style: "margin:0 0 8px" }, p.nombre),
+    p.referencia ? h("div", { clase: "chico" },
+      t("cod_referencia").replace("{s}", p.referencia)) : "",
     h("div", { clase: "chico" }, p.telefono || "—"),
     h("div", { clase: "chico gris", style: "margin-bottom:10px" },
       p.hoy ? t("cod_hoy").replace("{s}", p.hoy) : t("cod_sin_hoy")),

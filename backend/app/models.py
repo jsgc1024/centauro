@@ -384,9 +384,26 @@ class Persona(Base):
     plaza_id: Mapped[int] = mapped_column(ForeignKey("plaza.id"))
     es_freelance: Mapped[bool] = mapped_column(Boolean, default=False)
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
-    # Para el task sheet: la foto y el telefono vienen de Odoo.
+    # Para el task sheet: la foto y el telefono vienen de Odoo. La foto
+    # llega como data URI --la de 128 px de Odoo, unos KB-- y se guarda
+    # dentro del registro como las demas imagenes del sistema: por eso es
+    # texto largo y no los 400 caracteres de cuando se penso como enlace.
     telefono: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    foto_url: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    foto_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Lo demas que llega de Odoo (seccion 51). La referencia es el numero
+    # de empleado de RH: con el se le busca para dictarle su codigo, y es
+    # algo mas que preguntarle por telefono.
+    referencia: Mapped[str | None] = mapped_column(String(40), nullable=True,
+                                                   index=True)
+    fecha_ingreso: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Cuando se leyo de Odoo por ultima vez y cuando Odoo la dio de baja,
+    # en UTC y sin zona, como el write_date de Odoo con el que se compara.
+    # La baja se queda anotada para cerrarle el acceso en cuanto
+    # compruebe sus viaticos, si se fue debiendo.
+    odoo_sincronizado_en: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True)
+    baja_odoo_en: Mapped[datetime | None] = mapped_column(DateTime,
+                                                          nullable=True)
     # A donde se le deposita. Vienen de Odoo igual que el telefono y la
     # foto: el maestro de empleados vive alla. Mientras esa conexion no
     # exista, finanzas los puede llenar y se van poblando conforme se
@@ -400,6 +417,33 @@ class Persona(Base):
                                                         nullable=True)
 
     plaza: Mapped[Plaza] = relationship()
+
+
+class SincronizacionOdoo(Base):
+    """Cada lectura de Odoo: cuando, quien y que cambio.
+
+    La de cada hora espera a que exista una hecha a mano: la primera
+    vez alguien mira el ensayo y decide. `detalle` guarda el informe
+    completo --con nombres--; la de cada hora sin novedades deja su
+    renglon sin repetirlo.
+    """
+    __tablename__ = "sincronizacion_odoo"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tipo: Mapped[str] = mapped_column(String(20), index=True)   # personal
+    hecha_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    automatica: Mapped[bool] = mapped_column(Boolean, default=False,
+                                             server_default="false")
+    hecha_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    leidos: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    altas: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    cambios: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    bajas: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    pendientes: Mapped[int] = mapped_column(Integer, default=0,
+                                            server_default="0")
+    detalle: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class TarifaFreelance(Base):
@@ -1265,6 +1309,9 @@ class TipoAlerta(str, enum.Enum):
     RECURSO_SIN_CONFIRMAR = "recurso_sin_confirmar"
     VIATICO_NO_TRANSFERIDO = "viatico_no_transferido"
     VEHICULO_SIN_ASIGNAR = "vehiculo_sin_asignar"
+    # Odoo archivo a alguien que tenia dias asignados (seccion 51): hay
+    # que reemplazarlo.
+    PERSONAL_DE_BAJA = "personal_de_baja"
 
 
 class Destinatario(str, enum.Enum):

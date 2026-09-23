@@ -133,6 +133,21 @@ def crud_router(
         if not obj:
             raise HTTPException(404, f"No existe el registro {item_id}")
 
+        # Lo que llega de Odoo se corrige en Odoo (seccion 51): cambiado
+        # aqui, la siguiente lectura lo volveria a poner como estaba.
+        if modelo is m.Persona and obj.odoo_id:
+            nuevos = datos.model_dump(exclude_unset=True)
+            tocados = [c for c in ("nombre", "correo", "plaza_id", "odoo_id")
+                       if c in nuevos and nuevos[c] != getattr(obj, c)]
+            if tocados:
+                raise HTTPException(409, {
+                    "mensaje": "Viene de Odoo: se corrige en Odoo.",
+                    "que_hacer": "Recursos Humanos lo cambia en la ficha del "
+                                 "empleado en Odoo y Centauro lo toma en la "
+                                 "siguiente lectura.",
+                    "campos": tocados,
+                })
+
         # Se apunta solo lo que de verdad cambio, con su valor viejo al
         # lado. El estado entero no sirve: lo que alguien busca en
         # diciembre es que se le movio a ese precio y cuando, no como

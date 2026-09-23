@@ -18,6 +18,7 @@ import secrets
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import HTTPException
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app import accesos, auth
@@ -286,9 +287,10 @@ def _ficha_de_campo(db: Session, persona: m.Persona,
                     usuario: m.Usuario) -> dict:
     """Lo que ve quien va a dictar el codigo.
 
-    La foto y el telefono no son adorno: como no hay numero de empleado,
-    la voz es lo unico que verifica, y esto le da al consultor algo mas
-    que preguntar --"de que numero me llamas"--.
+    La foto, el telefono y el numero de empleado no son adorno: le dan al
+    consultor algo mas que la voz para saber con quien habla --"de que
+    numero me llamas", "cual es tu numero de empleado"-- y la foto de
+    Odoo para verle la cara.
     """
     return {
         "persona_id": persona.id,
@@ -296,6 +298,7 @@ def _ficha_de_campo(db: Session, persona: m.Persona,
         "nombre": persona.nombre,
         "telefono": persona.telefono,
         "foto": persona.foto_url,
+        "referencia": persona.referencia,
         "correo": usuario.correo,
         "hoy": _donde_esta_hoy(db, persona.id),
         "estrenado": usuario.hash_contrasena is not None,
@@ -312,7 +315,8 @@ def _vence_el_codigo(db: Session, usuario_id: int) -> str | None:
 
 
 def buscar_para_codigo(db: Session, actor: m.Usuario, q: str) -> list[dict]:
-    """El buscador de la pantalla del codigo.
+    """El buscador de la pantalla del codigo: por nombre o por el numero
+    de empleado de Odoo, completo.
 
     Pide al menos dos letras a proposito: una busqueda que devuelve a
     todos es el padron completo en la pantalla de cualquier consultor.
@@ -325,7 +329,10 @@ def buscar_para_codigo(db: Session, actor: m.Usuario, q: str) -> list[dict]:
              .filter(m.Usuario.rol == m.Rol.PERSONAL_SEGURIDAD,
                      m.Usuario.activo.is_(True),
                      m.Persona.activo.is_(True),
-                     m.Persona.nombre.ilike(f"%{q}%"))
+                     or_(m.Persona.nombre.ilike(f"%{q}%"),
+                         # El numero de empleado, completo: un pedazo
+                         # de numero traeria a medio padron.
+                         m.Persona.referencia.ilike(q)))
              .order_by(m.Persona.nombre).limit(20).all())
     return [_ficha_de_campo(db, u.persona, u) for u in filas
             if puede_dar_codigo(db, actor, u.persona_id)][:10]

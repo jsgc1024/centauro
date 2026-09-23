@@ -593,9 +593,16 @@ def test_el_servicio_callado_trae_con_que_asentar_la_marca(cliente, sesion,
 
     h = sesion("consultor")
     hoy = date.today()
+    # Pegada a la hora en que corre la bateria. Con las 07:00 fijas,
+    # despues de las diez de la noche el dia ya habia pasado su fin hace
+    # mas de tres horas y la central lo trataba --bien-- como abandonado:
+    # la prueba fallaba por la hora y no por el codigo.
+    arranque = max(datetime.now() - timedelta(hours=1),
+                   datetime.combine(hoy, time(0, 0)))
     servicio = crear_servicio(
         cliente, h, datos,
-        [jornada(hoy, datos["modalidades"]["full_day"]["id"])])
+        [jornada(hoy, datos["modalidades"]["full_day"]["id"],
+                 hora=arranque.strftime("%H:%M:00"))])
     j = servicio["equipos"][0]["jornadas"][0]
     asignar(cliente, h, j["id"],
             persona_id=datos["personal"]["Juan Ramirez"]["id"])

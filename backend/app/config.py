@@ -50,9 +50,10 @@ class Settings(BaseSettings):
 
     # Odoo, del lado de SALIDA: la factura del servicio aprobado.
     #
-    # Lo que entra de Odoo --personal, flota, capacitaciones, taller--
-    # llega por sus propias rutas y no necesita nada de esto; esto es
-    # para lo que Centauro le manda.
+    # Lo que Odoo manda --flota, capacitaciones, taller-- llega por sus
+    # propias rutas y no necesita nada de esto; esto es para lo que
+    # Centauro le manda. El personal ya no espera a que se lo manden: se
+    # lee (abajo, `odoo_base`).
     #
     # Mientras `odoo_url` este vacio no sale nada: el cierre aprobado se
     # queda en la bandeja de "por facturar" y se puede mandar despues sin
@@ -61,6 +62,15 @@ class Settings(BaseSettings):
     odoo_url: str = ""             # "https://odoo.centauro.lat/api/facturas"
     odoo_token: str = ""
     odoo_timeout: int = 20
+
+    # Odoo, del lado de ENTRADA (seccion 51): Centauro lee de ahi al
+    # personal de seguridad cada hora, por la API JSON-2. Solo lee.
+    # `odoo_api_key` es la llave del usuario de la conexion --no la de una
+    # persona-- y Odoo la da por tres meses como maximo. Vacio = no se lee
+    # nada. `odoo_bd` solo hace falta si el servidor tiene varias bases.
+    odoo_base: str = ""            # "https://centauro.odoo.com"
+    odoo_api_key: str = ""
+    odoo_bd: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

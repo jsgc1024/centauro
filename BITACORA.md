@@ -3374,6 +3374,55 @@ el panorama, el bono de puntualidad contra el nuevo límite y el
 candado de cerrar con descuento antes de que venza el plazo del
 personal.
 
+## 51. El personal, leído de Odoo
+
+Decisión de Salvador, 23 de septiembre: etapa 1 de la conexión con Odoo.
+Odoo es el maestro de empleados; Centauro deja de capturar a su gente y
+la lee de ahí.
+
+- **Quién entra.** El personal de seguridad: puesto «Personal de
+  Seguridad» (con los de GDL) o «Security Driver». Monitoristas,
+  oficina y guardias no. La llave es el número interno de Odoo; quien
+  ya estaba en Centauro se vincula por su correo la primera vez.
+- **Qué manda Odoo.** Nombre, plaza —la ubicación de trabajo; el Estado
+  de México va como Ciudad de México—, celular, correo, referencia de
+  empleado, fecha de ingreso y foto. En el catálogo ya no se editan: se
+  corrigen en Odoo. Un campo vacío en Odoo no borra el de Centauro. Lo
+  de la operación —a qué servicio va, con qué rol, sus viáticos— sigue
+  siendo de Centauro. Los datos del banco no se leen todavía.
+- **La foto** llega como imagen dentro del registro. El círculo con
+  iniciales que Odoo le pone a quien no tiene foto no es foto: no se
+  guarda y el informe lo cuenta aparte. Se vuelve a pedir solo cuando
+  Odoo toca la ficha.
+- **Alta**: la persona y su acceso a la app, sin contraseña; entra con
+  el código de cuatro dígitos que le dictan. El buscador de esa
+  pantalla ya encuentra por número de empleado, completo, y lo muestra
+  junto a la foto.
+- **Baja**: si Odoo la archiva, en la siguiente lectura deja de estar
+  disponible, se le cierra el acceso, la central recibe una alerta
+  *dado de baja en Odoo* en cada día que tenía por delante y su
+  consultor un aviso al teléfono. Si debe viáticos, el acceso sigue
+  abierto solo para comprobarlos y se cierra solo en cuanto no deba
+  nada: la regla del panel de accesos.
+- **Lo dudoso no se adivina**: sin plaza, plaza que no existe, correo
+  con error de dedo o repetido, cambio de puesto, o activo en Odoo y de
+  baja en Centauro quedan como *pendientes* y no se tocan.
+- **Cómo se lee.** Por la API JSON-2 de Odoo 19, con un cliente que
+  solo sabe leer. `GET /odoo/personal/ensayo` dice qué haría sin
+  guardar nada; `POST /odoo/personal/sincronizar` lo guarda;
+  `sincronizar_personal.py` hace lo mismo desde la terminal, con solo
+  cuentas en pantalla. La tarea `odoo.sincronizar_personal` lee cada
+  hora, pero no arranca hasta que exista una lectura hecha a mano. Cada
+  lectura queda en `sincronizacion_odoo`.
+- **La llave** es la del usuario «Centauro (conexión)», no la de una
+  persona, y dura tres meses como máximo (`despliegue/LEEME.md`).
+
+De paso: el aviso del visto bueno llevaba al consultor a una dirección
+que no existía (`/servicios/…`); ahora abre el servicio en la consola.
+
+Pendiente: la pantalla del ensayo en la consola; después la flotilla,
+las cotizaciones y la factura en borrador, en ese orden.
+
 ## 14. Lo que falta
 
 ### Abierto
@@ -3407,7 +3456,10 @@ busca, está en las secciones 15 y 16.*
   el panel, y el código de campo lo dicta el consultor —ese último por
   diseño, no por falta: lo que protege ese camino es que quien entrega el
   código reconozca la voz de quien llama.
-- **La baja en Odoo no cierra el acceso.** `odoo.sincronizar_personal`
+- ~~**La baja en Odoo no cierra el acceso.**~~ **Cerrado el 23 de
+  septiembre**, sección 51: Centauro lee el personal de Odoo y la baja
+  llega sola. *(Lo de abajo es el texto de entonces.)*
+  `odoo.sincronizar_personal`
   actualiza solo nombre, teléfono y foto; `activo` no está en la lista y
   `_sincronizar` nunca da de baja a nadie. Recursos humanos da de baja a
   alguien en Odoo —que es la fuente de verdad de empleados— y en Centauro

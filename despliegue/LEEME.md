@@ -81,11 +81,33 @@ CORREO_DE=Centauro <avisos@centauro.lat>
 # cierre se queda en "por facturar" y se manda despues.
 ODOO_URL=
 ODOO_TOKEN=
+
+# Odoo, de entrada: Centauro lee de ahi al personal de seguridad cada
+# hora, y solo lee. La llave es la del usuario «Centauro (conexion)»,
+# no la de una persona, y Odoo la da por tres meses como maximo.
+ODOO_BASE=https://centauro.odoo.com
+ODOO_API_KEY=
 ```
 
 `VAPID_PUBLIC` y `VAPID_PRIVATE` se dejan vacías al principio: las
 escribe el paso 6. Las demás llaves y contraseñas se pegan aquí, en el
 servidor, y en ningún otro lado.
+
+**La conexión con Odoo.** El usuario «Centauro (conexión)» se crea en
+Odoo con permiso de *Empleados: Oficial* —para leer el correo personal
+y la referencia— y ocupa una licencia. Su llave se genera en su perfil
+→ *Seguridad de la cuenta* → *Claves API*, con el vencimiento más largo
+que Odoo permita (tres meses). **Anota el día que vence**: ese día la
+lectura se detiene y el registro del worker dice «Odoo rechazó la
+llave». La nueva se pega aquí y se reinician `api`, `worker` y `beat`.
+
+La primera lectura del personal se hace a mano, después de ver el
+ensayo; la tarea de cada hora no arranca hasta que exista esa primera:
+
+```bash
+docker compose -f docker-compose.prod.yml run --rm api python sincronizar_personal.py
+docker compose -f docker-compose.prod.yml run --rm api python sincronizar_personal.py --aplicar
+```
 
 Las contraseñas y la clave de sesión:
 

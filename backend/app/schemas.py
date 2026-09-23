@@ -240,6 +240,10 @@ class PersonaOut(PersonaIn):
     # pantallas los leen.
     telefono: str | None = None
     foto_url: str | None = None
+    # Tambien de Odoo (seccion 51): el numero de empleado y desde cuando
+    # esta en la empresa.
+    referencia: str | None = None
+    fecha_ingreso: date | None = None
 
 
 class TarifaFreelanceIn(Base):

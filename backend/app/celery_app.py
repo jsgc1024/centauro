@@ -99,6 +99,14 @@ celery.conf.update(
             "task": "bonos.calcular_el_mes",
             "schedule": crontab(day_of_month="3", hour=5, minute=0),
         },
+        # El personal de seguridad, leido de Odoo (seccion 51). Cada hora,
+        # a los 17 minutos para no caer junto con las de la hora en punto.
+        # No arranca sola: espera a que alguien haya hecho la primera
+        # lectura a mano, despues de ver el ensayo.
+        "odoo-personal": {
+            "task": "odoo.sincronizar_personal",
+            "schedule": crontab(minute=17),
+        },
     },
 )
 
@@ -268,5 +276,18 @@ def avanzar_cierres():
     db = SessionLocal()
     try:
         return {"movidos": cierre.avanzar_cierres(db)}
+    finally:
+        db.close()
+
+
+@celery.task(name="odoo.sincronizar_personal")
+def sincronizar_personal_de_odoo():
+    """El personal de seguridad, leido de Odoo."""
+    from app.db import SessionLocal
+    from app import odoo_personal
+
+    db = SessionLocal()
+    try:
+        return odoo_personal.sincronizar_si_toca(db)
     finally:
         db.close()

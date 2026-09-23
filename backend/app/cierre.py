@@ -538,7 +538,8 @@ def avanzar(db: Session, cierre: m.Cierre,
                 titulo=f"{servicio.folio}: tienes 24 h para el visto bueno",
                 cuerpo=("La comprobacion del personal termino. Tu plazo "
                         f"vence el {limite:%d/%m a las %H:%M}."),
-                url=f"/servicios/{servicio.id}",
+                # El consultor trabaja en la consola, no en la app de campo.
+                url=f"/consola/#/servicio/{servicio.id}",
                 etiqueta=f"visto-bueno-{cierre.id}")
         except Exception:                 # noqa: BLE001
             # Un aviso que no sale no puede frenar el reloj.

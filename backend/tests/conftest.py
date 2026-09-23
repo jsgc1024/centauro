@@ -40,6 +40,10 @@ TABLAS_DE_OPERACION = [
     # prueba que los siembra se los dejaba puestos a la siguiente. La
     # que revisa el padron vacio los encontraba llenos.
     "capacitacion",
+    # Cada lectura de Odoo deja su renglon, y la tarea de cada hora espera
+    # a que exista uno hecho a mano: sin vaciarlo, la prueba que revisa
+    # esa espera encontraria el de la prueba anterior.
+    "sincronizacion_odoo",
     "reemplazo_recurso", "alerta_incidencia",
     "concepto_nomina", "renglon_nomina", "ajuste_nomina", "nomina_semanal",
     "respuesta_encuesta", "encuesta",

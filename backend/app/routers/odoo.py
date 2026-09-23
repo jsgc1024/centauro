@@ -3,12 +3,17 @@
 Odoo es la fuente de verdad del nombre, telefono y fotografia. El sistema
 no los captura: los recibe por aqui y los guarda para que el task sheet
 los muestre sin depender de que Odoo responda en ese momento.
+
+El personal de seguridad ya no espera a que se lo manden: Centauro lo lee
+de Odoo (seccion 51). `/personal/ensayo` dice que haria sin guardar nada
+y `/personal/sincronizar` lo guarda; despues lo sigue leyendo solo, cada
+hora. `POST /personal` se queda para quien todavia lo mande.
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models as m
-from app import odoo, schemas as s
+from app import odoo, odoo_api, odoo_personal, schemas as s
 from app.auth import requiere
 from app.db import get_db
 
@@ -55,3 +60,48 @@ def taller(entradas: list[s.TallerOdoo],
     rango en que cada unidad esta fuera, para dejar de ofrecerla."""
     return odoo.sincronizar_taller(
         db, [e.model_dump(exclude_none=True) for e in entradas])
+
+
+# ------------------------------------------------ el personal, leido de Odoo
+
+def _conexion():
+    """El cliente de Odoo, o un 503 que dice que falta."""
+    try:
+        return odoo_api.cliente()
+    except odoo_api.SinConexion:
+        raise HTTPException(503, {
+            "mensaje": "Odoo no esta conectado en este servidor.",
+            "que_hacer": "Falta ODOO_BASE y ODOO_API_KEY en el .env del "
+                         "servidor.",
+        })
+
+
+def _leer_personal(db: Session, ensayo: bool, quien: m.Usuario) -> dict:
+    cliente = _conexion()
+    try:
+        return odoo_personal.sincronizar(db, cliente, ensayo=ensayo,
+                                         quien=None if ensayo else quien)
+    except odoo_api.NoResponde as error:
+        raise HTTPException(502, {
+            "mensaje": str(error),
+            "que_hacer": "Si Odoo rechazo la llave, hay que crear una nueva "
+                         "en Odoo y ponerla en el .env del servidor.",
+        })
+
+
+@router.get("/personal/ensayo",
+            summary="Que cambiaria al leer el personal de Odoo, sin guardar")
+def personal_ensayo(db: Session = Depends(get_db),
+                    usuario: m.Usuario = Depends(requiere(m.Rol.ADMIN))):
+    """Lee Odoo y dice que haria: altas, cambios, bajas y pendientes.
+    No guarda nada, ni aqui ni en Odoo."""
+    return _leer_personal(db, True, usuario)
+
+
+@router.post("/personal/sincronizar",
+             summary="Leer el personal de Odoo y guardarlo")
+def personal_sincronizar(db: Session = Depends(get_db),
+                         usuario: m.Usuario = Depends(requiere(m.Rol.ADMIN))):
+    """Lo mismo que el ensayo, guardado. La primera vez se hace a mano,
+    despues de ver el ensayo; de ahi en adelante se lee solo cada hora."""
+    return _leer_personal(db, False, usuario)
