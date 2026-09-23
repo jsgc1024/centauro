@@ -3717,6 +3717,13 @@ busca, está en las secciones 15 y 16.*
   Centauro la da por anulada, pero en Odoo alguien tiene que cancelarla
   —quien reciba las facturas, o finanzas a mano—. Hoy no muerde: sin
   conexión no sale ninguna factura.
+- **El GPS de las unidades** (Pegasus Gateway de DCT, con API en JSON).
+  Aprobado por Salvador (23 sep): la unidad como segundo testigo de las
+  marcas del conductor, la alerta si no sale a tiempo al punto, el botón
+  de pánico del vehículo con el contexto del servicio, y los kilómetros
+  reales contra la gasolina comprobada. Primero, el reconocimiento de
+  solo lectura (`backend/reconocer_pegasus.py`) para ver qué da de
+  verdad; con eso, la propuesta con pantallas.
 - **El correo: falta el proveedor y el dominio.** El despachador ya
   existe (sección 29): SMTP, apagado por omisión, con reintentos y con
   el error del proveedor escrito al lado. Lo que falta es **tuyo**: a qué
@@ -3806,14 +3813,16 @@ busca, está en las secciones 15 y 16.*
   las seis de la mañana, con una mano. Ahí no cabe un recorrido; ahí
   sirve que cada pantalla diga en un renglón qué se espera de ellos
   ahora.
-- **El código de vestimenta del equipo.** Pedido por Salvador (20 sep):
-  al dar de alta el servicio, el consultor elige **casual, semiformal o
-  formal**, y eso se ve en la app de campo y en el task sheet. **Solo
-  para eventuales**: el implantado tiene su propio acuerdo con el
-  cliente y no se pregunta cada mes.
-- **Avisar al cliente del reemplazo de personal o de unidad.** Pedido
-  por Salvador (20 sep). La propuesta del momento del envío está abajo,
-  en la sección 39.
+- ~~**El código de vestimenta del equipo.**~~ **Cerrado el 20 de
+  septiembre**, sección 40. *(Lo de abajo es el texto del pedido.)*
+  Pedido por Salvador (20 sep): al dar de alta el servicio, el consultor
+  elige **casual, semiformal o formal**, y eso se ve en la app de campo
+  y en el task sheet. **Solo para eventuales**: el implantado tiene su
+  propio acuerdo con el cliente y no se pregunta cada mes.
+- ~~**Avisar al cliente del reemplazo de personal o de unidad.**~~
+  **Cerrado el 20 de septiembre**, sección 39: si el servicio está en
+  curso o es de hoy, el correo sale al guardar el relevo; si es de otro
+  día, el cambio viaja en el task sheet.
 - Restringir la llave de Google por IP del servidor.
 - Cargar los montos reales: tarifas, comisiones de los cuatro roles y
   tabuladores de viáticos por acuerdo.
@@ -3821,14 +3830,14 @@ busca, está en las secciones 15 y 16.*
 - **Generar las llaves de push.** `.env` todavía no tiene `VAPID_PUBLIC`
   ni `VAPID_PRIVATE`, así que los avisos al teléfono no salen:
   `docker compose exec -T api python generar_llaves_push.py`.
-- **El servidor de producción.** Ver `ARQUITECTURA.md`. Tres cosas hay
-  que hacer antes de encender: el `docker-compose.yml` del repositorio
-  es de desarrollo y no se puede subir tal cual (publica Postgres y
-  Redis a internet, trae la contraseña a la vista, corre uvicorn con
-  `--reload`), el pozo de conexiones de SQLAlchemy se queda corto contra
-  el pozo de hilos de FastAPI, y el respaldo tiene que estar probado
-  antes de que haya datos reales que perder —con las imágenes dentro de
-  la base, el `pg_dump` *es* el sistema completo.
+- **El servidor de producción.** Ver `ARQUITECTURA.md` y
+  `despliegue/LEEME.md`. Las tres cosas que frenaban el encendido ya
+  quedaron: `docker-compose.prod.yml` solo asoma a internet el proxy con
+  su certificado, lee la contraseña del `.env` y no corre con
+  `--reload`; el pozo de conexiones de SQLAlchemy ya alcanza al de hilos
+  de FastAPI (`app/db.py`); y el respaldo se restaura y se cuenta
+  (sección 37). Lo que falta es encenderlo: el 23 de septiembre se está
+  desplegando en OVH, en centauro.cc.
 - ~~**El implantado de Brasil: dos personas rotando los 7 días.**~~
   **Cerrado el 20 de septiembre**, sección 27. Se construyó como un tipo
   de implantado aparte —12 × 36— y el de 12 horas naturales no se tocó.

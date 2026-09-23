@@ -63,3 +63,7 @@ backend/Personal_de_seguridad_para_RH_*.xlsx
 # El detalle de la ultima lectura del personal de Odoo: lleva nombres.
 backend/odoo_personal_ultimo.json
 backend/odoo_flota_ultimo.json
+
+# El reporte del reconocimiento de Pegasus (el GPS de las unidades):
+# campos, conteos y eventos, sin coordenadas ni placas completas.
+backend/reconocimiento_pegasus.txt
