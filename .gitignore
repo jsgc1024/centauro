@@ -48,3 +48,13 @@ Claude outputs/
 humo/capturas/
 humo/node_modules/
 humo/package-lock.json
+
+# El reporte del reconocimiento de Odoo: catalogos y conteos de la
+# empresa. No es un secreto, pero tampoco es codigo.
+backend/reconocimiento_odoo.txt
+
+# Lo que dejan los scripts de Odoo: el plan del ensayo, la bitacora
+# para deshacer y la hoja de RH (esa lleva datos personales).
+backend/odoo_plan.json
+backend/odoo_cambios_*.json
+backend/Personal_de_seguridad_para_RH_*.xlsx
