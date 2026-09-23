@@ -66,4 +66,4 @@ backend/odoo_flota_ultimo.json
 
 # El reporte del reconocimiento de Pegasus (el GPS de las unidades):
 # campos, conteos y eventos, sin coordenadas ni placas completas.
-backend/reconocimiento_pegasus.txt
+backend/reconocimiento_pegasus*.txt

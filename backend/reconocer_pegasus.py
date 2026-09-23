@@ -7,10 +7,14 @@ reporta cada unidad, que eventos manda --encendido, apagado, exceso de
 velocidad, panico--, en que unidades vienen la velocidad y la distancia,
 y si las horas vienen en UTC o en hora local.
 
-Solo mira el grupo de Proteccion Ejecutiva ("2025 P.E.", decision de
-Salvador, 23 sep): el gateway es el de Centauro Satelital y trae las
-unidades de otras areas y de clientes, que aqui no tienen nada que
-hacer. De los demas grupos no se imprime ni el nombre.
+Solo mira un grupo de Proteccion Ejecutiva: "2025 P.E." (Mexico) por
+omision, o "CENTAURO BRASIL" con PEGASUS_GRUPO (decisiones de Salvador,
+23 sep). El gateway es el de Centauro Satelital y trae las unidades de
+otras areas y de clientes, que aqui no tienen nada que hacer. De los
+demas grupos no se imprime ni el nombre.
+
+Tambien cuenta los panicos del ultimo mes: el evento "panic" (codigo
+10, segun Salvador), para confirmar como llega y cada cuanto pasa.
 
 Lo que NO hace, y esta amarrado en el codigo:
   * No escribe nada en Pegasus. Despues de entrar solo hace GET a las
@@ -43,9 +47,9 @@ from datetime import datetime, timezone
 
 import httpx
 
-SALIDA = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                      "reconocimiento_pegasus.txt")
+AQUI = os.path.dirname(os.path.abspath(__file__))
 GRUPO = "2025 P.E."
+PANICO = "panic"
 POR_LLAMADA = 25          # unidades por consulta de eventos (limite de Pegasus)
 PAUSA = 0.5               # segundos entre llamadas: tope de 3 por segundo
 KM_POR_MILLA = 1.609344
@@ -269,6 +273,8 @@ def main():
     clave = os.environ.get("PEGASUS_CLAVE") or getpass.getpass(
         "Clave (no se ve al escribirla): ")
     grupo_buscado = os.environ.get("PEGASUS_GRUPO") or GRUPO
+    global SALIDA
+    SALIDA = os.path.join(AQUI, f"reconocimiento_pegasus_{normal(grupo_buscado)}.txt")
     p = Pegasus(sitio)
     p.entrar(usuario.strip(), clave)
     del clave
@@ -469,29 +475,63 @@ def main():
         viajes.extend(v for v in lista_de(p.leer(
             "/trips", vehicles=",".join(tanda), duration="P1D"))
             if isinstance(v, dict))
-    ambos(f"VIAJES DEL ULTIMO DIA: {len(viajes)}")
+    # Pegasus parte el dia en tramos: los de movimiento son trayectos y
+    # los demas, paradas.
+    trayectos = [v for v in viajes if v.get("moving")]
+    ambos(f"TRAMOS DEL ULTIMO DIA: {len(viajes)} ({len(trayectos)} trayectos, "
+          f"{len(viajes) - len(trayectos)} paradas)")
     if viajes:
-        dur = [v["duration"] / 60 for v in viajes
+        dur = [v["duration"] / 60 for v in trayectos
                if isinstance(v.get("duration"), (int, float))]
-        dist = [v["distance"] / 1000 for v in viajes
+        dist = [v["distance"] / 1000 for v in trayectos
                 if isinstance(v.get("distance"), (int, float))]
         if dur:
-            ambos(f"  duracion: mediana {mediana(dur):.0f} min")
+            ambos(f"  trayectos: duracion mediana {mediana(dur):.0f} min")
         if dist:
-            ambos(f"  distancia: mediana {mediana(dist):.1f} km, "
-                  f"la mas larga {max(dist):.1f} km")
-        andando = sum(1 for v in viajes if v.get("moving"))
-        ambos(f"  en curso ahora: {andando}")
+            ambos(f"  trayectos: distancia mediana {mediana(dist):.1f} km, "
+                  f"el mas largo {max(dist):.1f} km")
         fines = [momento(v.get("end_time")) for v in viajes]
         fines = [f for f in fines if f]
         if fines:
             ultimo = (ahora - max(fines)).total_seconds() / 60
-            ambos(f"  el viaje que termino mas reciente: hace {ultimo:.0f} min"
+            ambos(f"  el tramo que termino mas reciente: hace {ultimo:.0f} min"
                   + ("  <- parece hora de Mexico, no UTC"
                      if 330 <= ultimo <= 390 else ""))
         detalle.append("CAMPOS DE UN VIAJE (presencia / ejemplo tapado)")
         detalle.extend(estructura(viajes))
         detalle.append("")
+    ambos()
+
+    # --- el panico: un mes, solo ese evento. Con tope por si el filtro
+    # no se respeta: asi nunca se baja el mes entero.
+    panicos, otros = [], 0
+    for tanda in en_tandas(ids):
+        crudo = p.leer("/rawdata", vehicles=",".join(tanda), duration="P30D",
+                       labels=PANICO, tail=500,
+                       fields="vid,event_time,label,code,type")
+        for e in lista_de(crudo):
+            if not isinstance(e, dict):
+                continue
+            if str(e.get("label", "")).lower() == PANICO:
+                panicos.append(e)
+            else:
+                otros += 1
+    ambos(f"PANICO EN LOS ULTIMOS 30 DIAS: {len(panicos)}, en "
+          f"{len({e.get('vid') for e in panicos})} unidades")
+    if panicos:
+        codigos = collections.Counter(f"codigo {e.get('code')}, tipo {e.get('type')}"
+                                      for e in panicos)
+        ambos("  como llega: " + ", ".join(f"{c} x{n}" for c, n in codigos.items()))
+        fechas = sorted((momento(e.get("event_time")) for e in panicos
+                         if momento(e.get("event_time"))), reverse=True)
+        ambos("  los mas recientes (UTC): " + ", ".join(
+            f"{f:%d/%m %H:%M}" for f in fechas[:5]))
+        por_dia = collections.Counter(f.date() for f in fechas)
+        ambos(f"  dias con panico: {len(por_dia)}; el dia con mas: "
+              f"{max(por_dia.values())}")
+    if otros:
+        ambos(f"  OJO: llegaron {otros} eventos que no son panico: el filtro "
+              "por etiqueta no se respeto y la cuenta puede estar corta")
     cerrar(p, resumen, detalle)
 
 
@@ -507,6 +547,9 @@ def cerrar(p: Pegasus, resumen: list, detalle: list):
     print("\n".join(resumen))
     print(f"\nEl detalle quedo en backend/{os.path.basename(SALIDA)} "
           "(no va a git).")
+
+
+SALIDA = os.path.join(AQUI, "reconocimiento_pegasus.txt")
 
 
 if __name__ == "__main__":
