@@ -202,6 +202,25 @@ def abrir_plazo_del_servicio(db: Session, servicio: m.Servicio,
     return cuantos
 
 
+def _termino_del_implantado(db: Session, jornada: m.Jornada,
+                            termino: datetime,
+                            registrado: datetime | None) -> None:
+    """El dia del implantado termino.
+
+    Si es de un mes de contrato, cerrar el dia ya no abre plazo: el
+    plazo es del mes y arranca con su cierre, cuando el mes queda
+    completo (seccion 56). El dia sin mes de contrato --los de antes
+    de que hubiera meses-- conserva sus 24 horas desde que termina.
+    """
+    from app import cierre_mes
+
+    contrato = cierre_mes.contrato_de(db, jornada)
+    if contrato is None:
+        abrir_plazo_de_comprobacion(db, jornada, termino)
+        return
+    cierre_mes.terminar_si_cerro_el_mes(db, contrato, registrado=registrado)
+
+
 def _viaticos_del_servicio(db: Session, servicio_id: int) -> list:
     return (db.query(m.AsignacionViatico)
             .join(m.Jornada, m.AsignacionViatico.jornada_id == m.Jornada.id)
@@ -614,12 +633,13 @@ def registrar_hito(db: Session, jornada_id: int, persona_id: int,
     elif tipo == m.TipoHito.FIN_SERVICIO:
         jornada.fin_real = ahora
         jornada.estatus = m.EstatusJornada.TERMINADA
-        # El dia termino. En el implantado empiezan a correr las 24
-        # horas para comprobar ese dia; en el eventual el plazo es uno
-        # solo para todo el servicio y arranca con el termino general,
-        # abajo, al cerrar el ultimo dia (decision de Salvador, 22 sep).
+        # El dia termino. En el eventual el plazo es uno solo para todo
+        # el servicio y arranca con el termino general, abajo, al
+        # cerrar el ultimo dia (decision de Salvador, 22 sep). En el
+        # implantado es uno por mes y arranca con el cierre del mes
+        # (seccion 56).
         if servicio.tipo != m.TipoServicio.EVENTUAL:
-            abrir_plazo_de_comprobacion(db, jornada, ahora)
+            _termino_del_implantado(db, jornada, ahora, recibido)
         terminar_si_cerro_el_ultimo_dia(db, servicio, termino=ahora,
                                         registrado=recibido)
         del_solicitante = ta.idioma_de(db, servicio,
@@ -1423,7 +1443,7 @@ def cerrar_a_mano(db: Session, jornada_id: int, quien_id: int,
     # plazo corre igual: la diferencia queda en el sello del cierre, no
     # en el reloj de la comprobacion.
     if jornada.equipo.servicio.tipo != m.TipoServicio.EVENTUAL:
-        abrir_plazo_de_comprobacion(db, jornada, fin)
+        _termino_del_implantado(db, jornada, fin, ahora)
     jornada.cerrada_a_mano_por_id = quien_id
     jornada.cerrada_a_mano_en = ahora
     jornada.cierre_motivo = justificacion.strip()
@@ -1517,6 +1537,13 @@ def reabrir(db: Session, jornada_id: int, quien_id: int,
                 from app import programacion
                 servicio.estatus = m.EstatusServicio.PLANEADO
                 programacion.evaluar(servicio)
+    else:
+        # El implantado cierra por mes (seccion 56): reabrir un dia de
+        # un mes en comprobacion o sin visto bueno deshace el termino de
+        # ese mes; con el visto bueno dado ya no se reabre.
+        from app import cierre_mes
+        cierre_mes.deshacer_termino(db, cierre_mes.contrato_de(db, jornada),
+                                    "no se puede reabrir un dia")
 
     # Se deshace todo lo que escribio el cierre a mano, la hora de
     # inicio incluida. Dejarla era peor que no haber cerrado: quedaba

@@ -62,7 +62,8 @@ def revisar(db: Session, servicio_id: int, ahora: datetime | None = None) -> dic
 
     # --- desviaciones del comparativo
     respaldadas = set()
-    registro = db.query(m.Cierre).filter_by(servicio_id=servicio_id).first()
+    registro = (db.query(m.Cierre)
+                .filter_by(servicio_id=servicio_id, contrato_id=None).first())
     if registro:
         respaldadas = {d.descripcion for d in registro.desviaciones if d.respaldada}
 

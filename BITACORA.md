@@ -3494,6 +3494,50 @@ la nómina porque el bono es dinero; lo que mide es cómo trabajó la
 gente en la calle, y lo consulta quien decide a quién se manda. Quién
 lo ve no cambia.
 
+## 56. El cierre por mes del implantado
+
+Decisión de Salvador, 22 de septiembre (`PROPUESTA_CIERRE_24H.md`,
+regla 8), y el camino A del 23 de septiembre. Segunda de las tres
+sesiones del cierre en dos relojes. El implantado nunca termina: la
+cadena la recorre cada mes de contrato.
+
+- **Un cierre por mes, en la misma tabla.** El cierre y la comisión
+  del consultor llevan el mes de contrato (`contrato_id`). El eventual
+  sigue con uno por servicio —ahora como índice parcial— y su camino
+  no cambia; toda su batería pasa igual.
+- **T0 del mes.** El cierre del último día trabajado del mes: la hora
+  real de término, o la firma si se cerró tarde. Si el mes acaba en
+  fin de semana, el viernes; si se trabaja el sábado adicional, el
+  sábado. También arranca si el mes queda completo porque se
+  cancelaron sus últimos días, con red en la tarea de cada cinco
+  minutos. Sin días trabajados ni dinero que haya salido, no hay
+  relojes.
+- **Los viáticos del mes** vencen todos en T0 + 24 h; cerrar cada día
+  ya no abre plazo. El del relevado corre desde su relevo. Un día sin
+  mes de contrato conserva sus 24 h desde que termina.
+- **T1 y el visto bueno.** Los mismos relojes: a las 24 h —o antes, si
+  todo el dinero del mes cerró— el consultor tiene sus 24 h. La
+  revisión del mes compara contra el contrato: días base y adicionales
+  trabajados a su precio, la unidad por mes; un día sin cubrir o un
+  precio que falta se resuelve antes. El visto bueno manda la factura
+  del mes; si Odoo no contesta, el mes queda por facturar.
+- **Finanzas aprueba el mes** y se detona la comisión del consultor
+  por mes: 1 % sobre lo facturado, sin los viáticos comprobados; se
+  pierde fuera de plazo y se retiene con incidencia grave del mes.
+- **El estatus del servicio no se mueve.** Cada mes lleva su fase: en
+  la cartera (`periodos[].fase`) y en su panel (`cierre`), con
+  `/implantados/contratos/{id}/cierre/estado` y `/cierre/revision`.
+- **Un día que entra o se reabre después de T0** deshace el término
+  del mes; con el visto bueno dado ya no se puede.
+- **Cancelar el implantado** cierra con lo trabajado cada mes que
+  tenga algo que cerrar, con T0 = el momento de cancelar.
+- **La app** esconde la tarjeta de un mes con el cierre de ese mes, no
+  con el de otro.
+
+Los viáticos por comprobar todavía no van en la factura del mes —la
+del eventual tampoco los lleva—: entran con la factura en Odoo.
+Queda para la sesión 3: la consola y la app con la fase y sus relojes.
+
 ## 14. Lo que falta
 
 ### Abierto

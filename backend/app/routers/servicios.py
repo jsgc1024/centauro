@@ -1893,6 +1893,13 @@ def cancelar_servicio(servicio_id: int, datos: s.CancelarIn,
         abrir_plazo_del_servicio(db, servicio, momento)
         motor_cierre.abrir(db, servicio.id, abierto_en=momento,
                            motivo="cancelacion")
+    # El implantado cierra por mes (seccion 56): cada mes con dias
+    # trabajados o dinero que salio arranca su cierre con T0 = ahora y
+    # se factura con lo trabajado; los que no tienen nada que cerrar se
+    # quedan sin relojes.
+    elif servicio.tipo == m.TipoServicio.IMPLANTADO:
+        from app import cierre_mes
+        cierre_mes.al_cancelar(db, servicio)
 
     antes = servicio.estatus.value
     servicio.estatus = m.EstatusServicio.CANCELADO

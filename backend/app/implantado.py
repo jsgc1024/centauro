@@ -324,6 +324,13 @@ def agregar_dia(db: Session, contrato_id: int, fecha: date,
                          "aparte, con su propia cotizacion.",
         })
 
+    # Un dia que entra despues de T0 (seccion 56): con el mes en
+    # comprobacion o sin visto bueno el termino se deshace y el mes
+    # vuelve a cerrar con su nuevo ultimo dia; con el visto bueno dado
+    # ya no entra: la factura del mes salio con los dias que tenia.
+    from app import cierre_mes
+    cierre_mes.deshacer_termino(db, contrato, "ya no entra un dia nuevo")
+
     equipo = contrato.servicio.equipos[0]
     ya_esta = (db.query(m.Jornada)
                .filter_by(equipo_id=equipo.id, fecha=fecha).first())
@@ -520,6 +527,11 @@ def reactivar_dia(db: Session, servicio: m.Servicio, fecha: date) -> dict:
         raise HTTPException(404, "Ese dia no existe en el servicio")
     if jornada.estatus != m.EstatusJornada.CANCELADA:
         raise HTTPException(409, "Ese dia no esta cancelado")
+    # Un dia que vuelve despues de T0 deshace el termino del mes; con el
+    # visto bueno dado ya no vuelve (seccion 56).
+    from app import cierre_mes
+    cierre_mes.deshacer_termino(db, cierre_mes.contrato_de(db, jornada),
+                                "ya no vuelve un dia cancelado")
     jornada.estatus = m.EstatusJornada.PLANEADA
     db.commit()
     return {"reactivado": fecha.isoformat()}
@@ -715,6 +727,10 @@ def cubrir_dia(db: Session, servicio: m.Servicio, fecha: date,
                                  f"no esta abierto")
     if not personal:
         raise HTTPException(409, "Hay que decir quien cubre el dia")
+    # Lo mismo que el dia adicional: despues de T0 un dia nuevo deshace
+    # el termino del mes, y con el visto bueno dado ya no entra.
+    from app import cierre_mes
+    cierre_mes.deshacer_termino(db, contrato, "ya no entra un dia nuevo")
 
     equipo = servicio.equipos[0]
     acuerdo = (db.query(m.AcuerdoImplantado)
@@ -785,6 +801,10 @@ def cerrar_dia(db: Session, servicio: m.Servicio, fecha: date) -> dict:
         raise HTTPException(404, "Ese dia no esta abierto")
     if _ya_empezo(jornada):
         raise HTTPException(409, "Ese dia ya empezo: no se puede cerrar")
+    # Si con este dia el mes se queda sin nada por trabajar, arranca su
+    # cierre (seccion 56): ya no hay otro dia cuyo termino lo dispare.
+    from app import cierre_mes
+    contrato = cierre_mes.contrato_de(db, jornada)
 
     # El dinero de ese dia. Lo que ya salio del banco no se borra con un
     # dia: primero hay que resolver el deposito.
@@ -815,6 +835,8 @@ def cerrar_dia(db: Session, servicio: m.Servicio, fecha: date) -> dict:
         quienes = ", ".join(sorted(
             v.persona.nombre for v in con_dinero if v.persona))
         jornada.estatus = m.EstatusJornada.CANCELADA
+        cierre_mes.terminar_si_cerro_el_mes(
+            db, contrato, registrado=reloj.ahora_del_servicio(db, servicio))
         db.commit()
         return {"cancelado": fecha.isoformat(), "borrado": False,
                 "viaticos_vivos": len(con_dinero), "monto": str(total),
@@ -829,6 +851,8 @@ def cerrar_dia(db: Session, servicio: m.Servicio, fecha: date) -> dict:
     db.flush()
 
     db.delete(jornada)
+    cierre_mes.terminar_si_cerro_el_mes(
+        db, contrato, registrado=reloj.ahora_del_servicio(db, servicio))
     db.commit()
     return {"cerrado": fecha.isoformat(),
             "viaticos_borrados": len(viaticos)}

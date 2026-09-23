@@ -275,13 +275,20 @@ def avisar_horas_extra():
 
 @celery.task(name="cierre.avanzar")
 def avanzar_cierres():
-    """De la comprobacion al visto bueno, cuando toca."""
+    """De la comprobacion al visto bueno, cuando toca.
+
+    Antes, la red del implantado: el mes que quedo completo sin que el
+    cierre de un dia lo disparara --se cancelaron sus ultimos dias--
+    arranca aqui su cierre (seccion 56).
+    """
     from app.db import SessionLocal
-    from app import cierre
+    from app import cierre, cierre_mes
 
     db = SessionLocal()
     try:
-        return {"movidos": cierre.avanzar_cierres(db)}
+        meses = cierre_mes.abrir_los_que_terminaron(db)
+        return {"meses_abiertos": meses,
+                "movidos": cierre.avanzar_cierres(db)}
     finally:
         db.close()
 

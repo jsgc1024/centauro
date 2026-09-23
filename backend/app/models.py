@@ -2153,11 +2153,26 @@ class TipoDesviacion(str, enum.Enum):
 
 class Cierre(Base):
     """El consultor tiene 24 horas tras el cierre de viaticos del personal.
-    Maximo 48 horas tras el termino del servicio para cerrar y facturar."""
+    Maximo 48 horas tras el termino del servicio para cerrar y facturar.
+
+    Uno por servicio en el eventual y uno por mes de contrato en el
+    implantado (seccion 56): el implantado no termina, cada mes recorre
+    la cadena de dos relojes por su cuenta.
+    """
     __tablename__ = "cierre"
+    # El eventual conserva su regla --a lo mas un cierre por servicio--
+    # como indice parcial. La restriccion de columna no dejaba vivir al
+    # implantado, que lleva un cierre por mes con el mismo folio.
+    __table_args__ = (
+        Index("uq_cierre_del_eventual", "servicio_id", unique=True,
+              postgresql_where=text("contrato_id IS NULL")),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    servicio_id: Mapped[int] = mapped_column(ForeignKey("servicio.id"), unique=True)
+    servicio_id: Mapped[int] = mapped_column(ForeignKey("servicio.id"))
+    # El mes de contrato, en el implantado; vacio en el eventual.
+    contrato_id: Mapped[int | None] = mapped_column(
+        ForeignKey("contrato_implantado.id"), nullable=True, unique=True)
     abierto_en: Mapped[datetime] = mapped_column(DateTime)
     limite_consultor: Mapped[datetime] = mapped_column(DateTime)
     # Los dos relojes. `abierto_en` es T0 --el termino general, o la
@@ -2197,6 +2212,7 @@ class Cierre(Base):
                                                       nullable=True)
 
     servicio: Mapped[Servicio] = relationship()
+    contrato: Mapped["ContratoImplantado | None"] = relationship()
     desviaciones: Mapped[list["Desviacion"]] = relationship(
         back_populates="cierre", cascade="all, delete-orphan")
 
@@ -2731,10 +2747,21 @@ class ComisionConsultor(Base):
     en ambos casos descontando los viaticos. Se detona con el cierre
     validado por finanzas dentro de las 24 horas."""
     __tablename__ = "comision_consultor"
-    __table_args__ = (UniqueConstraint("servicio_id", "consultor_id"),)
+    # Una por servicio y consultor en el eventual; en el implantado, una
+    # por mes de contrato (seccion 56): se factura mes con mes.
+    __table_args__ = (
+        Index("uq_comision_del_servicio", "servicio_id", "consultor_id",
+              unique=True, postgresql_where=text("contrato_id IS NULL")),
+        Index("uq_comision_del_mes", "contrato_id", "consultor_id",
+              unique=True,
+              postgresql_where=text("contrato_id IS NOT NULL")),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     servicio_id: Mapped[int] = mapped_column(ForeignKey("servicio.id"))
+    # El mes de contrato, en el implantado; vacio en el eventual.
+    contrato_id: Mapped[int | None] = mapped_column(
+        ForeignKey("contrato_implantado.id"), nullable=True)
     consultor_id: Mapped[int] = mapped_column(ForeignKey("persona.id"))
     anio: Mapped[int] = mapped_column(Integer)
     mes: Mapped[int] = mapped_column(Integer)

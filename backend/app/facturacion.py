@@ -51,6 +51,12 @@ def armar(db: Session, cierre: m.Cierre) -> dict:
     """
     from app import cotizacion as cot
 
+    # El mes del implantado se factura con los precios de su contrato,
+    # no con una cotizacion por dia (seccion 56).
+    if cierre.contrato_id:
+        from app import cierre_mes
+        return cierre_mes.armar_factura(db, cierre)
+
     servicio = cierre.servicio
     cotizacion = cot.vigente(db, servicio.id)
     if not cotizacion:
@@ -173,6 +179,9 @@ def por_facturar(db: Session) -> list[dict]:
         "enviado_en": c.enviado_en.isoformat() if c.enviado_en else None,
         "servicio_id": c.servicio_id,
         "folio": c.servicio.folio,
+        # El mes, en el implantado: el mismo folio factura mes con mes.
+        "periodo": (f"{c.contrato.mes:02d}/{c.contrato.anio}"
+                    if c.contrato_id else None),
         "cliente": (c.servicio.cliente.nombre
                     if c.servicio.cliente else None),
         "total": str(c.total_ejecutado),

@@ -8,7 +8,7 @@ comprobar, todos con el mismo limite. Al vencer --o antes, si todo el
 dinero ya cerro-- llega T1 y corren las 24 horas del consultor. Su
 visto bueno manda la factura a Odoo; finanzas aprueba y cierra.
 
-Solo el eventual. El implantado corta a mes y llega en su propia sesion.
+Solo el eventual. El implantado corta a mes: test_cierre_mes.py.
 """
 from datetime import timedelta
 

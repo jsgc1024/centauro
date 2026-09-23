@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app import auditoria, auth
 from app import disponibilidad as disp
+from app import cierre_mes
 from app import implantado as motor
 from app import tasksheet
 from app import viaticos_implantado as viaticos
@@ -140,6 +141,28 @@ def cierre(contrato_id: int, db: Session = Depends(get_db), _=Depends(LECTURA)):
     Las dos listas salen de las mismas jornadas: asi cuadran.
     """
     return motor.cierre_del_mes(db, contrato_id)
+
+
+@router.get("/contratos/{contrato_id}/cierre/estado",
+            summary="El reloj del cierre del mes")
+def estado_del_cierre(contrato_id: int, db: Session = Depends(get_db),
+                      ahora: datetime | None = None, _=Depends(LECTURA)):
+    """En que fase va el mes --comprobacion, sin visto bueno, en
+    facturacion-- con sus relojes (seccion 56). El visto bueno y la
+    aprobacion del mes van por las mismas rutas del cierre: `/cierre/
+    {cierre_id}/enviar-finanzas` y `/cierre/{cierre_id}/aprobar`."""
+    return cierre_mes.estado(db, cierre_mes.contrato_o_404(db, contrato_id),
+                             ahora)
+
+
+@router.get("/contratos/{contrato_id}/cierre/revision",
+            summary="Revision del mes antes del visto bueno")
+def revision_del_mes(contrato_id: int, db: Session = Depends(get_db),
+                     ahora: datetime | None = None, _=Depends(LECTURA)):
+    """Lo que el consultor tiene que resolver antes del visto bueno del
+    mes: el comparativo contra el contrato, el dinero y las marcas."""
+    return cierre_mes.revisar(db, cierre_mes.contrato_o_404(db, contrato_id),
+                              ahora)
 
 
 @router.get("/contratos", summary="Contratos implantados")
@@ -610,6 +633,7 @@ def cartera(db: Session = Depends(get_db), _=Depends(LECTURA)):
                  .order_by(m.ContratoImplantado.anio.desc(),
                            m.ContratoImplantado.mes.desc()).all())
         ultimo = meses[0] if meses else None
+        fases = cierre_mes.fases_de(db, meses)
         salida.append({
             "servicio_id": s_.id, "folio": s_.folio,
             "cliente": s_.cliente.nombre if s_.cliente else None,
@@ -624,7 +648,10 @@ def cartera(db: Session = Depends(get_db), _=Depends(LECTURA)):
             # puede abrir el que sigue. Con esto el panel pinta las
             # pestanas del mes y el boton, sin otra vuelta al servidor.
             "periodos": [{"anio": c.anio, "mes": c.mes,
-                          "periodo": f"{c.mes:02d}/{c.anio}"}
+                          "periodo": f"{c.mes:02d}/{c.anio}",
+                          # En que va el cierre de cada mes; vacio
+                          # mientras se trabaja (seccion 56).
+                          "fase": fases.get(c.id)}
                          for c in reversed(meses)],
             "siguiente": motor.estado_desde(ultimo, s_),
         })
@@ -875,6 +902,8 @@ def panel_del_mes(servicio_id: int, anio: int, mes: int,
         "dias_sin_abrir": sin_abrir,
         "cambios": cambios,
         "resumen": motor.resumen_mensual(db, contrato.id) if contrato else None,
+        # El cierre del mes: su fase y sus relojes (seccion 56).
+        "cierre": cierre_mes.estado(db, contrato) if contrato else None,
     }
 
 
@@ -1044,8 +1073,16 @@ def completar_mes(servicio_id: int, anio: int, mes: int,
     contrato = _contrato_del_mes(db, servicio.id, anio, mes)
     if not contrato:
         raise HTTPException(409, f"El mes {mes:02d}/{anio} no esta abierto")
+    # Con el visto bueno del mes dado ya no entran dias; antes, los que
+    # entren deshacen el termino del mes (seccion 56).
+    if cierre_mes.con_visto_bueno(db, contrato):
+        cierre_mes.deshacer_termino(db, contrato,
+                                    "ya no se completan sus dias")
     hecho = motor.generar_mes(db, contrato.id,
                               rellenando=True)
+    if hecho.get("jornadas_creadas"):
+        cierre_mes.deshacer_termino(db, contrato,
+                                    "ya no se completan sus dias")
     auditoria.registrar(db, usuario, servicio, "completar mes",
                         f"{mes:02d}/{anio}: {hecho.get('jornadas_creadas', 0)} dia(s)")
     db.commit()

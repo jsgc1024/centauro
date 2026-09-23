@@ -7,6 +7,7 @@ Se detona con el cierre VALIDADO por finanzas dentro de las 24 horas,
 no con el cierre simplemente capturado. Se paga por servicio facturado,
 con corte mensual de todo lo acumulado, sin esperar a la cobranza.
 """
+import calendar
 from datetime import date
 from decimal import Decimal
 
@@ -44,14 +45,15 @@ def generar(db: Session, servicio_id: int) -> m.ComisionConsultor:
     if not servicio.consultor_id:
         raise HTTPException(400, "El servicio no tiene consultor asignado")
 
-    registro = db.query(m.Cierre).filter_by(servicio_id=servicio_id).first()
+    registro = (db.query(m.Cierre)
+                .filter_by(servicio_id=servicio_id, contrato_id=None).first())
     if not registro or registro.estatus not in (m.EstatusCierre.APROBADO,
                                                 m.EstatusCierre.FACTURADO):
         raise HTTPException(409, "La comision se detona con el cierre validado "
                                  "por finanzas")
 
     existente = (db.query(m.ComisionConsultor)
-                 .filter_by(servicio_id=servicio_id,
+                 .filter_by(servicio_id=servicio_id, contrato_id=None,
                             consultor_id=servicio.consultor_id).first())
     if existente:
         return existente
@@ -81,6 +83,79 @@ def generar(db: Session, servicio_id: int) -> m.ComisionConsultor:
     elif incidencia_grave_del_servicio(db, servicio_id):
         comision.estatus = m.EstatusComision.RETENIDA
         comision.motivo = ("Hay una incidencia grave en el servicio. "
+                           "La consecuencia la decide el director general.")
+
+    db.add(comision)
+    db.commit()
+    db.refresh(comision)
+    return comision
+
+
+def generar_del_mes(db: Session, cierre: m.Cierre) -> m.ComisionConsultor:
+    """La comision del consultor por un mes de implantado (seccion 56).
+
+    La misma regla que la del servicio --sobre lo facturado,
+    descontando los viaticos; se pierde si el visto bueno salio fuera
+    de plazo; se retiene si hubo incidencia grave-- pero por mes,
+    porque el implantado se factura mes con mes. La incidencia que
+    cuenta es la de ese mes.
+    """
+    from app import cierre_mes
+
+    servicio = cierre.servicio
+    if not servicio.consultor_id:
+        raise HTTPException(400, "El servicio no tiene consultor asignado")
+    if cierre.estatus not in (m.EstatusCierre.APROBADO,
+                              m.EstatusCierre.FACTURADO):
+        raise HTTPException(409, "La comision se detona con el cierre validado "
+                                 "por finanzas")
+
+    existente = (db.query(m.ComisionConsultor)
+                 .filter_by(contrato_id=cierre.contrato_id,
+                            consultor_id=servicio.consultor_id).first())
+    if existente:
+        return existente
+
+    contrato = cierre.contrato
+    facturacion = Decimal(str(cierre.total_ejecutado or 0))
+    # El costo real de los viaticos del mes es lo comprobado.
+    viaticos = sum((Decimal(str(v.monto_comprobado or 0))
+                    for v in cierre_mes.viaticos_del_mes(db, contrato)),
+                   CERO)
+    base = facturacion - viaticos
+    pct = _porcentaje(db, servicio.pais_id, servicio.tipo)
+    monto = (base * pct / Decimal("100")).quantize(Decimal("0.01"))
+
+    referencia = cierre.aprobado_en or cierre.enviado_en
+    periodo = referencia.date() if referencia else date.today()
+    pais = db.get(m.Pais, servicio.pais_id)
+
+    comision = m.ComisionConsultor(
+        servicio_id=servicio.id, contrato_id=contrato.id,
+        consultor_id=servicio.consultor_id,
+        anio=periodo.year, mes=periodo.month,
+        facturacion=facturacion, viaticos=viaticos, base=base,
+        porcentaje=pct, monto=monto, moneda=pais.moneda_local)
+
+    ultimo = calendar.monthrange(contrato.anio, contrato.mes)[1]
+    grave = (db.query(m.Incidencia)
+             .filter(m.Incidencia.servicio_id == servicio.id,
+                     m.Incidencia.gravedad == m.GravedadIncidencia.GRAVE,
+                     m.Incidencia.autorizada.is_(True),
+                     m.Incidencia.fecha >= date(contrato.anio,
+                                                contrato.mes, 1),
+                     m.Incidencia.fecha <= date(contrato.anio,
+                                                contrato.mes, ultimo))
+             .first())
+    if not cierre.dentro_de_plazo:
+        comision.estatus = m.EstatusComision.PERDIDA
+        comision.monto = CERO
+        comision.motivo = ("El consultor no dio el visto bueno del mes "
+                           "dentro de sus 24 horas: se pierde la comision "
+                           "de ese mes")
+    elif grave:
+        comision.estatus = m.EstatusComision.RETENIDA
+        comision.motivo = ("Hay una incidencia grave en el mes. "
                            "La consecuencia la decide el director general.")
 
     db.add(comision)

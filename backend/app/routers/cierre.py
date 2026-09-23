@@ -11,6 +11,7 @@ from app import facturacion
 from app import encuestas as motor_encuestas
 from app import nomina
 from app import cierre as motor
+from app import cierre_mes
 from app import cotizacion as cotmotor
 from app import models as m
 from app import comisiones as motor_comisiones
@@ -211,6 +212,10 @@ def enviar_finanzas(cierre_id: int, db: Session = Depends(get_db),
     cierre = db.get(m.Cierre, cierre_id)
     if not cierre:
         raise HTTPException(404, f"No existe el cierre {cierre_id}")
+    # El mes del implantado lleva su revision y su factura del mes;
+    # lo de abajo es el eventual, sin cambios (seccion 56).
+    if cierre.contrato_id:
+        return cierre_mes.enviar_a_finanzas(db, cierre, usuario, ahora)
 
     # En hora del pais del servicio: de esta comparacion depende que el
     # consultor cobre su comision o la pierda.
@@ -323,6 +328,10 @@ def aprobar(cierre_id: int, db: Session = Depends(get_db),
         raise HTTPException(404, f"No existe el cierre {cierre_id}")
     if cierre.estatus != m.EstatusCierre.ENVIADO_FINANZAS:
         raise HTTPException(409, f"El cierre esta en {cierre.estatus.value}")
+    # El mes del implantado: se aprueba el mes, el servicio sigue vivo
+    # y la comision es de ese mes (seccion 56).
+    if cierre.contrato_id:
+        return cierre_mes.aprobar(db, cierre, usuario)
 
     cierre.estatus = m.EstatusCierre.APROBADO
     cierre.aprobado_en = datetime.now()

@@ -434,7 +434,8 @@ def mis_viaticos(db: Session = Depends(get_db),
             "devolucion_en_revision": Decimal("0"),
             # El consultor ya reviso el servicio y lo mando a facturar.
             # Desde ahi, esto es historia para el agente.
-            "visto_bueno": _con_visto_bueno(db, servicio.id),
+            "visto_bueno": _con_visto_bueno(
+                db, servicio.id, jornada.fecha if por_mes else None),
         })
         monto = Decimal(str(v.monto_total or 0))
         comprobado = Decimal(str(v.monto_comprobado or 0))
@@ -553,9 +554,23 @@ def mis_viaticos(db: Session = Depends(get_db),
             "total_por_comprobar": sum(f["por_comprobar"] for f in pendientes)}
 
 
-def _con_visto_bueno(db: Session, servicio_id: int) -> bool:
-    """Si el consultor ya cerro ese servicio y lo mando a facturar."""
-    cierre = db.query(m.Cierre).filter_by(servicio_id=servicio_id).first()
+def _con_visto_bueno(db: Session, servicio_id: int,
+                     del_mes: date | None = None) -> bool:
+    """Si el consultor ya cerro ese servicio y lo mando a facturar.
+
+    En el implantado el cierre es del mes (seccion 56): la tarjeta de
+    septiembre se va con el cierre de septiembre, no con el de octubre.
+    """
+    consulta = db.query(m.Cierre).filter_by(servicio_id=servicio_id)
+    if del_mes is None:
+        cierre = consulta.filter(m.Cierre.contrato_id.is_(None)).first()
+    else:
+        cierre = (consulta
+                  .join(m.ContratoImplantado,
+                        m.Cierre.contrato_id == m.ContratoImplantado.id)
+                  .filter(m.ContratoImplantado.anio == del_mes.year,
+                          m.ContratoImplantado.mes == del_mes.month)
+                  .first())
     return bool(cierre and cierre.estatus != m.EstatusCierre.ABIERTO)
 
 

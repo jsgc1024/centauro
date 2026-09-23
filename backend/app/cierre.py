@@ -396,7 +396,10 @@ def estado(db: Session, servicio_id: int,
         raise HTTPException(404, f"No existe el servicio {servicio_id}")
 
     ahora = reloj.ahora_del_servicio(db, servicio, ahora)
-    fila = db.query(m.Cierre).filter_by(servicio_id=servicio_id).first()
+    # El del servicio. El implantado lleva uno por mes y se lee con
+    # `cierre_mes.estado`.
+    fila = (db.query(m.Cierre)
+            .filter_by(servicio_id=servicio_id, contrato_id=None).first())
     if not fila:
         return {"momento": ahora.isoformat(), "existe": False,
                 "cierre_id": None, "estatus": None, "fase": None,
@@ -441,7 +444,17 @@ def abrir(db: Session, servicio_id: int, abierto_en: datetime | None = None,
     if not servicio:
         raise HTTPException(404, f"No existe el servicio {servicio_id}")
 
-    existente = db.query(m.Cierre).filter_by(servicio_id=servicio_id).first()
+    # El implantado no termina: cierra por mes, solo, al cerrar el ultimo
+    # dia trabajado de cada mes (`cierre_mes`, seccion 56). Un cierre del
+    # servicio entero lo sacaria de esa cadena.
+    if servicio.tipo == m.TipoServicio.IMPLANTADO:
+        raise HTTPException(409, {
+            "mensaje": "El implantado cierra por mes, no por servicio",
+            "que_hacer": "El cierre de cada mes arranca solo al cerrar su "
+                         "ultimo dia trabajado."})
+
+    existente = (db.query(m.Cierre)
+                 .filter_by(servicio_id=servicio_id, contrato_id=None).first())
     if existente:
         return existente
 
@@ -492,6 +505,15 @@ def viaticos_abiertos(db: Session, servicio_id: int) -> int:
             .count())
 
 
+def _dinero_afuera(db: Session, cierre: m.Cierre) -> int:
+    """Los viaticos sin cerrar de lo que cierra: el servicio entero en
+    el eventual; en el implantado, solo los del mes (seccion 56)."""
+    if cierre.contrato_id:
+        from app import cierre_mes
+        return cierre_mes.viaticos_abiertos(db, cierre.contrato)
+    return viaticos_abiertos(db, cierre.servicio_id)
+
+
 def avanzar(db: Session, cierre: m.Cierre,
             ahora: datetime | None = None) -> bool:
     """De la comprobacion al visto bueno: pone T1 y el limite del consultor.
@@ -517,7 +539,7 @@ def avanzar(db: Session, cierre: m.Cierre,
     elif ahora >= cierre.comprobacion_hasta:
         t1 = cierre.comprobacion_hasta
         limite = t1 + timedelta(hours=HORAS_CONSULTOR)
-    elif viaticos_abiertos(db, servicio.id) == 0:
+    elif _dinero_afuera(db, cierre) == 0:
         t1 = ahora
         limite = t1 + timedelta(hours=HORAS_CONSULTOR)
     else:
@@ -532,14 +554,22 @@ def avanzar(db: Session, cierre: m.Cierre,
 
     if servicio.consultor_id and not viejo:
         from app import push
+        # En el implantado el visto bueno es del mes y se da en su
+        # panel (seccion 56).
+        de_que = (f"{servicio.folio} {cierre.contrato.mes:02d}/"
+                  f"{cierre.contrato.anio}" if cierre.contrato_id
+                  else servicio.folio)
+        pantalla = (f"/consola/#/implantado/{servicio.id}"
+                    if cierre.contrato_id
+                    else f"/consola/#/servicio/{servicio.id}")
         try:
             push.avisar(
                 db, servicio.consultor_id,
-                titulo=f"{servicio.folio}: tienes 24 h para el visto bueno",
+                titulo=f"{de_que}: tienes 24 h para el visto bueno",
                 cuerpo=("La comprobacion del personal termino. Tu plazo "
                         f"vence el {limite:%d/%m a las %H:%M}."),
                 # El consultor trabaja en la consola, no en la app de campo.
-                url=f"/consola/#/servicio/{servicio.id}",
+                url=pantalla,
                 etiqueta=f"visto-bueno-{cierre.id}")
         except Exception:                 # noqa: BLE001
             # Un aviso que no sale no puede frenar el reloj.
@@ -556,6 +586,11 @@ def avanzar_cierres(db: Session, ahora: datetime | None = None) -> list[str]:
                    .filter(m.Cierre.estatus == m.EstatusCierre.ABIERTO)
                    .all()):
         if avanzar(db, cierre, ahora):
-            movidos.append(cierre.servicio.folio)
+            # El mes del implantado se dice con su mes: el folio es el
+            # mismo todo el contrato.
+            movidos.append(
+                cierre.servicio.folio if not cierre.contrato_id else
+                f"{cierre.servicio.folio} {cierre.contrato.mes:02d}/"
+                f"{cierre.contrato.anio}")
     db.commit()
     return movidos
