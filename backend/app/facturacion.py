@@ -64,6 +64,25 @@ def armar(db: Session, cierre: m.Cierre) -> dict:
     # Al tarifario del cliente, que es el precio que se le vendio.
     ejecutado = motor_cierre.ejecutado(db, servicio, cotizacion.tarifario_id)
     cliente = servicio.cliente
+    conceptos = [{
+        "fecha": linea["fecha"],
+        "equipo": linea["equipo"],
+        "tipo": linea["tipo"],
+        "descripcion": linea["descripcion"],
+        "cantidad": linea["cantidad"],
+        "importe": str(linea["importe"]),
+        "horas_extra": linea.get("horas_extra") or 0,
+    } for linea in ejecutado["detalle"]]
+    # Los viaticos, en su propio renglon, cuando la cotizacion los cobra
+    # aparte: lo comprobado valido (seccion 57). Incluidos, ya van en el
+    # precio y no se suman.
+    viaticos = motor_cierre.viaticos_por_cobrar(db, servicio.id, cotizacion)
+    if viaticos:
+        conceptos.append({"fecha": None, "equipo": None,
+                          "tipo": "viaticos",
+                          "descripcion": "Viaticos comprobados",
+                          "cantidad": 1, "importe": str(viaticos),
+                          "horas_extra": 0})
 
     return {
         # El folio de Centauro viaja siempre: es la llave para conciliar
@@ -77,16 +96,8 @@ def armar(db: Session, cierre: m.Cierre) -> dict:
         "moneda": cotizacion.moneda.value,
         "fecha": (cierre.enviado_en or cierre.aprobado_en
                   or datetime.now()).date().isoformat(),
-        "total": str(ejecutado["total"]),
-        "conceptos": [{
-            "fecha": linea["fecha"],
-            "equipo": linea["equipo"],
-            "tipo": linea["tipo"],
-            "descripcion": linea["descripcion"],
-            "cantidad": linea["cantidad"],
-            "importe": str(linea["importe"]),
-            "horas_extra": linea.get("horas_extra") or 0,
-        } for linea in ejecutado["detalle"]],
+        "total": str(ejecutado["total"] + viaticos),
+        "conceptos": conceptos,
     }
 
 

@@ -117,7 +117,6 @@ def test_un_equipo_callado_sube_al_rengon_de_arriba(cliente, sesion, datos):
     ya lo tiene en rojo."""
     h = sesion("consultor")
     hp = sesion("juan")
-    servicio = _servicio_hoy(cliente, h, datos)
     juan = datos["personal"]["Juan Ramirez"]["id"]
     # La hora de la marca no puede estar en el futuro: el candado la
     # cambiaria por la del servidor y el silencio medido despues saldria
@@ -127,6 +126,11 @@ def test_un_equipo_callado_sube_al_rengon_de_arriba(cliente, sesion, datos):
     arranque = min(_momento(10, 0),
                    datetime.now().replace(second=0, microsecond=0)
                    - timedelta(minutes=1))
+    # Y el servicio arranca a esa misma hora. Arrancaba a las 7:00, y
+    # corrida de madrugada el panorama lo veia por arrancar, sin unidad,
+    # y pedia atenderlo: la prueba media otra cosa que el silencio.
+    servicio = _servicio_hoy(cliente, h, datos,
+                             hora=arranque.strftime("%H:%M:00"))
     _arrancar(cliente, h, hp, datos, servicio, juan, arranque)
 
     hd = sesion("dirgeneral")

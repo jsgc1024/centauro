@@ -43,6 +43,8 @@ class ContratoIn(BaseModel):
     precio_dia_personal: Decimal | None = None
     precio_dia_adicional: Decimal | None = None
     precio_mes_completo: Decimal | None = None
+    # Dentro del precio, o aparte por lo comprobado (seccion 57).
+    viaticos_incluidos: bool = True
 
 
 class DiaAdicionalIn(BaseModel):
@@ -277,6 +279,8 @@ class MesImplantadoIn(BaseModel):
     precio_dia_personal: Decimal | None = None
     precio_dia_adicional: Decimal | None = None
     precio_mes_completo: Decimal | None = None
+    # Dentro del precio, o aparte por lo comprobado (seccion 57).
+    viaticos_incluidos: bool = True
 
 
 class AltaImplantadoIn(BaseModel):
@@ -323,6 +327,9 @@ class AltaImplantadoIn(BaseModel):
     precio_dia_personal: Decimal | None = None
     precio_dia_adicional: Decimal | None = None
     precio_mes_completo: Decimal | None = None
+    # Como se cobran los viaticos, la misma opcion que la cotizacion del
+    # eventual: dentro del precio, o aparte por lo comprobado (seccion 57).
+    viaticos_incluidos: bool = True
 
     acuerdo: AcuerdoIn = AcuerdoIn()
 
@@ -451,6 +458,7 @@ def _abrir_mes(db: Session, usuario: m.Usuario, servicio: m.Servicio,
         precio_dia_personal=datos.precio_dia_personal,
         precio_dia_adicional=datos.precio_dia_adicional,
         precio_mes_completo=datos.precio_mes_completo,
+        viaticos_incluidos=datos.viaticos_incluidos,
         dias_base=len(motor.dias_del_mes(
             inicio.year, inicio.month, dias_servicio, inicio.day,
             (acuerdo.turno if acuerdo and acuerdo.turno

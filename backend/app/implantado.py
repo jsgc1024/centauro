@@ -1613,6 +1613,7 @@ def abrir_siguiente(db: Session, servicio: m.Servicio,
         precio_dia_personal=anterior.precio_dia_personal,
         precio_dia_adicional=anterior.precio_dia_adicional,
         precio_mes_completo=anterior.precio_mes_completo,
+        viaticos_incluidos=anterior.viaticos_incluidos,
         dias_base=len(dias_del_mes(anio, mes, anterior.dias_servicio,
                                    None,
                                    turno_del_servicio(db, servicio.id))))

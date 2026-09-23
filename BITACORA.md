@@ -3538,6 +3538,29 @@ Los viáticos por comprobar todavía no van en la factura del mes —la
 del eventual tampoco los lleva—: entran con la factura en Odoo.
 Queda para la sesión 3: la consola y la app con la fase y sus relojes.
 
+## 57. Los viáticos en la factura, según la cotización
+
+Decisión de Salvador, 23 de septiembre: la cotización dice si los
+viáticos van incluidos en el precio o se cobran aparte; son dos
+opciones distintas.
+
+- **Eventual.** Si se cobran, la factura suma lo comprobado válido
+  —sin notas rechazadas ni lo enviado a descuento— en su propio
+  renglón, y el total por facturar lo incluye. Si van incluidos, nada
+  aparte.
+- **La comisión y la rentabilidad.** Lo facturado ya cuenta los
+  viáticos que se cobran. La comisión sigue siendo sobre lo facturado
+  descontando los viáticos, así que cuando se cobran aparte deja de
+  restar unos que antes ni se facturaban (aprobado por Salvador).
+  Con viáticos incluidos, nada cambia.
+- **Implantado.** No tiene cotización por día: sus precios viven en
+  los términos de cada mes, y ahí va la misma opción
+  (`viaticos_incluidos`), incluidos por omisión como en el eventual.
+  Pasa sola al mes siguiente. La factura del mes y la comisión del
+  mes siguen la misma regla.
+
+La opción todavía no se ve en la consola: llega con las pantallas.
+
 ## 14. Lo que falta
 
 ### Abierto

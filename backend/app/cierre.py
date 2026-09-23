@@ -153,6 +153,23 @@ def _viaticos_del_comparativo(cotizacion, asignado, comprobado, devuelto,
     }
 
 
+def viaticos_por_cobrar(db: Session, servicio_id: int,
+                        cotizacion) -> Decimal:
+    """Los viaticos que se le cobran al cliente aparte (seccion 57).
+
+    Lo dice la cotizacion, y son dos opciones distintas: incluidos, el
+    cliente ya los paga dentro del precio y la factura no suma nada;
+    por comprobar, se le factura lo comprobado valido --sin lo
+    rechazado ni lo enviado a descuento, que no es gasto del servicio--.
+    """
+    comprobado = sum((_d(v.monto_comprobado) for v in (
+        db.query(m.AsignacionViatico)
+        .join(m.Jornada, m.AsignacionViatico.jornada_id == m.Jornada.id)
+        .join(m.Equipo, m.Jornada.equipo_id == m.Equipo.id)
+        .filter(m.Equipo.servicio_id == servicio_id).all())), CERO)
+    return _viatico_facturable(cotizacion, comprobado)
+
+
 def comparar(db: Session, servicio_id: int) -> dict:
     servicio = db.get(m.Servicio, servicio_id)
     if not servicio:
@@ -307,7 +324,11 @@ def rentabilidad(db: Session, servicio_id: int) -> dict:
         raise HTTPException(409, "El servicio no tiene cotizacion autorizada")
 
     real = ejecutado(db, servicio, cotizacion.tarifario_id)
-    facturacion = real["total"]
+    # Lo que se le factura: lo ejecutado y, si la cotizacion cobra los
+    # viaticos aparte, lo comprobado (seccion 57). Sin esto la utilidad
+    # y la comision restaban unos viaticos que no se facturaban.
+    viaticos_cobrados = viaticos_por_cobrar(db, servicio_id, cotizacion)
+    facturacion = real["total"] + viaticos_cobrados
 
     costo_personal = CERO
     costo_vehiculo = CERO
@@ -361,6 +382,7 @@ def rentabilidad(db: Session, servicio_id: int) -> dict:
         "servicio": servicio.folio,
         "moneda": cotizacion.moneda.value,
         "facturacion": facturacion,
+        "viaticos_cobrados": viaticos_cobrados,
         "costos": {
             "personal": costo_personal,
             "dias_festivos_pagados_al_doble": dias_festivos,

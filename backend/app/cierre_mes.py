@@ -425,6 +425,10 @@ def comparar(db: Session, contrato: m.ContratoImplantado) -> dict:
                          + (f", {_d(v.monto_absorbido)} absorbido por la "
                             "empresa" if _d(v.monto_absorbido) else ""))
 
+    # Los que se cobran aparte, si los terminos del mes asi lo dicen
+    # (seccion 57): lo comprobado valido. Incluidos, van en el precio.
+    por_cobrar = CERO if contrato.viaticos_incluidos else comprobado
+
     return {
         "servicio": contrato.servicio.folio,
         "periodo": periodo(contrato),
@@ -441,7 +445,15 @@ def comparar(db: Session, contrato: m.ContratoImplantado) -> dict:
                      "devuelto": devuelto,
                      "pendiente": asignado - comprobado - devuelto,
                      "descontado_al_personal": descontado,
-                     "absorbido_por_la_empresa": absorbido},
+                     "absorbido_por_la_empresa": absorbido,
+                     "modo_cobro": ("incluidos_en_el_precio"
+                                    if contrato.viaticos_incluidos
+                                    else "por_comprobar"),
+                     "facturable_al_cliente": por_cobrar},
+        # Lo que sale en la factura del mes: el servicio y, si se cobran
+        # aparte, los viaticos comprobados.
+        "a_facturar": {"servicio": trabajado, "viaticos": por_cobrar,
+                       "total": trabajado + por_cobrar},
         "desviaciones": desviaciones,
         "notas": notas,
         "sin_desviaciones": not desviaciones,
@@ -617,7 +629,7 @@ def enviar_a_finanzas(db: Session, cierre: m.Cierre, usuario: m.Usuario,
 
     comparativo = revision["comparativo"]
     cierre.total_cotizado = comparativo["contratado"]["importe"]
-    cierre.total_ejecutado = comparativo["trabajado"]["importe"]
+    cierre.total_ejecutado = comparativo["a_facturar"]["total"]
     cierre.estatus = m.EstatusCierre.ENVIADO_FINANZAS
     cierre.enviado_en = momento
     cierre.cerrado_por_id = usuario.persona_id
@@ -693,9 +705,9 @@ def armar_factura(db: Session, cierre: m.Cierre) -> dict:
     """La factura del mes, renglon por renglon, a los precios del contrato.
 
     El folio de Centauro y el mes viajan siempre: son la llave para
-    conciliar las dos bases el dia que no cuadren. Los viaticos por
-    comprobar no van todavia --tampoco en la del eventual--: entran con
-    la factura en Odoo (etapa 4), para los dos a la vez.
+    conciliar las dos bases el dia que no cuadren. Los viaticos van en
+    su renglon cuando los terminos del mes los cobran aparte (seccion
+    57); incluidos, ya van en el precio.
     """
     contrato = cierre.contrato
     servicio = cierre.servicio
@@ -734,6 +746,14 @@ def armar_factura(db: Session, cierre: m.Cierre) -> dict:
                 "cantidad": 1, "precio": str(precios["unidad_mes"]),
                 "importe": str(precios["unidad_mes"])})
 
+    a_facturar = comparativo["a_facturar"]
+    if a_facturar["viaticos"]:
+        conceptos.append({
+            "tipo": "viaticos",
+            "descripcion": f"Viaticos comprobados {de_que}",
+            "cantidad": 1, "precio": str(a_facturar["viaticos"]),
+            "importe": str(a_facturar["viaticos"])})
+
     pais = db.get(m.Pais, servicio.pais_id)
     cliente = servicio.cliente
     return {
@@ -745,6 +765,6 @@ def armar_factura(db: Session, cierre: m.Cierre) -> dict:
         "moneda": pais.moneda_local.value if pais else None,
         "fecha": (cierre.enviado_en or cierre.aprobado_en
                   or datetime.now()).date().isoformat(),
-        "total": str(trabajado["importe"]),
+        "total": str(a_facturar["total"]),
         "conceptos": conceptos,
     }

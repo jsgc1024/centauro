@@ -2301,6 +2301,11 @@ class ContratoImplantado(Base):
     precio_dia_personal: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     precio_dia_adicional: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     precio_mes_completo: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    # Como se cobran los viaticos: dentro del precio del mes, o aparte,
+    # por lo comprobado. La misma opcion que la cotizacion del eventual
+    # (seccion 57); pasa sola al mes siguiente.
+    viaticos_incluidos: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=text("true"))
 
     generado: Mapped[bool] = mapped_column(Boolean, default=False)
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

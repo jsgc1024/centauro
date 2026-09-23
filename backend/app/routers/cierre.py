@@ -253,7 +253,10 @@ def enviar_finanzas(cierre_id: int, db: Session = Depends(get_db),
 
     comparativo = revision["comparativo"]
     cierre.total_cotizado = comparativo["cotizacion"]["total"]
-    cierre.total_ejecutado = comparativo["ejecutado"]["total"]
+    # Lo que se factura: lo ejecutado y, si la cotizacion cobra los
+    # viaticos aparte, lo comprobado (seccion 57).
+    cierre.total_ejecutado = (comparativo["ejecutado"]["total"]
+                              + comparativo["viaticos"]["facturable_al_cliente"])
     cierre.estatus = m.EstatusCierre.ENVIADO_FINANZAS
     cierre.enviado_en = momento
     cierre.cerrado_por_id = usuario.persona_id
