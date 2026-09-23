@@ -672,6 +672,9 @@ AYUDA_POR_PANTALLA = {
     "app.js": 0,        # el armazon: la barra, las rutas, la entrada
     "catalogos.js": 0,  # tablas de catalogo: la columna se llama como lo que trae
     "codigo.js": 0,     # cuatro digitos y una contrasena nueva; no hay alcance que explicar
+    # Antes de entrar: crear la contrasena con el enlace del correo y
+    # pedir ese enlace. Sus reglas van escritas en la misma tarjeta.
+    "contrasena.js": 0,
     "idioma.js": 0,     # la tabla de textos
     "mapa.js": 0,       # el buscador de direcciones, que vive dentro de otra pantalla
     "util.js": 0,       # aqui vive `conAyuda`, entre otras cosas

@@ -1620,7 +1620,8 @@ class Notificacion(Base):
     `servicio_id` era obligatorio, y con eso el sistema no sabia mandar
     nada que no fuera sobre un servicio: ni la invitacion de acceso de
     alguien que acaba de entrar, ni el enlace de "olvide mi contrasena".
-    Por eso esos dos los sigue entregando administracion a mano.
+    Por eso esos dos los entregaba administracion a mano. Ya salen por
+    correo: ver `acceso_por_correo` y la seccion 58 de la bitacora.
 
     Es la tercera tabla con la misma suposicion metida --"todo lo que
     pasa aqui pasa dentro de un servicio"--. `RegistroAccion` la tenia y

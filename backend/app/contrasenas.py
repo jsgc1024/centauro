@@ -13,6 +13,10 @@ recuperacion de hace una semana sigue abriendo la cuenta.
 **Pedir recuperacion no dice si la cuenta existe.** La respuesta es la
 misma siempre. Decir "ese correo no esta registrado" le regala media
 lista a quien esta probando.
+
+Los enlaces --la invitacion y la recuperacion-- salen por correo a quien
+trabaja en la consola (ver `acceso_por_correo`). Al personal de campo
+no: lo suyo es el codigo de cuatro digitos, al final de este archivo.
 """
 import secrets
 from datetime import date, datetime, timedelta, timezone
@@ -21,7 +25,7 @@ from fastapi import HTTPException
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app import accesos, auth
+from app import acceso_por_correo, accesos, auth
 from app import models as m
 from app import reloj
 
@@ -35,6 +39,11 @@ HORAS_RECUPERACION = 2
 POR_CORREO = {m.Rol.CONSULTOR, m.Rol.CENTRAL, m.Rol.FINANZAS,
               m.Rol.DIRECTOR_OPERACIONES, m.Rol.DIRECTOR_GENERAL,
               m.Rol.ADMIN, m.Rol.RECURSOS_HUMANOS}
+
+# Los que viajan como enlace. El codigo de campo tambien vive en la
+# tabla de invitaciones, pero guardado cifrado y con su propia puerta:
+# no se usa como enlace aunque alguien consiguiera el renglon.
+CON_ENLACE = (m.TipoInvitacion.INVITACION, m.TipoInvitacion.RECUPERACION)
 
 # La de demostracion esta en el codigo y en la bitacora: es la primera
 # que alguien va a volver a poner "para no olvidarla".
@@ -74,7 +83,11 @@ def _ahora() -> datetime:
 
 
 def _anular_pendientes(db: Session, usuario_id: int) -> int:
-    """Los enlaces vivos de esa cuenta dejan de servir."""
+    """Los enlaces vivos de esa cuenta dejan de servir.
+
+    Y su correo, si todavia no salio, tampoco sale: llegaria con un
+    enlace muerto.
+    """
     vivos = (db.query(m.Invitacion)
              .filter(m.Invitacion.usuario_id == usuario_id,
                      m.Invitacion.usado_en.is_(None),
@@ -82,6 +95,9 @@ def _anular_pendientes(db: Session, usuario_id: int) -> int:
              .all())
     for enlace in vivos:
         enlace.anulado_en = datetime.now()
+    usuario = db.get(m.Usuario, usuario_id)
+    if usuario:
+        acceso_por_correo.retirar_pendientes(db, usuario)
     return len(vivos)
 
 
@@ -121,52 +137,180 @@ def cambiar(db: Session, usuario: m.Usuario, actual: str, nueva: str) -> dict:
 
 # ------------------------------------------------------ la olvidada
 
-# La misma respuesta exista o no la cuenta. Y dice los dos caminos, para
-# que el de campo no se quede esperando un correo que no va a llegar.
-MISMA_RESPUESTA = {
-    "resultado": "pedido",
-    "mensaje": ("Si ese correo tiene acceso, se genero un enlace para "
-                "volver a poner la contrasena."),
-    "personal_de_campo": ("Si eres personal de seguridad, tu contrasena la "
-                          "recuperas con tu consultor, no por correo."),
-}
+def misma_respuesta() -> dict:
+    """La misma respuesta exista o no la cuenta.
+
+    Dice los dos caminos, para que el de campo no se quede esperando un
+    correo que no va a llegar. Y dice si el correo esta encendido, que
+    no es un dato de nadie: mientras no lo este, el enlace lo entrega
+    administracion, y la pantalla tiene que decirlo en vez de mandar a
+    alguien a esperar un correo que no va a salir.
+    """
+    encendido = acceso_por_correo.encendido()
+    return {
+        "resultado": "pedido",
+        "mensaje": ("Si ese correo tiene acceso, en un momento le llega un "
+                    "enlace para poner una contrasena nueva."
+                    if encendido else
+                    "Si ese correo tiene acceso, se genero un enlace. El "
+                    "correo todavia no esta encendido: lo entrega "
+                    "administracion."),
+        "personal_de_campo": ("Si eres personal de seguridad, tu contrasena "
+                              "la recuperas con tu consultor o con la "
+                              "central, no por correo."),
+        "por_correo": encendido,
+        "de": acceso_por_correo.remitente() if encendido else None,
+        "horas": HORAS_RECUPERACION,
+    }
 
 
-def pedir_recuperacion(db: Session, correo: str) -> dict:
-    """Genera el enlace. Nunca dice si la cuenta existe.
+def pedir_recuperacion(db: Session, correo: str) -> tuple:
+    """Genera el enlace y deja escrito su correo. Nunca dice si la
+    cuenta existe.
+
+    Devuelve (respuesta, aviso): el aviso es para que quien llama lo
+    mande en cuanto confirme, y es nulo cuando no hay a quien mandarle
+    nada --que la respuesta no deja ver--.
 
     El enlace no viaja en esta respuesta a proposito: este endpoint es
     publico, y devolverlo aqui seria regalar la cuenta a cualquiera que
-    escriba un correo ajeno.
+    escriba un correo ajeno. Viaja por el correo de la persona.
     """
     usuario = db.query(m.Usuario).filter_by(correo=(correo or "").strip()).first()
     if not usuario or not usuario.activo or usuario.rol not in POR_CORREO:
-        return MISMA_RESPUESTA
+        return misma_respuesta(), None
 
     _anular_pendientes(db, usuario.id)
-    token = secrets.token_urlsafe(32)
-    db.add(m.Invitacion(
-        usuario_id=usuario.id, token=token,
+    enlace = m.Invitacion(
+        usuario_id=usuario.id, token=secrets.token_urlsafe(32),
         tipo=m.TipoInvitacion.RECUPERACION,
-        expira_en=datetime.now() + timedelta(hours=HORAS_RECUPERACION)))
+        expira_en=datetime.now() + timedelta(hours=HORAS_RECUPERACION))
+    db.add(enlace)
+    db.flush()
+    aviso = acceso_por_correo.escribir(db, usuario, enlace)
     accesos.anotar(db, usuario, "recuperacion pedida", "usuario", usuario.id,
                    detalle=f"vence en {HORAS_RECUPERACION} horas")
     db.flush()
-    return MISMA_RESPUESTA
+    return misma_respuesta(), aviso
+
+
+# --------------------------------------------------- la primera vez
+
+def invitar(db: Session, usuario: m.Usuario) -> tuple:
+    """El enlace de la primera vez y, si trabaja en la consola, su
+    correo. Devuelve (enlace, aviso); el aviso es nulo para el personal
+    de campo.
+
+    Un enlace nuevo mata a los anteriores: reenviar la invitacion deja
+    sin valor la que se mando antes.
+    """
+    _anular_pendientes(db, usuario.id)
+    token, expira = auth.token_invitacion()
+    enlace = m.Invitacion(usuario_id=usuario.id, token=token,
+                          tipo=m.TipoInvitacion.INVITACION, expira_en=expira)
+    db.add(enlace)
+    db.flush()
+    aviso = (acceso_por_correo.escribir(db, usuario, enlace)
+             if usuario.rol in POR_CORREO else None)
+    return enlace, aviso
+
+
+def reinvitar(db: Session, usuario: m.Usuario, actor: m.Usuario) -> tuple:
+    """Otra invitacion para quien todavia no estrena su acceso.
+
+    Se le paso el correo, vencio a los tres dias o no le llego. Quien ya
+    tiene contrasena no la necesita: si la olvido, la recupera el solo
+    desde la entrada.
+    """
+    if not usuario.activo:
+        raise HTTPException(409, {
+            "mensaje": "Ese acceso esta cerrado.",
+            "que_hacer": "Si tiene que volver a entrar, reabrelo primero.",
+        })
+    if usuario.persona and not usuario.persona.activo:
+        raise HTTPException(409, {
+            "mensaje": "Esa persona esta dada de baja como empleado.",
+            "que_hacer": "Si volvio, reactivala primero como empleada.",
+        })
+    if usuario.rol not in POR_CORREO:
+        raise HTTPException(409, {
+            "mensaje": "El personal de seguridad no recibe invitacion por "
+                       "correo.",
+            "que_hacer": "Pone su contrasena con el codigo de cuatro "
+                         "digitos que le dicta su consultor o la central.",
+        })
+    if usuario.hash_contrasena is not None:
+        raise HTTPException(409, {
+            "mensaje": "Ya creo su contrasena.",
+            "que_hacer": "Si la olvido, la recupera ella misma desde la "
+                         "entrada.",
+        })
+    enlace, aviso = invitar(db, usuario)
+    accesos.anotar(db, actor, "invitacion reenviada", "usuario", usuario.id,
+                   detalle=f"vence {enlace.expira_en:%d/%m/%Y %H:%M}")
+    db.flush()
+    return enlace, aviso
+
+
+def estado_de_invitacion(db: Session, usuario: m.Usuario) -> dict:
+    """Lo que el panel de accesos dice de la invitacion de alguien: si
+    su enlace sigue vivo y que paso con su correo.
+
+    "No le llego" tiene cuatro respuestas distintas y cada una se
+    arregla distinto: el correo esta por salir, no salio (y el proveedor
+    dijo por que), el correo todavia no esta encendido, o el enlace ya
+    vencio. Decir solo "pendiente" deja a quien mira adivinando cual.
+    """
+    enlace = (db.query(m.Invitacion)
+              .filter(m.Invitacion.usuario_id == usuario.id,
+                      m.Invitacion.tipo == m.TipoInvitacion.INVITACION)
+              .order_by(m.Invitacion.id.desc()).first())
+    if not enlace:
+        estado = "ninguna"
+    elif enlace.usado_en:
+        estado = "usada"
+    elif enlace.anulado_en:
+        estado = "anulada"
+    elif enlace.expira_en < datetime.now():
+        estado = "vencida"
+    else:
+        estado = "vigente"
+
+    # El correo de ESTE enlace; el de uno anterior no dice nada de este.
+    aviso = None
+    if enlace:
+        aviso = (db.query(m.Notificacion)
+                 .filter(m.Notificacion.plantilla == acceso_por_correo.INVITACION,
+                         m.Notificacion.enlace_seguimiento
+                         == acceso_por_correo.ruta(enlace.token))
+                 .order_by(m.Notificacion.id.desc()).first())
+    return {
+        "por_correo": usuario.rol in POR_CORREO,
+        "estrenado": usuario.hash_contrasena is not None,
+        "estado": estado,
+        "expira_en": enlace.expira_en.isoformat() if enlace else None,
+        "correo": ({
+            "estado": aviso.estado,
+            "salio_en": aviso.salio_en.isoformat() if aviso.salio_en else None,
+            "error": aviso.ultimo_error,
+        } if aviso else None),
+        "correo_encendido": acceso_por_correo.encendido(),
+    }
 
 
 def enlace_pendiente(db: Session, usuario_id: int) -> dict:
-    """El enlace vivo de esa cuenta, para que administracion lo entregue.
+    """El enlace vivo de esa cuenta, para que administracion lo copie.
 
-    Existe porque el sistema todavia no sabe mandar un correo que no
-    cuelgue de un servicio: `Notificacion.servicio_id` es obligatorio.
-    Mientras eso no exista, el enlace lo entrega una persona --igual que
-    el codigo del personal de campo lo dicta su consultor--.
-
-    El dia que haya correo de verdad, esto se apaga.
+    Nacio cuando el sistema no sabia mandar estos correos y el enlace lo
+    entregaba una persona. Ya salen por correo, y esto se queda para
+    cuando el correo no llega --un buzon que lo manda a no deseados, el
+    correo todavia sin encender--. Solo administracion (decision de
+    Salvador, 23 sep): con el enlace en la mano se le pone la contrasena
+    a otra persona y se entra como ella.
     """
     enlace = (db.query(m.Invitacion)
               .filter(m.Invitacion.usuario_id == usuario_id,
+                      m.Invitacion.tipo.in_(CON_ENLACE),
                       m.Invitacion.usado_en.is_(None),
                       m.Invitacion.anulado_en.is_(None))
               .order_by(m.Invitacion.id.desc()).first())
@@ -176,16 +320,56 @@ def enlace_pendiente(db: Session, usuario_id: int) -> dict:
         raise HTTPException(409, "El ultimo enlace ya vencio. Pide uno nuevo.")
     return {
         "tipo": enlace.tipo.value,
-        "enlace": f"https://centauro.lat/crear-contrasena/{enlace.token}",
+        "enlace": acceso_por_correo.enlace(enlace.token),
         "expira_en": enlace.expira_en.isoformat(),
     }
 
 
 # ------------------------------------------------------ usar el enlace
 
+def _enlace_de(db: Session, token: str) -> m.Invitacion | None:
+    return (db.query(m.Invitacion)
+            .filter(m.Invitacion.token == (token or ""),
+                    m.Invitacion.tipo.in_(CON_ENLACE))
+            .first())
+
+
+def revisar_enlace(db: Session, token: str) -> dict:
+    """Lo que la pagina del enlace necesita antes de pedir nada.
+
+    Sin esto la pagina pedia la contrasena dos veces y hasta el final
+    decia que el enlace habia vencido. Se dice primero.
+
+    Los datos de la persona --su correo, con que entra-- solo salen con
+    un enlace vivo: quien lo tiene es quien lo recibio. Con uno muerto
+    solo se dice que esta muerto, y por que.
+    """
+    enlace = _enlace_de(db, token)
+    if not enlace:
+        return {"estado": "invalido"}
+    if enlace.usado_en:
+        return {"estado": "usado"}
+    if enlace.anulado_en:
+        return {"estado": "anulado"}
+    if enlace.expira_en < datetime.now():
+        return {"estado": "vencido"}
+    usuario = enlace.usuario
+    if not usuario.activo:
+        return {"estado": "cerrado"}
+    return {
+        "estado": "vivo",
+        "tipo": enlace.tipo.value,
+        "correo": usuario.correo,
+        "rol": usuario.rol.value,
+        # La pagina se abre en el idioma en que le llego el correo.
+        "idioma": acceso_por_correo.idioma_de(usuario),
+        "expira_en": enlace.expira_en.isoformat(),
+    }
+
+
 def usar_enlace(db: Session, token: str, nueva: str) -> dict:
     """Pone la contrasena con un enlace, sea de invitacion o de olvido."""
-    enlace = db.query(m.Invitacion).filter_by(token=token).first()
+    enlace = _enlace_de(db, token)
     if not enlace:
         raise HTTPException(404, "Enlace invalido")
     if enlace.usado_en:

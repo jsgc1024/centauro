@@ -141,6 +141,34 @@ TEXTOS = {
         "quien": "Who",
         "que_hizo": "What they did",
         "detalle": "Detail",
+        # --- el acceso: la invitacion y la recuperacion de contrasena
+        "acc_inv_asunto": "Your access to Centauro",
+        "acc_inv_cuerpo": ("Hi, {nombre}. You now have access to Centauro, "
+                           "the Executive Protection system. To sign in "
+                           "for the first time, create your password with "
+                           "the button."),
+        "acc_inv_boton": "Create my password",
+        "acc_inv_nota": ("The link works only once and expires on {dia} "
+                         "at {hora}."),
+        "acc_rec_asunto": "To set a new password",
+        "acc_rec_cuerpo": ("Someone asked to change the password of your "
+                           "Centauro account. If it was you, use the "
+                           "button. If it wasn't, ignore this email: your "
+                           "password stays the same."),
+        "acc_rec_boton": "Set my new password",
+        "acc_rec_nota": "The link works only once and expires at {hora}.",
+        "acc_tu_correo": "Your email",
+        "acc_entras_como": "You sign in as",
+        # Los nombres de la consola, para que el correo diga lo mismo que
+        # la pantalla que va a abrir.
+        "rol_personal_seguridad": "Security personnel",
+        "rol_central": "Control room",
+        "rol_consultor": "Consultant",
+        "rol_director_operaciones": "Head of operations",
+        "rol_director_general": "Managing director",
+        "rol_finanzas": "Finance",
+        "rol_recursos_humanos": "Human Resources",
+        "rol_admin": "Administration",
     },
     "es": {
         "equipo": "Equipo",
@@ -232,6 +260,31 @@ TEXTOS = {
         "quien": "Quién",
         "que_hizo": "Qué hizo",
         "detalle": "Detalle",
+        # --- el acceso: la invitacion y la recuperacion de contrasena
+        "acc_inv_asunto": "Tu acceso a Centauro",
+        "acc_inv_cuerpo": ("Hola, {nombre}. Ya tienes acceso a Centauro, el "
+                           "sistema de Protección Ejecutiva. Para entrar la "
+                           "primera vez, crea tu contraseña con el botón."),
+        "acc_inv_boton": "Crear mi contraseña",
+        "acc_inv_nota": ("El enlace sirve una sola vez y vence el {dia} a "
+                         "las {hora}."),
+        "acc_rec_asunto": "Para poner una nueva contraseña",
+        "acc_rec_cuerpo": ("Alguien pidió cambiar la contraseña de tu acceso "
+                           "a Centauro. Si fuiste tú, usa el botón. Si no "
+                           "fuiste tú, ignora este correo: tu contraseña "
+                           "sigue igual."),
+        "acc_rec_boton": "Poner mi nueva contraseña",
+        "acc_rec_nota": "El enlace sirve una sola vez y vence a las {hora}.",
+        "acc_tu_correo": "Tu correo",
+        "acc_entras_como": "Entras como",
+        "rol_personal_seguridad": "Personal de seguridad",
+        "rol_central": "Central de inteligencia",
+        "rol_consultor": "Consultor",
+        "rol_director_operaciones": "Dirección de operaciones",
+        "rol_director_general": "Dirección general",
+        "rol_finanzas": "Finanzas",
+        "rol_recursos_humanos": "Recursos Humanos",
+        "rol_admin": "Administración",
     },
     "pt": {
         "equipo": "Equipe",
@@ -321,6 +374,31 @@ TEXTOS = {
         "quien": "Quem",
         "que_hizo": "O que fez",
         "detalle": "Detalhe",
+        # --- el acceso: la invitacion y la recuperacion de contrasena
+        "acc_inv_asunto": "Seu acesso ao Centauro",
+        "acc_inv_cuerpo": ("Olá, {nombre}. Você já tem acesso ao Centauro, o "
+                           "sistema de Proteção Executiva. Para entrar pela "
+                           "primeira vez, crie sua senha com o botão."),
+        "acc_inv_boton": "Criar minha senha",
+        "acc_inv_nota": ("O link funciona uma única vez e vence {dia}, às "
+                         "{hora}."),
+        "acc_rec_asunto": "Para definir uma nova senha",
+        "acc_rec_cuerpo": ("Alguém pediu para mudar a senha do seu acesso ao "
+                           "Centauro. Se foi você, use o botão. Se não foi "
+                           "você, ignore este e-mail: sua senha continua a "
+                           "mesma."),
+        "acc_rec_boton": "Definir minha nova senha",
+        "acc_rec_nota": "O link funciona uma única vez e vence às {hora}.",
+        "acc_tu_correo": "Seu e-mail",
+        "acc_entras_como": "Você entra como",
+        "rol_personal_seguridad": "Pessoal de segurança",
+        "rol_central": "Central de inteligência",
+        "rol_consultor": "Consultor",
+        "rol_director_operaciones": "Direção de operações",
+        "rol_director_general": "Direção geral",
+        "rol_finanzas": "Finanças",
+        "rol_recursos_humanos": "Recursos Humanos",
+        "rol_admin": "Administração",
     },
 }
 

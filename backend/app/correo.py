@@ -172,6 +172,13 @@ def versiones(db: Session, aviso: m.Notificacion) -> tuple:
     tres idiomas: ahi las estrellas se pican desde el mensaje, y meterlo
     en el armazon general seria pedirle lo mismo con menos.
     """
+    if aviso.plantilla in ("acceso_invitacion", "acceso_recuperacion"):
+        # La invitacion y la recuperacion de contrasena: el boton y la
+        # nota dependen de cual es, y la hora que vence se dice en la
+        # del pais de quien lo recibe (ver `acceso_por_correo`).
+        from app import acceso_por_correo
+        return acceso_por_correo.versiones(db, aviso)
+
     if aviso.plantilla in ("encuesta", "encuesta_recordatorio"):
         encuesta = _encuesta_de(db, aviso)
         liga = con_dominio(aviso.enlace_seguimiento)
@@ -223,15 +230,32 @@ def vencio(aviso: m.Notificacion, ahora: datetime | None = None) -> bool:
     return (ahora - nacio) > timedelta(hours=HORAS_DE_VIDA)
 
 
-def pendientes(db: Session, limite: int = POR_VUELTA) -> list:
-    return (db.query(m.Notificacion)
-            .filter(m.Notificacion.estado == "pendiente")
-            .order_by(m.Notificacion.id)
-            .limit(limite).all())
+def pendientes(db: Session, limite: int = POR_VUELTA, solo=None,
+               bloquear: bool = False) -> list:
+    """Lo que falta por salir.
+
+    `solo` limita a unos avisos en particular: el correo de acceso sale
+    al guardar y no espera a la vuelta de cinco minutos.
+
+    `bloquear` es para quien los va a mandar. Desde que ese correo sale
+    al guardar puede haber dos despachadores a la vez --el de la vuelta
+    y el del alta--, y sin esto los dos tomarian el mismo aviso y saldria
+    dos veces. Cada uno se queda con los que el otro no tiene tomados.
+    """
+    consulta = db.query(m.Notificacion).filter(
+        m.Notificacion.estado == "pendiente")
+    if solo is not None:
+        consulta = consulta.filter(m.Notificacion.id.in_(list(solo)))
+    consulta = consulta.order_by(m.Notificacion.id).limit(limite)
+    if bloquear:
+        consulta = consulta.with_for_update(skip_locked=True)
+    return consulta.all()
 
 
-def despachar(db: Session, limite: int = POR_VUELTA) -> dict:
-    """Saca lo que este pendiente. Devuelve la cuenta de la vuelta."""
+def despachar(db: Session, limite: int = POR_VUELTA, solo=None) -> dict:
+    """Saca lo que este pendiente. Devuelve la cuenta de la vuelta.
+
+    Con `solo`, saca nada mas esos avisos (ver `pendientes`)."""
     if not configurado():
         return {"configurado": False, "enviados": 0, "fallidos": 0,
                 "pendientes": db.query(m.Notificacion)
@@ -239,7 +263,7 @@ def despachar(db: Session, limite: int = POR_VUELTA) -> dict:
                                 .count()}
 
     enviados, fallidos, sin_correo, vencidos = 0, 0, 0, 0
-    for aviso in pendientes(db, limite):
+    for aviso in pendientes(db, limite, solo=solo, bloquear=True):
         if vencio(aviso):
             # No se borra: queda dicho que se escribio y no salio. "No
             # llego el correo" y "no se mando" son dos conversaciones

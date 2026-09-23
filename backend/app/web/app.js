@@ -12,6 +12,7 @@ import { carteraImplantados, nuevoImplantado,
 import { detenerPanorama, pantallaPanorama } from "./panorama.js";
 import { pantallaAccesos } from "./accesos.js";
 import { pantallaCodigo } from "./codigo.js";
+import { pantallaEnlace, pantallaOlvide } from "./contrasena.js";
 import { pantallaServicio } from "./servicio.js";
 import { aviso, campo, entrada, h, lista, mensaje, vaciar,
          vigilarCapturas } from "./util.js";
@@ -158,10 +159,20 @@ function marca(alto = 40) {
 
 /* ------------------------------------------------------------ entrada */
 
+/* El correo con que se llega de las pantallas de antes de entrar: quien
+   acaba de crear su contrasena no tiene por que volver a escribirlo, y
+   quien pide el enlace ya lo habia escrito en la entrada. */
+let correoSugerido = "";
+
 async function pantallaEntrada() {
   await traerLogo();
   const cuerpo = document.getElementById("app");
   vaciar(cuerpo);
+
+  const correo = entrada("correo", { type: "email", required: "true",
+                                     autocomplete: "username",
+                                     value: correoSugerido || null });
+  correoSugerido = "";
 
   const f = h("form", { onsubmit: async (e) => {
     e.preventDefault();
@@ -182,14 +193,46 @@ async function pantallaEntrada() {
   f.append(
     marca(62),
     sello(),
-    campo(t("correo"), entrada("correo", { type: "email", required: "true",
-                                          autocomplete: "username" })),
+    campo(t("correo"), correo),
     campo(t("contrasena"), entrada("contrasena", { type: "password", required: "true",
                                                   autocomplete: "current-password" })),
     h("div", { clase: "error" }),
-    h("button", { type: "submit" }, t("entrar")));
+    h("button", { type: "submit" }, t("entrar")),
+    /* Quien trabaja en la consola la recupera solo, por correo. El de
+       campo lo lee en la pantalla siguiente: lo suyo va con su
+       consultor o con la central. */
+    h("div", { clase: "centro" },
+      h("button", { type: "button", clase: "enlace", onclick: () => {
+        correoSugerido = correo.value.trim();
+        location.hash = "#/olvide";
+      } }, t("cc_olvide"))));
 
   cuerpo.append(h("div", { clase: "entrada" }, f));
+}
+
+/* Lo que se abre sin haber entrado: el enlace del correo para crear la
+   contrasena, y el "olvide mi contrasena". Se mira antes que la sesion:
+   quien llega aqui no tiene una, o trae la de otra persona en esa misma
+   computadora. */
+const ANTES_DE_ENTRAR = [
+  [/^#\/crear-contrasena\/([\w-]+)$/, pantallaEnlace],
+  [/^#\/olvide$/, pantallaOlvide],
+];
+
+/* Lo que esas pantallas necesitan del armazon: la marca de arriba y el
+   camino de vuelta a la entrada, con el correo ya escrito. */
+function deAfuera() {
+  const op = {
+    cabecera: () => [marca(62), sello()],
+    correo: correoSugerido,
+    irAEntrada: (correo = "", cerrarSesion = false) => {
+      correoSugerido = correo;
+      if (cerrarSesion) api.salir();
+      location.hash = "#/entrar";
+    },
+  };
+  correoSugerido = "";
+  return op;
 }
 
 function destinoDe(rol) {
@@ -379,6 +422,13 @@ const RUTAS = [
 
 async function pintar() {
   const cuerpo = document.getElementById("app");
+
+  for (const [patron, vista] of ANTES_DE_ENTRAR) {
+    const coincide = location.hash.match(patron);
+    if (!coincide) continue;
+    await traerLogo();
+    return vista(cuerpo, deAfuera(), coincide[1]);
+  }
 
   if (!sesion.token) return pantallaEntrada();
   if (!sesion.usuario) {

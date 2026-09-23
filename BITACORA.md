@@ -3561,6 +3561,53 @@ opciones distintas.
 
 La opción todavía no se ve en la consola: llega con las pantallas.
 
+## 58. El acceso por correo: la invitación y la recuperación
+
+Decisión de Salvador, 23 de septiembre, después de ver las pantallas:
+«dale así, copiar el enlace solo administración».
+
+- **Qué sale y a quién.** Dos correos, desde la dirección de
+  `CORREO_DE`: la invitación, cuando se da un acceso (el enlace sirve
+  una vez y dura 3 días), y la recuperación, cuando alguien pide
+  «¿Olvidaste tu contraseña?» en la entrada (una vez, 2 horas). Solo a
+  quien entra a la consola: administración, consultores, central,
+  finanzas, recursos humanos y dirección. El personal de seguridad no
+  recibe correos de contraseña: sigue con el código de 4 dígitos.
+- **Sale al guardar.** No espera la vuelta de cinco minutos: en cuanto
+  se confirma el alta o el pedido, ese correo sale en segundo plano. La
+  vuelta sigue siendo la red si el proveedor no contesta. Para que dos
+  despachadores no manden el mismo aviso, cada uno toma sus renglones
+  con `FOR UPDATE SKIP LOCKED`.
+- **Un enlace muerto no sale por correo.** Reenviar la invitación, pedir
+  otra recuperación o usar el enlace apaga los anteriores, y su correo,
+  si no había salido, queda en «vencida». Sin `URL_PUBLICA` el correo de
+  acceso no sale —se queda pendiente con el motivo escrito—: llegaría
+  sin botón.
+- **El enlace vive detrás del «#».** `/#/crear-contrasena/…`: el
+  navegador no manda esa parte al servidor, así que el token no queda en
+  ninguna bitácora del camino. La página pregunta primero si el enlace
+  sirve (`POST /auth/enlace`, con el token en el cuerpo) y dice cuál es
+  el caso: vencido, ya usado, reemplazado por uno nuevo o acceso
+  cerrado. Se abre en el idioma del país de la persona, y la hora que
+  dice el correo también es la de su país.
+- **La entrada** trae «¿Olvidaste tu contraseña?». La respuesta es la
+  misma exista o no la cuenta; lo único que cambia es si el correo está
+  encendido, que no es un dato de nadie.
+- **Accesos.** «+ Dar acceso»: la persona (de las que no tienen acceso),
+  con qué entra y, si se quiere, su puesto. Y para quien todavía no crea
+  su contraseña: cómo va su invitación, «Reenviar la invitación» y
+  «Copiar el enlace». **Copiar es solo de administración** —y de
+  dirección general, que hereda lo de administración—: con el enlace en
+  la mano se le pone la contraseña a otra persona. RRHH da accesos y
+  reenvía, pero no ve enlaces, tampoco en las respuestas del alta ni del
+  reenvío. Queda escrito quién copió.
+- **De paso.** La casilla «Ver también los accesos cerrados» quedó junto
+  a su texto. No se da acceso a alguien dado de baja, ni con un correo
+  que ya es la llave de otro acceso.
+
+Mientras el correo no esté encendido todo funciona igual y la pantalla
+lo dice: el enlace lo entrega administración, copiándolo del renglón.
+
 ## 14. Lo que falta
 
 ### Abierto
@@ -3576,7 +3623,9 @@ busca, está en las secciones 15 y 16.*
   servidor SMTP, con qué credenciales, desde qué dirección y bajo qué
   dominio cuelgan los enlaces. Son cinco renglones del `.env`
   —`CORREO_HOST`, `CORREO_PUERTO`, `CORREO_USUARIO`, `CORREO_CLAVE`,
-  `CORREO_DE`— más `URL_PUBLICA`.
+  `CORREO_DE`— más `URL_PUBLICA`. La invitación y la recuperación de
+  contraseña ya salen por él (sección 58): con esos renglones puestos,
+  llegan solas.
 
   *(Lo de abajo es el texto de cuando no existía el envío, que explica
   por qué la tabla es como es.)*

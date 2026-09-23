@@ -302,6 +302,11 @@ button.peligro { background: var(--grave); }
 }
 .entrada img { height: 62px; display: block; margin: 0 auto 22px; }
 .entrada button { width: 100%; margin-top: 6px; }
+/* Las pantallas de antes de entrar --crear la contrasena, pedir el
+   enlace-- viven en la misma tarjeta, con su titulo y su texto. */
+.entrada form h2 { margin: 4px 0 6px; color: var(--centauro); font-size: 18px; }
+.entrada form p { margin: 0 0 14px; }
+.entrada .centro { text-align: center; margin-top: 14px; }
 
 @media (max-width: 800px) {
   .rejilla.dos, .rejilla.tres { grid-template-columns: 1fr; }

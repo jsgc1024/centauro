@@ -1,12 +1,13 @@
 """Alta de accesos, creacion de contrasena e inicio de sesion."""
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app import accesos, auth, contrasenas, intentos
+from app import acceso_por_correo, accesos, auth, contrasenas, intentos
 from app import models as m
 from app.db import get_db
 
@@ -28,10 +29,31 @@ ADMINISTRA = auth.requiere(m.Rol.ADMIN, m.Rol.DIRECTOR_GENERAL,
 # entrega el codigo reconozca la voz de quien llama.
 DICTA_CODIGO = auth.requiere(m.Rol.CONSULTOR, m.Rol.CENTRAL)
 
+# Quien puede ver un enlace de contrasena: administracion, y direccion
+# general porque hereda todo lo de administracion. Decision de Salvador
+# (23 sep). Con el enlace en la mano se le pone la contrasena a otra
+# persona y se entra como ella; por eso RRHH, que si da los accesos, no
+# lo ve: da el acceso y el enlace le llega a la persona por su correo.
+COPIA_ENLACE = auth.requiere(m.Rol.ADMIN)
+
+
+def _copia_enlaces(actor: m.Usuario) -> bool:
+    """Lo mismo que COPIA_ENLACE, para decidir que va en una respuesta."""
+    return (actor.rol == m.Rol.ADMIN
+            or m.Rol.ADMIN in auth.HEREDA.get(actor.rol, set()))
+
 
 class AltaUsuarioIn(BaseModel):
     persona_id: int
     rol: m.Rol
+    # El puesto, de una vez. Opcional: sin puesto entra con lo de su rol.
+    categoria_id: int | None = None
+
+
+class EnlaceIn(BaseModel):
+    """El token viaja en el cuerpo y no en la ruta: una ruta queda
+    escrita en la bitacora de cada servidor del camino."""
+    token: str
 
 
 class MotivoIn(BaseModel):
@@ -108,36 +130,132 @@ class ContrasenaDeCampoIn(BaseModel):
 
 
 @router.post("/usuarios", status_code=201,
-             summary="Dar de alta un acceso y generar su invitacion")
-def alta_usuario(datos: AltaUsuarioIn, db: Session = Depends(get_db),
+             summary="Dar de alta un acceso y mandar su invitacion")
+def alta_usuario(datos: AltaUsuarioIn, tareas: BackgroundTasks,
+                 db: Session = Depends(get_db),
                  actor: m.Usuario = Depends(ADMINISTRA)):
-    """El usuario queda ligado al correo del empleado. Se le envia un enlace
-    para que el mismo cree su contrasena."""
+    """El usuario queda ligado al correo del empleado, y ese correo recibe
+    el enlace para que el mismo cree su contrasena.
+
+    Solo quien trabaja en la consola: el personal de seguridad recibe su
+    acceso de Odoo y pone su contrasena con el codigo de cuatro digitos.
+    """
     persona = db.get(m.Persona, datos.persona_id)
     if not persona:
         raise HTTPException(404, f"No existe la persona {datos.persona_id}")
+    if not persona.activo:
+        raise HTTPException(409, {
+            "mensaje": "Esa persona esta dada de baja como empleado.",
+            "que_hacer": "El acceso no puede ser la puerta de atras de una "
+                         "baja: si volvio, reactivala primero como empleada.",
+        })
 
     existente = db.query(m.Usuario).filter_by(persona_id=persona.id).first()
     if existente:
         raise HTTPException(409, f"Esa persona ya tiene acceso (usuario {existente.id})")
+    # El correo es la llave del acceso y no se repite. Sin esto, dos
+    # personas con el mismo correo reventaban contra la base.
+    llave = (persona.correo or "").strip().lower()
+    if db.query(m.Usuario.id).filter(
+            func.lower(func.trim(m.Usuario.correo)) == llave).first():
+        raise HTTPException(409, {
+            "mensaje": "Ese correo ya es el acceso de otra persona.",
+            "que_hacer": "Corrige el correo de esta persona en el padron.",
+        })
 
     usuario = m.Usuario(persona_id=persona.id, correo=persona.correo, rol=datos.rol)
     db.add(usuario)
     db.flush()
-
-    token, expira = auth.token_invitacion()
-    db.add(m.Invitacion(usuario_id=usuario.id, token=token, expira_en=expira))
     accesos.anotar(db, actor, "acceso creado", "usuario", usuario.id,
                    despues=usuario.rol.value, detalle=usuario.correo)
+    if datos.categoria_id is not None:
+        accesos.poner_categoria(db, actor, usuario.id, datos.categoria_id)
+
+    enlace, aviso = contrasenas.invitar(db, usuario)
     db.commit()
+    acceso_por_correo.despachar_despues(tareas, aviso)
 
     return {
         "usuario_id": usuario.id, "correo": usuario.correo, "rol": usuario.rol.value,
         "invitacion": {
-            "enlace": f"https://centauro.lat/crear-contrasena/{token}",
-            "expira_en": expira.isoformat(),
+            "expira_en": enlace.expira_en.isoformat(),
+            # Sale por correo a quien trabaja en la consola; al de campo no.
+            "por_correo": aviso is not None,
+            "correo_encendido": acceso_por_correo.encendido(),
+            # Solo para administracion (ver COPIA_ENLACE).
+            "enlace": (acceso_por_correo.enlace(enlace.token)
+                       if _copia_enlaces(actor) else None),
         },
-        "nota": "En produccion este enlace se envia por correo, no se devuelve aqui",
+    }
+
+
+@router.get("/personas-sin-acceso",
+            summary="A quien se le puede dar acceso")
+def personas_sin_acceso(db: Session = Depends(get_db),
+                        _: m.Usuario = Depends(ADMINISTRA)):
+    """La lista de "Dar acceso": las personas vivas del padron que todavia
+    no tienen uno.
+
+    Fuera quien ya lo tiene --el acceso es uno por persona-- y quien trae
+    un correo que ya es la llave de otro acceso. Y con lo que la pantalla
+    dice arriba del formulario: de que direccion sale el correo y cuanto
+    dura el enlace, o que el correo todavia no esta encendido.
+    """
+    con_acceso = {persona_id for (persona_id,)
+                  in db.query(m.Usuario.persona_id).all()}
+    llaves = {(c or "").strip().lower()
+              for (c,) in db.query(m.Usuario.correo).all()}
+    filas = (db.query(m.Persona)
+             .filter(m.Persona.activo.is_(True))
+             .order_by(m.Persona.nombre).all())
+    encendido = acceso_por_correo.encendido()
+    return {
+        "personas": [{"persona_id": p.id, "nombre": p.nombre,
+                      "correo": p.correo}
+                     for p in filas
+                     if p.id not in con_acceso
+                     and (p.correo or "").strip().lower() not in llaves],
+        "correo_encendido": encendido,
+        "de": acceso_por_correo.remitente() if encendido else None,
+        "dias": auth.HORAS_INVITACION // 24,
+    }
+
+
+@router.get("/usuarios/{usuario_id}/invitacion",
+            summary="Como va la invitacion de alguien")
+def estado_de_invitacion(usuario_id: int, db: Session = Depends(get_db),
+                         actor: m.Usuario = Depends(ADMINISTRA)):
+    """Si su enlace sigue vivo y que paso con su correo: lo que se
+    necesita para contestar "no me llego"."""
+    usuario = db.get(m.Usuario, usuario_id)
+    if not usuario:
+        raise HTTPException(404, f"No existe el acceso {usuario_id}")
+    return {**contrasenas.estado_de_invitacion(db, usuario),
+            "puede_copiar": _copia_enlaces(actor)}
+
+
+@router.post("/usuarios/{usuario_id}/invitacion",
+             summary="Mandarle otra vez su invitacion")
+def reenviar_invitacion(usuario_id: int, tareas: BackgroundTasks,
+                        db: Session = Depends(get_db),
+                        actor: m.Usuario = Depends(ADMINISTRA)):
+    """Un enlace nuevo por correo, y el anterior deja de servir.
+
+    Para quien todavia no estrena su acceso: se le paso el correo,
+    vencio a los tres dias, o no le llego.
+    """
+    usuario = db.get(m.Usuario, usuario_id)
+    if not usuario:
+        raise HTTPException(404, f"No existe el acceso {usuario_id}")
+    enlace, aviso = contrasenas.reinvitar(db, usuario, actor)
+    db.commit()
+    acceso_por_correo.despachar_despues(tareas, aviso)
+    return {
+        "correo": usuario.correo,
+        "expira_en": enlace.expira_en.isoformat(),
+        "correo_encendido": acceso_por_correo.encendido(),
+        "enlace": (acceso_por_correo.enlace(enlace.token)
+                   if _copia_enlaces(actor) else None),
     }
 
 
@@ -339,6 +457,17 @@ def quitar_permiso(usuario_id: int, actividad: str,
     return resultado
 
 
+@router.post("/enlace", summary="Como esta un enlace de contrasena")
+def revisar_enlace(datos: EnlaceIn, db: Session = Depends(get_db)):
+    """Lo que la pagina del enlace pregunta al abrirse: si sirve, y si
+    sirve, de quien es y con que entra.
+
+    Publica, como la de abajo: quien la usa todavia no tiene contrasena.
+    El token son 256 bits al azar; no se adivina ni se enumera.
+    """
+    return contrasenas.revisar_enlace(db, datos.token)
+
+
 @router.post("/establecer-contrasena",
              summary="Poner la contrasena con un enlace")
 def establecer_contrasena(datos: EstablecerContrasenaIn,
@@ -374,14 +503,13 @@ def cambiar_mi_contrasena(datos: CambioContrasenaIn, peticion: Request,
 
 
 @router.post("/recuperar", summary="Se me olvido la contrasena")
-def recuperar(datos: RecuperarIn, peticion: Request,
+def recuperar(datos: RecuperarIn, peticion: Request, tareas: BackgroundTasks,
               db: Session = Depends(get_db)):
     """La respuesta es la misma exista o no la cuenta.
 
     El enlace no viaja aqui: esta puerta es publica, y devolverlo seria
-    regalar la cuenta a quien escriba un correo ajeno. Mientras el
-    sistema no sepa mandar correos que no cuelguen de un servicio, lo
-    entrega administracion desde el panel.
+    regalar la cuenta a quien escriba un correo ajeno. Viaja por el
+    correo de la persona, que sale en cuanto se confirma.
     """
     ip = peticion.client.host if peticion.client else None
     # En su propio carril, no en el del inicio de sesion: con el mismo
@@ -391,8 +519,9 @@ def recuperar(datos: RecuperarIn, peticion: Request,
     carril = f"recuperar:{datos.correo}"
     intentos.revisar(carril, ip)
     intentos.fallo(carril, ip)
-    resultado = contrasenas.pedir_recuperacion(db, datos.correo)
+    resultado, aviso = contrasenas.pedir_recuperacion(db, datos.correo)
     db.commit()
+    acceso_por_correo.despachar_despues(tareas, aviso)
     return resultado
 
 
@@ -450,13 +579,12 @@ def contrasena_de_campo(datos: ContrasenaDeCampoIn, peticion: Request,
 @router.get("/usuarios/{usuario_id}/enlace-pendiente",
             summary="El enlace vivo de esa cuenta, para entregarlo")
 def enlace_pendiente(usuario_id: int, db: Session = Depends(get_db),
-                     actor: m.Usuario = Depends(ADMINISTRA)):
-    """Existe porque el sistema todavia no sabe mandar un correo que no
-    cuelgue de un servicio. Mientras tanto lo entrega una persona, igual
-    que el codigo del personal de campo lo dicta su consultor.
+                     actor: m.Usuario = Depends(COPIA_ENLACE)):
+    """El "Copiar el enlace" del panel, para cuando el correo no llega.
 
-    Queda escrito quien lo pidio: un enlace de contrasena en manos de
-    alguien es una cuenta en manos de alguien.
+    Solo administracion (ver COPIA_ENLACE), y queda escrito quien lo
+    pidio: un enlace de contrasena en manos de alguien es una cuenta en
+    manos de alguien.
     """
     resultado = contrasenas.enlace_pendiente(db, usuario_id)
     accesos.anotar(db, actor, "enlace entregado", "usuario", usuario_id,

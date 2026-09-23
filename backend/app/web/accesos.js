@@ -11,7 +11,8 @@
    que quizá ya no está. Ese dato se guardaba desde hace meses y nadie lo
    miraba. */
 import { api } from "./api.js";
-import { aviso, conAyuda, entrada, h, lista, mensaje } from "./util.js";
+import { aviso, campo, conAyuda, entrada, fecha, h, hora, lista,
+         mensaje } from "./util.js";
 import { t } from "./idioma.js";
 import { ROLES, nombreDelRol, pestanaPuestos,
          seccionDePermisos } from "./categorias.js";
@@ -19,6 +20,17 @@ import { ROLES, nombreDelRol, pestanaPuestos,
 /* Meses sin entrar a partir de los cuales conviene mirar la cuenta. No
    es un candado, es una ceja levantada. */
 const MESES_DORMIDO = 3;
+
+/* Quien entra a la consola, y por eso recibe su invitación por correo.
+   El personal de seguridad no: su acceso llega de Odoo y su contraseña
+   la pone con el código de cuatro dígitos. Es la misma lista que
+   `contrasenas.POR_CORREO` en el servidor. */
+const DE_CONSOLA = ROLES.filter(r => r !== "personal_seguridad");
+
+/* "sáb 26 sep 2026 a las 13:10". */
+function cuando(iso) {
+  return t("acc_cuando").replace("{fecha}", fecha(iso)).replace("{hora}", hora(iso));
+}
 
 /* "hace 12 min", "hace 4 meses". La precisión que sirve para decidir: a
    nadie le importa si fueron 97 o 103 días, le importa que son meses. */
@@ -45,22 +57,34 @@ function mesesSinEntrar(iso) {
    no puede?" —que se contesta mirando su renglón y el puesto que trae. */
 export async function pantallaAccesos(main) {
   const pestanas = h("div", { clase: "acciones", style: "margin:0 0 4px" });
+  const dar = h("div");
   const zona = h("div");
   let vista = "personas";
+  let recargarPersonas = async () => {};
 
   function pintarPestanas() {
-    pestanas.replaceChildren(...[
+    const botones = [
       ["personas", t("cat_personas")], ["puestos", t("cat_puestos")],
     ].map(([clave, texto]) => h("button", {
       type: "button",
       clase: clave === vista ? "chico" : "claro chico",
       onclick: () => { vista = clave; pintarPestanas(); pintarVista(); },
-    }, texto)));
+    }, texto));
+    /* Dar acceso es de la pestaña de personas: en la de puestos sería
+       un botón que no tiene que ver con lo que se está mirando. */
+    if (vista === "personas") {
+      botones.push(h("button", {
+        type: "button", clase: "chico", style: "margin-left:auto",
+        onclick: () => abrirDarAcceso(dar, () => recargarPersonas()),
+      }, t("acc_dar")));
+    }
+    pestanas.replaceChildren(...botones);
   }
 
-  function pintarVista() {
+  async function pintarVista() {
+    dar.replaceChildren();
     if (vista === "puestos") return pestanaPuestos(zona);
-    return pantallaPersonas(zona);
+    recargarPersonas = await pantallaPersonas(zona);
   }
 
   /* El titulo y su explicacion van sueltos, encima de la tarjeta, como
@@ -71,10 +95,88 @@ export async function pantallaAccesos(main) {
   main.append(
     h("h1", {}, t("acc_titulo")),
     h("p", { clase: "sub" }, t("acc_pie")),
-    h("div", { clase: "tarjeta" }, pestanas, zona));
+    h("div", { clase: "tarjeta" }, pestanas, dar, zona));
 
   pintarPestanas();
   await pintarVista();
+}
+
+/* Dar acceso: a quién, con qué entra y, si se quiere, su puesto. Le
+   llega un correo para que ella misma cree su contraseña; nadie más la
+   conoce nunca. */
+async function abrirDarAcceso(caja, alTerminar) {
+  if (caja.childElementCount) return caja.replaceChildren();
+  caja.replaceChildren(h("div", { clase: "gris chico" }, "…"));
+  try {
+    const [datos, puestos] = await Promise.all([
+      api.get("/auth/personas-sin-acceso"), api.get("/auth/categorias")]);
+    formularioDarAcceso(caja, datos, puestos, alTerminar);
+  } catch (err) {
+    caja.replaceChildren(aviso(err.message, "grave"));
+  }
+}
+
+function formularioDarAcceso(caja, datos, puestos, alTerminar, hecho = "") {
+  const persona = lista("persona", [
+    { valor: "", texto: t("acc_elige_persona") },
+    ...datos.personas.map(p => ({ valor: String(p.persona_id),
+                                  texto: `${p.nombre} · ${p.correo}` }))]);
+  const rol = lista("rol", DE_CONSOLA.map(r => ({ valor: r, texto: nombreDelRol(r) })));
+  rol.value = "consultor";
+  /* Los puestos apagados no se ofrecen: para eso se apagaron. */
+  const puesto = lista("puesto", [{ valor: "", texto: t("acc_sin_puesto") },
+    ...puestos.filter(p => p.activa)
+      .map(p => ({ valor: String(p.categoria_id), texto: p.nombre }))]);
+  const salida = h("div");
+
+  const mandar = h("button", { type: "button", clase: "chico" }, t("acc_mandar_inv"));
+  mandar.disabled = !datos.personas.length;
+  mandar.addEventListener("click", async () => {
+    if (!persona.value) {
+      salida.replaceChildren(aviso(t("acc_falta_persona"), "alerta"));
+      return;
+    }
+    mandar.disabled = true;
+    try {
+      const r = await api.post("/auth/usuarios", {
+        persona_id: Number(persona.value), rol: rol.value,
+        categoria_id: puesto.value ? Number(puesto.value) : null });
+      const inv = r.invitacion;
+      /* Con el correo apagado, quien puede copiar el enlace lo lee aquí
+         dicho; quien no, sabe a quién pedírselo. */
+      const texto = inv.correo_encendido
+        ? t("acc_inv_va").replace("{correo}", r.correo)
+            .replace("{cuando}", cuando(inv.expira_en))
+        : t(inv.enlace ? "acc_inv_apagado_copia" : "acc_inv_apagado_pide")
+            .replace("{correo}", r.correo);
+      await alTerminar();
+      /* El formulario vuelve limpio --esa persona ya no está en la
+         lista-- y con el aviso de lo que pasó. */
+      formularioDarAcceso(caja, await api.get("/auth/personas-sin-acceso"),
+                          puestos, alTerminar,
+                          aviso(texto, inv.correo_encendido ? "ok" : "alerta"));
+    } catch (err) {
+      salida.replaceChildren(aviso(err.message, "grave"));
+      mandar.disabled = false;
+    }
+  });
+
+  caja.replaceChildren(h("div", { clase: "tarjeta lisa", style: "margin:12px 0 4px" },
+    h("h3", { style: "margin:0 0 4px" }, t("acc_dar_titulo")),
+    h("p", { clase: "gris chico", style: "margin:0 0 12px" },
+      datos.correo_encendido
+        ? t("acc_dar_pie").replace("{de}", datos.de).replace("{dias}", datos.dias)
+        : t("acc_dar_pie_apagado")),
+    datos.personas.length ? "" : aviso(t("acc_nadie_sin_acceso"), "alerta"),
+    h("div", { clase: "rejilla tres" },
+      campo(t("acc_persona"), persona),
+      campo(t("acc_entra_como"), rol),
+      campo(t("acc_puesto_opcional"), puesto)),
+    h("div", { clase: "acciones" }, mandar,
+      h("button", { type: "button", clase: "chico claro",
+                    onclick: () => caja.replaceChildren() }, t("acc_cancelar"))),
+    salida,
+    hecho));
 }
 
 async function pantallaPersonas(main) {
@@ -112,11 +214,15 @@ async function pantallaPersonas(main) {
 
   main.replaceChildren(
     h("div", { style: "margin-top:12px" }, buscar),
-    h("label", { clase: "chico", style: "display:block;margin-top:8px" },
-      cerrados, " ", t("acc_ver_cerrados")),
+    /* La casilla junto a su texto. Con la etiqueta de bloque, la casilla
+       tomaba el ancho entero y salía sola en un renglón, encima y
+       desfasada del texto que la explica. */
+    h("label", { clase: "casilla", style: "margin-top:8px" },
+      cerrados, t("acc_ver_cerrados")),
     cuerpo);
 
   await recargar();
+  return recargar;
 }
 
 /* Los avisos son lo que esta pantalla aporta de verdad. El resto son
@@ -190,10 +296,19 @@ function abrir(zona, u, recargar) {
 
   const rastro = h("div", { clase: "gris chico", style: "margin-top:12px" });
   const permisos = h("div");
+  const invitacion = h("div");
   zona.replaceChildren(h("div", { clase: "tarjeta lisa", style: "margin-top:8px" },
+    invitacion,
     h("div", { clase: "rejilla dos" },
       h("div", {}, rol), h("div", {}, motivo)),
     acciones, permisos, rastro));
+
+  /* Quien todavía no estrena su acceso y entra a la consola: cómo va su
+     invitación, y cómo mandarle otra. El de campo no tiene: lo suyo es
+     el código de cuatro dígitos. */
+  if (!u.estrenado && u.activo && u.rol !== "personal_seguridad") {
+    bloqueInvitacion(invitacion, u);
+  }
 
   /* Al personal de seguridad no se le reparten permisos: entra desde la
      app y lo único que hace ahí son sus propias jornadas. Ofrecerle 29
@@ -213,6 +328,104 @@ function abrir(zona, u, recargar) {
             f.detalle ? h("span", { clase: "gris" }, ` · "${f.detalle}"`) : "")))
         : h("div", {}, t("acc_sin_historial")));
   }).catch(() => rastro.replaceChildren());
+}
+
+/* "No le llegó" tiene cuatro respuestas y cada una se arregla distinto:
+   está por salir, no salió, el correo todavía no está encendido, o el
+   enlace ya venció. Se dice cuál. */
+function comoVa(e) {
+  const vence = e.expira_en ? cuando(e.expira_en) : "";
+  if (e.estado === "ninguna") return t("acc_inv_ninguna");
+  if (e.estado === "vencida") return t("acc_inv_vencio").replace("{vence}", vence);
+  if (e.estado !== "vigente") return t("acc_inv_no_sirve");
+  const c = e.correo;
+  if (!c) return t("acc_inv_sin_aviso").replace("{vence}", vence);
+  if (c.estado === "enviada") {
+    return t("acc_inv_salio").replace("{cuando}", cuando(c.salio_en))
+      .replace("{vence}", vence);
+  }
+  if (c.estado === "pendiente" && !c.error) {
+    return t(e.correo_encendido ? "acc_inv_por_salir" : "acc_inv_apagado")
+      .replace("{vence}", vence);
+  }
+  return t("acc_inv_no_salio").replace("{vence}", vence);
+}
+
+async function bloqueInvitacion(caja, u) {
+  let e;
+  try {
+    e = await api.get(`/auth/usuarios/${u.usuario_id}/invitacion`);
+  } catch (err) {
+    caja.replaceChildren(aviso(err.message, "grave"));
+    return;
+  }
+  const aMano = h("div");
+
+  const reenviar = h("button", { type: "button", clase: "chico" },
+    t(e.estado === "ninguna" ? "acc_mandar_inv" : "acc_reenviar"));
+  reenviar.addEventListener("click", async () => {
+    reenviar.disabled = true;
+    try {
+      const r = await api.post(`/auth/usuarios/${u.usuario_id}/invitacion`);
+      mensaje(r.correo_encendido
+        ? t("acc_inv_va").replace("{correo}", r.correo)
+            .replace("{cuando}", cuando(r.expira_en))
+        : t(r.enlace ? "acc_reinv_apagado_copia" : "acc_reinv_apagado_pide")
+            .replace("{correo}", r.correo),
+        r.correo_encendido ? "ok" : "alerta");
+      await bloqueInvitacion(caja, u);
+    } catch (err) {
+      mensaje(err.message, "grave");
+      reenviar.disabled = false;
+    }
+  });
+
+  const botones = [reenviar];
+  /* Copiar el enlace es solo de administración (decisión de Salvador,
+     23 sep): con él en la mano se le pone la contraseña a otra persona.
+     El servidor lo vuelve a revisar; esto solo decide si se pinta. */
+  if (e.puede_copiar && e.estado === "vigente") {
+    botones.push(botonCopiar(u, aMano));
+  }
+
+  caja.replaceChildren(h("div", { style: "margin:0 0 14px" },
+    h("div", { clase: "chico", style: "margin-bottom:8px" },
+      h("b", {}, t("acc_su_inv")), h("span", { clase: "gris" }, ` · ${comoVa(e)}`)),
+    e.correo && e.correo.error
+      ? h("div", { clase: "gris chico", style: "margin:-4px 0 8px" }, e.correo.error)
+      : "",
+    h("div", { clase: "acciones" }, ...botones),
+    h("div", { clase: "gris chico", style: "margin-top:6px" },
+      t(e.puede_copiar ? "acc_inv_pie" : "acc_inv_pie_sin_copia")),
+    aMano,
+    h("hr", { style: "border:0;border-top:1px solid var(--linea);margin:14px 0 0" })));
+}
+
+function botonCopiar(u, aMano) {
+  const boton = h("button", { type: "button", clase: "chico claro" }, t("acc_copiar"));
+  boton.addEventListener("click", async () => {
+    boton.disabled = true;
+    try {
+      const r = await api.get(`/auth/usuarios/${u.usuario_id}/enlace-pendiente`);
+      const liga = new URL(r.enlace, location.origin).href;
+      try {
+        await navigator.clipboard.writeText(liga);
+        mensaje(t("acc_copiado"));
+      } catch {
+        /* Sin permiso para el portapapeles --una conexión sin https, un
+           navegador que no deja--: se enseña para copiarlo a mano. */
+        aMano.replaceChildren(h("div", { style: "margin-top:8px" },
+          h("div", { clase: "gris chico", style: "margin-bottom:4px" },
+            t("acc_copia_a_mano")),
+          entrada("enlace", { value: liga, readonly: "true", clase: "fijo",
+                              onfocus: (ev) => ev.target.select() })));
+      }
+    } catch (err) {
+      mensaje(err.message, "grave");
+    }
+    boton.disabled = false;
+  });
+  return boton;
 }
 
 async function mandar(e, ruta, cuerpo, recargar) {
