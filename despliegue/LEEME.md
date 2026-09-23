@@ -17,6 +17,38 @@ así vive en `ARQUITECTURA.md`, en la raíz.
 Compose. Zona horaria en `America/Mexico_City`. Solo los puertos 80 y
 443 abiertos al mundo.
 
+**1b. El código llega por git.** El repositorio vive en GitHub
+(`jsgc1024/centauro`, privado). El servidor lo clona con una **llave de
+despliegue de solo lectura**, no con la cuenta de nadie: si alguien
+entra al servidor, con esa llave puede leer el código, pero no
+modificarlo ni tocar otros repositorios.
+
+En el servidor, como el usuario que va a operar:
+
+```bash
+ssh-keygen -t ed25519 -C "servidor-centauro" -f ~/.ssh/id_ed25519 -N ""
+cat ~/.ssh/id_ed25519.pub
+```
+
+La línea que imprime se pega en GitHub: repositorio → *Settings* →
+*Deploy keys* → *Add deploy key*, título `servidor centauro`, **sin**
+marcar *Allow write access*. Luego:
+
+```bash
+sudo mkdir -p /opt/centauro && sudo chown "$USER" /opt/centauro
+git clone git@github.com:jsgc1024/centauro.git /opt/centauro
+cd /opt/centauro
+```
+
+Para actualizar después, desde `/opt/centauro`:
+
+```bash
+git pull
+docker compose -f docker-compose.prod.yml build api
+docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
+docker compose -f docker-compose.prod.yml up -d api worker beat
+```
+
 **2. El `.env`.** Se edita con `nano`, nunca con `echo` —queda en el
 historial de la terminal— y no va al repositorio.
 
@@ -33,7 +65,27 @@ TELEFONO_CENTRAL=+525550221022
 VAPID_PUBLIC=...
 VAPID_PRIVATE=...
 VAPID_CONTACTO=mailto:operaciones@centauro.lat
+
+# De donde cuelgan los enlaces que van en correos y task sheets.
+URL_PUBLICA=https://operacion.centauro.lat
+
+# El correo que sale de la empresa (SMTP). Mientras CORREO_HOST y
+# CORREO_DE esten vacios no sale nada: los avisos quedan pendientes.
+CORREO_HOST=
+CORREO_PUERTO=587
+CORREO_USUARIO=
+CORREO_CLAVE=
+CORREO_DE=Centauro <avisos@centauro.lat>
+
+# Odoo, de salida: la factura del servicio. Vacio = nada sale; el
+# cierre se queda en "por facturar" y se manda despues.
+ODOO_URL=
+ODOO_TOKEN=
 ```
+
+`VAPID_PUBLIC` y `VAPID_PRIVATE` se dejan vacías al principio: las
+escribe el paso 6. Las demás llaves y contraseñas se pegan aquí, en el
+servidor, y en ningún otro lado.
 
 Las contraseñas y la clave de sesión:
 
