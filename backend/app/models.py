@@ -523,6 +523,14 @@ class EstatusServicio(str, enum.Enum):
     ARRIBADO = "arribado"
     EN_CURSO = "en_curso"
     TERMINADO = "terminado"
+    # El cierre en dos relojes (decision de Salvador, 22 sep). Al
+    # terminar corren las 24 h del personal para comprobar; al vencer
+    # --o antes, si todo el dinero ya cerro-- el servicio queda sin
+    # visto bueno y corren las 24 h del consultor; su visto bueno lo
+    # manda a facturar y finanzas lo cierra. Hoy solo el eventual pasa
+    # por aqui; el implantado corta a mes y llega en su propia sesion.
+    SIN_VISTO_BUENO = "sin_visto_bueno"
+    EN_FACTURACION = "en_facturacion"
     CERRADO = "cerrado"
     CANCELADO = "cancelado"
 
@@ -2017,7 +2025,8 @@ class LineaCotizacion(Base):
 # ================================================================ CIERRE
 
 class EstatusCierre(str, enum.Enum):
-    ABIERTO = "abierto"                      # corriendo las 24 h del consultor
+    ABIERTO = "abierto"                      # comprobacion: las 24 h del personal
+    SIN_VISTO_BUENO = "sin_visto_bueno"      # las 24 h del consultor
     EN_REVISION_IA = "en_revision_ia"
     ENVIADO_FINANZAS = "enviado_finanzas"
     DEVUELTO_A_OPERACION = "devuelto_a_operacion"
@@ -2045,6 +2054,19 @@ class Cierre(Base):
     servicio_id: Mapped[int] = mapped_column(ForeignKey("servicio.id"), unique=True)
     abierto_en: Mapped[datetime] = mapped_column(DateTime)
     limite_consultor: Mapped[datetime] = mapped_column(DateTime)
+    # Los dos relojes. `abierto_en` es T0 --el termino general, o la
+    # cancelacion--; `comprobacion_hasta` = T0 + 24 h es el plazo del
+    # personal; `visto_bueno_desde` es T1, cuando arranco el consultor,
+    # y `limite_consultor` = T1 + 24 h. Mientras T1 no llega, el limite
+    # del consultor queda provisional en T0 + 48 h.
+    comprobacion_hasta: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True)
+    visto_bueno_desde: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True)
+    # "termino" o "cancelacion": la cancelacion es un termino con su
+    # propia revision.
+    motivo_apertura: Mapped[str | None] = mapped_column(
+        String(20), nullable=True)
     estatus: Mapped[EstatusCierre] = mapped_column(
         Enum(EstatusCierre), default=EstatusCierre.ABIERTO)
     total_cotizado: Mapped[float] = mapped_column(Numeric(12, 2), default=0)

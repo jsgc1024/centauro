@@ -198,6 +198,8 @@ const ESTATUS = {
   arribado: "est_arribado",
   en_curso: "est_en_curso",
   terminado: "est_terminado",
+  sin_visto_bueno: "est_sin_visto_bueno",
+  en_facturacion: "est_en_facturacion",
   cerrado: "est_cerrado",
   cancelado: "est_cancelado",
   abierta: "est_abierta",

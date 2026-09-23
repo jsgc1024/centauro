@@ -46,7 +46,8 @@ const TONO_ESTATUS = {
   asignado: "azul",
   arribado: "arribo",
   en_curso: "ok",
-  terminado: "cafe", cerrado: "negro", cancelado: "grave",
+  terminado: "cafe", sin_visto_bueno: "alerta", en_facturacion: "cafe",
+  cerrado: "negro", cancelado: "grave",
 };
 
 /* ------------------------------------------------------------ cartera */

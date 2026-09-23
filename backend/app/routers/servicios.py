@@ -1706,8 +1706,12 @@ def eliminar_servicio(servicio_id: int, datos: s.EliminarIn | None = None,
                      "en camino" if en_camino else None)}
 # ---------------------------------------------------------------- cancelar
 
-# Lo que ya no se puede cancelar: o esta cancelado, o ya se cerro.
-YA_NO_SE_CANCELA = {m.EstatusServicio.CANCELADO, m.EstatusServicio.CERRADO}
+# Lo que ya no se puede cancelar: o esta cancelado, o ya termino --el
+# termino general ya corrio, y con el los relojes--, o ya se cerro.
+YA_NO_SE_CANCELA = {m.EstatusServicio.CANCELADO, m.EstatusServicio.CERRADO,
+                    m.EstatusServicio.TERMINADO,
+                    m.EstatusServicio.SIN_VISTO_BUENO,
+                    m.EstatusServicio.EN_FACTURACION}
 
 # Viaticos que todavia no salieron de la caja.
 VIATICOS_SIN_SALIR = {m.EstatusViatico.ASIGNADO, m.EstatusViatico.SOLICITADO}
@@ -1869,6 +1873,26 @@ def cancelar_servicio(servicio_id: int, datos: s.CancelarIn,
                 .all())
     for vehiculo in rentados:
         _devolver_renta(vehiculo, servicio.folio)
+
+    # La cancelacion es un termino (decision de Salvador, 22 sep). Si
+    # hay dinero que salio de la caja o dias trabajados, arranca el
+    # mismo proceso que al terminar: T0 es ahora, los viaticos que
+    # salieron reciben su plazo y a las 24 h el consultor tiene las
+    # suyas para revisar la cancelacion. Sin nada que cerrar no hay
+    # relojes (decision 8). Solo el eventual, por ahora.
+    trabajados = [j for j in jornadas
+                  if j.estatus == m.EstatusJornada.TERMINADA]
+    salieron = [v for v in viaticos
+                if v.estatus != m.EstatusViatico.CANCELADO]
+    if servicio.tipo == m.TipoServicio.EVENTUAL and (trabajados or salieron):
+        from app import cierre as motor_cierre
+        from app import reloj
+        from app.operacion import abrir_plazo_del_servicio
+
+        momento = reloj.ahora_del_servicio(db, servicio)
+        abrir_plazo_del_servicio(db, servicio, momento)
+        motor_cierre.abrir(db, servicio.id, abierto_en=momento,
+                           motivo="cancelacion")
 
     antes = servicio.estatus.value
     servicio.estatus = m.EstatusServicio.CANCELADO

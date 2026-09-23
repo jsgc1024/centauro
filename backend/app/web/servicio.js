@@ -49,7 +49,8 @@ export async function pantallaServicio(main, servicioId) {
 async function bloqueVistoBueno(servicio) {
   /* Antes de que el servicio termine no hay nada que revisar, y despues
      de cerrado ya no hay nada que hacer aqui. */
-  if (!["terminado", "cerrado"].includes(servicio.estatus)) {
+  if (!["terminado", "sin_visto_bueno", "en_facturacion", "cerrado",
+        "cancelado"].includes(servicio.estatus)) {
     return h("div", {});
   }
 
@@ -72,6 +73,10 @@ async function bloqueVistoBueno(servicio) {
     return caja;
   }
 
+  /* El cancelado solo tiene cierre si habia algo que cerrar: dinero
+     afuera o dias trabajados. Sin cierre no hay nada que pintar. */
+  if (!c.existe && servicio.estatus === "cancelado") return h("div", {});
+
   let r = null;
   let fallo = null;
   try {
@@ -83,12 +88,25 @@ async function bloqueVistoBueno(servicio) {
       t("srv_ya_facturado").replace("{f}", c.factura)));
     return caja;
   }
-  if (c.estatus && c.estatus !== "abierto") {
+  /* Ya con visto bueno --o devuelto por finanzas, que es lo unico que
+     regresa aqui-- no hay reloj que correr. */
+  if (c.estatus && !["abierto", "sin_visto_bueno",
+                     "devuelto_a_operacion"].includes(c.estatus)) {
     caja.append(h("p", { clase: "gris" },
       t("srv_cierre_en").replace("{e}", estatus(c.estatus))));
     if (c.factura_error) {
       caja.append(aviso(c.factura_error, "alerta"));
     }
+    return caja;
+  }
+
+  /* El primer reloj: la comprobacion del personal. El boton no se
+     ofrece todavia; el servidor tampoco lo aceptaria. */
+  if (c.estatus === "abierto") {
+    const cuenta = h("div", { clase: "reloj-cierre" });
+    pintarReloj(cuenta, c.comprobacion_hasta, c.momento);
+    caja.append(cuenta, h("p", { clase: "gris chico" },
+      t("srv_fase_comprobacion")));
     return caja;
   }
 

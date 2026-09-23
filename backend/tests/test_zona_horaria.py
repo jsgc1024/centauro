@@ -190,9 +190,12 @@ def test_el_plazo_para_cerrar_nace_en_la_hora_del_pais(cliente, sesion, datos,
     assert r.status_code in (200, 201), r.text
 
     abierto = datetime.fromisoformat(r.json()["abierto_en"])
+    hasta = datetime.fromisoformat(r.json()["comprobacion_hasta"])
     limite = datetime.fromisoformat(r.json()["limite_consultor"])
-    # 24 horas exactas, y contadas desde la hora de São Paulo.
-    assert round((limite - abierto).total_seconds() / 3600) == 24
+    # 24 horas exactas para el personal, contadas desde la hora de São
+    # Paulo; las del consultor, provisionales en 48 hasta que llegue T1.
+    assert round((hasta - abierto).total_seconds() / 3600) == 24
+    assert round((limite - abierto).total_seconds() / 3600) == 48
     ahora_br = reloj.ahora_en(type("P", (), {
         "zona_horaria": brasil["pais"]["zona_horaria"]})())
     assert abs((abierto - ahora_br).total_seconds()) < 120, (abierto, ahora_br)

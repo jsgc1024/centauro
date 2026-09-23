@@ -7,9 +7,11 @@ capacitaciones y las unidades en taller. No salia nada. El estatus
 nadie, asi que un servicio aprobado por finanzas se quedaba sin quien
 dijera "ya se cobro".
 
-Una factura por servicio, en cuanto finanzas aprueba el cierre (decision
-de Salvador, 20 sep): cada folio tiene su factura y la rentabilidad
-cuadra sola.
+Una factura por servicio (decision de Salvador, 20 sep): cada folio
+tiene su factura y la rentabilidad cuadra sola. Sale con el visto bueno
+del consultor --el termino general del servicio (decision del 22 sep)--
+y finanzas aprueba despues; `facturado` es el ultimo eslabon, cuando las
+dos cosas ya pasaron.
 
 **Lo que se factura es lo EJECUTADO, no lo cotizado.** La cotizacion es
 lo que se ofrecio; el ejecutado es lo que de verdad se presto, valuado
@@ -67,7 +69,8 @@ def armar(db: Session, cierre: m.Cierre) -> dict:
             "nombre": cliente.nombre if cliente else None,
         },
         "moneda": cotizacion.moneda.value,
-        "fecha": (cierre.aprobado_en or datetime.now()).date().isoformat(),
+        "fecha": (cierre.enviado_en or cierre.aprobado_en
+                  or datetime.now()).date().isoformat(),
         "total": str(ejecutado["total"]),
         "conceptos": [{
             "fecha": linea["fecha"],
@@ -87,11 +90,17 @@ def enviar(db: Session, cierre: m.Cierre) -> dict:
     No levanta excepcion nunca: devuelve que paso. Quien la llama ya
     tiene algo guardado que no puede perder.
     """
-    if cierre.estatus == m.EstatusCierre.FACTURADO:
+    if cierre.estatus == m.EstatusCierre.FACTURADO or cierre.facturado_en:
+        # Salio con el visto bueno del consultor. Si finanzas ya aprobo,
+        # el cierre queda facturado: es el ultimo eslabon.
+        if cierre.estatus == m.EstatusCierre.APROBADO:
+            cierre.estatus = m.EstatusCierre.FACTURADO
+            db.flush()
         return {"resultado": "ya estaba facturado",
                 "factura": cierre.factura_odoo}
 
-    if cierre.estatus != m.EstatusCierre.APROBADO:
+    if cierre.estatus not in (m.EstatusCierre.ENVIADO_FINANZAS,
+                              m.EstatusCierre.APROBADO):
         return {"resultado": "no se factura",
                 "motivo": f"el cierre esta en {cierre.estatus.value}"}
 
@@ -134,7 +143,11 @@ def enviar(db: Session, cierre: m.Cierre) -> dict:
     # dice que llego sin folio: es lo que habria que ir a buscar a mano.
     folio = (datos.get("factura") or datos.get("numero")
              or datos.get("name") or datos.get("id"))
-    cierre.estatus = m.EstatusCierre.FACTURADO
+    # Facturado es el ultimo eslabon: solo cuando finanzas ya aprobo. Si
+    # la factura sale con el visto bueno del consultor, el cierre sigue
+    # enviado a finanzas, con su folio ya puesto.
+    if cierre.estatus == m.EstatusCierre.APROBADO:
+        cierre.estatus = m.EstatusCierre.FACTURADO
     cierre.facturado_en = datetime.now()
     cierre.factura_odoo = str(folio)[:60] if folio else None
     cierre.factura_error = None if folio else "Odoo contesto sin folio"
@@ -150,10 +163,14 @@ def por_facturar(db: Session) -> list[dict]:
     cliente no paga.
     """
     filas = (db.query(m.Cierre)
-             .filter(m.Cierre.estatus == m.EstatusCierre.APROBADO)
-             .order_by(m.Cierre.aprobado_en).all())
+             .filter(m.Cierre.estatus.in_((m.EstatusCierre.ENVIADO_FINANZAS,
+                                           m.EstatusCierre.APROBADO)),
+                     m.Cierre.facturado_en.is_(None))
+             .order_by(m.Cierre.enviado_en).all())
     return [{
         "cierre_id": c.id,
+        "estatus": c.estatus.value,
+        "enviado_en": c.enviado_en.isoformat() if c.enviado_en else None,
         "servicio_id": c.servicio_id,
         "folio": c.servicio.folio,
         "cliente": (c.servicio.cliente.nombre

@@ -141,6 +141,8 @@ def abrir(servicio_id: int, db: Session = Depends(get_db),
     # si nacio en este segundo.
     suyas = db.query(m.Encuesta).filter_by(servicio_id=servicio_id).all()
     return {"cierre_id": c.id, "abierto_en": c.abierto_en.isoformat(),
+            "comprobacion_hasta": (c.comprobacion_hasta.isoformat()
+                                   if c.comprobacion_hasta else None),
             "limite_consultor": c.limite_consultor.isoformat(),
             "estatus": c.estatus.value,
             "encuestas_enviadas": [e.tipo.value for e in suyas]}
@@ -213,6 +215,28 @@ def enviar_finanzas(cierre_id: int, db: Session = Depends(get_db),
     # En hora del pais del servicio: de esta comparacion depende que el
     # consultor cobre su comision o la pierda.
     momento = reloj.ahora_del_servicio(db, cierre.servicio, ahora)
+
+    # El reloj del sistema pudo no haber pasado todavia: si ya llego T1
+    # --o todo el dinero ya cerro--, se avanza aqui mismo y se guarda,
+    # pase lo que pase con la revision de abajo.
+    if motor.avanzar(db, cierre, momento):
+        db.commit()
+
+    # Mientras corren las 24 h del personal, el visto bueno ni se abre:
+    # no se le va a pedir al consultor que cierre con descuento un
+    # dinero que su gente todavia tiene tiempo de comprobar. Y lo que ya
+    # se envio no se envia dos veces.
+    if cierre.estatus not in (m.EstatusCierre.SIN_VISTO_BUENO,
+                              m.EstatusCierre.DEVUELTO_A_OPERACION):
+        raise HTTPException(409, {
+            "mensaje": ("Todavia corre la comprobacion de viaticos del personal"
+                        if cierre.estatus == m.EstatusCierre.ABIERTO
+                        else f"El cierre esta en {cierre.estatus.value}"),
+            "hasta": (cierre.comprobacion_hasta.isoformat()
+                      if cierre.comprobacion_hasta else None),
+            "observaciones": [],
+        })
+
     revision = revisor.revisar(db, cierre.servicio_id, momento)
 
     if not revision["listo_para_finanzas"]:
@@ -229,6 +253,11 @@ def enviar_finanzas(cierre_id: int, db: Session = Depends(get_db),
     cierre.enviado_en = momento
     cierre.cerrado_por_id = usuario.persona_id
     cierre.dentro_de_plazo = momento <= cierre.limite_consultor
+    # El visto bueno es el termino general: el servicio pasa a
+    # facturacion. El cancelado se queda cancelado.
+    if cierre.servicio.estatus in (m.EstatusServicio.TERMINADO,
+                                   m.EstatusServicio.SIN_VISTO_BUENO):
+        cierre.servicio.estatus = m.EstatusServicio.EN_FACTURACION
 
     auditoria.registrar(db, usuario, cierre.servicio, "enviar a finanzas",
                         f"cotizado {cierre.total_cotizado}, "
@@ -248,7 +277,16 @@ def enviar_finanzas(cierre_id: int, db: Session = Depends(get_db),
             f"siguiente nomina")
     db.commit()
 
+    # Y a Odoo, en este momento: el visto bueno del consultor es el
+    # termino general (decision de Salvador, 22 sep). Va despues del
+    # commit a proposito: el envio ya quedo guardado y un Odoo caido no
+    # lo deshace; el servicio se queda en la bandeja de por facturar
+    # con el error a la vista y se reintenta desde ahi.
+    factura = facturacion.enviar(db, cierre)
+    db.commit()
+
     return {"resultado": "enviado a finanzas", "cierre_id": cierre.id,
+            "factura": factura,
             "dentro_de_plazo": cierre.dentro_de_plazo,
             "comision_consultor": "se detona con la validacion de finanzas"
                                   if cierre.dentro_de_plazo
@@ -265,6 +303,9 @@ def devolver(cierre_id: int, datos: DevolucionIn, db: Session = Depends(get_db),
         raise HTTPException(404, f"No existe el cierre {cierre_id}")
     cierre.estatus = m.EstatusCierre.DEVUELTO_A_OPERACION
     cierre.devuelto_motivo = datos.motivo
+    # Vuelve al consultor: el servicio regresa a sin visto bueno.
+    if cierre.servicio.estatus == m.EstatusServicio.EN_FACTURACION:
+        cierre.servicio.estatus = m.EstatusServicio.SIN_VISTO_BUENO
     auditoria.registrar(db, usuario, cierre.servicio, "devolver a operacion",
                         datos.motivo)
     db.commit()
@@ -286,7 +327,10 @@ def aprobar(cierre_id: int, db: Session = Depends(get_db),
     cierre.estatus = m.EstatusCierre.APROBADO
     cierre.aprobado_en = datetime.now()
     cierre.aprobado_por_id = usuario.persona_id
-    cierre.servicio.estatus = m.EstatusServicio.CERRADO
+    # El cancelado se queda cancelado: cierra su expediente, no cambia
+    # de estatus.
+    if cierre.servicio.estatus != m.EstatusServicio.CANCELADO:
+        cierre.servicio.estatus = m.EstatusServicio.CERRADO
 
     auditoria.registrar(db, usuario, cierre.servicio, "aprobar cierre",
                         "validado por finanzas")
@@ -300,13 +344,11 @@ def aprobar(cierre_id: int, db: Session = Depends(get_db),
                     "monto": c.monto, "estatus": c.estatus.value,
                     "motivo": c.motivo}
 
-    # Y a Odoo, que es el paso que faltaba: una factura por servicio, en
-    # cuanto finanzas aprueba.
-    #
-    # Va despues del commit a proposito. El cierre ya quedo aprobado y la
-    # comision ya se genero: si Odoo no contesta, eso no se puede
-    # deshacer. El servicio se queda en la bandeja de "por facturar" con
-    # el error a la vista y se reintenta desde ahi.
+    # La factura salio con el visto bueno del consultor. Aqui solo se
+    # reintenta si aquel envio fallo y, si ya esta, el cierre pasa a
+    # facturado. Va despues del commit a proposito: el cierre ya quedo
+    # aprobado y la comision ya se genero; si Odoo no contesta, eso no
+    # se deshace y el servicio sigue en la bandeja de por facturar.
     factura = facturacion.enviar(db, cierre)
     db.commit()
 

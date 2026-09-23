@@ -3331,6 +3331,49 @@ cosas cambian:
   con los colores secundarios, se cambian los hex ahí y nada más.
   Propuesta y pantallas en `PROPUESTA_SENAL_COLOR.md`.
 
+## 50. El cierre en dos relojes
+
+Decisión de Salvador, 22 de septiembre (`PROPUESTA_CIERRE_24H.md`).
+Primera de tres sesiones: reglas, reloj y pruebas del eventual.
+
+- **T0, el término general.** La hora real de término del último
+  día del eventual —o la firma, si la central lo cerró tarde: un
+  plazo que nace vencido no es un plazo— o el momento de cancelar.
+  En T0 todos los viáticos del servicio reciben el mismo límite,
+  T0 + 24 h; cerrar un día intermedio ya no abre plazo. Se respeta
+  el del relevado, que corre desde su relevo.
+- **T1, el segundo reloj.** Lo pone la tarea `cierre.avanzar` cada
+  cinco minutos: al vencer las 24 h del personal —o antes, si todos
+  los viáticos ya cerraron, se devolvieron o se cancelaron— el cierre
+  y el servicio pasan a **sin visto bueno** y el consultor tiene hasta
+  T1 + 24 h; de ahí depende su comisión. Mientras corre la
+  comprobación el visto bueno ni se abre: no se le pide al consultor
+  cerrar con descuento un dinero que su gente todavía puede comprobar.
+- **El visto bueno es el término general.** Al enviar a finanzas el
+  servicio pasa a **en facturación** y la factura sale a Odoo en ese
+  momento; si Odoo no contesta queda en *por facturar* con el error a
+  la vista. Finanzas aprueba, cierra el expediente y detona la
+  comisión; *facturado* es el último eslabón, cuando las dos cosas ya
+  pasaron. Devolver a operación regresa el servicio a sin visto bueno.
+- **Cancelar es un término.** Con dinero afuera o días trabajados,
+  cancelar arranca los mismos relojes con T0 = ahora y el consultor
+  revisa la cancelación; sin nada que cerrar no hay relojes. El
+  servicio se queda *cancelado*; su rastro es el cierre. Un servicio
+  terminado ya no se cancela.
+- **Reabrir un día** antes del visto bueno deshace el término: el
+  cierre se borra con sus plazos y el servicio vuelve a la calle; con
+  el visto bueno dado ya no se reabre.
+- **Lo ya terminado no se toca**: un cierre nacido antes conserva su
+  plazo de siempre. **El implantado no se toca**: sigue día por día
+  hasta la sesión del cierre por mes.
+
+Pendiente para las sesiones que siguen: el cierre por mes del
+implantado; la consola con la fase y sus relojes, la app con
+«por comprobar» sin fecha hasta el término, la bandeja de finanzas,
+el panorama, el bono de puntualidad contra el nuevo límite y el
+candado de cerrar con descuento antes de que venza el plazo del
+personal.
+
 ## 14. Lo que falta
 
 ### Abierto

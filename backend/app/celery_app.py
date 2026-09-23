@@ -68,6 +68,13 @@ celery.conf.update(
             "task": "operacion.avisar_horas_extra",
             "schedule": crontab(minute="*/5"),
         },
+        # El segundo reloj del cierre: lo que llego a T1 --o cerro todo
+        # su dinero antes-- pasa a sin visto bueno y arrancan las 24 h
+        # del consultor. Lo mueve el reloj, no una persona.
+        "cierre-avanzar": {
+            "task": "cierre.avanzar",
+            "schedule": crontab(minute="*/5"),
+        },
         # Los certificados que se vencen. Una vez al dia, temprano:
         # avisa a los treinta dias y el dia que vence, y nada mas. El
         # campo existia desde hacia meses y nada lo miraba.
@@ -248,5 +255,18 @@ def avisar_horas_extra():
     db = SessionLocal()
     try:
         return {"avisos": len(operacion.avisar_horas_extra(db))}
+    finally:
+        db.close()
+
+
+@celery.task(name="cierre.avanzar")
+def avanzar_cierres():
+    """De la comprobacion al visto bueno, cuando toca."""
+    from app.db import SessionLocal
+    from app import cierre
+
+    db = SessionLocal()
+    try:
+        return {"movidos": cierre.avanzar_cierres(db)}
     finally:
         db.close()

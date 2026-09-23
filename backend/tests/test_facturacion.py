@@ -66,14 +66,19 @@ def _cierre_aprobado(cliente, sesion, datos):
 def test_al_aprobar_se_manda_la_factura_con_lo_ejecutado(cliente, sesion,
                                                          datos, odoo):
     """Lo que se factura es lo EJECUTADO, no lo cotizado: la cotizacion
-    es lo que se ofrecio y el ejecutado lo que de verdad se presto."""
+    es lo que se ofrecio y el ejecutado lo que de verdad se presto.
+
+    Desde el 22 de septiembre la factura sale con el visto bueno del
+    consultor --enviar a finanzas--; finanzas aprueba despues y el
+    cierre queda facturado. Aprobar no la manda dos veces."""
     servicio, cierre_id = _cierre_aprobado(cliente, sesion, datos)
+    assert len(odoo) == 1, "la factura sale con el visto bueno"
 
     r = cliente.post(f"/cierre/{cierre_id}/aprobar", headers=sesion("finanzas"))
     assert r.status_code == 200, r.text
-    assert r.json()["factura"]["resultado"] == "facturado"
+    assert r.json()["factura"]["resultado"] == "ya estaba facturado"
 
-    assert len(odoo) == 1, odoo
+    assert len(odoo) == 1, "aprobar no factura dos veces"
     cuerpo = odoo[0]["cuerpo"]
     assert cuerpo["referencia"] == servicio["folio"]
     assert cuerpo["conceptos"], cuerpo
@@ -179,8 +184,13 @@ def test_la_pantalla_recibe_el_reloj_para_pintarlo_corriendo(cliente, sesion,
     assert c["existe"] is True
     assert c["cierre_id"] == cierre_id
     assert c["limite"] and r.json()["revisado_en"]
-    # Veinticuatro horas desde que se abrio, ni una mas.
+    # Veinticuatro horas para el personal desde el termino general, y
+    # veinticuatro para el consultor desde que arranco su reloj --T1,
+    # cuando el personal termino de comprobar--, ni una mas.
     from datetime import datetime
     abierto = datetime.fromisoformat(c["abierto_en"])
+    hasta = datetime.fromisoformat(c["comprobacion_hasta"])
+    desde = datetime.fromisoformat(c["visto_bueno_desde"])
     limite = datetime.fromisoformat(c["limite"])
-    assert round((limite - abierto).total_seconds() / 3600) == 24
+    assert round((hasta - abierto).total_seconds() / 3600) == 24
+    assert round((limite - desde).total_seconds() / 3600) == 24

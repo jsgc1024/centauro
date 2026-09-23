@@ -4,6 +4,7 @@ El comparativo busca desviaciones: dias de mas o de menos, recursos no
 cotizados, horas extra, y viaticos mal dispersados o sin comprobar.
 Solo las desviaciones sin respaldo detonan el escalamiento.
 """
+import logging
 import math
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -15,9 +16,16 @@ from app import cotizacion as cot
 from app import models as m
 from app import reloj
 
+# Los dos relojes (decision de Salvador, 22 sep). T0 es el termino
+# general del servicio: de T0 a T0 + 24 el personal comprueba sus
+# viaticos. T1 llega al vencer ese plazo --o antes, si todo el dinero
+# ya cerro--: de T1 a T1 + 24 el consultor da el visto bueno. Si nadie
+# se adelanta, los dos suman 48 horas desde el termino.
+HORAS_PERSONAL = 24
 HORAS_CONSULTOR = 24
-HORAS_MAXIMO_TOTAL = 48
+HORAS_MAXIMO_TOTAL = HORAS_PERSONAL + HORAS_CONSULTOR
 CERO = Decimal("0")
+registro = logging.getLogger(__name__)
 
 
 def _d(valor) -> Decimal:
@@ -388,25 +396,47 @@ def estado(db: Session, servicio_id: int,
         raise HTTPException(404, f"No existe el servicio {servicio_id}")
 
     ahora = reloj.ahora_del_servicio(db, servicio, ahora)
-    registro = db.query(m.Cierre).filter_by(servicio_id=servicio_id).first()
+    fila = db.query(m.Cierre).filter_by(servicio_id=servicio_id).first()
+    if not fila:
+        return {"momento": ahora.isoformat(), "existe": False,
+                "cierre_id": None, "estatus": None, "fase": None,
+                "abierto_en": None, "comprobacion_hasta": None,
+                "visto_bueno_desde": None, "limite": None,
+                "minutos_restantes": None, "viaticos_abiertos": None,
+                "motivo": None, "factura": None, "factura_error": None}
+
+    def iso(momento):
+        return momento.isoformat() if momento else None
+
     return {
         "momento": ahora.isoformat(),
-        "existe": bool(registro),
-        "cierre_id": registro.id if registro else None,
-        "estatus": registro.estatus.value if registro else None,
-        "abierto_en": registro.abierto_en.isoformat() if registro else None,
-        "limite": (registro.limite_consultor.isoformat()
-                   if registro else None),
-        "minutos_restantes": (
-            int((registro.limite_consultor - ahora).total_seconds() / 60)
-            if registro else None),
-        "factura": registro.factura_odoo if registro else None,
-        "factura_error": registro.factura_error if registro else None,
+        "existe": True,
+        "cierre_id": fila.id,
+        "estatus": fila.estatus.value,
+        # La fase, para las pantallas: en que reloj va.
+        "fase": FASES.get(fila.estatus),
+        "abierto_en": iso(fila.abierto_en),
+        "comprobacion_hasta": iso(fila.comprobacion_hasta),
+        "visto_bueno_desde": iso(fila.visto_bueno_desde),
+        "limite": iso(fila.limite_consultor),
+        "minutos_restantes": int(
+            (fila.limite_consultor - ahora).total_seconds() / 60),
+        "viaticos_abiertos": viaticos_abiertos(db, servicio_id),
+        "motivo": fila.motivo_apertura,
+        "factura": fila.factura_odoo,
+        "factura_error": fila.factura_error,
     }
 
 
-def abrir(db: Session, servicio_id: int, abierto_en: datetime | None = None) -> m.Cierre:
-    """Arranca el reloj de las 24 horas del consultor."""
+def abrir(db: Session, servicio_id: int, abierto_en: datetime | None = None,
+          motivo: str = "termino") -> m.Cierre:
+    """Arranca el primer reloj: las 24 horas del personal.
+
+    `abierto_en` es T0 --el termino general, o la cancelacion--. De ahi
+    salen `comprobacion_hasta` (T0 + 24 h) y, provisional, el limite
+    del consultor en T0 + 48 h: el de verdad lo pone `avanzar` cuando
+    llega T1.
+    """
     servicio = db.get(m.Servicio, servicio_id)
     if not servicio:
         raise HTTPException(404, f"No existe el servicio {servicio_id}")
@@ -419,8 +449,11 @@ def abrir(db: Session, servicio_id: int, abierto_en: datetime | None = None) -> 
     # decide si cobra su comision: si nace con el reloj del contenedor y
     # se juzga con otro, queda torcido desde el principio.
     momento = reloj.ahora_del_servicio(db, servicio, abierto_en)
+    hasta = momento + timedelta(hours=HORAS_PERSONAL)
     cierre = m.Cierre(servicio_id=servicio_id, abierto_en=momento,
-                      limite_consultor=momento + timedelta(hours=HORAS_CONSULTOR))
+                      comprobacion_hasta=hasta,
+                      limite_consultor=hasta + timedelta(hours=HORAS_CONSULTOR),
+                      motivo_apertura=motivo)
     db.add(cierre)
     # `flush` y no `commit`: esto se llama tambien desde adentro del
     # cierre del ultimo dia, y ahi commitear a media transaccion partiria
@@ -428,3 +461,100 @@ def abrir(db: Session, servicio_id: int, abierto_en: datetime | None = None) -> 
     # el arranque del reloj--. Quien llama decide cuando guardar.
     db.flush()
     return cierre
+
+
+# ---------------------------------------------------------------- el segundo reloj
+
+# La fase, para las pantallas: lo que cada estatus del cierre quiere
+# decir en la cadena de dos relojes.
+FASES = {
+    m.EstatusCierre.ABIERTO: "comprobacion",
+    m.EstatusCierre.SIN_VISTO_BUENO: "sin_visto_bueno",
+    m.EstatusCierre.EN_REVISION_IA: "sin_visto_bueno",
+    m.EstatusCierre.DEVUELTO_A_OPERACION: "devuelto",
+    m.EstatusCierre.ENVIADO_FINANZAS: "en_facturacion",
+    m.EstatusCierre.APROBADO: "aprobado",
+    m.EstatusCierre.FACTURADO: "facturado",
+}
+
+# Lo que ya no cuenta como dinero afuera.
+VIATICO_RESUELTO = (m.EstatusViatico.CERRADO, m.EstatusViatico.DEVUELTO,
+                    m.EstatusViatico.CANCELADO)
+
+
+def viaticos_abiertos(db: Session, servicio_id: int) -> int:
+    """Cuantos viaticos del servicio siguen sin cerrar."""
+    return (db.query(m.AsignacionViatico)
+            .join(m.Jornada, m.AsignacionViatico.jornada_id == m.Jornada.id)
+            .join(m.Equipo, m.Jornada.equipo_id == m.Equipo.id)
+            .filter(m.Equipo.servicio_id == servicio_id,
+                    m.AsignacionViatico.estatus.notin_(VIATICO_RESUELTO))
+            .count())
+
+
+def avanzar(db: Session, cierre: m.Cierre,
+            ahora: datetime | None = None) -> bool:
+    """De la comprobacion al visto bueno: pone T1 y el limite del consultor.
+
+    Lo mueve el reloj del sistema, no una persona. T1 llega cuando
+    vencen las 24 h del personal (T0 + 24) o antes, si todos los
+    viaticos del servicio ya cerraron, se devolvieron o se cancelaron:
+    no hay nada que esperar (decision 2 de la propuesta).
+
+    Solo escribe; quien llama decide cuando guardar. Devuelve si movio.
+    """
+    if cierre.estatus != m.EstatusCierre.ABIERTO:
+        return False
+    servicio = cierre.servicio
+    ahora = reloj.ahora_del_servicio(db, servicio, ahora)
+
+    viejo = cierre.comprobacion_hasta is None
+    if viejo:
+        # Nacio antes de los dos relojes: su plazo era el de siempre, 24 h
+        # desde que se abrio. Se respeta tal cual (regla 10 de la
+        # propuesta): lo ya terminado no se toca.
+        t1, limite = cierre.abierto_en, cierre.limite_consultor
+    elif ahora >= cierre.comprobacion_hasta:
+        t1 = cierre.comprobacion_hasta
+        limite = t1 + timedelta(hours=HORAS_CONSULTOR)
+    elif viaticos_abiertos(db, servicio.id) == 0:
+        t1 = ahora
+        limite = t1 + timedelta(hours=HORAS_CONSULTOR)
+    else:
+        return False
+
+    cierre.visto_bueno_desde = t1
+    cierre.limite_consultor = limite
+    cierre.estatus = m.EstatusCierre.SIN_VISTO_BUENO
+    # El cancelado se queda cancelado: su rastro es el cierre.
+    if servicio.estatus == m.EstatusServicio.TERMINADO:
+        servicio.estatus = m.EstatusServicio.SIN_VISTO_BUENO
+
+    if servicio.consultor_id and not viejo:
+        from app import push
+        try:
+            push.avisar(
+                db, servicio.consultor_id,
+                titulo=f"{servicio.folio}: tienes 24 h para el visto bueno",
+                cuerpo=("La comprobacion del personal termino. Tu plazo "
+                        f"vence el {limite:%d/%m a las %H:%M}."),
+                url=f"/servicios/{servicio.id}",
+                etiqueta=f"visto-bueno-{cierre.id}")
+        except Exception:                 # noqa: BLE001
+            # Un aviso que no sale no puede frenar el reloj.
+            registro.exception("no se pudo avisar el visto bueno de %s",
+                               servicio.folio)
+    return True
+
+
+def avanzar_cierres(db: Session, ahora: datetime | None = None) -> list[str]:
+    """El barrido de cada cinco minutos: lo que llego a T1 pasa a sin
+    visto bueno. Devuelve los folios que movio."""
+    movidos = []
+    for cierre in (db.query(m.Cierre)
+                   .filter(m.Cierre.estatus == m.EstatusCierre.ABIERTO)
+                   .all()):
+        if avanzar(db, cierre, ahora):
+            movidos.append(cierre.servicio.folio)
+    db.commit()
+    return movidos

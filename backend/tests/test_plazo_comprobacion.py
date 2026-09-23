@@ -48,6 +48,13 @@ def _viatico(viatico_id):
         return v.limite_comprobacion, v.jornada.fin_real
 
 
+def _firmado(jornada_id):
+    from app import models as m
+    from app.db import SessionLocal
+    with SessionLocal() as db:
+        return db.get(m.Jornada, jornada_id).cerrada_a_mano_en
+
+
 def test_el_dia_que_termina_abre_el_plazo(cliente, sesion, datos):
     """Antes el viático nacía sin plazo y moría sin plazo."""
     servicio, j, viatico, _ = _dia_con_viaticos(cliente, sesion, datos)
@@ -92,8 +99,13 @@ def test_el_cierre_a_mano_tambien_lo_abre(cliente, sesion, datos):
                                             "confirmado por teléfono"})
     assert r.status_code == 200, r.text
 
+    # Un dia firmado tres dias tarde no nace vencido: el plazo corre
+    # desde la firma de la central, no desde la hora de termino que
+    # asento (decision de Salvador, 22 sep).
     limite, fin_real = _viatico(viatico["id"])
-    assert limite == fin_real + timedelta(hours=24)
+    firmado = _firmado(j["id"])
+    assert limite == firmado + timedelta(hours=24)
+    assert limite > fin_real + timedelta(hours=24)
 
 
 def test_el_plazo_del_relevo_no_se_pisa(cliente, sesion, datos):

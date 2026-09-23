@@ -159,8 +159,18 @@ def revisar(db: Session, servicio_id: int, ahora: datetime | None = None) -> dic
             "mensaje": f"{len(abiertas)} alerta(s) de la central siguen abiertas",
             "accion": "Cierra cada alerta con su resolucion."})
 
-    # --- reloj del consultor
-    if registro:
+    # --- los dos relojes
+    if registro and registro.estatus == m.EstatusCierre.ABIERTO:
+        # Corren las 24 h del personal: el visto bueno todavia no abre.
+        hasta = registro.comprobacion_hasta
+        observaciones.append({
+            "nivel": AVISO, "asunto": "Comprobacion en curso",
+            "mensaje": (f"El personal tiene hasta el {hasta:%d/%m %H:%M} "
+                        "para comprobar sus viaticos" if hasta else
+                        "El personal esta comprobando sus viaticos"),
+            "accion": "El visto bueno se abre cuando venza ese plazo, o "
+                      "antes si todos los viaticos ya cerraron."})
+    elif registro:
         restante = (registro.limite_consultor - ahora).total_seconds() / 3600
         if restante < 0:
             # Vencido no significa que no se pueda facturar: el servicio debe

@@ -155,10 +155,16 @@ def test_comision_perdida_si_se_cierra_fuera_de_plazo(cliente, sesion, datos):
 
     cierre = cliente.post(f"/cierre/servicio/{servicio['id']}/abrir",
                           headers=h).json()
+    # Los dos relojes se atrasan: la comprobacion del personal vencio
+    # hace dos dias, asi que T1 fue entonces y las 24 h del consultor
+    # se acabaron ayer.
+    from app import reloj
     with SessionLocal() as db:
         fila = db.get(mo.Cierre, cierre["cierre_id"])
-        fila.abierto_en = fila.abierto_en - timedelta(days=2)
-        fila.limite_consultor = fila.limite_consultor - timedelta(days=2)
+        ahora = reloj.ahora_del_servicio(db, fila.servicio)
+        fila.abierto_en = ahora - timedelta(days=3)
+        fila.comprobacion_hasta = ahora - timedelta(days=2)
+        fila.limite_consultor = ahora - timedelta(days=1)
         db.commit()
 
     envio = cliente.post(f"/cierre/{cierre['cierre_id']}/enviar-finanzas", headers=h)
@@ -250,6 +256,23 @@ def test_no_se_manda_a_finanzas_con_viaticos_abiertos(cliente, sesion, datos):
 
     cierre = cliente.post(f"/cierre/servicio/{servicio['id']}/abrir",
                           headers=h).json()
+    # Mientras corren las 24 h del personal, el visto bueno ni se abre:
+    # no se le va a pedir al consultor que cierre con descuento un
+    # dinero que su gente todavia tiene tiempo de comprobar.
+    envio = cliente.post(f"/cierre/{cierre['cierre_id']}/enviar-finanzas",
+                         headers=h)
+    assert envio.status_code == 409, envio.text
+    assert "comprobacion" in envio.json()["detail"]["mensaje"].lower()
+
+    # Vencido el plazo del personal, el visto bueno se abre y el candado
+    # es el de siempre: con viaticos abiertos no se manda.
+    from app import cierre as motor
+    from app import models as mo
+    from app.db import SessionLocal
+    with SessionLocal() as db:
+        fila = db.get(mo.Cierre, cierre["cierre_id"])
+        assert motor.avanzar(db, fila, fila.comprobacion_hasta)
+        db.commit()
     envio = cliente.post(f"/cierre/{cierre['cierre_id']}/enviar-finanzas",
                          headers=h)
     assert envio.status_code == 409, envio.text

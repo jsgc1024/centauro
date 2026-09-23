@@ -360,8 +360,8 @@ def test_el_recorrido_con_las_cuentas_y_los_estatus(cliente, sesion, datos):
     envio = cliente.post(f"/cierre/{cierre['cierre_id']}/enviar-finanzas",
                          headers=h)
     assert envio.status_code == 200, envio.text
-    assert _estatus_servicio(cliente, h, sid) == "terminado", \
-        "enviar a finanzas no cierra: cierra finanzas"
+    assert _estatus_servicio(cliente, h, sid) == "en_facturacion", \
+        "el visto bueno manda a facturar; cerrar, cierra finanzas"
 
     aprobado = cliente.post(f"/cierre/{cierre['cierre_id']}/aprobar", headers=hf)
     assert aprobado.status_code == 200, aprobado.text

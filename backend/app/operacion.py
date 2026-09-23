@@ -176,6 +176,42 @@ def abrir_plazo_de_comprobacion(db: Session, jornada: m.Jornada,
     return cuantos
 
 
+def abrir_plazo_del_servicio(db: Session, servicio: m.Servicio,
+                             termino: datetime) -> int:
+    """El eventual abre el plazo una sola vez, para todos: T0 + 24 h.
+
+    Decision de Salvador, 22 sep: las 24 horas del personal corren
+    desde el termino general del servicio --el cierre del ultimo dia,
+    o la cancelacion--, no desde el cierre de cada dia. En un servicio
+    de tres dias los tres viaticos vencen a la misma hora.
+
+    Se respeta el plazo que ya tenga un viatico: el del relevado, que
+    corre desde su relevo (decision 1 de la propuesta). Y el dinero que
+    ya cerro, se devolvio o se cancelo no recibe plazo: ya no esta
+    afuera.
+    """
+    from app import viaticos as motor_viaticos
+
+    limite = motor_viaticos.limite_de_comprobacion(termino)
+    cuantos = 0
+    for viatico in _viaticos_del_servicio(db, servicio.id):
+        if viatico.limite_comprobacion or viatico.estatus in (
+                m.EstatusViatico.CERRADO, m.EstatusViatico.DEVUELTO,
+                m.EstatusViatico.CANCELADO):
+            continue
+        viatico.limite_comprobacion = limite
+        cuantos += 1
+    return cuantos
+
+
+def _viaticos_del_servicio(db: Session, servicio_id: int) -> list:
+    return (db.query(m.AsignacionViatico)
+            .join(m.Jornada, m.AsignacionViatico.jornada_id == m.Jornada.id)
+            .join(m.Equipo, m.Jornada.equipo_id == m.Equipo.id)
+            .filter(m.Equipo.servicio_id == servicio_id)
+            .all())
+
+
 def _pares_del_equipo(jornada: m.Jornada, idioma: str | None = None,
                       solo_vigentes: bool = False) -> list:
     """Quien va y en que, para la ficha del correo.
@@ -581,9 +617,14 @@ def registrar_hito(db: Session, jornada_id: int, persona_id: int,
     elif tipo == m.TipoHito.FIN_SERVICIO:
         jornada.fin_real = ahora
         jornada.estatus = m.EstatusJornada.TERMINADA
-        # El dia termino: empiezan a correr las 24 horas para comprobar.
-        abrir_plazo_de_comprobacion(db, jornada, ahora)
-        terminar_si_cerro_el_ultimo_dia(db, servicio)
+        # El dia termino. En el implantado empiezan a correr las 24
+        # horas para comprobar ese dia; en el eventual el plazo es uno
+        # solo para todo el servicio y arranca con el termino general,
+        # abajo, al cerrar el ultimo dia (decision de Salvador, 22 sep).
+        if servicio.tipo != m.TipoServicio.EVENTUAL:
+            abrir_plazo_de_comprobacion(db, jornada, ahora)
+        terminar_si_cerro_el_ultimo_dia(db, servicio, termino=ahora,
+                                        registrado=recibido)
         del_solicitante = ta.idioma_de(db, servicio,
                                        m.Destinatario.SOLICITANTE)
         cuerpo, pares = _cierre_del_dia(db, jornada, ahora, del_solicitante)
@@ -1065,8 +1106,10 @@ def dias_sin_cerrar(db: Session, ahora: datetime | None = None,
     return salida
 
 
-def terminar_si_cerro_el_ultimo_dia(db: Session,
-                                    servicio: m.Servicio) -> bool:
+def terminar_si_cerro_el_ultimo_dia(db: Session, servicio: m.Servicio,
+                                    termino: datetime | None = None,
+                                    registrado: datetime | None = None,
+                                    ) -> bool:
     """El eventual se apaga cuando ya no le queda dia por trabajar.
 
     `terminado` existia en el catalogo y no lo escribia nadie: el
@@ -1127,7 +1170,17 @@ def terminar_si_cerro_el_ultimo_dia(db: Session,
 
     servicio.estatus = m.EstatusServicio.TERMINADO
 
-    # Y arranca solo el reloj del consultor.
+    # T0, el termino general: la hora real de termino del ultimo dia.
+    # Si el dia se firmo tarde --la central lo cerro a mano tres dias
+    # despues, o la marca llego con retraso--, T0 es la firma: un plazo
+    # que nace vencido no es un plazo (decision 4 de la propuesta).
+    momentos = [x for x in (termino, registrado) if x]
+    t0 = max(momentos) if momentos else reloj.ahora_del_servicio(db, servicio)
+
+    # Y arrancan solos los dos relojes: las 24 horas del personal para
+    # comprobar --todos los viaticos del servicio con el mismo limite,
+    # T0 + 24 h-- y, cuando vencen o todo el dinero ya cerro, las 24
+    # horas del consultor (`cierre.avanzar`, cada cinco minutos).
     #
     # Se abria a mano, con un boton que alguien tenia que acordarse de
     # tocar. Si nadie lo tocaba, el plazo de 24 horas no empezaba nunca
@@ -1141,7 +1194,8 @@ def terminar_si_cerro_el_ultimo_dia(db: Session,
     from app import cierre as motor_cierre
     from app import encuestas as motor_encuestas
 
-    motor_cierre.abrir(db, servicio.id)
+    abrir_plazo_del_servicio(db, servicio, t0)
+    motor_cierre.abrir(db, servicio.id, abierto_en=t0)
     try:
         motor_encuestas.generar(db, servicio.id)
     except Exception:                     # noqa: BLE001
@@ -1371,11 +1425,16 @@ def cerrar_a_mano(db: Session, jornada_id: int, quien_id: int,
     # Cerrado a mano o marcado desde la calle, el dia termino igual y el
     # plazo corre igual: la diferencia queda en el sello del cierre, no
     # en el reloj de la comprobacion.
-    abrir_plazo_de_comprobacion(db, jornada, fin)
+    if jornada.equipo.servicio.tipo != m.TipoServicio.EVENTUAL:
+        abrir_plazo_de_comprobacion(db, jornada, fin)
     jornada.cerrada_a_mano_por_id = quien_id
     jornada.cerrada_a_mano_en = ahora
     jornada.cierre_motivo = justificacion.strip()
-    terminar_si_cerro_el_ultimo_dia(db, jornada.equipo.servicio)
+    # En el eventual, un dia firmado tarde no nace vencido: el plazo
+    # corre desde la firma, no desde la hora de termino que asento la
+    # central (decision 4 de la propuesta).
+    terminar_si_cerro_el_ultimo_dia(db, jornada.equipo.servicio,
+                                    termino=fin, registrado=ahora)
     db.commit()
 
     horas = round((fin - inicio).total_seconds() / 3600, 2)
@@ -1416,6 +1475,51 @@ def reabrir(db: Session, jornada_id: int, quien_id: int,
     # alguien crea que esto revierte un pago.
     pagado = (db.query(m.ConceptoNomina)
               .filter_by(jornada_id=jornada.id).first() is not None)
+
+    # El eventual ya terminado: reabrir un dia deshace el termino
+    # general. Si el cierre sigue en comprobacion o sin visto bueno, se
+    # borra con sus plazos y el servicio vuelve a la calle; al cerrar el
+    # dia otra vez nace un T0 nuevo. Con el visto bueno dado ya no: la
+    # factura salio, o esta por salir, con esas horas.
+    servicio = jornada.equipo.servicio
+    if servicio.tipo == m.TipoServicio.EVENTUAL:
+        if servicio.estatus == m.EstatusServicio.CANCELADO:
+            raise HTTPException(409, {
+                "mensaje": "El servicio esta cancelado: no se reabre un dia",
+                "que_hacer": "Lo que haya que corregir de ese dia se "
+                             "resuelve en la revision de la cancelacion."})
+        cierre = (db.query(m.Cierre)
+                  .filter_by(servicio_id=servicio.id).first())
+        if cierre and (cierre.facturado_en or cierre.estatus in (
+                m.EstatusCierre.EN_REVISION_IA,
+                m.EstatusCierre.ENVIADO_FINANZAS,
+                m.EstatusCierre.APROBADO, m.EstatusCierre.FACTURADO)):
+            raise HTTPException(409, {
+                "mensaje": "El servicio ya tiene visto bueno: no se puede reabrir",
+                "que_hacer": "Lo que cambie de este dia se corrige con "
+                             "finanzas, no reabriendo el dia."})
+        if cierre:
+            for viatico in _viaticos_del_servicio(db, servicio.id):
+                if viatico.limite_comprobacion == cierre.comprobacion_hasta:
+                    viatico.limite_comprobacion = None
+            db.delete(cierre)
+            db.flush()
+        if servicio.estatus in (m.EstatusServicio.TERMINADO,
+                                m.EstatusServicio.SIN_VISTO_BUENO):
+            # En curso si otro dia ya se trabajo o esta en la calle;
+            # si no, vuelve a esperar su dia, con el estatus que le
+            # toque por sus recursos.
+            otros = [j for e in servicio.equipos for j in e.jornadas
+                     if j.id != jornada.id and j.estatus in (
+                         m.EstatusJornada.TERMINADA,
+                         m.EstatusJornada.EN_CURSO,
+                         m.EstatusJornada.ARRIBADO)]
+            if otros:
+                servicio.estatus = m.EstatusServicio.EN_CURSO
+            else:
+                from app import programacion
+                servicio.estatus = m.EstatusServicio.PLANEADO
+                programacion.evaluar(servicio)
 
     # Se deshace todo lo que escribio el cierre a mano, la hora de
     # inicio incluida. Dejarla era peor que no haber cerrado: quedaba
