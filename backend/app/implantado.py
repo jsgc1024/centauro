@@ -888,6 +888,24 @@ def _cambios_de_personal(db: Session, jornadas: list) -> list[dict]:
     return sorted(salida, key=lambda c: c["desde"] or "")
 
 
+def jornadas_del_mes(contrato: m.ContratoImplantado) -> list:
+    """Las jornadas vivas del mes de este contrato, en orden.
+
+    El implantado usa el mismo equipo mes tras mes, asi que las
+    jornadas del equipo son las de todos sus meses. El resumen para
+    facturar las contaba todas y, en cuanto se abria el mes que sigue,
+    el de cada mes sumaba los dos: se habria cobrado doble. El corte y
+    el resumen salen ahora de esta lista, que es la unica forma de que
+    cuadren.
+    """
+    equipo = contrato.servicio.equipos[0] if contrato.servicio.equipos else None
+    return sorted(
+        [j for j in (equipo.jornadas if equipo else [])
+         if j.fecha.year == contrato.anio and j.fecha.month == contrato.mes
+         and j.estatus != m.EstatusJornada.CANCELADA],
+        key=lambda j: j.fecha)
+
+
 def cierre_del_mes(db: Session, contrato_id: int) -> dict:
     """Que dias se trabajaron y quien los trabajo.
 
@@ -904,12 +922,7 @@ def cierre_del_mes(db: Session, contrato_id: int) -> dict:
     if not contrato:
         raise HTTPException(404, f"No existe el contrato {contrato_id}")
 
-    equipo = contrato.servicio.equipos[0] if contrato.servicio.equipos else None
-    jornadas = sorted(
-        [j for j in (equipo.jornadas if equipo else [])
-         if j.fecha.year == contrato.anio and j.fecha.month == contrato.mes
-         and j.estatus != m.EstatusJornada.CANCELADA],
-        key=lambda j: j.fecha)
+    jornadas = jornadas_del_mes(contrato)
 
     # Con que rol fue cada quien. Se lee de las jornadas y no de la
     # plantilla porque el relevo que cubrio el sabado pudo ir con otro.
@@ -989,9 +1002,8 @@ def resumen_mensual(db: Session, contrato_id: int) -> dict:
     if not contrato:
         raise HTTPException(404, f"No existe el contrato {contrato_id}")
 
-    equipo = contrato.servicio.equipos[0] if contrato.servicio.equipos else None
-    jornadas = equipo.jornadas if equipo else []
-    vivas = [j for j in jornadas if j.estatus != m.EstatusJornada.CANCELADA]
+    # Solo las del mes, las mismas del corte (ver `jornadas_del_mes`).
+    vivas = jornadas_del_mes(contrato)
     base = [j for j in vivas if not j.es_dia_adicional]
     adicionales = [j for j in vivas if j.es_dia_adicional]
 

@@ -81,6 +81,48 @@ def test_solo_un_mes_por_delante(cliente, sesion, datos):
     assert "un solo mes" in str(r.json()["detail"])
 
 
+def test_el_resumen_de_cada_mes_cuenta_solo_sus_dias(cliente, sesion, datos):
+    """El implantado usa el mismo equipo mes tras mes. El resumen para
+    facturar contaba todas sus jornadas: en cuanto se abria el mes que
+    sigue, el de cada mes sumaba los dos y se habria cobrado doble."""
+    alta, h = _alta(cliente, sesion, datos)
+    servicio_id = alta["servicio_id"]
+    este = alta["contrato_id"]
+
+    def resumen(contrato_id):
+        r = cliente.get(f"/implantados/contratos/{contrato_id}/resumen",
+                        headers=h)
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    antes = resumen(este)
+    r = cliente.post(f"/implantados/{servicio_id}/mes-siguiente", headers=h)
+    assert r.status_code == 200, r.text
+    siguiente = r.json()["contrato_id"]
+
+    # El mes en curso no cambia porque se haya abierto el que sigue.
+    despues = resumen(este)
+    assert despues["dias"] == antes["dias"], despues["dias"]
+    assert despues["facturacion"]["total"] == antes["facturacion"]["total"]
+
+    # Y el que sigue cobra solo sus dias habiles, mas la unidad del mes.
+    anio, mes = _siguiente(date.today())
+    habiles = sum(1 for d in range(1, calendar.monthrange(anio, mes)[1] + 1)
+                  if date(anio, mes, d).weekday() < 5)
+    nuevo = resumen(siguiente)
+    assert nuevo["periodo"] == f"{mes:02d}/{anio}"
+    assert nuevo["dias"]["base"] == habiles, nuevo["dias"]
+    assert nuevo["dias"]["total"] == habiles, nuevo["dias"]
+    assert abs(float(nuevo["facturacion"]["total"])
+               - (2900 * habiles + 66000)) < 0.01, nuevo["facturacion"]
+
+    # Y cuadra con el corte, que sale de las mismas jornadas.
+    corte = cliente.get(f"/implantados/contratos/{siguiente}/cierre",
+                        headers=h).json()
+    assert corte["cliente"]["base"] == nuevo["dias"]["base"]
+    assert corte["cliente"]["adicionales"] == nuevo["dias"]["adicionales"]
+
+
 def test_la_cartera_dice_cual_sigue_y_cuales_estan_abiertos(cliente, sesion, datos):
     alta, h = _alta(cliente, sesion, datos)
     servicio_id = alta["servicio_id"]

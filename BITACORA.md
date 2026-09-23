@@ -3472,6 +3472,20 @@ página que nunca se construyó y el enlace apuntaba fijo a centauro.lat.
 El resto de los correos no cambia. El mapeo del botón en `correo.py` se
 queda por si algún día se hace el panel.
 
+## 54. El resumen del mes del implantado, solo con sus días
+
+Hallazgo del 23 de septiembre, al revisar la factura del implantado:
+el resumen para facturar contaba todas las jornadas del equipo, y el
+implantado usa el mismo equipo mes tras mes. En cuanto se abría el mes
+que sigue, el resumen de cada mes sumaba los dos: se habría cobrado
+doble. El corte del mes sí filtraba, así que los dos papeles dejaban
+de cuadrar. No llegó a cobrarse nada: el sistema aún no está en
+producción.
+
+Ahora el corte y el resumen salen de la misma lista,
+`jornadas_del_mes`. La prueba abre el mes que sigue y revisa que cada
+resumen cuente solo sus días y cuadre con el corte.
+
 ## 14. Lo que falta
 
 ### Abierto
