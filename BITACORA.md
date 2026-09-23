@@ -3462,6 +3462,16 @@ Odoo, igual que el personal.
   `odoo.sincronizar_flota` cada hora, a los 27 minutos, después de la
   primera lectura a mano.
 
+## 53. El aviso de contacto, sin seguimiento en vivo
+
+Decisión de Salvador, 23 de septiembre: por ahora no se desarrolla el
+seguimiento en vivo. Al hacer contacto con el ejecutivo, el solicitante
+recibe el aviso de que ya se hizo contacto —«Se hizo contacto con el
+ejecutivo a las 10:40»—, sin botón ni enlace. El botón llevaba a una
+página que nunca se construyó y el enlace apuntaba fijo a centauro.lat.
+El resto de los correos no cambia. El mapeo del botón en `correo.py` se
+queda por si algún día se hace el panel.
+
 ## 14. Lo que falta
 
 ### Abierto

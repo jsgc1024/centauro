@@ -69,7 +69,9 @@ def test_no_se_puede_iniciar_sin_haber_llegado(cliente, sesion, datos):
     assert detalle["que_hacer"]
 
 
-def test_el_contacto_avisa_al_cliente_con_enlace_que_expira(cliente, sesion, datos):
+def test_el_contacto_avisa_al_cliente_sin_enlace(cliente, sesion, datos):
+    """Al hacer contacto sale el aviso, sin seguimiento en vivo: no se
+    desarrolla por ahora (decision de Salvador, 23 sep)."""
     j = _preparar(cliente, sesion, datos, 34)
     inicio = datetime.fromisoformat(j["inicio_programado"])
     h = sesion("juan")
@@ -84,9 +86,8 @@ def test_el_contacto_avisa_al_cliente_con_enlace_que_expira(cliente, sesion, dat
     al_ejecutivo = [n for n in avisos if n["para"] == "ejecutivo"]
 
     assert al_solicitante and al_ejecutivo
-    con_enlace = [n for n in al_solicitante if n["enlace"]]
-    assert con_enlace, "el solicitante debe recibir el enlace de seguimiento"
-    assert con_enlace[0]["expira"] is not None, "el enlace debe expirar"
+    assert not [n for n in al_solicitante if n["enlace"]], \
+        "el aviso de contacto ya no lleva enlace de seguimiento"
 
 
 def test_tablero_lista_lo_que_falta_antes_de_iniciar(cliente, sesion, datos):

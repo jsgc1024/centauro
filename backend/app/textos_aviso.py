@@ -82,8 +82,7 @@ TEXTOS = {
         # --- contacto con el principal
         "inicio_asunto_solicitante": "{folio}: service started",
         "inicio_cuerpo_solicitante": ("Contact was made with the principal "
-                                      "at {hora}. You can follow the "
-                                      "service live here."),
+                                      "at {hora}."),
         "inicio_asunto_principal": "Service started",
         "inicio_cuerpo_principal": "Your service started at {hora}.",
         "boton_seguir": "Follow the service live",
@@ -177,8 +176,7 @@ TEXTOS = {
                          "y está en espera de hacer contacto."),
         "inicio_asunto_solicitante": "{folio}: servicio iniciado",
         "inicio_cuerpo_solicitante": ("Se hizo contacto con el ejecutivo a "
-                                      "las {hora}. Puede seguir el servicio "
-                                      "en vivo desde aquí."),
+                                      "las {hora}."),
         "inicio_asunto_principal": "Servicio iniciado",
         "inicio_cuerpo_principal": "Su servicio inició a las {hora}.",
         "boton_seguir": "Seguir el servicio en vivo",
@@ -269,8 +267,7 @@ TEXTOS = {
                          "e aguarda para fazer contato."),
         "inicio_asunto_solicitante": "{folio}: serviço iniciado",
         "inicio_cuerpo_solicitante": ("O contato com o principal foi feito "
-                                      "às {hora}. Você pode acompanhar o "
-                                      "serviço ao vivo aqui."),
+                                      "às {hora}."),
         "inicio_asunto_principal": "Serviço iniciado",
         "inicio_cuerpo_principal": "Seu serviço começou às {hora}.",
         "boton_seguir": "Acompanhar o serviço ao vivo",

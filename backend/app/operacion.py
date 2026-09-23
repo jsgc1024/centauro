@@ -10,7 +10,6 @@ Candados aprobados:
 """
 import logging
 import math
-import secrets
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException
@@ -44,7 +43,6 @@ MINUTOS_DIFERIDO_REVISABLE = 30
 # cosa. Lo que pase de ahi no se toma como buena: se usa la hora del
 # servidor y lo mira la central.
 MINUTOS_FUTURO_TOLERADO = 2
-HORAS_VIGENCIA_ENLACE = 4          # el enlace de seguimiento expira tras el servicio
 # Que tan antes del inicio programado se acepta un meet and greet puesto
 # a mano por la central. No es el margen de la app --esa marca trae
 # ubicacion y hora del servidor--, sino la cota de lo que alguien puede
@@ -595,9 +593,9 @@ def registrar_hito(db: Session, jornada_id: int, persona_id: int,
         if servicio.estatus in (*m.ANTES_DE_ARRANCAR,
                                 m.EstatusServicio.ARRIBADO):
             servicio.estatus = m.EstatusServicio.EN_CURSO
-        token = secrets.token_urlsafe(16)
-        expira = jornada.fin_programado + timedelta(hours=HORAS_VIGENCIA_ENLACE)
-        enlace = f"https://centauro.lat/seguimiento/{token}"
+        # Solo el aviso de que ya hubo contacto, sin enlace de
+        # seguimiento en vivo: no se desarrolla por ahora (decision de
+        # Salvador, 23 sep).
         del_principal = ta.idioma_de(db, servicio, m.Destinatario.EJECUTIVO)
         del_solicitante = ta.idioma_de(db, servicio,
                                        m.Destinatario.SOLICITANTE)
@@ -606,7 +604,6 @@ def registrar_hito(db: Session, jornada_id: int, persona_id: int,
                         folio=servicio.folio),
                    ta.t(del_solicitante, "inicio_cuerpo_solicitante",
                         hora=f"{ahora:%H:%M}"),
-                   enlace=enlace, expira=expira,
                    pares=_pares_del_equipo(jornada, del_solicitante))
         _notificar(db, jornada, m.Destinatario.EJECUTIVO, m.Canal.AMBOS,
                    ta.t(del_principal, "inicio_asunto_principal"),
