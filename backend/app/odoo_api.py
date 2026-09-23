@@ -74,6 +74,11 @@ class Odoo:
         return self.llamar(modelo, "search_read", domain=dominio,
                            fields=campos, order="id", context=contexto) or []
 
+    def campos(self, modelo: str) -> dict:
+        """Los campos que tiene ese modelo en este Odoo: los que agrego
+        la empresa con Studio pueden no estar."""
+        return self.llamar(modelo, "fields_get", attributes=["type"]) or {}
+
 
 def cliente() -> Odoo:
     if not hay_conexion():

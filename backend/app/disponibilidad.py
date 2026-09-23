@@ -202,7 +202,34 @@ def revisar_vehiculo(
     holgura_minima: float = HOLGURA_MINIMA_HORAS,
 ) -> list[Hallazgo]:
     ocupadas = _jornadas_de_vehiculo(db, vehiculo_id, inicio, fin)
-    return _evaluar(ocupadas, inicio, fin, bloquea_dia, excluir_jornada_id, holgura_minima)
+    return (_en_el_taller(db, vehiculo_id, inicio, fin)
+            + _evaluar(ocupadas, inicio, fin, bloquea_dia,
+                       excluir_jornada_id, holgura_minima))
+
+
+def _en_el_taller(db: Session, vehiculo_id: int, inicio: datetime,
+                  fin: datetime) -> list[Hallazgo]:
+    """La unidad en el taller no se ofrece (seccion 52).
+
+    El implantado ya lo respetaba y el eventual no: al asignar un
+    eventual, un coche desarmado salia libre, y asi se le promete al
+    cliente una unidad que no existe. Sin fecha de salida se da por
+    adentro.
+    """
+    salida = []
+    for fila in (db.query(m.TallerVehiculo)
+                 .filter(m.TallerVehiculo.vehiculo_id == vehiculo_id,
+                         m.TallerVehiculo.desde <= fin.date())
+                 .order_by(m.TallerVehiculo.desde).all()):
+        if fila.hasta is not None and fila.hasta < inicio.date():
+            continue
+        hasta = (f"hasta el {fila.hasta:%d/%m}" if fila.hasta
+                 else "sin fecha de salida")
+        salida.append(Hallazgo(
+            nivel="bloqueo",
+            motivo=f"En el taller desde el {fila.desde:%d/%m}, {hasta}",
+            jornada_id=None, servicio_folio=None, inicio=inicio, fin=fin))
+    return salida
 
 
 def recomendar_personal(

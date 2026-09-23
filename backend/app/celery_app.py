@@ -107,6 +107,12 @@ celery.conf.update(
             "task": "odoo.sincronizar_personal",
             "schedule": crontab(minute=17),
         },
+        # La flota y el taller (seccion 52), diez minutos despues. Tambien
+        # espera a la primera lectura hecha a mano.
+        "odoo-flota": {
+            "task": "odoo.sincronizar_flota",
+            "schedule": crontab(minute=27),
+        },
     },
 )
 
@@ -289,5 +295,18 @@ def sincronizar_personal_de_odoo():
     db = SessionLocal()
     try:
         return odoo_personal.sincronizar_si_toca(db)
+    finally:
+        db.close()
+
+
+@celery.task(name="odoo.sincronizar_flota")
+def sincronizar_flota_de_odoo():
+    """La flota y el taller de Proteccion Ejecutiva, leidos de Odoo."""
+    from app.db import SessionLocal
+    from app import odoo_flota
+
+    db = SessionLocal()
+    try:
+        return odoo_flota.sincronizar_si_toca(db)
     finally:
         db.close()

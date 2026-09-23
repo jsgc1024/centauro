@@ -183,6 +183,42 @@ class CategoriaVehiculo(Base):
     rendimiento_km_litro: Mapped[float] = mapped_column(Numeric(5, 2))
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # Sus fotos representativas, una por color (seccion 52).
+    variantes: Mapped[list["FotoCategoria"]] = relationship(
+        back_populates="categoria", cascade="all, delete-orphan")
+
+    @property
+    def fotos(self) -> list[str]:
+        """Los colores que tienen foto; "" es la base. La lista de
+        categorias dice esto y no carga las imagenes."""
+        return sorted(f.color for f in self.variantes)
+
+
+class FotoCategoria(Base):
+    """La foto representativa de una categoria, en un color.
+
+    Decision de Salvador (23 sep): la unidad no lleva su foto real sino
+    la de su categoria, pero respetando su color --la Suburban negra se
+    ve negra--. La base va sin color ("") y cada color aparte; la
+    unidad ensena la de su color y, si no hay, la base.
+    """
+    __tablename__ = "foto_categoria"
+    __table_args__ = (UniqueConstraint("categoria_id", "color"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    categoria_id: Mapped[int] = mapped_column(
+        ForeignKey("categoria_vehiculo.id", ondelete="CASCADE"), index=True)
+    # Como lo deja color_de(): la primera palabra, sin acentos.
+    color: Mapped[str] = mapped_column(String(40), default="",
+                                       server_default="")
+    # Diferida: saber que colores hay no tiene por que traer las fotos.
+    foto_url: Mapped[str] = mapped_column(Text, deferred=True)
+    cargada_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+    categoria: Mapped[CategoriaVehiculo] = relationship(
+        back_populates="variantes")
+
 
 class Modalidad(Base):
     """Jornada parametrizable por pais: MX full day 12h, BR eventual 10h."""
@@ -502,9 +538,18 @@ class Vehiculo(Base):
     # en un auto de renta es lo primero que pregunta el que lo va a
     # recibir en el estacionamiento.
     marca_modelo: Mapped[str | None] = mapped_column(String(80), nullable=True)
-    # La ve el ejecutivo en el task sheet, igual que la foto del personal.
-    # Viene de Odoo (modulo de flota), no se captura aqui.
+    # La que ve el ejecutivo es la de su categoria en su color (`foto`,
+    # abajo; seccion 52). Esta queda de respaldo: se ensena solo si la
+    # categoria todavia no tiene ninguna.
     foto_url: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    # Con que numero vive en Odoo (seccion 52), cuando se leyo por
+    # ultima vez y cuando Odoo la dio de baja. En UTC y sin zona.
+    odoo_id: Mapped[int | None] = mapped_column(Integer, nullable=True,
+                                                unique=True)
+    odoo_sincronizado_en: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True)
+    baja_odoo_en: Mapped[datetime | None] = mapped_column(DateTime,
+                                                          nullable=True)
 
     # ------------------------------------------------------- subarrendo
     rentado: Mapped[bool] = mapped_column(
@@ -534,6 +579,18 @@ class Vehiculo(Base):
 
     categoria: Mapped[CategoriaVehiculo] = relationship()
     plaza: Mapped[Plaza] = relationship()
+
+    @property
+    def foto(self) -> str | None:
+        """La que se ensena: la de su categoria en su color, o la base
+        de la categoria, o la propia. Decision de Salvador (23 sep):
+        basta una foto representativa, pero del color de la unidad."""
+        from app.odoo_flota_reglas import color_de
+
+        fotos = {f.color: f for f in (self.categoria.variantes
+                                      if self.categoria else [])}
+        elegida = fotos.get(color_de(self.color)) or fotos.get("")
+        return elegida.foto_url if elegida else self.foto_url
 
 
 # ================================================================ SERVICIOS
@@ -1312,6 +1369,8 @@ class TipoAlerta(str, enum.Enum):
     # Odoo archivo a alguien que tenia dias asignados (seccion 51): hay
     # que reemplazarlo.
     PERSONAL_DE_BAJA = "personal_de_baja"
+    # Odoo archivo una unidad que tenia dias asignados (seccion 52).
+    UNIDAD_DE_BAJA = "unidad_de_baja"
 
 
 class Destinatario(str, enum.Enum):

@@ -91,6 +91,8 @@ class CategoriaVehiculoIn(Base):
 class CategoriaVehiculoOut(CategoriaVehiculoIn):
     id: int
     activo: bool
+    # Los colores que tienen foto; "" es la base (seccion 52).
+    fotos: list[str] = []
 
 
 class ModalidadIn(Base):
@@ -289,6 +291,8 @@ class VehiculoIn(Base):
 class VehiculoOut(VehiculoIn):
     id: int
     activo: bool
+    # Si viene de Odoo: lo de Odoo ya no se edita aqui (seccion 52).
+    odoo_id: int | None = None
     rentado: bool = False
     arrendadora: str | None = None
     arrendadora_telefono: str | None = None

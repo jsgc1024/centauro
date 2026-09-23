@@ -1,14 +1,15 @@
 """Registro de todos los catalogos y del tarifario."""
 from datetime import date, datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app import auth
+from app import accesos, auth, imagenes
 from app import models as m
 from app import schemas as s
 from app.db import get_db
+from app.odoo_flota_reglas import color_de
 from app.routers.crud import crud_router
 
 router = APIRouter()
@@ -163,6 +164,59 @@ def consultores(db: Session = Depends(get_db),
     gente.sort(key=lambda p: p.nombre)
     return [{"id": p.id, "nombre": p.nombre, "correo": p.correo,
              "plaza_id": p.plaza_id} for p in gente]
+
+
+# ------------------------------------------------ la foto de la categoria
+
+ADMINISTRA = auth.requiere(m.Rol.ADMIN)
+
+
+@router.put("/categorias-vehiculo/{categoria_id}/foto",
+            tags=["Categorias de vehiculo"],
+            summary="La foto representativa de una categoria, en un color")
+async def poner_foto_de_categoria(
+        categoria_id: int, archivo: UploadFile = File(...),
+        color: str = "", db: Session = Depends(get_db),
+        actor: m.Usuario = Depends(ADMINISTRA)):
+    """Decision de Salvador (23 sep): la unidad no lleva su foto real,
+    lleva la de su categoria en su color. Sin color es la base: la que
+    ensenan los colores que todavia no tienen la suya."""
+    categoria = db.get(m.CategoriaVehiculo, categoria_id)
+    if not categoria:
+        raise HTTPException(404, f"No existe la categoria {categoria_id}")
+    contenido = await imagenes.leer(archivo)
+    color = color_de(color)
+    foto = (db.query(m.FotoCategoria)
+            .filter_by(categoria_id=categoria.id, color=color).first())
+    if foto is None:
+        foto = m.FotoCategoria(categoria_id=categoria.id, color=color)
+        db.add(foto)
+    foto.foto_url = contenido
+    accesos.anotar(db, actor, "foto de categoria", "categoria_vehiculo",
+                   categoria.id, despues=color or "base",
+                   detalle=categoria.nombre)
+    db.commit()
+    db.refresh(categoria)
+    return {"categoria_id": categoria.id, "color": color,
+            "fotos": categoria.fotos}
+
+
+@router.delete("/categorias-vehiculo/{categoria_id}/foto", status_code=204,
+               tags=["Categorias de vehiculo"],
+               summary="Quitar la foto de una categoria en un color")
+def quitar_foto_de_categoria(categoria_id: int, color: str = "",
+                             db: Session = Depends(get_db),
+                             actor: m.Usuario = Depends(ADMINISTRA)):
+    foto = (db.query(m.FotoCategoria)
+            .filter_by(categoria_id=categoria_id, color=color_de(color))
+            .first())
+    if not foto:
+        raise HTTPException(404, "Esa categoria no tiene foto en ese color")
+    accesos.anotar(db, actor, "foto de categoria quitada",
+                   "categoria_vehiculo", categoria_id,
+                   antes=foto.color or "base")
+    db.delete(foto)
+    db.commit()
 
 
 _CATALOGOS = [

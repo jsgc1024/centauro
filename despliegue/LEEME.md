@@ -101,13 +101,21 @@ que Odoo permita (tres meses). **Anota el día que vence**: ese día la
 lectura se detiene y el registro del worker dice «Odoo rechazó la
 llave». La nueva se pega aquí y se reinician `api`, `worker` y `beat`.
 
-La primera lectura del personal se hace a mano, después de ver el
-ensayo; la tarea de cada hora no arranca hasta que exista esa primera:
+La primera lectura del personal y la de la flota se hacen a mano,
+después de ver el ensayo; las tareas de cada hora no arrancan hasta que
+exista esa primera:
 
 ```bash
 docker compose -f docker-compose.prod.yml run --rm api python sincronizar_personal.py
 docker compose -f docker-compose.prod.yml run --rm api python sincronizar_personal.py --aplicar
+docker compose -f docker-compose.prod.yml run --rm api python sincronizar_flota.py
+docker compose -f docker-compose.prod.yml run --rm api python sincronizar_flota.py --aplicar
 ```
+
+Para la flota, el usuario de la conexión también necesita leer
+*Flotilla*. Las fotos de las categorías se cargan una vez desde una
+carpeta (`fotos_de_categoria.py`, instrucciones adentro): la base de
+cada categoría y una por color.
 
 Las contraseñas y la clave de sesión:
 

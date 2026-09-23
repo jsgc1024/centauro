@@ -3423,6 +3423,45 @@ que no existía (`/servicios/…`); ahora abre el servicio en la consola.
 Pendiente: la pantalla del ensayo en la consola; después la flotilla,
 las cotizaciones y la factura en borrador, en ese orden.
 
+## 52. La flota y el taller, leídos de Odoo
+
+Decisión de Salvador, 23 de septiembre: etapa 2 de la conexión con
+Odoo, igual que el personal.
+
+- **Qué entra.** Las unidades con la etiqueta «PROTECCIÓN EJECUTIVA» o
+  «pe». Logística, Dirección y las utilitarias no. La llave es el
+  número interno de Odoo; la primera vez se vincula por placa.
+- **Qué manda Odoo.** Placa, categoría, plaza —la Ubicación; el Estado
+  de México va como Ciudad de México—, marca y modelo, color y año. En
+  el catálogo ya no se editan. Lo vacío no borra. Implantado o
+  eventual, y el costo diario, siguen siendo de Centauro; los autos
+  rentados no se tocan.
+- **Las categorías** son las siete de Odoo. VAN es la «Van 10 pax» y
+  **Sedán** se agrega, con rendimiento y precios de ejemplo como el
+  resto del tarifario hasta cargar los reales.
+- **La foto** no es la de cada camioneta: es la de su categoría,
+  respetando su color. Cada categoría tiene una foto base y una por
+  color; la unidad enseña la de su color y, si no hay, la base. Se
+  cargan en Centauro (`fotos_de_categoria.py`), que al final dice qué
+  colores de la flota todavía no tienen la suya.
+- **Baja.** Si Odoo la archiva, deja de ofrecerse y la central recibe
+  una alerta *unidad dada de baja en Odoo* en cada día que tenía
+  asignado; su consultor, un aviso. Si le quitan la etiqueta, queda
+  pendiente y no se da de baja sola.
+- **El taller.** Las entradas de Flotilla → Servicios de tipo
+  Preventivo, Correctivo o Desgaste natural sacan la unidad de
+  circulación de la fecha de entrada a la de salida; sin salida, se da
+  por adentro. Lo que Odoo cancela o borra deja de bloquear. Lo que se
+  capturó a mano en Centauro no se toca. «Resguardo de Unidad» y los
+  de contrato no cuentan.
+- **El taller bloquea al eventual.** Hasta hoy solo el implantado lo
+  respetaba: al asignar un eventual, una unidad en el taller salía
+  libre. Ahora sale ocupada, con el motivo, y no se puede asignar.
+- **Cómo se lee.** `GET /odoo/flota/ensayo`, `POST
+  /odoo/flota/sincronizar` y `sincronizar_flota.py`; la tarea
+  `odoo.sincronizar_flota` cada hora, a los 27 minutos, después de la
+  primera lectura a mano.
+
 ## 14. Lo que falta
 
 ### Abierto

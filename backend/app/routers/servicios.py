@@ -1248,7 +1248,7 @@ def asignaciones_equipo(equipo_id: int, db: Session = Depends(get_db),
             "rentado": a.vehiculo.rentado,
             "arrendadora": a.vehiculo.arrendadora,
             "arrendadora_telefono": a.vehiculo.arrendadora_telefono,
-            "foto": a.vehiculo.foto_url, "dias": 0})
+            "foto": a.vehiculo.foto, "dias": 0})
         ficha["dias"] += 1
 
     return {"equipo": equipo.alias, "dias": total,
@@ -1290,7 +1290,7 @@ def ver_asignaciones(jornada_id: int, db: Session = Depends(get_db),
                        "rentado": a.vehiculo.rentado,
                        "arrendadora": a.vehiculo.arrendadora,
                        "blindada": a.vehiculo.categoria.blindado,
-                       "foto": a.vehiculo.foto_url}
+                       "foto": a.vehiculo.foto}
                       for a in jornada.vehiculos],
     }
 

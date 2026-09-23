@@ -68,7 +68,7 @@ def _unidad(vehiculo: m.Vehiculo) -> dict:
         "blindada": vehiculo.categoria.blindado if vehiculo.categoria else None,
         "color": vehiculo.color,
         "anio": vehiculo.modelo_anio,
-        "foto_url": vehiculo.foto_url,
+        "foto_url": vehiculo.foto,
     }
 
 

@@ -141,7 +141,8 @@ def _unidades_de(jornada: m.Jornada) -> list[dict]:
         "color": a.vehiculo.color,
         "anio": a.vehiculo.modelo_anio,
         "blindada": a.vehiculo.categoria.blindado,
-        "foto": a.vehiculo.foto_url,
+        # La de su categoria en su color (seccion 52).
+        "foto": a.vehiculo.foto,
     } for a in jornada.vehiculos]
 
 

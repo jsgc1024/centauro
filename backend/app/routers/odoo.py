@@ -8,12 +8,15 @@ El personal de seguridad ya no espera a que se lo manden: Centauro lo lee
 de Odoo (seccion 51). `/personal/ensayo` dice que haria sin guardar nada
 y `/personal/sincronizar` lo guarda; despues lo sigue leyendo solo, cada
 hora. `POST /personal` se queda para quien todavia lo mande.
+
+La flota y el taller, igual (seccion 52): `/flota/ensayo` y
+`/flota/sincronizar`.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models as m
-from app import odoo, odoo_api, odoo_personal, schemas as s
+from app import odoo, odoo_api, odoo_flota, odoo_personal, schemas as s
 from app.auth import requiere
 from app.db import get_db
 
@@ -76,11 +79,13 @@ def _conexion():
         })
 
 
-def _leer_personal(db: Session, ensayo: bool, quien: m.Usuario) -> dict:
+def _leer(modulo, db: Session, ensayo: bool, quien: m.Usuario) -> dict:
+    """El personal o la flota: la misma puerta, el mismo 503 y el
+    mismo 502."""
     cliente = _conexion()
     try:
-        return odoo_personal.sincronizar(db, cliente, ensayo=ensayo,
-                                         quien=None if ensayo else quien)
+        return modulo.sincronizar(db, cliente, ensayo=ensayo,
+                                  quien=None if ensayo else quien)
     except odoo_api.NoResponde as error:
         raise HTTPException(502, {
             "mensaje": str(error),
@@ -95,7 +100,7 @@ def personal_ensayo(db: Session = Depends(get_db),
                     usuario: m.Usuario = Depends(requiere(m.Rol.ADMIN))):
     """Lee Odoo y dice que haria: altas, cambios, bajas y pendientes.
     No guarda nada, ni aqui ni en Odoo."""
-    return _leer_personal(db, True, usuario)
+    return _leer(odoo_personal, db, True, usuario)
 
 
 @router.post("/personal/sincronizar",
@@ -104,4 +109,24 @@ def personal_sincronizar(db: Session = Depends(get_db),
                          usuario: m.Usuario = Depends(requiere(m.Rol.ADMIN))):
     """Lo mismo que el ensayo, guardado. La primera vez se hace a mano,
     despues de ver el ensayo; de ahi en adelante se lee solo cada hora."""
-    return _leer_personal(db, False, usuario)
+    return _leer(odoo_personal, db, False, usuario)
+
+
+# ------------------------------------------------ la flota, leida de Odoo
+
+@router.get("/flota/ensayo",
+            summary="Que cambiaria al leer la flota y el taller, sin guardar")
+def flota_ensayo(db: Session = Depends(get_db),
+                 usuario: m.Usuario = Depends(requiere(m.Rol.ADMIN))):
+    """Lee Odoo y dice que haria con las unidades de Proteccion
+    Ejecutiva y con el taller. No guarda nada, ni aqui ni en Odoo."""
+    return _leer(odoo_flota, db, True, usuario)
+
+
+@router.post("/flota/sincronizar",
+             summary="Leer la flota y el taller de Odoo y guardarlos")
+def flota_sincronizar(db: Session = Depends(get_db),
+                      usuario: m.Usuario = Depends(requiere(m.Rol.ADMIN))):
+    """Lo mismo que el ensayo, guardado. La primera vez se hace a mano;
+    de ahi en adelante se lee sola cada hora."""
+    return _leer(odoo_flota, db, False, usuario)

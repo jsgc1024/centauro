@@ -409,7 +409,7 @@ def test_el_panico_dice_en_que_servicio_va_y_si_lleva_al_principal(
     respuesta ya estaba en el sistema y la central la buscaba abriendo
     el folio en otra pantalla, con la alerta sonando.
     """
-    from datetime import date, datetime, time
+    from datetime import datetime, timedelta
 
     from ayudas import configurar_origen, marcar
     from app import central as motor
@@ -417,10 +417,17 @@ def test_el_panico_dice_en_que_servicio_va_y_si_lleva_al_principal(
 
     h = sesion("consultor")
     hp = sesion("juan")
+    # Todo en el pasado, a la hora que corra la bateria. Con las 07:00
+    # fijas, antes de las siete de la manana las marcas quedaban en el
+    # futuro y el servidor las cambiaba por su propia hora: la prueba
+    # esperaba "07:05" y veia "00:43". Fallaba por la hora, no por
+    # el codigo.
+    inicio = (datetime.now().replace(second=0, microsecond=0)
+              - timedelta(minutes=70))
     servicio = crear_servicio(
         cliente, h, datos,
-        [jornada(date.today(), datos["modalidades"]["full_day"]["id"],
-                 hora="07:00:00")])
+        [jornada(inicio.date(), datos["modalidades"]["full_day"]["id"],
+                 hora=inicio.strftime("%H:%M:00"))])
     j = servicio["equipos"][0]["jornadas"][0]
     asignar(cliente, h, j["id"],
             persona_id=datos["personal"]["Juan Ramirez"]["id"],
@@ -435,9 +442,8 @@ def test_el_panico_dice_en_que_servicio_va_y_si_lleva_al_principal(
         finally:
             db.close()
 
-    hoy = date.today()
-    marcar(cliente, hp, j["id"], "llegada_origen",
-           datetime.combine(hoy, time(7, 5)))
+    llegada = inicio + timedelta(minutes=5)
+    marcar(cliente, hp, j["id"], "llegada_origen", llegada)
     assert cliente.post("/contingencia/alertas", headers=hp,
                         json={"canal": "boton_app", "jornada_id": j["id"],
                               "lat": "19.4270", "lon": "-99.1677"}
@@ -447,15 +453,15 @@ def test_el_panico_dice_en_que_servicio_va_y_si_lleva_al_principal(
     ficha = panico()
     assert ficha["servicio"] == servicio["folio"], ficha
     assert ficha["principal"]["estado"] == "todavia_no", ficha["principal"]
-    assert ficha["principal"]["ultima_marca"] == "07:05"
+    assert ficha["principal"]["ultima_marca"] == f"{llegada:%H:%M}"
 
     # Con el ejecutivo a bordo, la misma alerta se lee distinto.
     marcar(cliente, hp, j["id"], "contacto_ejecutivo",
-           datetime.combine(hoy, time(7, 20)))
+           inicio + timedelta(minutes=20))
     ficha = panico()
     assert ficha["principal"]["estado"] == "a_bordo", ficha["principal"]
 
     # Lo dejó en su destino: sigue el servicio, pero él ya no va adentro.
     marcar(cliente, hp, j["id"], "llegada_destino",
-           datetime.combine(hoy, time(8, 10)))
+           inicio + timedelta(minutes=70))
     assert panico()["principal"]["estado"] == "en_espera"

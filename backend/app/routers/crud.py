@@ -23,6 +23,14 @@ from app import accesos, auth
 from app import models as m
 from app.db import get_db
 
+# Lo que manda Odoo en cada catalogo (secciones 51 y 52): en Centauro no
+# se edita, porque la siguiente lectura lo volveria a poner como estaba.
+DE_ODOO = {
+    m.Persona: ("nombre", "correo", "plaza_id", "odoo_id"),
+    m.Vehiculo: ("placa", "categoria_id", "plaza_id", "marca_modelo",
+                 "color", "modelo_anio"),
+}
+
 
 def _como_se_llama(obj) -> str | None:
     """Con que nombre se reconoce este registro en la bitacora.
@@ -133,17 +141,18 @@ def crud_router(
         if not obj:
             raise HTTPException(404, f"No existe el registro {item_id}")
 
-        # Lo que llega de Odoo se corrige en Odoo (seccion 51): cambiado
-        # aqui, la siguiente lectura lo volveria a poner como estaba.
-        if modelo is m.Persona and obj.odoo_id:
+        # Lo que llega de Odoo se corrige en Odoo (secciones 51 y 52).
+        de_odoo = DE_ODOO.get(modelo)
+        if de_odoo and obj.odoo_id:
             nuevos = datos.model_dump(exclude_unset=True)
-            tocados = [c for c in ("nombre", "correo", "plaza_id", "odoo_id")
+            tocados = [c for c in de_odoo
                        if c in nuevos and nuevos[c] != getattr(obj, c)]
             if tocados:
                 raise HTTPException(409, {
                     "mensaje": "Viene de Odoo: se corrige en Odoo.",
-                    "que_hacer": "Recursos Humanos lo cambia en la ficha del "
-                                 "empleado en Odoo y Centauro lo toma en la "
+                    "que_hacer": "Se cambia en Odoo --Recursos Humanos en la "
+                                 "ficha del empleado, Flotilla en la de la "
+                                 "unidad-- y Centauro lo toma en la "
                                  "siguiente lectura.",
                     "campos": tocados,
                 })
