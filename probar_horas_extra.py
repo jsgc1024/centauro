@@ -5,6 +5,8 @@
                                            revisa como cuenta las horas
     python3 probar_horas_extra.py 123      revisa ese servicio despues de
                                            corregir y dar el visto bueno
+    python3 probar_horas_extra.py cuentas  le pone una contrasena nueva a
+                                           las tres cuentas de prueba
 
 La primera corrida arma un eventual de cuatro dias full day ya pasados,
 del Cliente Demo AAA, con el personal y las unidades de la siembra (nunca
@@ -28,9 +30,18 @@ hora original, el candado del visto bueno y lo que ve finanzas.
 Cada corrida crea un servicio nuevo y no toca los que ya estan. No lleva
 marcas de la calle ni direcciones, asi que no sale a Google ni a Pegasus.
 No imprime nombres.
+
+Entra con la consultora, la central y finanzas de la siembra. Si alguna ya
+no tiene la contrasena de demostracion, la pide en la terminal sin
+mostrarla y no la guarda. Si no se sabe, `cuentas` les pone una nueva a
+las tres: la pide igual, sin mostrarla, y la asienta dentro del
+contenedor, solo si el entorno es de desarrollo y con las reglas de la
+consola (la de demostracion ya no se acepta).
 """
+import getpass
 import json
 import os
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -53,6 +64,7 @@ CLIENTE = "Cliente Demo AAA"
 PERSONAL = ("Juan Ramirez", "Luis Mendoza", "Miguel Torres", "Hector Palacios")
 UNIDADES = ("ABC-1234", "ABC-5678")
 PRESENTACION = "07:00:00"
+DEMO = "centauro2026"   # la de la siembra; el README la dice
 MOTIVO = ("Prueba de horas extra (seccion 65): el telefono no marco y la "
           "central asienta las horas que confirmo el equipo")
 
@@ -65,7 +77,7 @@ CASOS = [
     ("termina 1 min despues de que corran", 0, 1, 1),
 ]
 
-fallas = []
+fallas, avisos = [], []
 
 
 def alto(mensaje):
@@ -93,9 +105,14 @@ def pedir(metodo, ruta, cuerpo=None, token=None):
         alto(f"No contesta el sistema en {BASE}. Esta arriba docker compose?")
 
 
-def entrar(quien):
-    datos = urllib.parse.urlencode({"username": CUENTAS[quien],
-                                    "password": "centauro2026"}).encode()
+# Las contrasenas que se escribieron en esta corrida: solo en memoria, para
+# no pedir tres veces la misma.
+_escritas = []
+
+
+def _token(correo, clave):
+    datos = urllib.parse.urlencode({"username": correo,
+                                    "password": clave}).encode()
     req = urllib.request.Request(
         BASE + "/auth/token", data=datos, method="POST",
         headers={"Content-Type": "application/x-www-form-urlencoded"})
@@ -103,9 +120,87 @@ def entrar(quien):
         with urllib.request.urlopen(req) as r:
             return json.loads(r.read())["access_token"]
     except urllib.error.HTTPError as e:
-        alto(f"La cuenta de prueba de {quien} no entra ({e.code}).")
+        if e.code == 403:
+            alto(f"La cuenta {correo} esta desactivada en desarrollo.")
+        if e.code == 429:
+            alto(f"Demasiados intentos con {correo}: espera 15 minutos.")
+        return None
     except urllib.error.URLError:
         alto(f"No contesta el sistema en {BASE}. Esta arriba docker compose?")
+
+
+def entrar(quien):
+    correo = CUENTAS[quien]
+    for clave in [DEMO] + _escritas:
+        token = _token(correo, clave)
+        if token:
+            return token
+    if not sys.stdin.isatty():
+        alto(f"{correo} no entra con la contrasena de demostracion.")
+    clave = getpass.getpass(f"Contrasena de {correo} en desarrollo "
+                            "(no se ve al escribirla): ")
+    token = _token(correo, clave)
+    if not token:
+        alto(f"{correo} tampoco entra con esa. Si no la sabes, ponle una "
+             "nueva a las tres cuentas de prueba:\n\n"
+             "    python3 probar_horas_extra.py cuentas\n")
+    _escritas.append(clave)
+    return token
+
+
+# Lo que corre dentro del contenedor para `cuentas`. La contrasena entra
+# por la entrada estandar: no queda en la linea de comandos ni en el
+# ambiente. Se revisa con las mismas reglas de la consola.
+EN_EL_CONTENEDOR = r"""
+import sys
+from fastapi import HTTPException
+from app.config import es_desarrollo, settings
+from app.db import SessionLocal
+from app import contrasenas, models as m
+if not es_desarrollo(settings):
+    sys.exit("Esto no es desarrollo: no se toca ninguna cuenta.")
+clave = sys.stdin.readline().rstrip("\n")
+try:
+    contrasenas.validar(clave)
+except HTTPException as e:
+    d = e.detail
+    sys.exit("Esa no sirve: " + (d.get("mensaje") if isinstance(d, dict)
+                                 else str(d)))
+with SessionLocal() as db:
+    for correo in sys.argv[1:]:
+        u = db.query(m.Usuario).filter_by(correo=correo).first()
+        if not u:
+            print("  " + correo + ": no existe")
+        elif not u.activo:
+            print("  " + correo + ": esta desactivada, no se toca")
+        else:
+            contrasenas._asentar(db, u, clave)
+            print("  " + correo + ": lista")
+    db.commit()
+"""
+
+
+def cuentas():
+    print("Una contrasena nueva para las tres cuentas de prueba de tu "
+          "desarrollo:")
+    for correo in CUENTAS.values():
+        print("  " + correo)
+    print()
+    clave = getpass.getpass("Contrasena nueva (no se ve al escribirla): ")
+    if getpass.getpass("Otra vez: ") != clave:
+        alto("No coinciden. No se cambio nada.")
+    try:
+        r = subprocess.run(
+            ["docker", "compose", "exec", "-T", "api",
+             "python3", "-c", EN_EL_CONTENEDOR, *CUENTAS.values()],
+            cwd=os.path.dirname(os.path.abspath(__file__)),
+            input=clave + "\n", text=True)
+    except FileNotFoundError:
+        alto("No encontre docker en esta terminal.")
+    if r.returncode != 0:
+        alto("No se cambio nada.")
+    print("\nListo. Ahora corre la prueba y, cuando te pida la contrasena, "
+          "escribe esta misma:\n\n    python3 probar_horas_extra.py\n")
 
 
 def detalle(cuerpo):
@@ -137,6 +232,7 @@ def revisar(ok, texto, nota=None):
 
 def aviso(texto):
     print("  AVISO  " + texto)
+    avisos.append(texto)
 
 
 def hhmm(iso):
@@ -388,7 +484,11 @@ def despues(sid):
                     f"{hhmm(c['despues'])}, con la hora original y el motivo")
         if h["por_que_no"] == "visto_bueno" and cerrado is None:
             cerrado = (j, h)
-    revisar(correcciones > 0, f"{correcciones} correccion(es) de horas")
+    if correcciones:
+        revisar(True, f"{correcciones} correccion(es) de horas")
+    else:
+        aviso("todavia no hay correcciones: corrige el dia 2 en la consola y "
+              "corre esto otra vez")
 
     print("\n2. El candado del visto bueno")
     if cerrado is None:
@@ -414,9 +514,10 @@ def despues(sid):
                             token=finanzas), "leer la revision como finanzas")
     corregidas = [o for o in revision.get("observaciones", [])
                   if o.get("clave") == "horas_corregidas"]
-    revisar(len(corregidas) == correcciones,
-            f"ve {len(corregidas)} correccion(es) de horas, con quien, "
-            f"cuando y el motivo")
+    if correcciones or corregidas:
+        revisar(len(corregidas) == correcciones,
+                f"ve {len(corregidas)} correccion(es) de horas, con quien, "
+                f"cuando y el motivo")
     for o in corregidas:
         d = o["datos"]
         cual = "arranque" if d["campo"] == "inicio" else "termino"
@@ -430,6 +531,9 @@ def despues(sid):
 
 
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "cuentas":
+        cuentas()
+        sys.exit(0)
     if len(sys.argv) > 1:
         if not sys.argv[1].isdigit():
             alto("Pasa el id del servicio, el numero que imprimio la primera "
@@ -437,6 +541,10 @@ if __name__ == "__main__":
         despues(int(sys.argv[1]))
     else:
         armar()
-    print("\n" + ("Todo cuadra." if not fallas else
-                  f"{len(fallas)} cosa(s) no cuadran; pegame la salida."))
+    if fallas:
+        print(f"\n{len(fallas)} cosa(s) no cuadran; pegame la salida.")
+    elif avisos:
+        print("\nLo que se reviso cuadra; mira los avisos de arriba.")
+    else:
+        print("\nTodo cuadra.")
     sys.exit(1 if fallas else 0)

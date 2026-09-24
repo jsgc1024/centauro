@@ -4047,6 +4047,11 @@ la unidad no las cobre. Después se corrige una hora y se da el visto bueno
 en la consola, como consultora, y `python3 probar_horas_extra.py <id>`
 revisa la corrección con su hora original, el candado del visto bueno y lo
 que ve finanzas. Cada corrida crea un servicio nuevo; no imprime nombres.
+Si una cuenta de prueba ya no tiene la contraseña de demostración, la
+pide en la terminal sin mostrarla y no la guarda; si nadie la sabe,
+`python3 probar_horas_extra.py cuentas` les pone una nueva a la
+consultora, la central y finanzas de la siembra, dentro del contenedor,
+solo en desarrollo y con las reglas de la consola.
 
 ## 14. Lo que falta
 
