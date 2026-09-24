@@ -38,6 +38,7 @@ from app import auditoria
 from app import cierre as motor
 from app import comisiones
 from app import facturacion
+from app import horas_extra
 from app import implantado as motor_implantado
 from app import models as m
 from app import nomina
@@ -354,7 +355,8 @@ def comparar(db: Session, contrato: m.ContratoImplantado) -> dict:
     precios = {"dia": _d(contrato.precio_dia_personal),
                "dia_adicional": _d(contrato.precio_dia_adicional),
                "unidad_mes": _d(contrato.precio_mes_vehiculo),
-               "mes_completo": _d(contrato.precio_mes_completo)}
+               "mes_completo": _d(contrato.precio_mes_completo),
+               "hora_extra": _d(contrato.precio_hora_extra)}
     mes_completo = (contrato.esquema
                     == m.EsquemaCotizacionImplantado.MES_COMPLETO)
     desviaciones, notas = [], []
@@ -392,6 +394,21 @@ def comparar(db: Session, contrato: m.ContratoImplantado) -> dict:
     if adicionales:
         notas.append(f"{adicionales} dia(s) adicional(es): "
                      + ", ".join(corte["cliente"]["fechas_adicionales"]))
+
+    # Las horas extra del mes (seccion 65): se cobran aparte, por hora o
+    # fraccion, con el precio de los terminos, en los dos esquemas. Solo
+    # los dias que tuvieron gente: el que nadie cubrio no se trabajo.
+    con_extra = [j for j in motor_implantado.jornadas_del_mes(contrato)
+                 if j.personal and horas_extra.horas(j)]
+    horas_mes = sum(horas_extra.horas(j) for j in con_extra)
+    sin_precio = []
+    if horas_mes:
+        importe_extra = precios["hora_extra"] * horas_mes
+        desglose["horas_extra"] = importe_extra
+        trabajado += importe_extra
+        if not contrato.precio_hora_extra:
+            sin_precio.append({"fecha": None, "descripcion": periodo(contrato),
+                               "horas": horas_mes})
 
     # El dia que existio y nadie cubrio: ni se cobra ni se paga, pero es
     # un dia que el cliente pidio y no tuvo. Se explica antes de facturar.
@@ -433,7 +450,11 @@ def comparar(db: Session, contrato: m.ContratoImplantado) -> dict:
         "trabajado": {"dias_base": base, "dias_adicionales": adicionales,
                       "fechas_adicionales":
                           corte["cliente"]["fechas_adicionales"],
+                      "horas_extra": horas_mes,
+                      "dias_con_extra": len(con_extra),
                       "importe": trabajado, "desglose": desglose},
+        "horas_extra_por_dia": motor.horas_por_dia(con_extra),
+        "horas_extra_sin_precio": sin_precio,
         "diferencia": trabajado - contratado,
         "viaticos": {"asignado": asignado, "comprobado": comprobado,
                      "devuelto": devuelto,
@@ -494,6 +515,11 @@ def revisar(db: Session, contrato: m.ContratoImplantado,
                        else "Justifica la desviacion o corrige el mes.")})
 
     dias = _dias(db, contrato)
+    # Las horas extra del mes en horas, las corregidas y si falta su
+    # precio (seccion 65). Ninguna frena el visto bueno.
+    observaciones.extend(horas_extra.observaciones(
+        db, dias, comparativo["horas_extra_por_dia"],
+        comparativo["horas_extra_sin_precio"], del_mes=True))
     for j in dias:
         if j.estatus != m.EstatusJornada.CANCELADA and not j.fin_real:
             observaciones.append({
@@ -726,6 +752,15 @@ def armar_factura(db: Session, cierre: m.Cierre) -> dict:
                 "descripcion": f"Unidad {de_que}, mes completo",
                 "cantidad": 1, "precio": str(precios["unidad_mes"]),
                 "importe": str(precios["unidad_mes"])})
+
+    # Las horas extra van en su renglon en los dos esquemas (seccion 65).
+    if trabajado.get("horas_extra") and precios["hora_extra"]:
+        conceptos.append({
+            "tipo": "horas_extra",
+            "descripcion": f"Horas extra {de_que}",
+            "cantidad": trabajado["horas_extra"],
+            "precio": str(precios["hora_extra"]),
+            "importe": str(trabajado["desglose"]["horas_extra"])})
 
     a_facturar = comparativo["a_facturar"]
     if a_facturar["viaticos"]:

@@ -1929,6 +1929,8 @@ function tarjetaTerminos(contratoId, periodo, alGuardar) {
     const vehiculo = numero(x.precio_mes_vehiculo);
     const completo = numero(x.precio_mes_completo);
     const gastos = numero(x.gastos_mes);
+    // La hora extra del mes, aparte y en los dos esquemas (seccion 65).
+    const horaExtra = numero(x.precio_hora_extra);
 
     const campoDe = (texto, control) => h("div", { clase: "campo" },
       h("label", {}, texto), control);
@@ -1937,12 +1939,13 @@ function tarjetaTerminos(contratoId, periodo, alGuardar) {
                    campoDe(t("cie_vehiculo_al_mes"), vehiculo)];
     const deMes = campoDe(t("cie_precio_del_mes"), completo);
     const deGastos = campoDe(t("cie_gastos_del_mes"), gastos);
+    const deHoraExtra = campoDe(t("cie_hora_extra"), horaExtra);
     const rejilla = h("div", { clase: "rejilla cuatro" });
     const acomodar = () => {
       const esDia = porDia.querySelector("input").checked;
       const esAlzado = alzado.querySelector("input").checked;
       rejilla.replaceChildren(...(esDia ? deDia : [deMes]),
-                              esAlzado ? deGastos : h("div"));
+                              esAlzado ? deGastos : h("div"), deHoraExtra);
     };
     for (const r of [porDia, mesCompleto, alzado, netos]) {
       r.querySelector("input").addEventListener("change", acomodar);
@@ -1964,6 +1967,7 @@ function tarjetaTerminos(contratoId, periodo, alGuardar) {
             precio_mes_completo: valor(completo),
             viaticos_incluidos: esAlzado,
             gastos_mes: esAlzado ? valor(gastos) : null,
+            precio_hora_extra: valor(horaExtra),
           });
           mensaje(t("cie_terminos_guardados"));
           if (alGuardar) alGuardar();

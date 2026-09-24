@@ -75,14 +75,32 @@ def _ajuste(cliente, sesion, esperado=201, **campos):
     return r
 
 
-def _alargar_el_dia(cliente, sesion, jornada_id, horas):
+def _regresar(cliente, sesion, servicio_id):
+    """Finanzas regresa el servicio a operacion.
+
+    Desde la seccion 65 las horas de un dia ya no se mueven con el visto
+    bueno dado: la factura salio con ellas. Para corregirlas, finanzas
+    lo regresa --y la factura se anula-- y el dia se corrige ahi.
+    """
+    estado = cliente.get(f"/cierre/servicio/{servicio_id}/estado",
+                         headers=sesion("consultor")).json()
+    r = cliente.post(f"/cierre/{estado['cierre_id']}/devolver",
+                     headers=sesion("finanzas"),
+                     json={"motivo": "El dia fue mas largo de lo que dice la "
+                                     "marca de fin"})
+    assert r.status_code == 200, r.text
+
+
+def _alargar_el_dia(cliente, sesion, jornada_id, horas, servicio_id):
     """Mueve la marca de fin para que el dia salga con horas extra.
 
     Es el escenario que de verdad genera una correccion: el dia ya se
-    pago, la central ajusta la hora de termino, y lo que corresponde
-    sube. Inventar el ajuste a mano no prueba nada, porque el motor
-    compara contra la tarifa y no contra lo que alguien tecleo.
+    pago, finanzas regresa el servicio, la central ajusta la hora de
+    termino, y lo que corresponde sube. Inventar el ajuste a mano no
+    prueba nada, porque el motor compara contra la tarifa y no contra lo
+    que alguien tecleo.
     """
+    _regresar(cliente, sesion, servicio_id)
     h = sesion("central")
     b = cliente.get(f"/operacion/jornadas/{jornada_id}/bitacora",
                     headers=h).json()
@@ -107,7 +125,8 @@ def test_la_misma_diferencia_no_se_arrastra_dos_veces(cliente, sesion, datos):
     h = sesion("finanzas")
 
     # El dia resulta que fue mas largo: ahora corresponde mas.
-    _alargar_el_dia(cliente, sesion, j["id"], horas=3)
+    _alargar_el_dia(cliente, sesion, j["id"], horas=3,
+                    servicio_id=servicio["id"])
 
     r = cliente.post(f"/nomina/servicio/{servicio['id']}/revisar-diferencias",
                      headers=h)
@@ -150,7 +169,8 @@ def test_un_descuento_de_viaticos_no_tapa_la_correccion_del_dia(cliente, sesion,
             motivo="Viaticos sin comprobar")
 
     # Y el mismo dia resulta que fue mas largo.
-    _alargar_el_dia(cliente, sesion, j["id"], horas=2)
+    _alargar_el_dia(cliente, sesion, j["id"], horas=2,
+                    servicio_id=servicio["id"])
     cliente.post(f"/nomina/servicio/{servicio['id']}/revisar-diferencias",
                  headers=h)
 
@@ -274,6 +294,7 @@ def test_la_hora_original_es_la_primera_no_la_anterior(cliente, sesion, datos):
     h = sesion("central")
     servicio, j, _, _pais = _dia_pagado(cliente, sesion, datos)
     jornada_id = j["id"]
+    _regresar(cliente, sesion, servicio["id"])
 
     b = cliente.get(f"/operacion/jornadas/{jornada_id}/bitacora",
                     headers=h).json()

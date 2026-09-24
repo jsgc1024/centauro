@@ -499,6 +499,16 @@ class ServicioOut(Base):
     equipos: list[EquipoOut] = []
 
 
+class HorasDelDiaIn(Base):
+    """La correccion de las horas de un dia ya trabajado (seccion 65): la
+    hora en que arranco con el ejecutivo, la de termino, o las dos. El
+    motivo es obligatorio; lo lee finanzas en el visto bueno."""
+    inicio: datetime | None = None
+    fin: datetime | None = None
+    # Cabe en la columna: un motivo mas largo tronaba la correccion.
+    justificacion: str = Field(max_length=400)
+
+
 class DiaIn(Base):
     """Un dia que se agrega o se corrige con el servicio ya dado de alta."""
     fecha: date | None = None

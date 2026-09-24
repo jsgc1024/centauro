@@ -5,7 +5,6 @@ cotizados, horas extra, y viaticos mal dispersados o sin comprobar.
 Solo las desviaciones sin respaldo detonan el escalamiento.
 """
 import logging
-import math
 from datetime import datetime, timedelta
 from decimal import Decimal
 
@@ -13,6 +12,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app import cotizacion as cot
+from app import horas_extra
 from app import models as m
 from app import reloj
 
@@ -43,12 +43,10 @@ def factor_festivo(db: Session, pais_id: int, fecha) -> Decimal:
 
 
 def _horas_extra(jornada: m.Jornada) -> int:
-    """Horas extra completas despues del fin programado.
-    Las 12 horas son exactas, sin tolerancia."""
-    if not jornada.modalidad.aplica_horas_extra or not jornada.fin_real:
-        return 0
-    exceso = (jornada.fin_real - jornada.fin_programado).total_seconds() / 3600
-    return max(0, math.ceil(exceso)) if exceso > 0 else 0
+    """Las horas extra del dia, hora o fraccion. La regla vive en
+    `horas_extra` (seccion 65): corren desde la presentacion, o desde el
+    meet and greet si fue antes."""
+    return horas_extra.horas(jornada)
 
 
 def ejecutado(db: Session, servicio: m.Servicio, tarifario_id: int) -> dict:
@@ -56,6 +54,10 @@ def ejecutado(db: Session, servicio: m.Servicio, tarifario_id: int) -> dict:
     detalle = []
     total = CERO
     horas_extra_total = 0
+    importe_extra_total = CERO
+    # Los dias con horas extra, para que el visto bueno las diga en
+    # horas y no solo en dinero (seccion 65).
+    dias_con_extra = []
 
     for equipo in servicio.equipos:
         for j in equipo.jornadas:
@@ -67,6 +69,8 @@ def ejecutado(db: Session, servicio: m.Servicio, tarifario_id: int) -> dict:
 
             extras = _horas_extra(j)
             horas_extra_total += extras
+            if extras:
+                dias_con_extra.append(j)
 
             for a in j.personal:
                 # La asignacion relevada no se le cobra al cliente. Ese
@@ -88,9 +92,15 @@ def ejecutado(db: Session, servicio: m.Servicio, tarifario_id: int) -> dict:
                 if extras and tarifa.precio_hora_extra:
                     extra_importe = _d(tarifa.precio_hora_extra) * extras
                     importe += extra_importe
+                    importe_extra_total += extra_importe
                     linea["horas_extra"] = extras
                     linea["importe_horas_extra"] = extra_importe
                     linea["importe"] = importe
+                elif extras:
+                    # Sin precio de hora extra no se cobran, y antes nadie
+                    # se enteraba: a la gente si se le pagan. El revisor
+                    # lo dice en el visto bueno.
+                    linea["horas_extra_sin_precio"] = extras
                 detalle.append(linea)
                 total += importe
 
@@ -108,7 +118,9 @@ def ejecutado(db: Session, servicio: m.Servicio, tarifario_id: int) -> dict:
                                 "cantidad": 1, "importe": importe})
                 total += importe
 
-    return {"detalle": detalle, "total": total, "horas_extra": horas_extra_total}
+    return {"detalle": detalle, "total": total, "horas_extra": horas_extra_total,
+            "importe_horas_extra": importe_extra_total,
+            "dias_con_extra": dias_con_extra}
 
 
 # ---------------------------------------------------------------- comparativo
@@ -260,6 +272,26 @@ def desviaciones_del_dinero(viaticos: list) -> list[dict]:
     return desviaciones
 
 
+def horas_por_dia(jornadas: list) -> list[dict]:
+    """Las horas extra de cada dia, dichas en horas y con su porque: a que
+    hora corrian las horas contratadas y a que hora termino. Lo mismo
+    para el eventual y para el mes del implantado."""
+    salida = []
+    for j in sorted(jornadas, key=lambda x: (x.fecha, x.id)):
+        tope = horas_extra.limite(j)
+        salida.append({
+            "jornada_id": j.id, "fecha": j.fecha.isoformat(),
+            "equipo": j.equipo.alias if j.equipo else None,
+            "horas": horas_extra.horas(j),
+            "corren_hasta": f"{tope:%H:%M}" if tope else None,
+            "termino": f"{j.fin_real:%H:%M}" if j.fin_real else None,
+            "adelantado": bool(j.inicio_real and j.inicio_programado
+                               and j.inicio_real < j.inicio_programado),
+            "con_el_ejecutivo": (f"{j.inicio_real:%H:%M}"
+                                 if j.inicio_real else None)})
+    return salida
+
+
 def comparar(db: Session, servicio_id: int) -> dict:
     servicio = db.get(m.Servicio, servicio_id)
     if not servicio:
@@ -370,6 +402,15 @@ def comparar(db: Session, servicio_id: int) -> dict:
                        "moneda": cotizacion.moneda.value,
                        "viaticos_incluidos": cotizacion.viaticos_incluidos},
         "ejecutado": {"total": real["total"], "horas_extra": real["horas_extra"],
+                      "importe_horas_extra": real["importe_horas_extra"],
+                      "horas_extra_por_dia": horas_por_dia(
+                          real["dias_con_extra"]),
+                      "horas_extra_sin_precio": [
+                          {"fecha": l["fecha"], "equipo": l["equipo"],
+                           "descripcion": l["descripcion"],
+                           "horas": l["horas_extra_sin_precio"]}
+                          for l in real["detalle"]
+                          if l.get("horas_extra_sin_precio")],
                       "dias": len({l["fecha"] for l in real["detalle"]}),
                       "equipos": len({l["equipo"] for l in real["detalle"]})},
         "diferencia": real["total"] - servicio_cotizado,
@@ -435,7 +476,10 @@ def rentabilidad(db: Session, servicio_id: int) -> dict:
                                            modalidad_id=j.modalidad_id).first())
                 if comision:
                     costo_personal += _d(comision.monto) * factor
-                    if extras and comision.monto_hora_extra:
+                    # Las horas extra son de quien se quedo: al relevado
+                    # no se le pagan (ver `nomina.pago_de_jornada`), asi
+                    # que tampoco le cuestan a la empresa.
+                    if extras and comision.monto_hora_extra and not a.relevado_en:
                         costo_personal += _d(comision.monto_hora_extra) * extras * factor
 
             for a in j.vehiculos:

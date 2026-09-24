@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app import cierre as motor
 from app import cotizacion as cot
+from app import horas_extra
 from app import models as m
 from app import reloj
 
@@ -81,10 +82,9 @@ def revisar(db: Session, servicio_id: int, ahora: datetime | None = None) -> dic
         if d["tipo"] in DEL_DINERO and not d.get("respaldada"):
             continue
         if d["tipo"] in INFORMATIVAS:
-            observaciones.append({
-                "nivel": INFO, "asunto": "Horas extra",
-                "mensaje": d["descripcion"],
-                "accion": "Se cobra por tarifa; no requiere justificacion."})
+            # Se dicen abajo, dia por dia y en horas (seccion 65): el
+            # renglon de dinero ("cobra 960 mas de lo cotizado") no decia
+            # cuantas horas ni por que.
             continue
         # El cierre con descuento ya viene resuelto: hay decision tomada,
         # motivo escrito y dinero asignado. No hay nada que justificar.
@@ -98,6 +98,13 @@ def revisar(db: Session, servicio_id: int, ahora: datetime | None = None) -> dic
             "nivel": GRAVE, "asunto": d["tipo"],
             "mensaje": d["descripcion"],
             "accion": "Recotiza y autoriza con el cliente, o justifica la desviacion."})
+
+    # --- las horas extra en horas, las corregidas y las que no tienen
+    # precio (seccion 65). Ninguna frena el visto bueno.
+    ejecutado = comparativo["ejecutado"]
+    observaciones.extend(horas_extra.observaciones(
+        db, [j for e in servicio.equipos for j in e.jornadas],
+        ejecutado["horas_extra_por_dia"], ejecutado["horas_extra_sin_precio"]))
 
     # --- jornadas sin cerrar
     for equipo in servicio.equipos:

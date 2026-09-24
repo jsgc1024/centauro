@@ -669,7 +669,7 @@ AYUDA_POR_PANTALLA = {
     # flota--, el de lo pendiente y el de las ultimas lecturas.
     "odoo.js": 4,
     "panorama.js": 6,
-    "servicio.js": 9,
+    "servicio.js": 11,
 
     # --- las que no, y por que
     "api.js": 0,        # habla con el servidor; no pinta nada

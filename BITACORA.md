@@ -3920,6 +3920,121 @@ vinculadas, y quien se vincula y además trae algo distinto sale en las
 dos listas: se contaba dos veces. Ahora cada persona o unidad cuenta una
 vez, en el renglón y en la pantalla.
 
+## 65. Las horas extra: cuándo corren, cómo se ven y quién las corrige
+
+Pedido de Salvador, 24 de septiembre: «podrías darle una revisada a las
+horas extra. quiero revisar que el sistema sí las esté detectando, que se
+estén calculando de la forma correcta, que se visualicen en el panel y
+también que puedan editarse de ser necesario por el consultor».
+
+La revisión encontró que las cuentas cuadraban —el mismo número de horas
+en la factura y en la nómina, y las del relevo para quien se quedó—, con
+estos huecos:
+
+- El aviso preventivo de Brasil decía los minutos con el reloj de México:
+  «Faltam 199 minutos» cuando faltaban 19.
+- Pasado el fin programado, la central ya no veía nada: un equipo con una
+  hora extra encima salía normal, en verde.
+- El panel del día enseñaba la marca de fin y nada más. El visto bueno
+  decía las horas extra en dinero («cobra 960 más de lo cotizado») y no
+  en horas.
+- El consultor no podía corregirlas, pero sí mover la hora o la modalidad
+  de un día ya trabajado desde la tabla de días, sin motivo y aun con la
+  factura en Odoo. Y la central podía ajustar el fin después del visto
+  bueno: reabrir tenía ese candado, ajustar la marca no.
+- Si la tarifa del rol no traía precio de hora extra, no se cobraban y
+  nadie se enteraba; a la gente sí se le pagaban.
+- En el implantado la gente cobraba sus horas extra y la factura del mes
+  no las tenía.
+- El «?» del meet and greet a mano decía que de esa hora salían las horas
+  extra, y el cálculo nunca la usaba.
+
+### Las decisiones de Salvador
+
+- **Las horas del día corren desde la presentación, o desde el meet and
+  greet si fue antes.** Si el ejecutivo llega tarde, la espera cuenta: el
+  equipo estaba a la hora contratada. Si arranca antes, esa hora de más se
+  cobra y se paga.
+- **La unidad no cobra hora extra**; solo el personal.
+- **El consultor corrige las horas de un día de su servicio**, con motivo,
+  hasta su visto bueno. La hora original se queda con su nombre y el
+  motivo, y el visto bueno se lo dice a finanzas.
+- **En el implantado se cobran en la factura del mes**, con su precio en
+  los términos.
+
+### Lo que cambió
+
+- **La regla vive en un solo lugar**, `app/horas_extra.py`, y la usan el
+  cobro, la nómina, la rentabilidad, el aviso preventivo, la central y el
+  panorama. Hora o fracción, por minutos completos: lo que se ve como
+  19:00 no genera nada y 19:01 ya es una hora. Si dos del equipo marcan
+  el meet and greet, cuenta el primero.
+- **El aviso preventivo** sale contra el límite de las horas del día y con
+  el reloj del país. Un medio día ya no sale «por entrar en horas extra».
+- **La central** ve «En horas extra · 1 h 10 min, desde las 18:30»
+  mientras el equipo siga en la calle.
+- **El panel del día** tiene «Horas del día»: lo programado, desde cuándo
+  corren, a qué hora terminó, cuántas extra y quién las corrigió. «Corregir
+  horas» sale para el consultor del servicio hasta su visto bueno, y para
+  la central y dirección de operaciones; la vista previa dice cuántas
+  quedarían. Cada corrección deja su renglón en `correccion_horas` —la
+  hora que había, la que quedó, quién y por qué—, el ajuste de la central
+  en la bitácora también, y la marca se dice «corregida, la marca fue a
+  las …». Nadie corrige un día que trabajó.
+- **Candados.** La hora, la fecha y la modalidad de un día que ya arrancó
+  no se mueven desde la tabla de días, el vuelo ni la hora de mañana. Con
+  el visto bueno dado, el meet and greet y el fin ya no se ajustan, igual
+  que no se reabre el día. Si hay que corregir después, finanzas regresa
+  el servicio —la factura se anula— y se corrige ahí.
+- **El visto bueno las dice en horas**: «incluye horas extra · 3 h»
+  dentro del servicio, y en «Para revisar» cada día con su porqué, las
+  horas corregidas con quién y su motivo, y las que no tienen precio.
+  Finanzas ve lo mismo al aprobar.
+- **El implantado**: «Hora extra» en los términos del mes —pasa sola al
+  mes siguiente—, su renglón en el visto bueno del mes y en la factura, y
+  el aviso si hubo horas sin precio. Los meses que ya existen quedan sin
+  precio hasta que alguien lo ponga. La factura del mes lleva un renglón
+  nuevo, `horas_extra`: cuando se conecte la facturación, en Odoo necesita
+  su producto.
+- El motivo de la corrección en la bitácora pide diez letras, las mismas
+  que el servidor: el botón dejaba pasar cinco y luego rebotaba.
+- Migración `c3e7a1f94b2d`: la tabla `correccion_horas` y
+  `contrato_implantado.precio_hora_extra`.
+
+### Lo que salió al revisar el cambio
+
+Una segunda revisión, de puerta en puerta, buscó por dónde más se movían
+las horas de un día:
+
+- **La app mandaba la hora UTC sin decirlo.** Se cortaba la «Z» y el
+  servidor la leía como hora de pared: en México cada marca llegaba seis
+  horas «en el futuro» —se cambiaba por la del servidor, se mandaba a
+  revisar y al agente le salía que su reloj iba adelantado— y la que
+  salía de la cola más de seis horas después se quedaba seis horas tarde,
+  con sus horas extra. Ahora la app manda el instante con su zona, el
+  servidor lo dice en la hora del país, las marcas que ya estaban en la
+  cola se corrigen antes de salir, y la versión del caché de la app sube
+  a `v8` para que los teléfonos la tomen. No se había visto porque la app
+  no se ha probado en un teléfono de verdad.
+- **El meet and greet es el primero y el fin es el último**, también al
+  ajustar una marca: ajustar la de un compañero ya no mueve el día si
+  otra marca manda, y la marca de fin que llega tarde de la cola con una
+  hora anterior no le quita horas. Con el visto bueno dado, una marca de
+  la calle se guarda pero no mueve las horas: se queda para revisión.
+- **Las otras puertas.** El meet and greet a mano no se asienta con el
+  visto bueno dado, y en un día ya terminado queda como corrección. Una
+  llegada a mano ya no regresa un día terminado a «arribado» —lo sacaba
+  de la nómina—. Una marca anulada no se ajusta. Reabrir un día cerrado a
+  mano conserva el meet and greet que sí se marcó. Cerrar a mano no
+  acepta un arranque de más de tres horas antes. Guardar los km de un día
+  ya no le rehace la ventana con las horas que hoy tiene el catálogo.
+  Quien trabajó el día no ajusta sus horas ni le sale el botón.
+- **Lo demás.** El aviso de la unidad guardada cuenta las horas extra
+  contra el mismo límite. La rentabilidad ya no le cuenta horas extra al
+  relevado, que no las cobra. Y el formulario del meet and greet a mano
+  de la pantalla del servicio llamaba a una ruta que no existe: contestaba
+  «Not Found». Ahora usa la misma de la central.
+
 ## 14. Lo que falta
 
 ### Abierto
@@ -3929,6 +4044,15 @@ contraseñas, los puestos configurables, las 43 puertas mudadas a
 actividades y la bitácora de catálogos— salió de aquí; si algo de eso se
 busca, está en las secciones 15 y 16.*
 
+- **Las comisiones del consultor y la nómina del personal** (pedido
+  del 24 de septiembre, para después de probar las horas extra). Un panel
+  en Nóminas para la comisión del consultor —3 % de lo facturado en el
+  eventual y 1 % en el implantado, sin gastos ni impuestos— con su corte,
+  lo que se paga y lo que no, las diferencias y su visto bueno. Y revisar
+  la nómina del personal: corte semanal los lunes; el eventual paga lo que
+  ya tiene visto bueno del consultor; el implantado paga cada semana los
+  días trabajados, y en el corte del cierre del mes, con el visto bueno,
+  se pagan o descuentan las diferencias y queda cerrado. Maquetas antes.
 - **Odoo: dos datos para cuando se conecte la facturación** (sección 59).
   El acuerdo autorizado que manda Odoo (`ODOO_LO_QUE_NECESITAMOS.md`,
   5b) solo trae renglones de recurso y vehículo; a precio alzado tiene

@@ -1504,6 +1504,40 @@ class Hito(Base):
         foreign_keys=[anulado_por_id])
 
 
+class CorreccionHoras(Base):
+    """Una hora del dia que alguien corrigio despues (seccion 65).
+
+    De la hora en que el equipo arranco con el ejecutivo y de la hora en
+    que termino salen las horas extra: lo que se le cobra al cliente y
+    lo que se le paga a la gente. Esas dos horas las corrige la central
+    en la bitacora y, desde el 24 de septiembre, tambien el consultor de
+    su servicio hasta su visto bueno.
+
+    Cada correccion deja su renglon: que hora era, cual quedo, quien la
+    cambio y por que. La marca de la calle guarda su hora original
+    aparte (`Hito.marcado_original`); esto guarda tambien las horas que
+    no tenian marca --un dia cerrado a mano--, y es lo que el visto bueno
+    le ensena a finanzas. No se edita ni se borra.
+    """
+    __tablename__ = "correccion_horas"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    jornada_id: Mapped[int] = mapped_column(ForeignKey("jornada.id"),
+                                            index=True)
+    # "inicio" (el meet and greet) o "fin" (el fin del servicio).
+    campo: Mapped[str] = mapped_column(String(10))
+    antes: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    despues: Mapped[datetime] = mapped_column(DateTime)
+    persona_id: Mapped[int | None] = mapped_column(ForeignKey("persona.id"),
+                                                   nullable=True)
+    motivo: Mapped[str] = mapped_column(String(400))
+    creado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+    jornada: Mapped[Jornada] = relationship()
+    persona: Mapped[Persona | None] = relationship()
+
+
 class NotaBitacora(Base):
     """Lo que alguien de la casa supo y escribio en el dia.
 
@@ -2420,6 +2454,12 @@ class ContratoImplantado(Base):
         Boolean, default=True, server_default=text("true"))
     gastos_mes: Mapped[float | None] = mapped_column(Numeric(12, 2),
                                                      nullable=True)
+    # El precio de cada hora extra del mes (seccion 65), aparte del
+    # esquema: por dia o por mes, la hora de mas se cobra igual. Vacio,
+    # no se cobra --y el visto bueno del mes lo dice si hubo horas--.
+    # Pasa solo al mes siguiente.
+    precio_hora_extra: Mapped[float | None] = mapped_column(Numeric(12, 2),
+                                                            nullable=True)
 
     generado: Mapped[bool] = mapped_column(Boolean, default=False)
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

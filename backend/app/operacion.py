@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app import correo_html
 from app import models as m
 from app.cierre import _horas_extra
+from app import horas_extra
 from app import revision
 from app import reloj
 from app import textos_aviso as ta
@@ -372,6 +373,14 @@ def registrar_hito(db: Session, jornada_id: int, persona_id: int,
     # reloj del servidor, un conductor en Brasil que marcaba puntual
     # caia fuera de la ventana por tres horas y le levantaba alerta.
     recibido = reloj.ahora_de_la_jornada(db, jornada)
+    # La app manda el instante con su zona (seccion 65). Mandaba la hora
+    # UTC sin decirlo, y aqui se leia como hora de pared: en Mexico cada
+    # marca llegaba "seis horas en el futuro" --se cambiaba por la del
+    # servidor y se mandaba a revisar--, y la que salia de la cola
+    # despues de seis horas se quedaba seis horas tarde, con sus horas
+    # extra. Un instante con zona se dice en la hora de alla.
+    if marcado_en is not None and marcado_en.tzinfo is not None:
+        marcado_en = reloj.ahora_de_la_jornada(db, jornada, marcado_en)
     ahora = marcado_en or recibido
 
     # La hora la manda el telefono, y hasta hoy nadie la revisaba. Eso
@@ -407,6 +416,12 @@ def registrar_hito(db: Session, jornada_id: int, persona_id: int,
         ahora = recibido
 
     atraso = (recibido - ahora).total_seconds() / 60
+    # Una marca de las horas que llega con el visto bueno ya dado --la
+    # cola de un telefono que estuvo dias sin senal-- se guarda, pero no
+    # mueve lo que ya se facturo.
+    congelado = (tipo in (m.TipoHito.CONTACTO_EJECUTIVO,
+                          m.TipoHito.FIN_SERVICIO)
+                 and horas_extra.visto_bueno_dado(db, jornada))
     hito = m.Hito(jornada_id=jornada.id, persona_id=persona_id, tipo=tipo,
                   marcado_en=ahora, lat=lat, lon=lon, nota=nota,
                   recibido_en=recibido,
@@ -588,7 +603,15 @@ def registrar_hito(db: Session, jornada_id: int, persona_id: int,
                        f"{jornada.inicio_programado:%H:%M}")])
 
     elif tipo == m.TipoHito.CONTACTO_EJECUTIVO:
-        jornada.inicio_real = ahora
+        # El meet and greet es el primero: si dos del equipo lo marcan, el
+        # segundo no mueve la hora en que arranco el dia. De esa hora, si
+        # fue antes de la presentacion, corren las horas (seccion 65).
+        # Con el visto bueno dado ya no mueve nada: la marca se guarda y
+        # la central la revisa.
+        if congelado:
+            hito.requiere_revision = True
+        elif jornada.inicio_real is None or ahora < jornada.inicio_real:
+            jornada.inicio_real = ahora
         # El contacto con el principal es el que arranca el dia. Antes lo
         # encendia la llegada, y este renglon no existia aqui --solo en
         # el registro a mano de la central, que ya pensaba asi--.
@@ -631,7 +654,13 @@ def registrar_hito(db: Session, jornada_id: int, persona_id: int,
                    pares=_pares_del_equipo(jornada, del_principal))
 
     elif tipo == m.TipoHito.FIN_SERVICIO:
-        jornada.fin_real = ahora
+        # El dia termina con el ultimo del equipo: la marca que llega
+        # despues con una hora anterior no le quita horas (seccion 65).
+        # Y con el visto bueno dado ya no mueve nada.
+        if congelado:
+            hito.requiere_revision = True
+        elif jornada.fin_real is None or ahora > jornada.fin_real:
+            jornada.fin_real = ahora
         jornada.estatus = m.EstatusJornada.TERMINADA
         # El dia termino. En el eventual el plazo es uno solo para todo
         # el servicio y arranca con el termino general, abajo, al
@@ -718,6 +747,7 @@ def fijar_hora_de_manana(db: Session, jornada: m.Jornada, hora,
             "que_hacer": "Si el cliente quiere otro dia, se agrega al "
                          "servicio desde su pantalla."})
 
+    horas_extra.candado_del_arranque(db, siguiente)
     antes = siguiente.inicio_programado
     modalidad = db.get(m.Modalidad, siguiente.modalidad_id)
     siguiente.inicio_programado = datetime.combine(siguiente.fecha, hora)
@@ -759,6 +789,21 @@ def ajustar_hito(db: Session, hito_id: int, nuevo_momento: datetime,
     if not hito:
         raise HTTPException(404, f"No existe el hito {hito_id}")
 
+    # Las dos marcas de las que salen las horas extra ya no se mueven con
+    # el visto bueno dado: la factura salio con esas horas (seccion 65).
+    de_las_horas = hito.tipo in (m.TipoHito.CONTACTO_EJECUTIVO,
+                                 m.TipoHito.FIN_SERVICIO)
+    if de_las_horas:
+        horas_extra.candado_del_visto_bueno(
+            db, hito.jornada, "sus marcas ya no se ajustan")
+    # Una marca anulada --el fin de un dia que se reabrio-- ya no cuenta:
+    # ajustarla le ponia hora de termino a un dia abierto.
+    if hito.anulado_en is not None:
+        raise HTTPException(409, {
+            "mensaje": "Esa marca esta anulada",
+            "que_hacer": "El dia se reabrio: se cierra otra vez, no se ajusta "
+                         "la marca que ya no cuenta."})
+
     # La ORIGINAL es la primera, no la anterior.
     #
     # Esto se sobrescribia en cada ajuste, asi que a la segunda
@@ -781,10 +826,25 @@ def ajustar_hito(db: Session, hito_id: int, nuevo_momento: datetime,
     hito.justificacion_ajuste = justificacion
     hito.requiere_revision = False
 
-    if hito.tipo == m.TipoHito.CONTACTO_EJECUTIVO:
-        hito.jornada.inicio_real = nuevo_momento
-    elif hito.tipo == m.TipoHito.FIN_SERVICIO:
-        hito.jornada.fin_real = nuevo_momento
+    if de_las_horas:
+        # El mismo renglon que deja el consultor al corregir las horas:
+        # el visto bueno se lo dice a finanzas venga de donde venga.
+        campo = (horas_extra.INICIO
+                 if hito.tipo == m.TipoHito.CONTACTO_EJECUTIVO
+                 else horas_extra.FIN)
+        jornada = hito.jornada
+        antes = jornada.inicio_real if campo == horas_extra.INICIO \
+            else jornada.fin_real
+        db.flush()
+        # El primer meet and greet y el ultimo fin, contando la marca
+        # ajustada: ajustar la de un compañero no mueve el dia si otra
+        # marca manda.
+        horas_extra.recalcular(db, jornada, campo)
+        despues = jornada.inicio_real if campo == horas_extra.INICIO \
+            else jornada.fin_real
+        if despues != antes:
+            horas_extra.anotar(db, jornada, campo, antes, despues,
+                               ajustado_por_id, justificacion.strip())
 
     db.commit()
     return {"resultado": "ajustado", "hito_id": hito.id,
@@ -979,21 +1039,26 @@ def avisar_horas_extra(db: Session, ahora: datetime | None = None) -> list[dict]
     margen = reloj.margen_de_paises(db)
     ahora = ahora or datetime.now()
 
+    # El limite puede caer antes del fin programado --si el meet and
+    # greet fue antes de la presentacion, las horas corren desde ahi
+    # (seccion 65)--, asi que la consulta se abre tambien por ese lado.
+    adelanto = timedelta(hours=horas_extra.HORAS_ANTES_DEL_INICIO)
     jornadas = (db.query(m.Jornada)
                 .filter(m.Jornada.estatus.in_(m.ARRANCADAS),
                         m.Jornada.fin_programado >= ahora - margen,
                         m.Jornada.fin_programado
                         <= ahora + timedelta(minutes=AVISO_HORAS_EXTRA_MINUTOS)
-                        + margen)
+                        + margen + adelanto)
                 .all())
 
     avisos = []
     for j in jornadas:
         suyo = relojes.de_la_jornada(j)
-        if not (suyo <= j.fin_programado
+        tope = horas_extra.limite(j)
+        if not (suyo <= tope
                 <= suyo + timedelta(minutes=AVISO_HORAS_EXTRA_MINUTOS)):
             continue
-        if not j.modalidad.aplica_horas_extra:
+        if not horas_extra.aplica(j):
             continue
         ya = (db.query(m.Alerta)
               .filter_by(jornada_id=j.id, tipo=m.TipoAlerta.HORAS_EXTRA_PROXIMAS)
@@ -1001,7 +1066,9 @@ def avisar_horas_extra(db: Session, ahora: datetime | None = None) -> list[dict]
         if ya:
             continue
 
-        minutos = int((j.fin_programado - ahora).total_seconds() / 60)
+        # Con el reloj de alla: con el del servidor, en Brasil decia
+        # "faltan 199 minutos" cuando faltaban 19.
+        minutos = int((tope - suyo).total_seconds() / 60)
         servicio = j.equipo.servicio
         for destinatario in (m.Destinatario.SOLICITANTE,
                              m.Destinatario.EJECUTIVO):
@@ -1011,13 +1078,14 @@ def avisar_horas_extra(db: Session, ahora: datetime | None = None) -> list[dict]
                 db, j, destinatario, m.Canal.AMBOS,
                 ta.t(lengua, "extra_asunto", minutos=minutos),
                 ta.t(lengua, "extra_cuerpo", horas=horas,
-                     hora=f"{j.fin_programado:%H:%M}"),
+                     hora=f"{tope:%H:%M}"),
                 pares=[(ta.t(lengua, "cierre_programado"),
-                        f"{j.fin_programado:%H:%M}"),
+                        f"{tope:%H:%M}"),
                        (ta.t(lengua, "contratado"),
                         f"{horas} {ta.t(lengua, 'horas')}")])
         _alertar(db, j.id, m.TipoAlerta.HORAS_EXTRA_PROXIMAS,
-                 f"Aviso de horas extra enviado. Cierre programado {j.fin_programado:%H:%M}.")
+                 f"Aviso de horas extra enviado. Las horas contratadas se "
+                 f"cumplen a las {tope:%H:%M}.")
         avisos.append({"jornada_id": j.id, "servicio": j.equipo.servicio.folio,
                        "faltan_minutos": minutos})
 
@@ -1274,6 +1342,11 @@ def registrar_hito_a_mano(db: Session, jornada_id: int,
         raise HTTPException(409, {
             "mensaje": "Ese dia esta cancelado",
             "que_hacer": "Un dia cancelado no tiene marcas: no se trabajo."})
+    # El meet and greet decide desde cuando corren las horas: con el
+    # visto bueno dado ya no se asienta (seccion 65).
+    if tipo == m.TipoHito.CONTACTO_EJECUTIVO:
+        horas_extra.candado_del_visto_bueno(
+            db, jornada, "ya no se registra su meet and greet")
 
     ya = (db.query(m.Hito)
           .filter_by(jornada_id=jornada_id, tipo=tipo).first())
@@ -1335,7 +1408,10 @@ def registrar_hito_a_mano(db: Session, jornada_id: int,
     # no, un dia asentado por la central se quedaria en "asignado" con
     # el equipo parado en el punto.
     if tipo == m.TipoHito.LLEGADA_ORIGEN:
-        if jornada.estatus != m.EstatusJornada.EN_CURSO:
+        # Un dia ya terminado no vuelve a "arribado": se saldria de la
+        # nomina y del cierre por una marca que llego tarde.
+        if jornada.estatus not in (m.EstatusJornada.EN_CURSO,
+                                   m.EstatusJornada.TERMINADA):
             jornada.estatus = m.EstatusJornada.ARRIBADO
         if servicio.estatus in m.ANTES_DE_ARRANCAR:
             servicio.estatus = m.EstatusServicio.ARRIBADO
@@ -1344,6 +1420,13 @@ def registrar_hito_a_mano(db: Session, jornada_id: int,
     # llegada al punto no: llegar y esperar veinte minutos a que el
     # ejecutivo baje no es tener el servicio corriendo.
     if tipo == m.TipoHito.CONTACTO_EJECUTIVO:
+        # En un dia ya terminado, asentarlo mueve las horas extra: el
+        # visto bueno lo dice como una correccion, con su firma.
+        if (jornada.estatus == m.EstatusJornada.TERMINADA
+                and jornada.inicio_real != momento):
+            horas_extra.anotar(db, jornada, horas_extra.INICIO,
+                               jornada.inicio_real, momento, quien_id,
+                               justificacion.strip())
         jornada.inicio_real = momento
         if jornada.estatus in (m.EstatusJornada.PLANEADA,
                                m.EstatusJornada.CONFIRMADA,
@@ -1430,6 +1513,16 @@ def cerrar_a_mano(db: Session, jornada_id: int, quien_id: int,
                          "ocurre."})
 
     inicio = inicio_real or jornada.inicio_real or jornada.inicio_programado
+    # El mismo tope que el meet and greet a mano: de esta hora, si es
+    # antes de la presentacion, corren las horas extra (seccion 65).
+    if inicio < jornada.inicio_programado - timedelta(
+            hours=HORAS_ANTES_DEL_INICIO):
+        raise HTTPException(409, {
+            "mensaje": "Esa hora de inicio queda demasiado antes del servicio",
+            "que_hacer": (f"El dia se presentaba a las "
+                          f"{jornada.inicio_programado:%H:%M}. Mas de "
+                          f"{HORAS_ANTES_DEL_INICIO} horas antes no es de "
+                          "este servicio.")})
     if fin <= inicio:
         raise HTTPException(409, {
             "mensaje": "El servicio no puede terminar antes de empezar",
@@ -1559,6 +1652,10 @@ def reabrir(db: Session, jornada_id: int, quien_id: int,
     jornada.fin_real = None
     if jornada.cerrada_a_mano_en:
         jornada.inicio_real = None
+        # Pero el meet and greet que si se marco se queda: de el corren
+        # las horas si fue antes de la presentacion (seccion 65), y la
+        # marca ya no se puede volver a poner a mano.
+        horas_extra.recalcular(db, jornada, horas_extra.INICIO)
     jornada.cerrada_a_mano_por_id = None
     jornada.cerrada_a_mano_en = None
     jornada.cierre_motivo = None

@@ -52,6 +52,8 @@ class ContratoIn(BaseModel):
     # fijo del mes, o netos, por lo comprobado.
     viaticos_incluidos: bool = True
     gastos_mes: Decimal | None = None
+    # La hora extra del mes, aparte del esquema (seccion 65).
+    precio_hora_extra: Decimal | None = None
 
 
 class DiaAdicionalIn(BaseModel):
@@ -226,6 +228,8 @@ class TerminosDelMesIn(BaseModel):
     # falso, gastos netos con desglose al final.
     viaticos_incluidos: bool = True
     gastos_mes: Decimal | None = Field(default=None, ge=0)
+    # Seccion 65: cada hora extra del mes, en los dos esquemas.
+    precio_hora_extra: Decimal | None = Field(default=None, ge=0)
 
 
 def _terminos(db: Session, contrato: m.ContratoImplantado) -> dict:
@@ -243,6 +247,7 @@ def _terminos(db: Session, contrato: m.ContratoImplantado) -> dict:
         "modo_gastos": ("precio_alzado" if contrato.viaticos_incluidos
                         else "netos"),
         "gastos_mes": contrato.gastos_mes,
+        "precio_hora_extra": contrato.precio_hora_extra,
         "moneda": pais.moneda_local.value if pais else None,
         # Con el visto bueno dado ya no se cambian: la factura del mes
         # salio, o esta por salir, con estos precios.
@@ -281,7 +286,8 @@ def guardar_terminos(contrato_id: int, datos: TerminosDelMesIn,
     cambios = [f"{k}: {antes[k]} -> {despues[k]}"
                for k in ("esquema", "precio_dia_personal",
                          "precio_dia_adicional", "precio_mes_vehiculo",
-                         "precio_mes_completo", "modo_gastos", "gastos_mes")
+                         "precio_mes_completo", "modo_gastos", "gastos_mes",
+                         "precio_hora_extra")
                if str(antes[k]) != str(despues[k])]
     if cambios:
         auditoria.registrar(db, usuario, contrato.servicio,
@@ -409,6 +415,8 @@ class MesImplantadoIn(BaseModel):
     # fijo del mes, o netos, por lo comprobado.
     viaticos_incluidos: bool = True
     gastos_mes: Decimal | None = None
+    # La hora extra del mes, aparte del esquema (seccion 65).
+    precio_hora_extra: Decimal | None = None
 
 
 class AltaImplantadoIn(BaseModel):
@@ -460,6 +468,8 @@ class AltaImplantadoIn(BaseModel):
     # netos, por lo comprobado.
     viaticos_incluidos: bool = True
     gastos_mes: Decimal | None = None
+    # La hora extra del mes, aparte del esquema (seccion 65).
+    precio_hora_extra: Decimal | None = None
 
     acuerdo: AcuerdoIn = AcuerdoIn()
 
@@ -590,6 +600,7 @@ def _abrir_mes(db: Session, usuario: m.Usuario, servicio: m.Servicio,
         precio_mes_completo=datos.precio_mes_completo,
         viaticos_incluidos=datos.viaticos_incluidos,
         gastos_mes=datos.gastos_mes,
+        precio_hora_extra=datos.precio_hora_extra,
         dias_base=len(motor.dias_del_mes(
             inicio.year, inicio.month, dias_servicio, inicio.day,
             (acuerdo.turno if acuerdo and acuerdo.turno

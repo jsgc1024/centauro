@@ -182,11 +182,23 @@ function comparativoEventual(cmp, moneda) {
     h("td", { clase: "der num" }, dinero(cmp.cotizacion.servicio, moneda)),
     h("td", { clase: "der num" }, dinero(cmp.a_facturar.servicio, moneda)),
     h("td", { clase: "der num" }, dinero(cmp.a_facturar.servicio, moneda)));
+  /* Las horas extra, en horas y dentro del servicio (seccion 65): el
+     ejecutado ya las trae; este renglon dice cuanto de el son horas
+     extra, para no tener que deducirlo de la diferencia. */
+  const horas = Number(cmp.ejecutado.horas_extra || 0);
+  const importe = Number(cmp.ejecutado.importe_horas_extra || 0);
+  const extra = horas
+    ? h("tr", { clase: "sub" },
+        h("td", {}, reemplazar(t("cie_incluye_extra"), { n: horas })),
+        h("td", { clase: "der num" }, "—"),
+        h("td", { clase: "der num" }, importe ? dinero(importe, moneda) : "—"),
+        h("td", { clase: "der num" }, importe ? dinero(importe, moneda) : "—"))
+    : null;
   const diferencia = Number(cmp.diferencia || 0);
   return {
     encabezados: [t("cie_col_cotizado"), t("cie_col_ejecutado"),
                   t("cie_col_a_facturar")],
-    renglones: [servicio, renglonGastos(cmp.gastos, moneda)],
+    renglones: [servicio, extra, renglonGastos(cmp.gastos, moneda)],
     total: cmp.a_facturar.total,
     notas: [diferencia ? reemplazar(t("cie_nota_diferencia"), {
               m: (diferencia > 0 ? "+" : "−") + dinero(Math.abs(diferencia), moneda) })
@@ -201,9 +213,10 @@ function comparativoMes(cmp, moneda) {
     h("td", { clase: "der num" }, b), h("td", { clase: "der num" }, c),
     h("td", { clase: "der num" }, d));
   if (cmp.esquema === "mes_completo") {
+    /* El precio del mes, sin las horas extra: esas van en su renglon. */
+    const mes = (cmp.trabajado.desglose || {}).mes_completo;
     r.push(tr(t("cie_mes_completo"), dinero(cmp.contratado.importe, moneda),
-              dinero(cmp.trabajado.importe, moneda),
-              dinero(cmp.trabajado.importe, moneda)));
+              dinero(mes, moneda), dinero(mes, moneda)));
   } else {
     const d = cmp.trabajado.desglose || {};
     r.push(tr(t("cie_dias_base"), cmp.contratado.dias_base,
@@ -218,6 +231,14 @@ function comparativoMes(cmp, moneda) {
       r.push(tr(t("cie_vehiculo"), t("cie_un_mes"), t("cie_un_mes"),
                 dinero(d.vehiculo_mes, moneda)));
     }
+  }
+  /* Las horas extra del mes, aparte y en los dos esquemas (seccion 65). */
+  if (Number(cmp.trabajado.horas_extra || 0)) {
+    const d = cmp.trabajado.desglose || {};
+    r.push(tr(t("cie_horas_extra_mes"), "—",
+              reemplazar(t("cie_horas_dias"), { h: cmp.trabajado.horas_extra,
+                                                d: cmp.trabajado.dias_con_extra }),
+              Number(d.horas_extra || 0) ? dinero(d.horas_extra, moneda) : "—"));
   }
   r.push(renglonGastos(cmp.gastos, moneda));
   return {
@@ -287,6 +308,8 @@ const ASUNTOS = {
   viatico_excedido: "cie_desv_viatico_excedido",
   "Sin cotizacion autorizada": "cie_asu_sin_cotizacion",
   "Horas extra": "cie_desv_horas_extra",
+  "Horas corregidas": "cie_hc_asunto",
+  "Horas extra sin precio": "cie_hsp_asunto",
   "Desviacion respaldada": "cie_asu_respaldada",
   "Jornada sin termino": "cie_asu_jornada",
   "Marca fuera de horario sin revisar": "cie_asu_marca",
@@ -391,6 +414,28 @@ function paraRevisar(o) {
                  tipo: t(`cen_hito_${d.tipo}`), fecha: d.fecha }),
                mensaje: reemplazar(t("cie_gps_marca"), d),
                accion: t("cie_gps_marca_accion") };
+    /* Las horas extra (seccion 65): cuantas y por que, las corregidas y
+       las que no tienen precio. */
+    case "horas_extra":
+      return { asunto: t("cie_desv_horas_extra"),
+               mensaje: reemplazar(t("cie_he_dia"), d)
+                 + (d.arranco ? " " + reemplazar(t("cie_he_arranco"), d) : ""),
+               accion: t("cie_he_accion") };
+    case "horas_extra_mes":
+      return { asunto: t("cie_desv_horas_extra"),
+               mensaje: reemplazar(t("cie_he_mes"), d),
+               accion: t("cie_he_mes_accion") };
+    case "horas_corregidas":
+      return { asunto: t("cie_hc_asunto"),
+               mensaje: reemplazar(t(d.campo === "inicio" ? "cie_hc_inicio"
+                                                          : "cie_hc_fin"), d),
+               accion: t("cie_hc_accion") };
+    case "horas_sin_precio":
+    case "horas_sin_precio_mes":
+      return { asunto: t("cie_hsp_asunto"),
+               mensaje: reemplazar(t(o.clave === "horas_sin_precio"
+                                     ? "cie_hsp" : "cie_hsp_mes"), d),
+               accion: t("cie_hsp_accion") };
     case "gasolina":
       return { asunto: reemplazar(t("cie_gps_gasolina_asunto"), d),
                mensaje: reemplazar(t("cie_gps_gasolina"), {

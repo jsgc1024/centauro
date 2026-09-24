@@ -36,6 +36,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from app import gps_reglas as reglas
+from app import horas_extra
 from app import models as m
 from app import pegasus as conexion
 from app import reloj
@@ -1053,9 +1054,11 @@ def observaciones(db: Session, jornadas: list, viaticos: list) -> list[dict]:
                 guardada = hito.unidad_guardada_en
                 minutos = int((hito.marcado_en - guardada).total_seconds() // 60)
                 extra = None
-                if jornada.fin_programado and hito.marcado_en > jornada.fin_programado:
-                    extra = int((hito.marcado_en - max(guardada,
-                                                       jornada.fin_programado))
+                # Contra el limite de las horas del dia: corre desde el
+                # meet and greet si fue antes de la presentacion (65).
+                tope = horas_extra.limite(jornada)
+                if tope and hito.marcado_en > tope:
+                    extra = int((hito.marcado_en - max(guardada, tope))
                                 .total_seconds() // 60)
                 km = round((hito.unidad_guardada_m or 0) / 1000, 1)
                 mensaje = (f"la marca es de las {hito.marcado_en:%H:%M} y la "

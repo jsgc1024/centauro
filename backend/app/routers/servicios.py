@@ -13,6 +13,7 @@ from app import telefonos
 from app.routers import solicitantes as contactos
 from app import disponibilidad as disp
 from app import geocercas
+from app import horas_extra
 from app import models as m
 from app import schemas as s
 from app.db import get_db
@@ -505,6 +506,19 @@ def corregir_dia(jornada_id: int, datos: s.DiaIn, db: Session = Depends(get_db),
     jornada = _obtener_jornada(db, jornada_id)
     cambios = datos.model_dump(exclude_unset=True)
 
+    # Un dia que ya arranco tiene horas reales: su fecha, su modalidad y
+    # su hora ya no se mueven desde aqui (seccion 65). Moverlas cambiaba
+    # las horas extra --y la puntualidad del equipo-- sin motivo, aun con
+    # la factura ya en Odoo. Las horas se corrigen en el panel del dia.
+    hora_nueva = cambios.get("hora_presentacion")
+    mueve = ((cambios.get("fecha") and cambios["fecha"] != jornada.fecha)
+             or (cambios.get("modalidad_id")
+                 and cambios["modalidad_id"] != jornada.modalidad_id)
+             or (hora_nueva and hora_nueva
+                 != jornada.inicio_programado.time()))
+    if mueve:
+        horas_extra.candado_del_arranque(db, jornada)
+
     if "fecha" in cambios and cambios["fecha"]:
         repetida = any(j.fecha == cambios["fecha"] and j.id != jornada.id
                        for j in jornada.equipo.jornadas)
@@ -527,10 +541,15 @@ def corregir_dia(jornada_id: int, datos: s.DiaIn, db: Session = Depends(get_db),
     hora = cambios.get("hora_presentacion") or jornada.inicio_programado.time()
     if cambios.get("hora_presentacion"):
         jornada.hora_confirmada = True     # ya no es la heredada
-    modalidad = db.get(m.Modalidad, jornada.modalidad_id)
-    jornada.inicio_programado = datetime.combine(jornada.fecha, hora)
-    jornada.fin_programado = (jornada.inicio_programado
-                              + timedelta(hours=float(modalidad.horas)))
+    # La ventana solo se rehace si algo la mueve. Rehacerla siempre --al
+    # guardar los km, o la misma hora-- le ponia al dia las horas que hoy
+    # tiene la modalidad en el catalogo y no las que se contrataron, y con
+    # ellas cambiaban sus horas extra.
+    if mueve:
+        modalidad = db.get(m.Modalidad, jornada.modalidad_id)
+        jornada.inicio_programado = datetime.combine(jornada.fecha, hora)
+        jornada.fin_programado = (jornada.inicio_programado
+                                  + timedelta(hours=float(modalidad.horas)))
 
     servicio = jornada.equipo.servicio
     programacion.evaluar(servicio)
@@ -1476,9 +1495,11 @@ def _limpiar_jornadas(db: Session, jornada_ids: list[int]) -> int:
     # no significa nada-- y dejarla suelta reventaria el borrado con una
     # violacion de llave foranea. Lo encontro la prueba de la limpieza,
     # que es exactamente para lo que existe.
+    # Las horas corregidas del dia (seccion 65), por lo mismo: sin su dia
+    # no dicen nada.
     for tabla in (m.Hito, m.Reemplazo, m.AsignacionPersonal,
                   m.AsignacionVehiculo, m.AgendaJornada, m.ParadaAgenda,
-                  m.Alerta, m.NotaBitacora):
+                  m.Alerta, m.NotaBitacora, m.CorreccionHoras):
         db.query(tabla).filter(tabla.jornada_id.in_(jornada_ids)).delete(
             synchronize_session=False)
     # Lo que apunta al dia sin depender de el se queda huerfano a

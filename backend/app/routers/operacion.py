@@ -14,6 +14,7 @@ from app import auditoria
 from app import auth
 from app import models as m
 from app import geocercas
+from app import horas_extra
 from app import programacion
 from app import push
 from app import reloj
@@ -116,6 +117,11 @@ def _ajustar_presentacion(db: Session, jornada: m.Jornada) -> bool:
     sale de su hotel y la referencia es su presentacion acordada.
     """
     if not (jornada.vuelo_hora and jornada.vuelo_tipo == "llegada"):
+        return False
+    # El dia que ya arranco tiene horas reales: su presentacion ya no se
+    # mueve, o el vuelo capturado despues moveria las horas extra y la
+    # puntualidad del equipo (seccion 65). El vuelo si se guarda.
+    if horas_extra.ya_arranco(db, jornada):
         return False
     primera = min(jornada.equipo.jornadas, key=lambda j: j.fecha, default=None)
     if not primera or primera.id != jornada.id:
@@ -234,6 +240,14 @@ def ajustar(hito_id: int, datos: s.AjusteHitoIn,
         raise HTTPException(404, f"No existe el hito {hito_id}")
     if hito.persona_id == usuario.persona_id:
         raise HTTPException(403, "No puedes ajustar tu propia marca")
+    # Ni la de un compañero de un dia que trabajaste, si es de las que
+    # deciden las horas extra: seria firmarse las propias (seccion 65).
+    if (hito.tipo in (m.TipoHito.CONTACTO_EJECUTIVO, m.TipoHito.FIN_SERVICIO)
+            and any(a.persona_id == usuario.persona_id
+                    for a in hito.jornada.personal)):
+        raise HTTPException(403, {
+            "mensaje": "No puedes ajustar las horas de un dia que trabajaste",
+            "que_hacer": "Que lo ajuste otra persona de la central."})
 
     resultado = motor.ajustar_hito(db, hito_id, datos.nuevo_momento,
                                    usuario.persona_id, datos.justificacion)
@@ -279,6 +293,84 @@ def bitacora_del_dia(jornada_id: int, db: Session = Depends(get_db),
     # boton saldria para quien luego se come un 403.
     resultado["puedo_registrar_a_mano"] = auth.puede_el_usuario(
         db, usuario, "operacion.corregir")
+
+    # Las horas del dia (seccion 65): lo programado, desde cuando corren,
+    # a que hora termino, cuantas extra y quien las corrigio. Y si quien
+    # mira las puede corregir, que tambien lo contesta el servidor.
+    jornada = db.get(m.Jornada, jornada_id)
+    resultado["horas"] = horas_extra.del_dia(db, jornada)
+    resultado["horas"].update(_puedo_corregir_horas(db, usuario, jornada))
+    return resultado
+
+
+def _puedo_corregir_horas(db: Session, usuario: m.Usuario,
+                          jornada: m.Jornada) -> dict:
+    """Quien corrige las horas de un dia, y cuando.
+
+    La central y la direccion de operaciones, como siempre. Y el
+    consultor del servicio (decision de Salvador, 24 sep): es quien habla
+    con el cliente cuando una hora quedo mal. Solo en su servicio y solo
+    hasta su visto bueno; queda la hora original, su nombre y el motivo,
+    y el visto bueno se lo dice a finanzas.
+    """
+    central = auth.puede_el_usuario(db, usuario, "operacion.corregir")
+    servicio = jornada.equipo.servicio
+    suyo = (servicio.consultor_id is not None
+            and servicio.consultor_id == usuario.persona_id)
+    if not (central or suyo):
+        return {"puedo_corregir": False, "por_que_no": "permiso",
+                "valida": False}
+    # Nadie corrige las horas de un dia que trabajo: seria firmarse las
+    # horas extra. El boton ni sale.
+    if any(a.persona_id == usuario.persona_id for a in jornada.personal):
+        return {"puedo_corregir": False, "por_que_no": "su_dia",
+                "valida": central}
+    if jornada.estatus != m.EstatusJornada.TERMINADA or not jornada.fin_real:
+        return {"puedo_corregir": False, "por_que_no": "no_ha_terminado",
+                "valida": central}
+    if horas_extra.visto_bueno_dado(db, jornada):
+        return {"puedo_corregir": False, "por_que_no": "visto_bueno",
+                "valida": central}
+    return {"puedo_corregir": True, "por_que_no": None, "valida": central}
+
+
+@router.post("/jornadas/{jornada_id}/horas",
+             summary="Corregir las horas de un dia ya trabajado")
+def corregir_horas(jornada_id: int, datos: s.HorasDelDiaIn,
+                   db: Session = Depends(get_db),
+                   ahora: datetime | None = None,
+                   usuario: m.Usuario = Depends(auth.usuario_actual)):
+    """La hora en que el equipo arranco con el ejecutivo, la de termino,
+    o las dos, con su motivo. De ellas salen las horas extra que se le
+    cobran al cliente y se le pagan a la gente (seccion 65)."""
+    jornada = db.get(m.Jornada, jornada_id)
+    if not jornada:
+        raise HTTPException(404, f"No existe la jornada {jornada_id}")
+    permiso = _puedo_corregir_horas(db, usuario, jornada)
+    if permiso["por_que_no"] == "permiso":
+        raise HTTPException(403, {
+            "mensaje": "No puedes corregir las horas de este dia",
+            "que_hacer": ("Las corrige la central, o el consultor de ese "
+                          "servicio hasta su visto bueno.")})
+    # Nadie corrige las horas de un dia que trabajo el mismo: corregirlas
+    # es firmarse las horas extra. Lo mismo que el cierre a mano.
+    if permiso["por_que_no"] == "su_dia":
+        raise HTTPException(403, {
+            "mensaje": "No puedes corregir las horas de un dia que trabajaste",
+            "que_hacer": "Que las corrija la central o el consultor."})
+
+    # `ahora` solo mueve el reloj en las pruebas: en produccion se ignora,
+    # porque es el candado de "esa hora todavia no llega".
+    resultado = horas_extra.corregir(
+        db, jornada, usuario, datos.inicio, datos.fin, datos.justificacion,
+        valida=permiso["valida"], ahora=reloj.de_prueba(ahora))
+    auditoria.registrar(
+        db, usuario, jornada.equipo.servicio, "corregir horas",
+        (f"{jornada.fecha:%d/%m}: {resultado['horas_extra_antes']} h -> "
+         f"{resultado['horas_extra']} h extra. {datos.justificacion.strip()}"
+         )[:400],
+        jornada_id=jornada.id)
+    db.commit()
     return resultado
 
 

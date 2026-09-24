@@ -315,9 +315,19 @@ let sincronizando = false;
    mano. Se guarda aqui y la pantalla de hoy la levanta. */
 let mananaPorPreguntar = null;
 
+/* Las marcas que ya estaban en la cola antes de la seccion 65 traen la
+   hora UTC sin decirlo --se armaban con toISOString().slice(0, 19)--:
+   se les pone su zona antes de mandarlas o de ensenarlas. */
+function conZona(cuando) {
+  return cuando && !/(Z|[+-]\d\d:?\d\d)$/.test(cuando) ? `${cuando}Z` : cuando;
+}
+
 async function mandarHito(item) {
+  const cuerpo = item.cuerpo && item.cuerpo.marcado_en
+    ? { ...item.cuerpo, marcado_en: conZona(item.cuerpo.marcado_en) }
+    : item.cuerpo;
   const r = await api.post(`/operacion/jornadas/${item.jornada_id}/hitos`,
-                           item.cuerpo);
+                           cuerpo);
   if (r && r.manana) mananaPorPreguntar = r.manana;
   return r;
 }
@@ -361,7 +371,9 @@ function bandaRechazadas() {
   for (const x of filas) {
     caja.append(h("div", { clase: "chico",
       style: "font-weight:400;margin-top:6px" },
-      h("div", {}, [x.tipo, x.cuando].filter(Boolean).join(" · ")),
+      h("div", {}, [x.tipo && hitos()[x.tipo] ? hitos()[x.tipo].corto : x.tipo,
+                    x.cuando && hora(conZona(x.cuando))]
+        .filter(Boolean).join(" · ")),
       h("div", {}, x.motivo),
       h("button", { clase: "claro chico", style: "margin-top:6px",
         onclick: () => { apartadas.descartar(x.id); pintar(); } },
@@ -942,7 +954,10 @@ async function marcar(e, f, tipo, campoNota = null) {
      senal, que es como se juntan los errores que nadie ve. */
   const cuerpo = {
     tipo,
-    marcado_en: new Date().toISOString().slice(0, 19),
+    /* El instante con su zona (seccion 65). Se cortaba la "Z" y el
+       servidor leia la hora UTC como hora de pared: en Mexico cada marca
+       llegaba seis horas en el futuro. */
+    marcado_en: new Date().toISOString(),
     ...(donde ? { lat: String(donde.lat), lon: String(donde.lon) } : {}),
     /* La nota viaja DENTRO de la marca, no aparte. Mandarla en una
        segunda peticion seria perderla justo cuando mas importa: sin
@@ -985,7 +1000,7 @@ function franjaDeshacer() {
   const tipo = suya.cuerpo.tipo;
   const corto = hitos()[tipo] ? hitos()[tipo].corto : tipo;
   const cuando = suya.cuerpo.marcado_en
-    ? hora(suya.cuerpo.marcado_en) : "";
+    ? hora(conZona(suya.cuerpo.marcado_en)) : "";
   const pie = h("div", { clase: "chico" });
 
   const deshacer = h("button", { clase: "claro chico",

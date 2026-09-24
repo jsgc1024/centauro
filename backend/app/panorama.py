@@ -21,6 +21,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from app import horas_extra
 from app import models as m
 from app import reloj
 from app.central import SILENCIO_ROJO, color_del_silencio, silencio
@@ -135,8 +136,11 @@ def _ficha(db: Session, j: m.Jornada, relojes: reloj.Relojes,
     callado = silencio(ultimo, suyo)
     servicio = j.equipo.servicio
     pais = relojes.pais(servicio.pais_id)
-    falta_extra = (int((j.fin_programado - suyo).total_seconds() / 60)
-                   if j.fin_programado else None)
+    # Contra el limite de las horas del dia y solo donde hay horas extra
+    # (seccion 65), igual que la central.
+    tope = horas_extra.limite(j)
+    falta_extra = (int((tope - suyo).total_seconds() / 60)
+                   if tope and horas_extra.aplica(j) else None)
 
     return {
         "jornada_id": j.id,

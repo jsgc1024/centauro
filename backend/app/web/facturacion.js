@@ -223,8 +223,13 @@ function tablaDetalle(cmp, esMes, moneda) {
                reemplazar(t("cie_servicio_dias"),
                           { d: cmp.ejecutado.dias, e: cmp.ejecutado.equipos })),
        renglon(t("fac_ejecutado"), dinero(cmp.a_facturar.servicio, moneda),
-               Number(cmp.diferencia) ? reemplazar(t("fac_diferencia"), {
-                 m: dinero(cmp.diferencia, moneda) }) : "")];
+               [Number(cmp.diferencia) ? reemplazar(t("fac_diferencia"), {
+                  m: dinero(cmp.diferencia, moneda) }) : "",
+                /* Cuanto del ejecutado son horas extra (seccion 65). */
+                Number(cmp.ejecutado.horas_extra || 0)
+                  ? reemplazar(t("fac_incluye_extra"),
+                               { n: cmp.ejecutado.horas_extra }) : ""]
+                 .filter(Boolean).join(" · "))];
   if (g.modo) {
     filas.push(renglon(t("fac_gastos"), dinero(g.a_facturar, moneda),
       g.modo === "netos" ? t("fac_gastos_netos_pie")

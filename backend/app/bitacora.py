@@ -34,6 +34,7 @@ NOTA = "nota"            # lo que alguien de la casa supo y escribio
 # ilegible.
 ACCIONES_QUE_IMPORTAN = (
     "ajustar hito",          # la central corrigio una hora, con motivo
+    "corregir horas",        # las horas del dia, desde su panel (seccion 65)
     "marca a mano",          # nadie marco un punto critico y alguien lo firmo
     "cerrar dia a mano",     # nadie marco el fin y alguien lo firmo
     "reabrir dia",           # se deshizo ese cierre
@@ -160,6 +161,14 @@ def del_dia(db: Session, jornada_id: int) -> dict:
                           + (quien or "la central"))
             if hito.motivo_a_mano:
                 partes.append(hito.motivo_a_mano)
+
+        # La marca que alguien corrigio despues se dice como tal, con la
+        # hora que traia (seccion 65). Sin esto la bitacora ensenaba la
+        # hora nueva como si el equipo la hubiera marcado asi.
+        if (hito.marcado_original is not None
+                and hito.marcado_original != hito.marcado_en):
+            marca, tono = "corregida", "alerta"
+            partes.append(f"la marca fue a las {hito.marcado_original:%H:%M}")
 
         # La marca anulada se queda en la bitacora, dicha como lo que
         # es. La central reabrio ese dia y este fin de servicio dejo de

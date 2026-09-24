@@ -1042,6 +1042,14 @@ def resumen_mensual(db: Session, contrato_id: int) -> dict:
         desglose = {"personal_dias_base": personal,
                     "dias_adicionales": extra,
                     "vehiculo_mes": vehiculo}
+    # Las horas extra del mes, aparte y en los dos esquemas (seccion 65):
+    # las mismas cuentas que el visto bueno del mes (`cierre_mes.comparar`).
+    from app import horas_extra
+    horas_mes = sum(horas_extra.horas(j) for j in vivas if j.personal)
+    if horas_mes:
+        importe = Decimal(str(contrato.precio_hora_extra or 0)) * horas_mes
+        desglose["horas_extra"] = importe
+        total += importe
 
     reemplazos = _cambios_de_personal(db, vivas)
 
@@ -1054,6 +1062,7 @@ def resumen_mensual(db: Session, contrato_id: int) -> dict:
         "dias": {"base": len(base), "adicionales": len(adicionales),
                  "habiles_del_mes": len(dias_del_mes(contrato.anio, contrato.mes, False)),
                  "total": len(vivas)},
+        "horas_extra": horas_mes,
         "facturacion": {"desglose": desglose, "total": total},
         "reemplazos": reemplazos,
         "total_reemplazos": len(reemplazos),
@@ -1615,6 +1624,7 @@ def abrir_siguiente(db: Session, servicio: m.Servicio,
         precio_mes_completo=anterior.precio_mes_completo,
         viaticos_incluidos=anterior.viaticos_incluidos,
         gastos_mes=anterior.gastos_mes,
+        precio_hora_extra=anterior.precio_hora_extra,
         dias_base=len(dias_del_mes(anio, mes, anterior.dias_servicio,
                                    None,
                                    turno_del_servicio(db, servicio.id))))

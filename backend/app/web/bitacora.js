@@ -256,7 +256,9 @@ function corregirMarca(r, refrescar) {
       const zonaAviso = h("div", {});
       const guardar = h("button", { clase: "chico", type: "button",
         onclick: async () => {
-          if (!cuando.value || motivo.value.trim().length < 5) {
+          /* Diez letras, las mismas que pide el servidor: con cinco, el
+             boton dejaba pasar un motivo que despues rebotaba. */
+          if (!cuando.value || motivo.value.trim().length < 10) {
             return zonaAviso.replaceChildren(
               aviso(t("bit_corregir_faltan"), "alerta"));
           }

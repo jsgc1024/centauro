@@ -1456,10 +1456,11 @@ async function abrirDia(zona, jornada, cual = {}) {
    respuesta corta no alcanza.
 
    El boton de registrarlo a mano sale de `puedo_registrar_a_mano`, que
-   lo contesta el servidor. El consultor ve el panel y no escribe en el:
-   esa hora fija el inicio real, de donde salen las horas que se le
-   facturan al cliente, y quien vende el servicio es a quien mas le
-   conviene que un dia aparezca trabajado. */
+   lo contesta el servidor: asentar una marca que nadie hizo es de la
+   central, no del consultor, que es quien vende el servicio y a quien
+   mas le conviene que un dia aparezca trabajado. Las horas de un dia ya
+   terminado si las corrige el consultor, con motivo y hasta su visto
+   bueno, en "Horas del dia" (seccion 65). */
 async function bloqueDelDia(jornada) {
   const zona = h("div", { clase: "dia_real" });
   await pintarDelDia(zona, jornada);
@@ -1507,9 +1508,188 @@ async function pintarDelDia(zona, jornada) {
     }
   }
 
+  if (d.horas) partes.push(bloqueDeHoras(zona, jornada, d.horas));
+
   const { bitacoraDelDia } = await import("./bitacora.js");
   partes.push(await bitacoraDelDia(jornada.id));
   zona.replaceChildren(...partes);
+}
+
+/* ------------------------------------------- las horas del dia
+
+   Lo programado, desde cuando corren las horas, a que hora termino y
+   cuantas extra (seccion 65). Hasta hoy el panel ensenaba la marca de
+   fin y nada mas: desde aqui nadie veia si hubo horas extra ni cuantas.
+
+   Corregirlas lo decide el servidor (`puedo_corregir`): la central y la
+   direccion, y el consultor de su servicio hasta su visto bueno. La
+   hora original se queda guardada con quien la cambio y por que. */
+function diaYHora(iso) {
+  if (!iso) return "—";
+  return `${iso.slice(8, 10)}/${iso.slice(5, 7)} ${hora(iso)}`;
+}
+
+function duracion(minutos) {
+  const horas = Math.floor(minutos / 60);
+  const resto = String(minutos % 60).padStart(2, "0");
+  return horas ? t("hd_h_min").replace("{h}", horas).replace("{m}", resto)
+               : t("hd_min").replace("{m}", minutos);
+}
+
+/* La hora que tenia antes de la primera correccion: la de la calle. */
+function original(correcciones, campo) {
+  const suyas = (correcciones || []).filter(c => c.campo === campo);
+  return suyas.length ? suyas[0].antes : undefined;
+}
+
+function bloqueDeHoras(zona, jornada, x) {
+  const renglon = (texto, ...valor) =>
+    h("tr", {}, h("td", {}, texto), h("td", {}, ...valor));
+  const corregida = (campo, actual) => {
+    const antes = original(x.correcciones, campo);
+    if (antes === undefined) return [h("b", {}, hora(actual))];
+    return [antes ? h("span", { clase: "antes" }, hora(antes)) : null,
+            h("b", {}, hora(actual)), " ",
+            etiqueta(t("hd_corregido"), "alerta")];
+  };
+
+  const filas = [renglon(t("hd_programado"),
+    h("b", {}, `${hora(x.presentacion)} – ${hora(x.fin_programado)}`),
+    x.horas_contratadas
+      ? ` · ${t("hd_n_horas").replace("{n}", Number(x.horas_contratadas))}`
+      : "")];
+  if (x.con_el_ejecutivo) {
+    filas.push(renglon(t("hd_con_el_ejecutivo"),
+      ...corregida("inicio", x.con_el_ejecutivo),
+      x.adelantado
+        ? h("span", { clase: "gris chico" }, " ",
+            t("hd_adelantado").replace("{h}", hora(x.corren_hasta)))
+        : null));
+  }
+  if (x.termino) {
+    filas.push(renglon(t("hd_termino"), ...corregida("fin", x.termino)));
+  }
+  if (!x.aplica) {
+    filas.push(renglon(t("hd_horas_extra"),
+      h("span", { clase: "gris" }, t("hd_no_aplica"))));
+  } else if (x.en_curso) {
+    filas.push(renglon(t("hd_horas_extra"), x.minutos_en_extra
+      ? etiqueta(t("hd_en_extra").replace("{t}", duracion(x.minutos_en_extra)),
+                 "alerta")
+      : h("span", { clase: "gris" },
+          t("hd_cumple").replace("{h}", hora(x.corren_hasta)))));
+  } else if (x.termino) {
+    filas.push(renglon(t("hd_horas_extra"),
+      x.horas_extra
+        ? etiqueta(t("hd_n_h").replace("{n}", x.horas_extra), "alerta")
+        : h("span", {}, t("hd_ninguna")),
+      x.horas_extra
+        ? h("span", { clase: "gris chico" }, " ",
+            t("hd_de_a").replace("{a}", hora(x.corren_hasta))
+                        .replace("{b}", hora(x.termino)))
+        : null));
+  }
+
+  const sellos = (x.correcciones || []).map(c => h("div", { clase: "sello-corr" },
+    h("b", {}, t("hd_corregido_por").replace("{q}", c.quien || "—")), " ",
+    t("hd_corregido_detalle")
+      .replace("{f}", diaYHora(c.en))
+      .replace("{c}", t(c.campo === "inicio" ? "hd_campo_inicio" : "hd_campo_fin"))
+      .replace("{a}", c.antes ? hora(c.antes) : "—")
+      .replace("{d}", hora(c.despues)),
+    " «", c.motivo || "", "»"));
+
+  const zonaForm = h("div", {});
+  let pie = null;
+  if (x.puedo_corregir) {
+    pie = h("div", { clase: "acciones" },
+      h("button", { clase: "claro chico", type: "button", onclick: () => {
+        if (zonaForm.firstChild) return zonaForm.replaceChildren();
+        zonaForm.replaceChildren(formularioDeHoras(zona, jornada, x, zonaForm));
+      } }, t("hd_corregir")),
+      h("span", { clase: "chico gris" },
+        x.valida ? t("hd_corregir_pie_central") : t("hd_corregir_pie")));
+  } else if (x.por_que_no === "visto_bueno") {
+    pie = h("p", { clase: "chico gris", style: "margin:4px 0 0" },
+      t("hd_con_visto_bueno"));
+  }
+
+  return h("div", { clase: "horas-dia" },
+    conAyuda("h4", t("hd_titulo"), "ay_hd"),
+    h("table", {}, h("tbody", {}, ...filas)),
+    ...sellos, pie, zonaForm);
+}
+
+/* La vista previa hace la misma cuenta que el servidor: las horas corren
+   desde la presentacion o desde el meet and greet si fue antes, y cada
+   hora o fraccion pasado el limite es una hora extra. Solo es para ver
+   antes de guardar; la que cuenta es la del servidor. */
+function extrasCon(x, inicio, fin) {
+  if (!x.aplica || !fin) return 0;
+  const presentacion = new Date(x.presentacion);
+  const arranque = inicio && new Date(inicio) < presentacion
+    ? new Date(inicio) : presentacion;
+  const limite = new Date(new Date(x.fin_programado) - (presentacion - arranque));
+  const minutos = Math.floor((new Date(fin) - limite) / 60000);
+  return minutos > 0 ? Math.ceil(minutos / 60) : 0;
+}
+
+function formularioDeHoras(zona, jornada, x, zonaForm) {
+  const aLocal = (iso) => (iso || "").slice(0, 16);
+  const conSegundos = (v) => (v.length === 16 ? `${v}:00` : v);
+  const inicio = entrada("inicio", { type: "datetime-local",
+                                     value: aLocal(x.con_el_ejecutivo) });
+  const fin = entrada("fin", { type: "datetime-local", value: aLocal(x.termino) });
+  const motivo = entrada("justificacion", { placeholder: t("hd_motivo_ph"),
+                                            maxlength: 400 });
+  const vista = h("div", { clase: "prev" });
+  const zonaAviso = h("div", {});
+
+  const repintar = () => {
+    if (!x.aplica) return vista.replaceChildren(t("hd_no_aplica"));
+    const n = extrasCon(x, inicio.value, fin.value);
+    vista.replaceChildren(t("hd_con_estas"), " ",
+      h("b", {}, t("hd_n_h_extra").replace("{n}", n)), " ",
+      h("span", { clase: "gris" }, t("hd_hoy").replace("{n}", x.horas_extra)));
+  };
+  inicio.addEventListener("input", repintar);
+  fin.addEventListener("input", repintar);
+  repintar();
+
+  const guardar = h("button", { clase: "chico", type: "button",
+    onclick: async () => {
+      if (motivo.value.trim().length < 10) {
+        return zonaAviso.replaceChildren(aviso(t("hd_faltan"), "alerta"));
+      }
+      const cuerpo = { justificacion: motivo.value.trim() };
+      if (inicio.value && inicio.value !== aLocal(x.con_el_ejecutivo)) {
+        cuerpo.inicio = conSegundos(inicio.value);
+      }
+      if (fin.value && fin.value !== aLocal(x.termino)) {
+        cuerpo.fin = conSegundos(fin.value);
+      }
+      guardar.disabled = true;
+      try {
+        await api.post(`/operacion/jornadas/${jornada.id}/horas`, cuerpo);
+        await pintarDelDia(zona, jornada);
+      } catch (err) {
+        guardar.disabled = false;
+        zonaAviso.replaceChildren(aviso(err.message, "grave"));
+      }
+    } }, t("hd_guardar"));
+
+  return h("div", { clase: "tarjeta lisa", style: "margin:12px 0 0" },
+    conAyuda("h4", t("hd_corregir_titulo"), "ay_hd_corregir"),
+    h("div", { clase: "rejilla dos" },
+      campo(t("hd_arranco"), inicio), campo(t("hd_termino"), fin)),
+    campo(t("hd_motivo"), motivo),
+    vista,
+    h("p", { clase: "gris chico", style: "margin:0 0 10px" }, t("hd_form_pie")),
+    zonaAviso,
+    h("div", { clase: "acciones" }, guardar,
+      h("button", { clase: "claro chico", type: "button",
+                    onclick: () => zonaForm.replaceChildren() },
+        t("hd_cancelar"))));
 }
 
 /* Los tres campos se exigen y el boton lo dice antes de mandarlos: un
@@ -1531,7 +1711,10 @@ function formularioMeetAndGreet(zona, jornada, candidatos) {
       }
       boton.disabled = true;
       try {
-        await api.post(`/operacion/jornadas/${jornada.id}/meet-and-greet`, {
+        /* La ruta es la misma de la central (marca-a-mano). Esta llamaba a
+           una que no existe, y el formulario contestaba "Not Found". */
+        await api.post(`/operacion/jornadas/${jornada.id}/marca-a-mano`, {
+          tipo: "contacto_ejecutivo",
           persona_id: Number(quien.value),
           momento: cuando.value.length === 16 ? `${cuando.value}:00` : cuando.value,
           justificacion: motivo.value.trim(),

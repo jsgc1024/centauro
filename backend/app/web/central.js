@@ -910,6 +910,14 @@ function bandaPulso(p) {
   return caja;
 }
 
+function tiempoEnExtra(minutos) {
+  const horas = Math.floor(minutos / 60);
+  return horas
+    ? t("hd_h_min").replace("{h}", horas)
+        .replace("{m}", String(minutos % 60).padStart(2, "0"))
+    : t("hd_min").replace("{m}", minutos);
+}
+
 function tablaPulso(filas) {
   const cuerpo = h("tbody");
   for (const f of filas) {
@@ -936,6 +944,16 @@ function tablaPulso(filas) {
         f.por_entrar_en_extra
           ? etiqueta(`${t("cen_extra")} · ${f.minutos_para_horas_extra} min`,
                      "alerta")
+          : null,
+        /* Ya en horas extra y todavia en la calle (seccion 65). Antes,
+           pasado el fin, este renglon no decia nada: el equipo salia
+           normal, en verde, con una hora extra encima. */
+        f.minutos_en_extra
+          ? h("div", {},
+              etiqueta(`${t("cen_en_extra")} · ${tiempoEnExtra(f.minutos_en_extra)}`,
+                       "alerta"),
+              h("div", { clase: "gris", style: "margin-top:3px" },
+                t("cen_extra_desde").replace("{h}", f.horas_extra_desde || "")))
           : null,
         f.alertas_abiertas
           ? h("div", {}, etiqueta(`${f.alertas_abiertas}`, "grave"))

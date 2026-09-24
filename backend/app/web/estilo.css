@@ -194,6 +194,20 @@ button.peligro { background: var(--grave); }
 .dia_mg.ok { border-left-color: var(--ok); background: #e6f4ec; }
 .dia_mg.falta { border-left-color: var(--alerta); background: #fdf6e3; }
 
+/* Las horas del dia (seccion 65): lo programado, desde cuando corren,
+   a que hora termino y cuantas extra, con quien las corrigio. */
+.horas-dia { margin: 4px 0 14px; padding: 12px 14px; border: 1px solid var(--linea);
+             border-radius: 8px; background: #fff; }
+.horas-dia table { width: auto; border: 0; background: transparent; margin: 2px 0 8px; }
+.horas-dia td { border: 0; padding: 3px 18px 3px 0; font-size: 13.5px;
+                vertical-align: baseline; }
+.horas-dia td:first-child { color: var(--gris); width: 150px; }
+.horas-dia .antes { text-decoration: line-through; color: var(--gris); margin-right: 6px; }
+.horas-dia .prev { margin: 4px 0 10px; font-size: 13.5px; }
+.horas-dia .prev b { color: var(--alerta); }
+.sello-corr { margin: 2px 0 8px; font-size: 12.5px; color: #5d4a12; background: #fdf6e3;
+              border-left: 3px solid var(--alerta); padding: 6px 10px; border-radius: 4px; }
+
 /* La bitacora dentro de la ficha del dia del implantado: separada de
    las posiciones por una linea, porque son dos cosas --quien iba y que
    paso-- y leerlas pegadas las confunde. */
@@ -1153,6 +1167,9 @@ table.tabla-cierre { border: 1px solid var(--linea); border-radius: 6px; margin:
 table.tabla-cierre th { padding: 7px 10px; font-size: 10.5px; }
 table.tabla-cierre td { padding: 8px 10px; font-size: 13px; }
 table.tabla-cierre tr.total td { border-top: 1px solid var(--linea); background: #fafbfc; }
+/* Lo que va dentro del renglon de arriba: las horas extra del servicio. */
+table.tabla-cierre tr.sub td { font-size: 12.5px; color: var(--gris); padding-top: 2px; }
+table.tabla-cierre tr.sub td:first-child { padding-left: 22px; }
 td.der, th.der { text-align: right; }
 h4.seccion { margin: 18px 0 6px; font-size: 13px; color: var(--centauro); }
 

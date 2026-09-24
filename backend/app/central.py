@@ -21,6 +21,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from app import gps
+from app import horas_extra
 from app import implantado as imp
 from app import models as m
 from app import reloj
@@ -444,9 +445,16 @@ def _en_curso(db: Session, jornada: m.Jornada, ahora: datetime,
               .order_by(m.Hito.marcado_en.desc()).first())
     minutos = silencio(ultimo, suyo)
 
-    para_extra = None
-    if jornada.fin_programado:
-        para_extra = int((jornada.fin_programado - suyo).total_seconds() / 60)
+    # Contra el limite de las horas del dia, que corre desde el meet and
+    # greet si fue antes de la presentacion (seccion 65). Y solo donde hay
+    # horas extra: un medio dia salia "por entrar en horas extra" sin
+    # poder tenerlas.
+    para_extra = en_extra = None
+    tope = horas_extra.limite(jornada)
+    if tope and horas_extra.aplica(jornada):
+        para_extra = int((tope - suyo).total_seconds() / 60)
+        de_mas = horas_extra.minutos_de_mas(jornada, suyo)
+        en_extra = de_mas if de_mas > 0 else None
 
     abiertas = (db.query(m.Alerta)
                 .filter_by(jornada_id=jornada.id, atendida=False).count())
@@ -496,6 +504,11 @@ def _en_curso(db: Session, jornada: m.Jornada, ahora: datetime,
         "minutos_para_horas_extra": para_extra,
         "por_entrar_en_extra": (para_extra is not None
                                 and 0 <= para_extra <= AVISO_HORAS_EXTRA),
+        # Ya pasado el limite y todavia en la calle: cuanto lleva en
+        # horas extra y desde que hora. Antes, pasado el fin, la central
+        # no veia nada: el equipo salia normal, en verde.
+        "minutos_en_extra": en_extra,
+        "horas_extra_desde": f"{tope:%H:%M}" if en_extra else None,
         "alertas_abiertas": abiertas,
         # Lo ultimo que dijo cada unidad del dia (seccion 60). No apaga
         # nada: un equipo callado sigue en rojo aunque su camioneta se
