@@ -36,13 +36,13 @@ PAUSA = 0.4               # segundos entre llamadas: tope de 3 por segundo
 # minutos serian treinta entradas por hora con la misma clave.
 _sesiones: dict[tuple, str] = {}
 
-# La pausa despues de un 429. Vive en Redis para que la respeten todos los
-# procesos --el worker de Celery tiene varios--; si Redis no contesta, al
-# menos la respeta este.
+# La pausa despues de un 429, por sitio. Vive en Redis para que la
+# respeten todos los procesos --el worker de Celery tiene varios--; si
+# Redis no contesta, al menos la respeta este.
 LLAVE_PAUSA = "pegasus:pausa_hasta"
 ESPERA_SIN_AVISO = 15 * 60      # segundos, si el 429 no dice hasta cuando
 ESPERA_MAXIMA = 60 * 60
-_pausa_local = 0.0
+_pausa_local: dict[str, float] = {}
 _redis_cliente = None
 
 
@@ -67,21 +67,24 @@ def _redis():
     return _redis_cliente or None
 
 
-def pausa_hasta() -> float:
-    """Hasta cuando (epoch) no se le pide nada a Pegasus; 0 si se puede."""
+def _llave(sitio: str) -> str:
+    return f"{LLAVE_PAUSA}:{sitio}"
+
+
+def pausa_hasta(sitio: str) -> float:
+    """Hasta cuando (epoch) no se le pide nada a ese sitio; 0 si se puede."""
     guardada = 0.0
     r = _redis()
     if r is not None:
         try:
-            guardada = float(r.get(LLAVE_PAUSA) or 0)
+            guardada = float(r.get(_llave(sitio)) or 0)
         except Exception:                                  # noqa: BLE001
             guardada = 0.0
-    return max(guardada, _pausa_local)
+    return max(guardada, _pausa_local.get(sitio, 0.0))
 
 
-def _pausar(respuesta) -> float:
-    """Pegasus dijo 429: hasta cuando no se le pide nada."""
-    global _pausa_local
+def _pausar(respuesta, sitio: str) -> float:
+    """Pegasus dijo 429: hasta cuando no se le pide nada a ese sitio."""
     ahora = time.time()
     try:
         hasta = float(respuesta.headers.get("X-RateLimit-Reset") or 0)
@@ -90,24 +93,23 @@ def _pausar(respuesta) -> float:
     if hasta <= ahora:
         hasta = ahora + ESPERA_SIN_AVISO
     hasta = min(hasta, ahora + ESPERA_MAXIMA) + 5
-    _pausa_local = hasta
+    _pausa_local[sitio] = hasta
     r = _redis()
     if r is not None:
         try:
-            r.set(LLAVE_PAUSA, hasta, ex=int(hasta - ahora) + 1)
+            r.set(_llave(sitio), hasta, ex=int(hasta - ahora) + 1)
         except Exception:                                  # noqa: BLE001
             pass
     return hasta
 
 
-def quitar_pausa() -> None:
-    """Para las pruebas: olvida la pausa."""
-    global _pausa_local
-    _pausa_local = 0.0
+def quitar_pausa(sitio: str) -> None:
+    """Para las pruebas: olvida la pausa de ese sitio, y solo de ese."""
+    _pausa_local.pop(sitio, None)
     r = _redis()
     if r is not None:
         try:
-            r.delete(LLAVE_PAUSA)
+            r.delete(_llave(sitio))
         except Exception:                                  # noqa: BLE001
             pass
 
@@ -172,7 +174,7 @@ class Pegasus:
         except httpx.HTTPError as e:
             raise NoResponde(f"Pegasus no contesto ({type(e).__name__}).")
         if r.status_code == 429:
-            raise NoResponde(_mensaje_de_pausa(_pausar(r)))
+            raise NoResponde(_mensaje_de_pausa(_pausar(r, self.sitio)))
         if r.status_code != 200:
             raise NoResponde(f"Pegasus no dejo entrar ({r.status_code}): "
                              "revisa el usuario y la clave de la conexion.")
@@ -186,7 +188,7 @@ class Pegasus:
         self.http.headers["Authenticate"] = token
 
     def _esperar(self) -> None:
-        hasta = pausa_hasta()
+        hasta = pausa_hasta(self.sitio)
         if hasta > time.time():
             raise NoResponde(_mensaje_de_pausa(hasta))
         falta = PAUSA - (time.monotonic() - self._ultima)
@@ -210,7 +212,7 @@ class Pegasus:
             except httpx.HTTPError as e:
                 raise NoResponde(f"Pegasus no contesto ({type(e).__name__}).")
             if r.status_code == 429:
-                raise NoResponde(_mensaje_de_pausa(_pausar(r)))
+                raise NoResponde(_mensaje_de_pausa(_pausar(r, self.sitio)))
             if r.status_code == 401 and intento == 1:
                 # La sesion vencio: una vez mas con una nueva.
                 _sesiones.pop((self.sitio, self._usuario), None)

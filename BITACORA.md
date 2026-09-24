@@ -3793,6 +3793,33 @@ hace una vez lo mismo que ella con el usuario del `.env` y dice solo
 cuántos: unidades, placas, eventos y tramos, sin nombres, placas ni
 coordenadas.
 
+## 61. Todas las horas de la bitácora, del país del servicio
+
+Decisión de Salvador, 24 de septiembre: «tiene que salir con la hora del
+pais. igual y poner una nota para que el personal sepa». Lo que tocó la
+central, las notas de turno y las alertas se guardan como un instante, y
+salían con el reloj de la base: en UTC en desarrollo, y en hora de México
+en el servidor aunque el servicio fuera de Brasil. Las marcas ya iban con
+la hora del país. Ahora todo va con la hora de pared del país del
+servicio, y la bitácora lo dice arriba: «Todas las horas están en hora
+de Mexico».
+
+De paso, los «?» que tocó el GPS dicen lo nuevo: el camino al punto (la
+unidad como testigo, «La unidad no ha salido» y de dónde salen las
+distancias), «En curso» (la unidad no cuenta como reporte: un equipo
+callado sigue en rojo aunque su camioneta se mueva) y la bitácora (una
+sola medida de la unidad por marca, y de qué país son las horas). El
+recorrido de la primera vez ya trae Unidades para quien la ve, y el de
+Monitoreo dice que ahí cae lo que hay que atender ahora: un pánico, un
+inhibidor, un equipo callado.
+
+Y las pruebas ya no pueden salir a Pegasus. Desde que se encendió la
+lectura, el contenedor trae el usuario de verdad en su entorno, y la
+prueba de «sin usuario no hace nada» leyó el GPS real —97 unidades, a la
+base de pruebas— y falló. `conftest.py` deja la conexión sin usuario
+antes de importar nada, y la pausa por un 429 es de cada sitio: la de una
+prueba ya no puede borrar la del Pegasus de verdad.
+
 ## 14. Lo que falta
 
 ### Abierto

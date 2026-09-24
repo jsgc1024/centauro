@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app import gps
 from app import models as m
+from app import reloj
 
 # Cada renglon dice de donde salio. La pantalla los dibuja distinto, y
 # quien lee sabe si esta viendo una promesa o un hecho.
@@ -90,8 +91,6 @@ def _meet_and_greet(db: Session, jornada: m.Jornada) -> dict:
 def _hora_del_pais(db: Session, instante: datetime | None,
                    jornada: m.Jornada):
     """Un instante (con zona) en la hora de pared del servicio."""
-    from app import reloj
-
     if instante is None:
         return None
     if instante.tzinfo is None:
@@ -199,8 +198,7 @@ def del_dia(db: Session, jornada_id: int) -> dict:
     for alerta in (db.query(m.Alerta).filter_by(jornada_id=jornada_id).all()):
         renglones.append({
             "fuente": ALERTA,
-            "momento": (alerta.creada_en.replace(tzinfo=None)
-                        if alerta.creada_en else None),
+            "momento": _hora_del_pais(db, alerta.creada_en, jornada),
             "titulo": alerta.tipo.value,
             "detalle": alerta.mensaje,
             "marca": "atendida" if alerta.atendida else None,
@@ -240,8 +238,7 @@ def del_dia(db: Session, jornada_id: int) -> dict:
         quien = registro.persona.nombre if registro.persona else None
         renglones.append({
             "fuente": CENTRAL,
-            "momento": (registro.creado_en.replace(tzinfo=None)
-                        if registro.creado_en else None),
+            "momento": _hora_del_pais(db, registro.creado_en, jornada),
             "titulo": registro.accion,
             "detalle": " · ".join(x for x in (registro.detalle, quien) if x),
             "marca": None, "tono": "",
@@ -252,8 +249,7 @@ def del_dia(db: Session, jornada_id: int) -> dict:
                  .filter_by(jornada_id=jornada_id).all()):
         renglones.append({
             "fuente": NOTA,
-            "momento": (nota.creada_en.replace(tzinfo=None)
-                        if nota.creada_en else None),
+            "momento": _hora_del_pais(db, nota.creada_en, jornada),
             "titulo": nota.persona.nombre if nota.persona else "—",
             "detalle": nota.texto,
             "marca": None, "tono": "",
@@ -275,9 +271,15 @@ def del_dia(db: Session, jornada_id: int) -> dict:
          and j.estatus != m.EstatusJornada.CANCELADA),
         key=lambda j: j.fecha, default=None)
 
+    # Todas las horas de arriba son de la pared del pais del servicio, y
+    # la pantalla lo dice: quien lo lee puede estar en otro pais.
+    pais_id = reloj.pais_de_la_jornada(jornada)
+    pais = db.get(m.Pais, pais_id) if pais_id else None
+
     return {
         "jornada_id": jornada.id,
         "fecha": jornada.fecha.isoformat(),
+        "hora_de": pais.nombre if pais else None,
         "estatus_jornada": jornada.estatus.value,
         "meet_and_greet": _meet_and_greet(db, jornada),
         "manana": ({"jornada_id": siguiente.id,

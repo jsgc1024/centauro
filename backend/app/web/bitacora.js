@@ -60,6 +60,12 @@ async function pintar(zona, jornadaId) {
 
   zona.replaceChildren(
     conAyuda("div", leyenda, "ay_bitacora", { clase: "leyenda_bitacora" }),
+    /* Todas las horas son de la pared del pais del servicio, y se dice:
+       la central de un pais lee la bitacora de otro. */
+    d.hora_de
+      ? h("div", { clase: "gris chico", style: "margin:-4px 0 10px" },
+          t("bit_horas_de").replace("{pais}", d.hora_de))
+      : "",
     ...(todos.length
       ? todos.map(r => renglon(r, d, refrescar))
       : [h("div", { clase: "vacio" }, t("bit_vacia"))]),

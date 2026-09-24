@@ -17,6 +17,15 @@ import os
 BASE_DE_PRUEBAS = "postgresql+psycopg://centauro:centauro_dev@db:5432/centauro_test"
 os.environ["DATABASE_URL"] = BASE_DE_PRUEBAS
 
+# Ni una prueba sale a Pegasus (seccion 60). Desde que se encendio la
+# lectura, el contenedor trae en su entorno el usuario de verdad, y una
+# prueba que llamo a la lectura sin su Pegasus de mentiras leyo el GPS
+# real --97 unidades, a la base de pruebas--. Las que necesitan un
+# Pegasus lo arman ellas; aqui se deja la conexion sin usuario.
+for _variable in ("PEGASUS_SITIO", "PEGASUS_USUARIO", "PEGASUS_CLAVE",
+                  "PEGASUS_SECRETO_AVISO"):
+    os.environ[_variable] = ""
+
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import text  # noqa: E402

@@ -160,6 +160,50 @@ def test_del_registro_de_acciones_solo_pasa_lo_que_importa(cliente, sesion,
         db.close()
 
 
+def test_todas_las_horas_son_del_pais_del_servicio(cliente, sesion, datos):
+    """Lo que toco la central, las notas y las alertas se guardan como un
+    instante, y salian con el reloj de la base: en UTC en desarrollo, en
+    hora de Mexico en el servidor aunque el servicio fuera de Brasil. Van
+    con la hora de pared del pais del servicio, como las marcas, y la
+    bitacora dice cual es."""
+    from datetime import timezone
+
+    from app import auditoria, bitacora, models as m
+    from app.db import SessionLocal
+
+    servicio, j = _dia(cliente, sesion, datos, 0)
+    # Un instante de UTC que en Mexico (UTC-6) cae a las 18:21 del dia
+    # anterior: si alguien olvida convertir, se nota en la fecha tambien.
+    instante = datetime(2026, 9, 24, 0, 21, tzinfo=timezone.utc)
+    en_mexico = datetime(2026, 9, 23, 18, 21)
+
+    db = SessionLocal()
+    try:
+        fila = db.get(m.Servicio, servicio["id"])
+        usuario = (db.query(m.Usuario)
+                   .filter_by(correo="ana.solis@centauro.lat").one())
+        auditoria.registrar(db, usuario, fila, "cerrar dia a mano",
+                            "nadie marco el fin", jornada_id=j["id"])
+        db.flush()
+        (db.query(m.RegistroAccion).filter_by(jornada_id=j["id"])
+         .update({"creado_en": instante}))
+        db.add(m.NotaBitacora(jornada_id=j["id"], persona_id=usuario.persona_id,
+                              texto="Hablo el cliente", creada_en=instante))
+        db.add(m.Alerta(jornada_id=j["id"], tipo=m.TipoAlerta.SIN_REPORTE,
+                        mensaje="Sin reportar", creada_en=instante))
+        db.commit()
+
+        d = bitacora.del_dia(db, j["id"])
+        assert d["hora_de"] == "Mexico"
+        horas = {r["fuente"]: r["momento"] for r in d["renglones"]
+                 if r["fuente"] in ("central", "nota", "alerta")}
+        assert set(horas) == {"central", "nota", "alerta"}
+        for fuente, momento in horas.items():
+            assert datetime.fromisoformat(momento) == en_mexico, fuente
+    finally:
+        db.close()
+
+
 def test_una_marca_diferida_ensena_las_dos_horas(cliente, sesion, datos):
     """La app puede marcar sin señal y mandar después. Hasta hoy esa
     diferencia no se enseñaba en ningún lado, y un día donde todo llega

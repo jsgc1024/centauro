@@ -312,7 +312,7 @@ const TEXTOS = {
     rec_operacion: "Cómo va la operación ahora mismo: quién está en la calle, quién no ha reportado y qué se ve en el día.",
     rec_eventuales: "Los servicios que se contratan por día: el alta, la cotización, quién va y el cierre.",
     rec_implantados: "Los servicios de mes, con la misma gente todos los días. De aquí salen el calendario y la facturación mensual.",
-    rec_central: "Lo que hay que resolver antes del corte de la víspera: quién no ha confirmado, qué viático no se depositó, qué hoja falta liberar.",
+    rec_central: "Lo que hay que atender ahora —un pánico, un inhibidor, un equipo callado— y lo que hay que resolver antes del corte de la víspera: quién no ha confirmado, qué viático no se depositó, qué hoja falta liberar.",
     rec_finanzas: "El dinero del servicio: lo que se entregó, lo que falta comprobar, las compras y las rentas.",
     rec_nomina: "Lo que se le paga al personal de seguridad cada semana, día por día y con el rol de ese día.",
     rec_personal: "Tu gente y tu flota: quién está disponible, con qué capacitación, y qué unidad puede llevar.",
@@ -1094,14 +1094,19 @@ const TEXTOS = {
     ay_pan_calidad_para: "Saber si lo que nos reportan es cierto, no si la operación va bien. Son dos preguntas distintas.",
     ay_pan_calidad_cuando: "Nunca de golpe: estas cifras solo se ven al cerrar cada servicio, una por una. Un patrón —alguien que siempre marca desde lejos— no se ve así.",
     ay_pan_calidad_numero: "Los intentos fuera de geocerca son marcas rechazadas: alguien quiso reportar que ya llegó desde lejos. Las marcas por validar las tiene que revisar la central.",
-    ay_cen_pulso_para: "Ver los servicios que están corriendo ahora y, sobre todo, cuánto lleva callado cada uno.",
+    ay_cen_pulso_para: "Ver los servicios que están corriendo ahora y, sobre todo, cuánto lleva callado cada uno. Debajo va lo que dice su unidad.",
     ay_cen_camino_para: "Saber si va a haber alguien en el punto. No mide "
-      + "puntualidad: mide si la persona se está moviendo hacia allá.",
+      + "puntualidad: mide si la persona se está moviendo hacia allá. Para "
+      + "quien trae unidad, lo que tiene que llegar es la camioneta, y su GPS "
+      + "cuenta como si hubiera contestado.",
     ay_cen_camino_cuando: "Cuando alguien aparece aquí como \"Sin "
-      + "respuesta\" o \"No llega\". A esa hora todavía se puede mandar a "
-      + "otra persona; una hora después, ya no.",
+      + "respuesta\", \"No llega\" o \"La unidad no ha salido\". A esa hora "
+      + "todavía se puede mandar a otra persona; una hora después, ya no.",
+    ay_cen_camino_numero: "Las distancias son en línea recta al punto: la "
+      + "del teléfono, de la última posición que mandó; la de la unidad, de "
+      + "su último reporte.",
     ay_cen_pulso_cuando: "Cuando el equipo vuelve a reportar y todo estaba bien. O cuando no vuelve, y entonces ya pasó algo.",
-    ay_cen_pulso_numero: "El silencio se cuenta desde la última marca o reporte de ese equipo, con la hora de su país.",
+    ay_cen_pulso_numero: "El silencio se cuenta desde la última marca o reporte de ese equipo, con la hora de su país. La unidad no cuenta como reporte: un equipo callado sigue en rojo aunque su camioneta se mueva.",
     ay_cen_semana_para: "Ver lo que viene, para llegar antes: confirmaciones que faltan, gente sin asignar, viáticos sin depositar.",
     ay_cen_semana_cuando: "A las seis de la mañana del día del servicio, que es cuando lo que se resolvía con una llamada la víspera ya cuesta un servicio.",
     ay_cen_sin_cerrar_para: "La lista de trabajo de la central: días que ya pasaron y siguen abiertos.",
@@ -1162,8 +1167,9 @@ const TEXTOS = {
     /* --- bitacora del dia */
     bit_ver: "Bitácora",
     bit_cerrar: "Cerrar bitácora",
-    ay_bitacora_para: "Ver en una sola columna todo lo que pasó en el día: lo que el cliente pidió, lo que el equipo marcó desde la app, lo que el sistema alertó y lo que la central tocó a mano.",
-    ay_bitacora_cuando: "Cuando el día no salió como estaba escrito y hay que reconstruir en qué momento se separó del plan. Un renglón sin hora es una parada que se planeó y que nadie marcó. Las posiciones del camino al punto no están aquí a propósito: se apagan al marcar la llegada y esto no es un rastreo.",
+    ay_bitacora_para: "Ver en una sola columna todo lo que pasó en el día: lo que el cliente pidió, lo que el equipo marcó desde la app —con dónde estaba su unidad en ese momento—, lo que el sistema alertó y lo que la central tocó a mano.",
+    ay_bitacora_cuando: "Cuando el día no salió como estaba escrito y hay que reconstruir en qué momento se separó del plan. Un renglón sin hora es una parada que se planeó y que nadie marcó. Las posiciones del camino al punto no están aquí a propósito: se apagan al marcar la llegada y esto no es un rastreo; de la unidad entra una sola medida por marca.",
+    ay_bitacora_numero: "Todas las horas son del país del servicio, aunque quien lo lea esté en otro.",
     dia_titulo: "Lo que pasó ese día",
     dia_sin_marca: "Todavía no hay meet and greet: nadie ha marcado el contacto con el ejecutivo.",
     dia_programado: "Programado para las",
@@ -1232,6 +1238,7 @@ const TEXTOS = {
     cmp_quitar_foto: "Quitar",
     cmp_borrador_recuperado: "Se recuperó lo que llevabas capturado.",
     bit_vacia: "Todavía no hay nada que contar de este día.",
+    bit_horas_de: "Todas las horas están en hora de {pais}.",
     bit_sin_hora: "sin hora",
     bit_fuente_plan: "Agenda del cliente",
     bit_fuente_hito: "Lo que marcó el equipo",
@@ -2858,7 +2865,7 @@ const TEXTOS = {
     rec_operacion: "How the operation is going right now: who is out there, who has not reported and what the day looks like.",
     rec_eventuales: "Services hired by the day: intake, quote, who goes and closing.",
     rec_implantados: "Monthly services, with the same people every day. The calendar and the monthly invoice come from here.",
-    rec_central: "What has to be solved before the evening cut-off: who has not confirmed, which expense money was not deposited, which sheet is not released yet.",
+    rec_central: "What needs attention now —a panic alert, a jammer, a silent team— and what has to be solved before the evening cut-off: who has not confirmed, which expense money was not deposited, which sheet is not released yet.",
     rec_finanzas: "The money of the service: what was handed out, what is still to be accounted for, purchases and rentals.",
     rec_nomina: "What field officers are paid each week, day by day and with that day's role.",
     rec_personal: "Your people and your fleet: who is available, with what training, and which vehicle they can take.",
@@ -3641,15 +3648,20 @@ const TEXTOS = {
     ay_pan_calidad_para: "Know whether what gets reported to us is true — not whether operations are going well. Two different questions.",
     ay_pan_calidad_cuando: "Never all at once: these figures only show when closing each service, one by one. A pattern — someone who always checks in from far away — does not show that way.",
     ay_pan_calidad_numero: "Out-of-geofence attempts are rejected check-ins: someone tried to report arriving from far away. Check-ins to validate have to be reviewed by the control room.",
-    ay_cen_pulso_para: "See the services running right now and, above all, how long each one has been silent.",
+    ay_cen_pulso_para: "See the services running right now and, above all, how long each one has been silent. Below it, what its vehicle says.",
     ay_cen_camino_para: "Know whether someone will be at the meeting "
       + "point. It does not measure punctuality: it measures whether "
-      + "the person is moving towards it.",
-    ay_cen_camino_cuando: "When someone shows up here as \"No answer\" or "
-      + "\"Will not make it\". At that hour another person can still be "
-      + "sent; an hour later, no.",
+      + "the person is moving towards it. For whoever brings a vehicle, "
+      + "what has to arrive is the vehicle, and its GPS counts as if they "
+      + "had answered.",
+    ay_cen_camino_cuando: "When someone shows up here as \"No answer\", "
+      + "\"Will not make it\" or \"The vehicle has not left\". At that hour "
+      + "another person can still be sent; an hour later, no.",
+    ay_cen_camino_numero: "Distances are in a straight line to the point: "
+      + "the phone's from the last position it sent, the vehicle's from its "
+      + "last report.",
     ay_cen_pulso_cuando: "When the team checks in again and everything was fine. Or when they do not, and by then something has happened.",
-    ay_cen_pulso_numero: "Silence is counted from that team's last check-in or report, in their country's time.",
+    ay_cen_pulso_numero: "Silence is counted from that team's last check-in or report, in their country's time. The vehicle does not count as a report: a silent team stays red even if its vehicle is moving.",
     ay_cen_semana_para: "See what is coming, to get ahead of it: missing confirmations, unassigned people, allowances not yet paid.",
     ay_cen_semana_cuando: "At six in the morning on the day of the service, when what one phone call the night before would have solved now costs a service.",
     ay_cen_sin_cerrar_para: "The control room's worklist: days that have already passed and are still open.",
@@ -3710,8 +3722,9 @@ const TEXTOS = {
     /* --- bitacora del dia */
     bit_ver: "Day log",
     bit_cerrar: "Close log",
-    ay_bitacora_para: "See everything that happened during the day in one column: what the client asked for, what the team marked from the app, what the system flagged and what the control room did by hand.",
-    ay_bitacora_cuando: "When the day did not go as written and you need to pin down where it split from the plan. A row with no time is a stop that was planned and never marked. Positions on the way to the pickup are deliberately absent: they switch off on arrival and this is not a tracker.",
+    ay_bitacora_para: "See everything that happened during the day in one column: what the client asked for, what the team marked from the app —with where its vehicle was at that moment—, what the system flagged and what the control room did by hand.",
+    ay_bitacora_cuando: "When the day did not go as written and you need to pin down where it split from the plan. A row with no time is a stop that was planned and never marked. Positions on the way to the pickup are deliberately absent: they switch off on arrival and this is not a tracker; from the vehicle there is a single reading per check-in.",
+    ay_bitacora_numero: "All times are the service country's, even if whoever reads it is somewhere else.",
     dia_titulo: "What actually happened that day",
     dia_sin_marca: "No meet and greet yet: nobody has marked the contact with the executive.",
     dia_programado: "Scheduled for",
@@ -3780,6 +3793,7 @@ const TEXTOS = {
     cmp_quitar_foto: "Remove",
     cmp_borrador_recuperado: "Recovered what you had captured.",
     bit_vacia: "Nothing to tell about this day yet.",
+    bit_horas_de: "All times are {pais} time.",
     bit_sin_hora: "no time",
     bit_fuente_plan: "Client agenda",
     bit_fuente_hito: "What the team marked",
@@ -5398,7 +5412,7 @@ const TEXTOS = {
     rec_operacion: "Como está a operação agora: quem está na rua, quem não reportou e como está o dia.",
     rec_eventuales: "Os serviços contratados por dia: o cadastro, a cotação, quem vai e o fechamento.",
     rec_implantados: "Os serviços de mês, com a mesma gente todos os dias. Daqui saem o calendário e o faturamento mensal.",
-    rec_central: "O que precisa ser resolvido antes do corte da véspera: quem não confirmou, qual diária não foi depositada, qual folha falta liberar.",
+    rec_central: "O que precisa de atenção agora —um pânico, um bloqueador de sinal, uma equipe calada— e o que precisa ser resolvido antes do corte da véspera: quem não confirmou, qual diária não foi depositada, qual folha falta liberar.",
     rec_finanzas: "O dinheiro do serviço: o que foi entregue, o que falta comprovar, as compras e as locações.",
     rec_nomina: "O que se paga ao pessoal de segurança a cada semana, dia a dia e com a função daquele dia.",
     rec_personal: "Sua gente e sua frota: quem está disponível, com que treinamento, e que unidade pode levar.",
@@ -6180,14 +6194,19 @@ const TEXTOS = {
     ay_pan_calidad_para: "Saber se o que nos reportam é verdade, não se a operação vai bem. São duas perguntas distintas.",
     ay_pan_calidad_cuando: "Nunca de uma vez: estes números só aparecem ao fechar cada serviço, um a um. Um padrão — alguém que sempre marca de longe — não se vê assim.",
     ay_pan_calidad_numero: "As tentativas fora da cerca são marcações recusadas: alguém quis reportar que já chegou estando longe. As marcações a validar têm de ser revistas pela central.",
-    ay_cen_pulso_para: "Ver os serviços em curso agora e, sobretudo, há quanto tempo cada um está calado.",
+    ay_cen_pulso_para: "Ver os serviços em curso agora e, sobretudo, há quanto tempo cada um está calado. Embaixo vai o que diz a unidade.",
     ay_cen_camino_para: "Saber se vai ter alguém no ponto. Não mede "
-      + "pontualidade: mede se a pessoa está se movendo para lá.",
+      + "pontualidade: mede se a pessoa está se movendo para lá. Para quem "
+      + "leva unidade, o que tem que chegar é a camionete, e o GPS dela "
+      + "conta como se tivesse respondido.",
     ay_cen_camino_cuando: "Quando alguém aparece aqui como \"Sem "
-      + "resposta\" ou \"Não chega\". Nessa hora ainda dá para mandar "
-      + "outra pessoa; uma hora depois, não.",
+      + "resposta\", \"Não chega\" ou \"A unidade não saiu\". Nessa hora "
+      + "ainda dá para mandar outra pessoa; uma hora depois, não.",
+    ay_cen_camino_numero: "As distâncias são em linha reta até o ponto: a "
+      + "do telefone, da última posição que mandou; a da unidade, do seu "
+      + "último reporte.",
     ay_cen_pulso_cuando: "Quando a equipe volta a reportar e estava tudo bem. Ou quando não volta, e aí já aconteceu algo.",
-    ay_cen_pulso_numero: "O silêncio é contado desde a última marcação ou reporte daquela equipe, com a hora do país dela.",
+    ay_cen_pulso_numero: "O silêncio é contado desde a última marcação ou reporte daquela equipe, com a hora do país dela. A unidade não conta como reporte: uma equipe calada continua em vermelho mesmo que a camionete se mova.",
     ay_cen_semana_para: "Ver o que vem, para chegar antes: confirmações que faltam, gente sem atribuir, diárias sem depositar.",
     ay_cen_semana_cuando: "Às seis da manhã do dia do serviço, quando o que se resolvia com um telefonema na véspera já custa um serviço.",
     ay_cen_sin_cerrar_para: "A lista de trabalho da central: dias que já passaram e continuam abertos.",
@@ -6248,8 +6267,9 @@ const TEXTOS = {
     /* --- bitacora del dia */
     bit_ver: "Diário do dia",
     bit_cerrar: "Fechar diário",
-    ay_bitacora_para: "Ver numa só coluna tudo o que aconteceu no dia: o que o cliente pediu, o que a equipe marcou pelo aplicativo, o que o sistema alertou e o que a central fez à mão.",
-    ay_bitacora_cuando: "Quando o dia não saiu como estava escrito e é preciso reconstruir em que momento se separou do plano. Uma linha sem hora é uma parada que foi planejada e que ninguém marcou. As posições do caminho até o ponto não estão aqui de propósito: apagam-se ao marcar a chegada e isto não é um rastreamento.",
+    ay_bitacora_para: "Ver numa só coluna tudo o que aconteceu no dia: o que o cliente pediu, o que a equipe marcou pelo aplicativo —com onde estava a unidade naquele momento—, o que o sistema alertou e o que a central fez à mão.",
+    ay_bitacora_cuando: "Quando o dia não saiu como estava escrito e é preciso reconstruir em que momento se separou do plano. Uma linha sem hora é uma parada que foi planejada e que ninguém marcou. As posições do caminho até o ponto não estão aqui de propósito: apagam-se ao marcar a chegada e isto não é um rastreamento; da unidade entra uma só medida por marcação.",
+    ay_bitacora_numero: "Todos os horários são do país do serviço, mesmo que quem lê esteja em outro.",
     dia_titulo: "O que aconteceu naquele dia",
     dia_sin_marca: "Ainda não há meet and greet: ninguém marcou o contato com o executivo.",
     dia_programado: "Programado para as",
@@ -6318,6 +6338,7 @@ const TEXTOS = {
     cmp_quitar_foto: "Remover",
     cmp_borrador_recuperado: "Recuperado o que você tinha capturado.",
     bit_vacia: "Ainda não há nada para contar deste dia.",
+    bit_horas_de: "Todos os horários estão no horário de {pais}.",
     bit_sin_hora: "sem hora",
     bit_fuente_plan: "Agenda do cliente",
     bit_fuente_hito: "O que a equipe marcou",

@@ -270,7 +270,7 @@ def test_si_pegasus_pide_esperar_no_se_le_pide_nada(db):
         return httpx.Response(429, headers={
             "X-RateLimit-Reset": str(int(reloj_real.time()) + 120)})
 
-    conexion.quitar_pausa()
+    conexion.quitar_pausa("https://cuota.invalid")
     try:
         cliente = conexion.Pegasus("https://cuota.invalid", "u", "c")
         cliente.http = httpx.Client(transport=httpx.MockTransport(sitio))
@@ -286,7 +286,7 @@ def test_si_pegasus_pide_esperar_no_se_le_pide_nada(db):
         assert "bajar el ritmo" in r["error"]
         assert len(llamadas) == antes
     finally:
-        conexion.quitar_pausa()
+        conexion.quitar_pausa("https://cuota.invalid")
         conexion._sesiones.clear()
 
 
