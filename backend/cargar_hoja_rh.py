@@ -12,7 +12,8 @@ empleado. No crea ni borra nada.
 
   * A cada persona se le encuentra por el No. Odoo, y ademas el nombre de
     la fila tiene que ser el de Odoo: una fila movida no le escribe a
-    otra persona. Si no coincide, la fila entera se salta.
+    otra persona. Si no coincide, la fila entera se salta, y la persona
+    no se da por vista: si su fila buena viene despues, se toma.
   * Una casilla vacia no borra lo que Odoo ya tiene.
   * Lo que no pasa la revision --una plaza que no es de las cuatro, un
     celular de menos de diez digitos, un correo mal escrito o repetido,
@@ -256,13 +257,15 @@ def calcular(odoo, filas):
         if e is None:
             saltadas["no es personal de seguridad en Odoo"] += 1
             continue
+        # Primero el nombre y despues si ya vino: una fila movida no le
+        # aparta el numero a la fila buena que viene mas abajo.
+        if normal(celda(fila.get("nombre"))) != normal(e.get("name")):
+            saltadas["el nombre de la fila no es el de Odoo"] += 1
+            continue
         if e["id"] in vistos:
             saltadas["la persona viene dos veces"] += 1
             continue
         vistos.add(e["id"])
-        if normal(celda(fila.get("nombre"))) != normal(e.get("name")):
-            saltadas["el nombre de la fila no es el de Odoo"] += 1
-            continue
 
         # La hoja trae lo que Odoo ya tenia: solo se revisa y se escribe lo
         # que cambia.

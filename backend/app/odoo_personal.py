@@ -215,6 +215,9 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
                              for p, _ in por_cerrar],
         "pendientes": plan["pendientes"],
         "sin_cambio": plan["sin_cambio"],
+        # Odoo dice algo que no es un numero («sin dispositivo»): no se
+        # guardo como telefono ni borro el que ya habia.
+        "celular_no_valido": plan["celular_no_valido"],
         # «sin_foto_real»: Odoo solo tiene el circulo con sus iniciales.
         "fotos": {"revisadas": len(filas_de_foto), "reales": reales,
                   "sin_foto_real": len(filas_de_foto) - reales,
@@ -317,6 +320,7 @@ def resumen(informe: dict) -> dict:
             "cambios": len(informe["cambios"]), "bajas": len(informe["bajas"]),
             "accesos_cerrados": len(informe["accesos_cerrados"]),
             "sin_cambio": informe["sin_cambio"],
+            "celular_no_valido": len(informe.get("celular_no_valido", [])),
             "pendientes": faltas, "fotos": informe["fotos"]}
 
 

@@ -55,6 +55,9 @@ def main(argv: list) -> int:
     print(f"Fotos revisadas: {fotos['revisadas']} · de verdad: "
           f"{fotos['reales']} · solo iniciales: {fotos['sin_foto_real']}"
           + (f" · guardadas: {fotos['actualizadas']}" if aplicar else ""))
+    if r["celular_no_valido"]:
+        print(f"Celular que en Odoo no es un numero: {r['celular_no_valido']} "
+              "(no se guarda y no borra el que ya habia)")
     if r["pendientes"]:
         print("Pendientes, por motivo:")
         for motivo, cuantos in sorted(r["pendientes"].items(),

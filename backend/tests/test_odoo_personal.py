@@ -259,6 +259,32 @@ def test_lo_que_cambia_en_odoo_cambia_aqui_y_lo_vacio_no_borra(db):
     assert (p.telefono, p.referencia) == ("+52 33 1111 2222", "PO-1")
 
 
+def test_un_celular_que_no_es_numero_no_se_guarda_ni_borra(db):
+    # En Odoo hay fichas que en el celular dicen «sin dispositivo».
+    odoo = OdooFalso(empleado(1, mobile_phone="Sin dispositivo"),
+                     empleado(2), empleado(3, mobile_phone="555 1234"))
+    informe = leer(db, odoo)
+    # No detiene el alta: entran, sin celular.
+    assert len(informe["altas"]) == 3 and not informe["pendientes"]
+    assert (persona(db, 1).telefono, persona(db, 3).telefono) == (None, None)
+    assert sorted(c["odoo_id"] - ODOO0
+                  for c in informe["celular_no_valido"]) == [1, 3]
+    assert odoo_personal.resumen(informe)["celular_no_valido"] == 2
+
+    # A quien ya tiene celular, un texto en Odoo no se lo borra...
+    odoo.cambiar(2, mobile_phone="N/A")
+    informe = leer(db, odoo)
+    assert not informe["cambios"]
+    assert persona(db, 2).telefono == "+52 55 5000 0002"
+    assert sorted(c["odoo_id"] - ODOO0
+                  for c in informe["celular_no_valido"]) == [1, 2, 3]
+    # ...y cuando Odoo ya trae el numero, entra con su lada.
+    odoo.cambiar(1, mobile_phone="5512345678")
+    informe = leer(db, odoo)
+    assert [c["que"] for c in informe["cambios"]] == [["celular"]]
+    assert persona(db, 1).telefono == "+52 5512345678"
+
+
 def test_quien_ya_estaba_en_centauro_se_vincula_por_su_correo(
         cliente, sesion, datos, db):
     h = sesion("admin")

@@ -16,6 +16,11 @@ Las decisiones de Salvador (23 de septiembre) que viven aqui:
   * El Estado de Mexico va como Ciudad de Mexico: es la misma zona
     metropolitana.
   * Lo dudoso no se adivina: se reporta como pendiente y no se toca.
+
+Y del 24 de septiembre: un celular que no es un numero --en Odoo hay
+fichas que dicen «sin dispositivo»-- no se guarda como telefono ni borra
+el que Centauro ya tiene; el informe lo cuenta aparte. No detiene el
+alta: la persona entra sin celular.
 """
 import collections
 import re
@@ -34,6 +39,10 @@ DOMINIOS_RAROS = frozenset({
     "hotmial.com", "hotmal.com", "hotmail.con", "hotamil.com",
     "yaho.com", "yahoo.con", "outlok.com", "outlook.con"})
 CORREO_VALIDO = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# Un celular ya con la lada de su pais tiene al menos diez digitos en toda
+# la region: +52 y diez en Mexico, +55 y diez u once en Brasil, +51 y
+# nueve en Peru. Lo que no llega no es un numero al que se pueda llamar.
+DIGITOS_CELULAR = 10
 
 # Como empieza cada imagen en base64. El SVG no esta porque es el avatar
 # de iniciales que Odoo le pone a quien no tiene foto: no es una foto, y
@@ -102,6 +111,11 @@ def problema_de_correo(correo: str) -> str | None:
     return None
 
 
+def es_celular(numero) -> bool:
+    """Si el telefono, ya con su lada, es un numero y no un texto."""
+    return sum(c.isdigit() for c in texto(numero)) >= DIGITOS_CELULAR
+
+
 def plaza_de(empleado: dict, plazas: dict) -> tuple:
     """(plaza o None, lo que dice Odoo). `plazas` va por nombre normalizado."""
     lugar = nombre_de(empleado.get("work_location_id"))
@@ -143,13 +157,26 @@ def planear(empleados: list, personas: list, plazas: dict,
 
     plan = {"leidos": len(elegidos), "altas": [], "vinculos": [],
             "cambios": [], "fotos": [], "pendientes": [], "sin_cambio": 0,
-            "procesadas": [], "revisar_salida": []}
+            "procesadas": [], "revisar_salida": [], "celular_no_valido": []}
     tomados = set()        # correos que este plan ya aparto
 
     def pendiente(e, persona_id, faltas):
         plan["pendientes"].append({"odoo_id": e["id"], "persona_id": persona_id,
                                    "nombre": texto(e.get("name")),
                                    "falta": faltas})
+
+    def celular(e, pais_id, persona_id, nombre):
+        """El celular de Odoo con su lada, o None si Odoo no trae un numero."""
+        escrito = texto(e.get("mobile_phone"))
+        if not escrito:
+            return None
+        numero = normalizar_tel(escrito, pais_id)
+        if es_celular(numero):
+            return numero
+        plan["celular_no_valido"].append({"odoo_id": e["id"],
+                                          "persona_id": persona_id,
+                                          "nombre": nombre})
+        return None
 
     for e in elegidos:
         nombre = texto(e.get("name"))
@@ -182,12 +209,10 @@ def planear(empleados: list, personas: list, plazas: dict,
                 pendiente(e, None, faltas)
                 continue
             tomados.add(correo)
-            celular = texto(e.get("mobile_phone"))
             plan["altas"].append({
                 "odoo_id": e["id"], "nombre": nombre, "correo": correo,
                 "plaza_id": plaza["id"], "plaza": plaza["nombre"],
-                "telefono": (normalizar_tel(celular, plaza["pais_id"])
-                             if celular else None),
+                "telefono": celular(e, plaza["pais_id"], None, nombre),
                 "referencia": texto(e.get("registration_number")) or None,
                 "fecha_ingreso": fecha(e.get("first_contract_date"))})
             plan["fotos"].append(e["id"])
@@ -208,13 +233,11 @@ def planear(empleados: list, personas: list, plazas: dict,
             que.append("plaza")
         elif plaza is None and lugar:
             avisos.append(f"la plaza «{lugar}» no existe en Centauro")
-        celular = texto(e.get("mobile_phone"))
-        if celular:
-            pais = plaza["pais_id"] if plaza is not None else persona.get("pais_id")
-            tel = normalizar_tel(celular, pais)
-            if tel and tel != persona.get("telefono"):
-                valores["telefono"] = tel
-                que.append("celular")
+        pais = plaza["pais_id"] if plaza is not None else persona.get("pais_id")
+        tel = celular(e, pais, persona["id"], nombre or persona.get("nombre"))
+        if tel and tel != persona.get("telefono"):
+            valores["telefono"] = tel
+            que.append("celular")
         referencia = texto(e.get("registration_number"))
         if referencia and referencia != persona.get("referencia"):
             valores["referencia"] = referencia

@@ -3820,6 +3820,47 @@ base de pruebas— y falló. `conftest.py` deja la conexión sin usuario
 antes de importar nada, y la pausa por un 429 es de cada sitio: la de una
 prueba ya no puede borrar la del Pegasus de verdad.
 
+## 62. La hoja de RH, cargada a Odoo
+
+RH devolvió la hoja del personal de seguridad (`hoja_rh_odoo.py`, sacada
+de Odoo la noche del 22 de septiembre) con lo que faltaba, y
+`cargar_hoja_rh.py` la subió a Odoo el 23 en la noche, con ensayo, visto
+bueno de Salvador y la bitácora para deshacer
+(`odoo_cambios_hoja_20260923_2207.json`, fuera de git): **65 personas,
+62 plazas, 5 celulares, 1 correo personal y 3 referencias**. La plaza era
+lo que detenía todo: sin ella la lectura del personal (sección 51) deja a
+la persona pendiente y no la da de alta.
+
+- **El No. Odoo venía recorrido** en 16 filas, con números repetidos y
+  nombres distintos. El cargador no le escribe a quien no es, pero se
+  habría saltado a 25 personas. Los correos y las referencias sí
+  cuadraban con cada nombre, así que se hizo una copia con el número
+  corregido por el nombre, lo cambiado en naranja y una columna
+  «Revisión Centauro» que dice qué pasa con cada fila y sirve para
+  devolverle a RH. La hoja de RH no se tocó.
+- **Lo que Odoo ya tenía más nuevo no se pisó.** Un revisor de solo
+  lectura comparó Odoo con la hoja que se sacó: un celular que ya habían
+  cambiado en Odoo se quedó como estaba. Tres personas tienen en Odoo la
+  ubicación «Office» y RH puso Ciudad de México; Salvador decidió dejarlas
+  así, de modo que la lectura del personal las deja pendientes hasta que
+  tengan una plaza de Centauro.
+- **Lo que le queda a RH, en Odoo:** 5 altas (una es un supervisor), 3
+  bajas y una renuncia en proceso por archivar, una persona de oficina con
+  puesto de seguridad y 2 supervisores que no hacen servicios —su puesto
+  decide si salen en Centauro—, 4 números que RH no reconoce y 7 personas
+  sin ningún celular.
+
+De paso, dos arreglos:
+
+- **El cargador** revisaba si la persona ya había venido antes de revisar
+  el nombre: una fila movida le apartaba el número a la fila buena que
+  venía después. Ahora primero el nombre.
+- **La lectura del personal** tomaba como teléfono lo que dijera Odoo, y
+  en tres fichas dice «sin dispositivo». Ahora, si el celular ya con su
+  lada no llega a diez dígitos —en toda la región un celular con lada
+  tiene al menos diez—, no se guarda ni borra el que había, el alta sigue
+  sin celular, y el informe y `sincronizar_personal.py` lo cuentan aparte.
+
 ## 14. Lo que falta
 
 ### Abierto
