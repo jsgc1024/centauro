@@ -4035,6 +4035,19 @@ las horas de un día:
   de la pantalla del servicio llamaba a una ruta que no existe: contestaba
   «Not Found». Ahora usa la misma de la central.
 
+### Para probarlo a mano
+
+`python3 probar_horas_extra.py` arma en desarrollo un eventual de cuatro
+días ya pasados —cliente, personal y unidades de la siembra, nunca el
+personal real—. La central asienta a mano la llegada, el meet and greet y
+el término de cada día con horas conocidas (0, 2, 1 y 1 h extra: a tiempo,
+con llegada tarde, con meet and greet antes de la presentación y con un
+minuto de más), y la corrida revisa el panel del día, el visto bueno y que
+la unidad no las cobre. Después se corrige una hora y se da el visto bueno
+en la consola, como consultora, y `python3 probar_horas_extra.py <id>`
+revisa la corrección con su hora original, el candado del visto bueno y lo
+que ve finanzas. Cada corrida crea un servicio nuevo; no imprime nombres.
+
 ## 14. Lo que falta
 
 ### Abierto
