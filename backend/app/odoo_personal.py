@@ -289,7 +289,7 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
         tipo=TIPO, automatica=automatica,
         hecha_por_id=quien.persona_id if quien else None,
         leidos=plan["leidos"], altas=len(plan["altas"]),
-        cambios=len(plan["cambios"]) + len(plan["vinculos"]),
+        cambios=_tocadas(plan),
         bajas=len(bajas), pendientes=len(plan["pendientes"]),
         # La de cada hora sin novedades deja su renglon --se sabe que
         # corrio-- pero no el detalle, que seria el mismo cada hora.
@@ -301,11 +301,19 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
         accesos.anotar(
             db, quien, "personal leido de odoo", "sincronizacion_odoo",
             fila.id, despues=(f"{len(plan['altas'])} altas, "
-                              f"{len(plan['cambios']) + len(plan['vinculos'])} "
+                              f"{_tocadas(plan)} "
                               f"cambios, {len(bajas)} bajas, "
                               f"{len(plan['pendientes'])} pendientes"))
     db.commit()
     return informe
+
+
+def _tocadas(plan: dict) -> int:
+    """Cuantas personas cambian o se vinculan. Quien se vincula y ademas
+    trae algo distinto sale en las dos listas: se cuenta una vez. Antes
+    se sumaban las dos y el renglon de la lectura decia el doble."""
+    return len({c["persona_id"] for c in plan["cambios"]}
+               | {v["persona_id"] for v in plan["vinculos"]})
 
 
 def resumen(informe: dict) -> dict:

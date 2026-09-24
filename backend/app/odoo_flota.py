@@ -256,7 +256,7 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
         tipo=TIPO, automatica=automatica,
         hecha_por_id=quien.persona_id if quien else None,
         leidos=plan["leidas"], altas=len(plan["altas"]),
-        cambios=len(plan["cambios"]) + len(plan["vinculos"]),
+        cambios=_tocadas(plan),
         bajas=len(bajas), pendientes=len(plan["pendientes"]),
         detalle=(json.dumps(informe, ensure_ascii=False, default=str)
                  if hubo_algo or not automatica else None))
@@ -266,10 +266,17 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
         accesos.anotar(
             db, quien, "flota leida de odoo", "sincronizacion_odoo", fila.id,
             despues=(f"{len(plan['altas'])} altas, "
-                     f"{len(plan['cambios']) + len(plan['vinculos'])} cambios, "
+                     f"{_tocadas(plan)} cambios, "
                      f"{len(bajas)} bajas, {len(taller['crear'])} al taller"))
     db.commit()
     return informe
+
+
+def _tocadas(plan: dict) -> int:
+    """Cuantas unidades cambian o se vinculan, cada una una vez: la que se
+    vincula y ademas trae algo distinto sale en las dos listas."""
+    return len({c["vehiculo_id"] for c in plan["cambios"]}
+               | {v["vehiculo_id"] for v in plan["vinculos"]})
 
 
 def resumen(informe: dict) -> dict:

@@ -11,13 +11,20 @@ hora. `POST /personal` se queda para quien todavia lo mande.
 
 La flota y el taller, igual (seccion 52): `/flota/ensayo` y
 `/flota/sincronizar`.
+
+La pantalla de Odoo de la consola (seccion 64) usa estas mismas rutas y
+`/estado`, que dice si hay llave y como van las lecturas: en produccion
+no hay terminal, y la primera lectura se hace desde ahi.
 """
+from urllib.parse import urlparse
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models as m
 from app import odoo, odoo_api, odoo_flota, odoo_personal, schemas as s
 from app.auth import requiere
+from app.config import settings
 from app.db import get_db
 
 router = APIRouter(prefix="/odoo", tags=["Odoo"])
@@ -92,6 +99,59 @@ def _leer(modulo, db: Session, ensayo: bool, quien: m.Usuario) -> dict:
             "que_hacer": "Si Odoo rechazo la llave, hay que crear una nueva "
                          "en Odoo y ponerla en el .env del servidor.",
         })
+
+
+# Las lecturas que salen en la pantalla de Odoo: las de cada hora sin
+# novedades tambien dejan su renglon, asi que con diez se ve el dia.
+LECTURAS_EN_PANTALLA = 10
+
+
+def _renglon(fila, nombres: dict) -> dict | None:
+    if fila is None:
+        return None
+    return {"id": fila.id, "tipo": fila.tipo,
+            "hecha_en": fila.hecha_en.isoformat() if fila.hecha_en else None,
+            "automatica": fila.automatica,
+            "hecha_por": nombres.get(fila.hecha_por_id),
+            "leidos": fila.leidos, "altas": fila.altas,
+            "cambios": fila.cambios, "bajas": fila.bajas,
+            "pendientes": fila.pendientes}
+
+
+@router.get("/estado",
+            summary="Si Odoo esta conectado y como van sus lecturas")
+def estado(db: Session = Depends(get_db),
+           _=Depends(requiere(m.Rol.ADMIN))):
+    """Lo que la pantalla de Odoo dice antes de leer nada: si este
+    servidor tiene la llave, si ya se hizo la primera lectura a mano de
+    cada cosa --sin ella la de cada hora no arranca-- y las ultimas
+    lecturas, a mano y solas. No le pregunta nada a Odoo."""
+    L = m.SincronizacionOdoo
+    reciente = (L.hecha_en.desc(), L.id.desc())
+    ultimas = db.query(L).order_by(*reciente).limit(LECTURAS_EN_PANTALLA).all()
+    por_tipo = {}
+    for tipo in (odoo_personal.TIPO, odoo_flota.TIPO):
+        a_mano = (db.query(L).filter_by(tipo=tipo, automatica=False)
+                  .order_by(*reciente).first())
+        sola = (db.query(L).filter_by(tipo=tipo, automatica=True)
+                .order_by(*reciente).first())
+        por_tipo[tipo] = (a_mano, sola)
+    quienes = {f.hecha_por_id for f in ultimas} | {
+        f.hecha_por_id for par in por_tipo.values() for f in par if f}
+    quienes.discard(None)
+    nombres = {p.id: p.nombre for p in
+               db.query(m.Persona).filter(m.Persona.id.in_(quienes)).all()
+               } if quienes else {}
+    sitio = urlparse(settings.odoo_base or "").hostname or None
+    return {
+        "conectado": odoo_api.hay_conexion(),
+        "sitio": sitio,
+        **{tipo: {"primera_hecha": a_mano is not None,
+                  "ultima_a_mano": _renglon(a_mano, nombres),
+                  "ultima_sola": _renglon(sola, nombres)}
+           for tipo, (a_mano, sola) in por_tipo.items()},
+        "lecturas": [_renglon(f, nombres) for f in ultimas],
+    }
 
 
 @router.get("/personal/ensayo",

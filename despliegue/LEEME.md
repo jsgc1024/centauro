@@ -103,7 +103,10 @@ llave». La nueva se pega aquí y se reinician `api`, `worker` y `beat`.
 
 La primera lectura del personal y la de la flota se hacen a mano,
 después de ver el ensayo; las tareas de cada hora no arrancan hasta que
-exista esa primera:
+exista esa primera. Se hacen desde la consola —*Gestión Administrativa →
+Odoo*, con administración o dirección general—, que también dice lo que
+falta corregir en Odoo y cuándo corrió la última de cada hora. Quien tenga
+la terminal del servidor puede hacer lo mismo así:
 
 ```bash
 docker compose -f docker-compose.prod.yml run --rm api python sincronizar_personal.py

@@ -665,6 +665,9 @@ AYUDA_POR_PANTALLA = {
     "finanzas.js": 5,
     "implantado.js": 9,
     "nomina.js": 3,
+    # La lectura de Odoo (seccion 64): uno por lectura --el personal y la
+    # flota--, el de lo pendiente y el de las ultimas lecturas.
+    "odoo.js": 4,
     "panorama.js": 6,
     "servicio.js": 9,
 

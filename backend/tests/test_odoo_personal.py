@@ -308,6 +308,9 @@ def test_quien_ya_estaba_en_centauro_se_vincula_por_su_correo(
     # La misma persona, con lo que dice Odoo, y un solo acceso.
     assert (p.id, p.nombre) == (r.json()["id"], "Agente Odoo 1")
     assert db.query(m.Usuario).filter_by(persona_id=p.id).count() == 1
+    # Se vincula y ademas le cambia el nombre: sale en las dos listas, pero
+    # el renglon de la lectura la cuenta una vez.
+    assert db.query(m.SincronizacionOdoo).one().cambios == 1
 
 
 def test_quien_estaba_con_el_correo_de_trabajo_pasa_a_entrar_con_el_personal(
@@ -531,6 +534,46 @@ def test_las_rutas_son_de_administracion(cliente, sesion, monkeypatch, db):
     assert db.query(m.SincronizacionOdoo).one().hecha_por_id == admin.persona_id
     assert db.query(m.RegistroAdmin).filter_by(
         objeto="sincronizacion_odoo").count() == 1
+
+
+def test_el_estado_dice_si_hay_llave_y_como_van_las_lecturas(
+        cliente, sesion, monkeypatch, db):
+    # La pantalla de Odoo (seccion 64) lo pregunta antes de leer nada:
+    # en produccion no hay terminal, y ahi se hace la primera lectura.
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "odoo_base", "")
+    monkeypatch.setattr(settings, "odoo_api_key", "")
+    assert cliente.get("/odoo/estado", headers=sesion("rrhh")).status_code == 403
+    r = cliente.get("/odoo/estado", headers=sesion("dirgeneral"))
+    assert r.status_code == 200, r.text
+    e = r.json()
+    assert (e["conectado"], e["sitio"], e["lecturas"]) == (False, None, [])
+    assert e["personal"] == {"primera_hecha": False, "ultima_a_mano": None,
+                             "ultima_sola": None}
+
+    # La primera, a mano desde la consola; despues, la de cada hora.
+    odoo = OdooFalso(empleado(1))
+    monkeypatch.setattr(odoo_api, "cliente", lambda: odoo)
+    monkeypatch.setattr(settings, "odoo_base", "https://centauro.odoo.com")
+    monkeypatch.setattr(settings, "odoo_api_key", "llave-de-prueba")
+    r = cliente.post("/odoo/personal/sincronizar", headers=sesion("dirgeneral"))
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    odoo_personal.sincronizar_si_toca(db, odoo)
+
+    e = cliente.get("/odoo/estado", headers=sesion("admin")).json()
+    assert (e["conectado"], e["sitio"]) == (True, "centauro.odoo.com")
+    direccion = db.query(m.Usuario).filter_by(correo="direccion@centauro.lat").one()
+    p = e["personal"]
+    assert p["primera_hecha"] is True
+    assert (p["ultima_a_mano"]["altas"], p["ultima_a_mano"]["hecha_por"]) == (
+        1, direccion.persona.nombre)
+    assert p["ultima_sola"]["automatica"] is True
+    assert p["ultima_sola"]["hecha_por"] is None
+    assert e["flota"]["primera_hecha"] is False
+    assert [(x["tipo"], x["automatica"]) for x in e["lecturas"]] == [
+        ("personal", True), ("personal", False)]
 
 
 def test_si_odoo_no_contesta_se_dice_claro(cliente, sesion, monkeypatch):

@@ -3887,6 +3887,39 @@ tienen el personal: esos 16 entrarán con el personal. Como la lectura del
 personal todavía no se aplica en el servidor, nadie tiene que cambiar de
 acceso.
 
+## 64. La pantalla de Odoo: la primera lectura, sin terminal
+
+Pedido de Salvador, 23 de septiembre en la noche: «te dejo trabajando en
+la pantalla de odoo y mañana la reviso a primera hora». El servidor de
+producción ya no se abre por SSH —lo administra TI y el código llega desde
+GitHub— y la primera lectura del personal y la de la flota vivían en la
+terminal (`sincronizar_personal.py`, `sincronizar_flota.py`). Sin esa
+primera, la de cada hora no arranca.
+
+- **Dónde.** *Gestión Administrativa → Odoo*. La abren administración y
+  dirección general, las mismas que pide el servidor para leer y guardar.
+- **Qué hace.** Una tarjeta por lectura —el personal de seguridad; la
+  flota y el taller— con lo que ya pasó: la última a mano, quién la hizo, y
+  si la de cada hora ya corre. Dos botones: *Ensayo* lee Odoo y dice qué
+  haría sin guardar nada; *Aplicar* se enciende solo después de un ensayo,
+  trae las cifras en el botón y pide un sí en la misma tarjeta. Al aplicar
+  se vuelve a leer Odoo, y la tarjeta enseña lo que de verdad se hizo.
+- **Lo pendiente es la lista para RH**, agrupada por lo que falta —sin
+  plaza, una plaza que Centauro no tiene como «Office», sin correo
+  personal, un correo con error de dedo— y con el No. Odoo de cada quien
+  para encontrarlo allá. Las bajas dicen por qué y si el acceso se cierra o
+  espera a que compruebe sus viáticos.
+- **Las últimas diez lecturas**, a mano y solas, con quién y cuánto: si la
+  de cada hora deja de aparecer, lo más probable es que la llave de Odoo
+  venció.
+- `GET /odoo/estado` dice si el servidor tiene la llave y cómo van las
+  lecturas; no le pregunta nada a Odoo.
+
+De paso: el renglón de cada lectura sumaba las cambiadas y las
+vinculadas, y quien se vincula y además trae algo distinto sale en las
+dos listas: se contaba dos veces. Ahora cada persona o unidad cuenta una
+vez, en el renglón y en la pantalla.
+
 ## 14. Lo que falta
 
 ### Abierto

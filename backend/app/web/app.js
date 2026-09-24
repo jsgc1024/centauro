@@ -13,6 +13,7 @@ import { carteraImplantados, nuevoImplantado,
          pantallaImplantado } from "./implantado.js";
 import { detenerPanorama, pantallaPanorama } from "./panorama.js";
 import { pantallaAccesos } from "./accesos.js";
+import { pantallaOdoo } from "./odoo.js";
 import { pantallaCodigo } from "./codigo.js";
 import { pantallaEnlace, pantallaOlvide } from "./contrasena.js";
 import { pantallaServicio } from "./servicio.js";
@@ -54,6 +55,10 @@ const DESEMPENO = ["consultor", "central", "finanzas", "recursos_humanos",
    es quien contesta el telefono cuando el cliente vuelve a llamar. */
 const VOZ_CLIENTE = ["consultor", "central", "finanzas",
                      "director_operaciones", "director_general", "admin"];
+/* Lo que Centauro lee de Odoo (seccion 64). Lo abre quien puede leerlo y
+   guardarlo: el servidor pide administracion, y direccion general la
+   hereda. Aplicar da de alta gente con acceso a la app. */
+const LEE_ODOO = ["admin", "director_general"];
 
 /* El menu de arriba, en una sola lista.
 
@@ -134,6 +139,11 @@ const MENU = [
     cuenta: "rec_codigo", quienes: CODIGO },
   { ruta: "/accesos", texto: "nav_accesos", grupo: "nav_administrativa",
     cuenta: "rec_accesos", quienes: ADMINISTRA },
+  /* La primera lectura del personal y de la flota, y lo que falta
+     corregir en Odoo. Vivia en la terminal del servidor, que en
+     produccion ya no se abre (seccion 64). */
+  { ruta: "/odoo", texto: "nav_odoo", grupo: "nav_administrativa",
+    cuenta: "rec_odoo", quienes: LEE_ODOO },
 ];
 
 export function menuDe(rol) {
@@ -433,6 +443,7 @@ const RUTAS = [
   [/^#\/encuestas$/, pantallaEncuestas, VOZ_CLIENTE],
   [/^#\/codigo$/, pantallaCodigo, CODIGO],
   [/^#\/accesos$/, pantallaAccesos, ADMINISTRA],
+  [/^#\/odoo$/, pantallaOdoo, LEE_ODOO],
 ];
 
 async function pintar() {
