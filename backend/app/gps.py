@@ -58,6 +58,15 @@ DIAS_PARA_CERRAR = 3
 # El aviso de Pegasus no despierta la revision de panicos dos veces en
 # este rato: la ruta es publica y no tiene que servir para martillar.
 SEGUNDOS_ENTRE_AVISOS = 20
+# Los eventos de Pegasus (/rawdata) tienen una cuota de todo el sitio de
+# Centauro Satelital: 800 por hora, compartida con sus operadores. El
+# panico de las unidades en servicio se revisa en cada vuelta; el de
+# todas, cada tanto. Con el disparador de Pegasus llega al instante.
+MINUTOS_ENTRE_BARRIDOS = 15
+# Tope de consultas por vuelta, para no gastar la cuota de un jalon a la
+# hora en que todos marcan o terminan: lo demas, en la vuelta siguiente.
+TESTIGOS_POR_VUELTA = 8
+DIAS_POR_VUELTA = 10
 VIVAS = (m.EstatusJornada.PLANEADA, m.EstatusJornada.CONFIRMADA,
          m.EstatusJornada.PROXIMA_A_INICIAR, m.EstatusJornada.ARRIBADO,
          m.EstatusJornada.EN_CURSO)
@@ -217,11 +226,11 @@ def lineas_del_dia(db: Session, jornada: m.Jornada, pais: m.Pais | None,
 
 # ================================================================ la lectura
 
-def _grupos(db: Session, cliente, ahora: datetime) -> list[m.GrupoGps]:
-    """Los grupos del `.env`, uno por pais, con su numero de Pegasus."""
+def _filas_de_grupo(db: Session) -> list[m.GrupoGps]:
+    """Un renglon por pais del `.env`, sin preguntarle nada a Pegasus."""
     config = grupos_configurados()
     paises = {p.codigo: p for p in db.query(m.Pais).all()}
-    filas, sin_numero = [], []
+    filas = []
     for codigo, nombre in config.items():
         pais = paises.get(codigo)
         if not pais:
@@ -234,8 +243,13 @@ def _grupos(db: Session, cliente, ahora: datetime) -> list[m.GrupoGps]:
         elif fila.nombre != nombre:
             fila.nombre, fila.pegasus_id = nombre, None
         filas.append(fila)
-        if fila.pegasus_id is None:
-            sin_numero.append(fila)
+    return filas
+
+
+def _grupos(db: Session, cliente, ahora: datetime) -> list[m.GrupoGps]:
+    """Los grupos del `.env`, uno por pais, con su numero de Pegasus."""
+    filas = _filas_de_grupo(db)
+    sin_numero = [f for f in filas if f.pegasus_id is None]
     if sin_numero:
         # De los demas grupos no se guarda ni el nombre.
         todos = cliente.grupos()
@@ -374,7 +388,9 @@ def leer(db: Session, cliente=None, ahora: datetime | None = None) -> dict:
                 leidas += _leer_unidades(db, cliente, g, ahora)
         db.flush()
         resultado["unidades"] = leidas
-        resultado["panicos"] = _revisar_panicos(db, cliente, grupos, ahora)
+        en_servicio = {a.vehiculo_id for j, _ in ventana for a in _vigentes(j)}
+        resultado["panicos"] = _revisar_panicos(db, cliente, grupos, ahora,
+                                                en_servicio)
         resultado["alertas"] = _alertas_de_la_unidad(db, relojes, ventana,
                                                      ahora)
         resultado["camino"] = _camino(db, relojes, ventana, ahora)
@@ -382,6 +398,10 @@ def leer(db: Session, cliente=None, ahora: datetime | None = None) -> dict:
         db.commit()
     except conexion.NoResponde as e:
         db.rollback()
+        # Si fallo la primera vuelta, los renglones de los grupos se fueron
+        # con el rollback: se vuelven a poner para que la pantalla diga
+        # por que no hay lectura, en vez de "todavia no se ha leido".
+        _filas_de_grupo(db)
         for g in db.query(m.GrupoGps).all():
             g.error, g.error_en = str(e)[:300], ahora
         db.commit()
@@ -462,15 +482,24 @@ def _alertar_panico(db: Session, grupo: m.GrupoGps, e: dict,
 
 
 def _revisar_panicos(db: Session, cliente, grupos: list[m.GrupoGps],
-                     ahora: datetime) -> int:
-    """El evento "panic" de las unidades de los grupos, desde donde se
-    quedo la vuelta anterior. Cada panico suena una sola vez."""
+                     ahora: datetime, en_servicio: set | None = None) -> int:
+    """El evento "panic" de las unidades de los grupos, desde el ultimo
+    barrido. Cada panico suena una sola vez.
+
+    Las unidades en servicio se revisan en cada vuelta; todas, cada
+    MINUTOS_ENTRE_BARRIDOS --o siempre, si no se dice cuales estan en
+    servicio, como con el aviso de Pegasus--."""
     nuevos = 0
     for grupo in grupos:
         if grupo.pegasus_id is None:
             continue
-        ids = [u.pegasus_id for u in db.query(m.UnidadGps)
-               .filter_by(grupo_id=grupo.id, en_el_grupo=True).all()]
+        barrido = (en_servicio is None or grupo.panico_hasta is None
+                   or (ahora - grupo.panico_hasta).total_seconds() / 60
+                   >= MINUTOS_ENTRE_BARRIDOS)
+        unidades = (db.query(m.UnidadGps)
+                    .filter_by(grupo_id=grupo.id, en_el_grupo=True).all())
+        ids = [u.pegasus_id for u in unidades
+               if barrido or u.vehiculo_id in en_servicio]
         if not ids:
             continue
         desde = grupo.panico_hasta or (ahora - timedelta(minutes=10))
@@ -487,7 +516,8 @@ def _revisar_panicos(db: Session, cliente, grupos: list[m.GrupoGps],
                 continue
             if _alertar_panico(db, grupo, e, cuando):
                 nuevos += 1
-        grupo.panico_hasta = ahora
+        if barrido:
+            grupo.panico_hasta = ahora
     return nuevos
 
 
@@ -743,6 +773,7 @@ def _testimonios(db: Session, cliente, ahora: datetime) -> int:
                   .filter(m.Hito.unidad_revisada_en.is_(None),
                           m.Hito.marcado_en >= desde)
                   .order_by(m.Hito.marcado_en).all())
+    consultas = 0
     for hito in pendientes:
         jornada = hito.jornada
         pais = db.get(m.Pais, reloj.pais_de_la_jornada(jornada))
@@ -763,6 +794,9 @@ def _testimonios(db: Session, cliente, ahora: datetime) -> int:
         if not unidad:
             hito.unidad_revisada_en = ahora
             continue
+        consultas += 1
+        if consultas > TESTIGOS_POR_VUELTA:
+            break             # lo demas, en la vuelta siguiente
         if hito.tipo == m.TipoHito.FIN_SERVICIO:
             tramos = reglas.tramos_ordenados(cliente.tramos(
                 [unidad.pegasus_id],
@@ -831,11 +865,16 @@ def cerrar_dias(db: Session, cliente=None, ahora: datetime | None = None) -> dic
                      m.Jornada.fin_real.isnot(None),
                      m.Jornada.fecha >= desde_dia,
                      m.AsignacionVehiculo.gps_cerrado_en.is_(None)).all())
-    cerrados = 0
+    cerrados = hechos = 0
     try:
         for a in filas:
+            if hechos >= DIAS_POR_VUELTA:
+                break         # lo demas, en la vuelta de la siguiente hora
+            antes = a.gps_cerrado_en
             if _cerrar_uno(db, cliente, a, ahora):
                 cerrados += 1
+            if antes is None and a.gps_cerrado_en is not None:
+                hechos += 1
         db.commit()
     except conexion.NoResponde as e:
         db.rollback()

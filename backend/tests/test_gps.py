@@ -72,6 +72,7 @@ class PegasusFalso:
         self.eventos_ = []
         self.tramos_ = []
         self.leidos = []
+        self.pedidos = []         # (etiquetas, unidades) de cada /rawdata
 
     def grupos(self):
         return self.grupos_
@@ -83,6 +84,7 @@ class PegasusFalso:
     def eventos(self, vehiculos, duracion, etiquetas=None, campos=None,
                 tope=None):
         vs = {str(v) for v in vehiculos}
+        self.pedidos.append((etiquetas, {int(v) for v in vehiculos}))
         quiere = set(etiquetas.split(",")) if etiquetas else None
         return [e for e in self.eventos_ if str(e["vid"]) in vs
                 and (quiere is None or e.get("label") in quiere)]
@@ -229,6 +231,65 @@ def test_el_fin_no_cuadra_si_la_unidad_se_guardo_lejos_y_antes():
 
 # ================================================================ la lectura
 
+def test_un_sitio_que_no_existe_se_dice_y_no_truena(db):
+    """El sitio mal escrito no llega a Pegasus: se dice en la pantalla,
+    en vez de tronar la lectura cada dos minutos."""
+    import httpx
+    from app import pegasus as conexion
+
+    def sin_sitio(peticion):
+        raise httpx.ConnectError("Name or service not known", request=peticion)
+
+    cliente = conexion.Pegasus("https://no-existe.invalid", "u", "c")
+    cliente.http = httpx.Client(transport=httpx.MockTransport(sin_sitio))
+    with pytest.raises(conexion.NoResponde, match="PEGASUS_SITIO"):
+        cliente.grupos()
+
+    # Aunque sea la primera vuelta, la pantalla dice por que no hay lectura.
+    r = gps.leer(db, cliente, datetime.now(timezone.utc))
+    assert "PEGASUS_SITIO" in r["error"]
+    grupos = db.query(m.GrupoGps).all()
+    assert {g.nombre for g in grupos} == {"2025 P.E.", "CENTAURO BRASIL"}
+    assert all("PEGASUS_SITIO" in g.error for g in grupos)
+
+
+def test_si_pegasus_pide_esperar_no_se_le_pide_nada(db):
+    """Un 429 se respeta hasta la hora que diga Pegasus: seguir pidiendo
+    despues de un 429 hace que bloquee la IP."""
+    import time as reloj_real
+
+    import httpx
+    from app import pegasus as conexion
+
+    llamadas = []
+
+    def sitio(peticion):
+        llamadas.append(peticion.url.path)
+        if peticion.url.path.endswith("/login"):
+            return httpx.Response(200, json={"auth": "sesion"})
+        return httpx.Response(429, headers={
+            "X-RateLimit-Reset": str(int(reloj_real.time()) + 120)})
+
+    conexion.quitar_pausa()
+    try:
+        cliente = conexion.Pegasus("https://cuota.invalid", "u", "c")
+        cliente.http = httpx.Client(transport=httpx.MockTransport(sitio))
+        with pytest.raises(conexion.NoResponde, match="bajar el ritmo"):
+            cliente.grupos()
+        antes = len(llamadas)
+        otro = conexion.Pegasus("https://cuota.invalid", "u", "c")
+        otro.http = httpx.Client(transport=httpx.MockTransport(sitio))
+        with pytest.raises(conexion.NoResponde, match="bajar el ritmo"):
+            otro.grupos()
+        assert len(llamadas) == antes          # ni siquiera salio
+        r = gps.leer(db, otro, datetime.now(timezone.utc))
+        assert "bajar el ritmo" in r["error"]
+        assert len(llamadas) == antes
+    finally:
+        conexion.quitar_pausa()
+        conexion._sesiones.clear()
+
+
 def test_sin_usuario_de_pegasus_no_hace_nada(db):
     assert gps.leer(db) == {"conectado": False}
     assert gps.cerrar_dias(db) == {"conectado": False}
@@ -328,6 +389,34 @@ def test_el_panico_del_vehiculo_suena_una_vez_con_su_servicio(
                                                         "Luis Mendoza"}
     assert ficha["unidad"]["estado"] in ("detenida", "en_movimiento")
     assert ficha["principal"]["estado"] == "a_bordo"
+
+
+def test_el_panico_se_revisa_seguido_en_servicio_y_de_todas_cada_tanto(
+        cliente, sesion, datos, db, pegasus):
+    """La cuota de eventos de Pegasus es de todo el sitio de Centauro
+    Satelital. En cada vuelta se revisa el panico de las unidades en
+    servicio; el de todas, cada quince minutos."""
+    servicio, j = _en_curso(cliente, sesion, datos)
+    ahora = datetime.now(timezone.utc)
+    pegasus.unidades_[GRUPO_MX] = [unidad(101, _placa_suburban(datos), ahora),
+                                   unidad(102, "ZZZ999", ahora)]
+
+    def panicos_pedidos():
+        return [u for e, u in pegasus.pedidos if e == reglas.PANICO]
+
+    gps.leer(db, pegasus, ahora)                      # primer barrido
+    assert panicos_pedidos()[-1] == {101, 102}
+    gps.leer(db, pegasus, ahora + timedelta(minutes=2))
+    assert panicos_pedidos()[-1] == {101}             # solo la de servicio
+    gps.leer(db, pegasus, ahora + timedelta(minutes=16))
+    assert panicos_pedidos()[-1] == {101, 102}        # otro barrido
+
+    # Un panico de la que no esta en servicio suena en el barrido.
+    _panico(pegasus, 102, ahora + timedelta(minutes=17))
+    gps.leer(db, pegasus, ahora + timedelta(minutes=18))
+    assert db.query(m.AlertaIncidencia).count() == 0
+    gps.leer(db, pegasus, ahora + timedelta(minutes=32))
+    assert db.query(m.AlertaIncidencia).count() == 1
 
 
 def test_el_panico_sin_servicio_tambien_suena(db, pegasus, datos):

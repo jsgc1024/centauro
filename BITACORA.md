@@ -3732,10 +3732,18 @@ Centauro Satelital.
   en el mismo «Atender ahora» que el de la app, con canal «Botón del
   vehículo»: de qué unidad, quién va a bordo con su teléfono, si el
   principal va con ellos y qué dice la unidad en ese momento. Suena una
-  sola vez por evento. Pegasus puede avisar al instante con un
-  disparador (`POST /gps/pegasus/aviso/{secreto}`); el aviso no trae
-  nada que se crea —solo adelanta la lectura— y sin secreto en el
-  `.env` la ruta no existe.
+  sola vez por evento. El de las unidades en servicio se revisa cada
+  dos minutos y el de todas, cada quince: los eventos de Pegasus tienen
+  una cuota de todo el sitio de Centauro Satelital —800 consultas por
+  hora, compartidas con sus operadores y sus clientes— y revisar las
+  97 unidades cada dos minutos se llevaba 150. Pegasus puede avisar al
+  instante con un disparador (`POST /gps/pegasus/aviso/{secreto}`); el
+  aviso no trae nada que se crea —solo adelanta la lectura— y sin
+  secreto en el `.env` la ruta no existe.
+- **Si Pegasus pide bajar el ritmo** (contesta 429), no se le pide nada
+  hasta la hora que diga: seguir pidiendo hace que bloquee la IP. Un
+  sitio mal escrito o una clave que no entra se dicen en la pantalla de
+  Unidades, en vez de tronar la lectura.
 - **El inhibidor y la corriente cortada** (más de dos minutos) suenan
   solo durante el servicio, del camino al punto a la marca de fin, con
   quién va a bordo. Se cierran solos cuando la unidad vuelve a estar

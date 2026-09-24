@@ -9,9 +9,13 @@ ella, y **solo lee**. Lo que no hace, y esta amarrado en el codigo:
     rutas de LECTURAS; cualquier otra truena antes de salir a la red.
   * No guarda la clave: vive en el `.env` del servidor y aqui solo se
     usa para pedir la sesion.
-  * Pocas llamadas y espaciadas: los limites de Pegasus son de tres por
-    segundo y unos cientos por hora. Los eventos se piden de 25 unidades
-    en 25, que es lo que acepta.
+  * Pocas llamadas y espaciadas. Los eventos (/rawdata) tienen una cuota
+    por usuario --30 por minuto, 500 por hora-- y otra de TODO el sitio
+    de Centauro Satelital --60 por minuto, 800 por hora--, que comparte
+    con sus operadores y sus clientes. Se piden de 25 unidades en 25.
+  * Si Pegasus contesta 429 (demasiadas), no se le pide nada hasta la
+    hora que diga. Seguir pidiendo despues de un 429 hace que bloquee la
+    IP: lo dice su documentacion.
 
 Las horas que manda Pegasus son UTC y las velocidades, millas por hora.
 Aqui no se convierte nada: eso es de las reglas (`gps_reglas.py`).
@@ -32,10 +36,86 @@ PAUSA = 0.4               # segundos entre llamadas: tope de 3 por segundo
 # minutos serian treinta entradas por hora con la misma clave.
 _sesiones: dict[tuple, str] = {}
 
+# La pausa despues de un 429. Vive en Redis para que la respeten todos los
+# procesos --el worker de Celery tiene varios--; si Redis no contesta, al
+# menos la respeta este.
+LLAVE_PAUSA = "pegasus:pausa_hasta"
+ESPERA_SIN_AVISO = 15 * 60      # segundos, si el 429 no dice hasta cuando
+ESPERA_MAXIMA = 60 * 60
+_pausa_local = 0.0
+_redis_cliente = None
+
 
 class NoResponde(Exception):
     """Pegasus no contesto, o contesto que no. El mensaje es corto y no
     trae nada de la sesion ni de la clave."""
+
+
+def _redis():
+    global _redis_cliente
+    if _redis_cliente is None:
+        try:
+            import redis
+
+            from app.config import settings
+            _redis_cliente = redis.Redis.from_url(
+                settings.redis_url, socket_connect_timeout=0.5,
+                socket_timeout=0.5, decode_responses=True)
+            _redis_cliente.ping()
+        except Exception:                                  # noqa: BLE001
+            _redis_cliente = False
+    return _redis_cliente or None
+
+
+def pausa_hasta() -> float:
+    """Hasta cuando (epoch) no se le pide nada a Pegasus; 0 si se puede."""
+    guardada = 0.0
+    r = _redis()
+    if r is not None:
+        try:
+            guardada = float(r.get(LLAVE_PAUSA) or 0)
+        except Exception:                                  # noqa: BLE001
+            guardada = 0.0
+    return max(guardada, _pausa_local)
+
+
+def _pausar(respuesta) -> float:
+    """Pegasus dijo 429: hasta cuando no se le pide nada."""
+    global _pausa_local
+    ahora = time.time()
+    try:
+        hasta = float(respuesta.headers.get("X-RateLimit-Reset") or 0)
+    except ValueError:
+        hasta = 0.0
+    if hasta <= ahora:
+        hasta = ahora + ESPERA_SIN_AVISO
+    hasta = min(hasta, ahora + ESPERA_MAXIMA) + 5
+    _pausa_local = hasta
+    r = _redis()
+    if r is not None:
+        try:
+            r.set(LLAVE_PAUSA, hasta, ex=int(hasta - ahora) + 1)
+        except Exception:                                  # noqa: BLE001
+            pass
+    return hasta
+
+
+def quitar_pausa() -> None:
+    """Para las pruebas: olvida la pausa."""
+    global _pausa_local
+    _pausa_local = 0.0
+    r = _redis()
+    if r is not None:
+        try:
+            r.delete(LLAVE_PAUSA)
+        except Exception:                                  # noqa: BLE001
+            pass
+
+
+def _mensaje_de_pausa(hasta: float) -> str:
+    minutos = max(1, int((hasta - time.time()) // 60) + 1)
+    return (f"Pegasus pidio bajar el ritmo: no se le vuelve a pedir nada "
+            f"en {minutos} min.")
 
 
 def lista_de(respuesta) -> list:
@@ -76,12 +156,23 @@ class Pegasus:
     def _entrar(self) -> None:
         """La unica escritura permitida: pedir la sesion."""
         credenciales = {"username": self._usuario, "password": self._clave}
-        self._esperar()
-        r = self.http.post(f"{self.base}/login", json=credenciales)
-        if r.status_code in (400, 415, 422):
-            # Hay sitios que la piden como formulario.
+        try:
             self._esperar()
-            r = self.http.post(f"{self.base}/login", data=credenciales)
+            r = self.http.post(f"{self.base}/login", json=credenciales)
+            if r.status_code in (400, 415, 422):
+                # Hay sitios que la piden como formulario.
+                self._esperar()
+                r = self.http.post(f"{self.base}/login", data=credenciales)
+        except httpx.ConnectError:
+            # Un sitio mal escrito o que no existe cae aqui, antes de que
+            # haya sesion. Sin esto la lectura tronaba cada dos minutos en
+            # vez de decir en pantalla que no hay conexion.
+            raise NoResponde("No se encontro el sitio de Pegasus o no "
+                             "contesta: revisa PEGASUS_SITIO.")
+        except httpx.HTTPError as e:
+            raise NoResponde(f"Pegasus no contesto ({type(e).__name__}).")
+        if r.status_code == 429:
+            raise NoResponde(_mensaje_de_pausa(_pausar(r)))
         if r.status_code != 200:
             raise NoResponde(f"Pegasus no dejo entrar ({r.status_code}): "
                              "revisa el usuario y la clave de la conexion.")
@@ -95,6 +186,9 @@ class Pegasus:
         self.http.headers["Authenticate"] = token
 
     def _esperar(self) -> None:
+        hasta = pausa_hasta()
+        if hasta > time.time():
+            raise NoResponde(_mensaje_de_pausa(hasta))
         falta = PAUSA - (time.monotonic() - self._ultima)
         if falta > 0:
             time.sleep(falta)
@@ -115,6 +209,8 @@ class Pegasus:
                 r = self.http.get(f"{self.base}{ruta}", params=params)
             except httpx.HTTPError as e:
                 raise NoResponde(f"Pegasus no contesto ({type(e).__name__}).")
+            if r.status_code == 429:
+                raise NoResponde(_mensaje_de_pausa(_pausar(r)))
             if r.status_code == 401 and intento == 1:
                 # La sesion vencio: una vez mas con una nueva.
                 _sesiones.pop((self.sitio, self._usuario), None)
