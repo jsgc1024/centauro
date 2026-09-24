@@ -151,6 +151,14 @@ def revisar(db: Session, servicio_id: int, ahora: datetime | None = None) -> dic
             "mensaje": f"{len(abiertas)} alerta(s) de la central siguen abiertas",
             "accion": "Cierra cada alerta con su resolucion."})
 
+    # --- lo que dice la unidad (seccion 60): el fin contra la unidad y
+    # la gasolina contra los kilometros. Para revisar, nunca frena: la
+    # unidad no castiga a nadie sola; senala, y el consultor decide.
+    from app import gps
+    observaciones.extend(gps.observaciones(
+        db, [j for e in servicio.equipos for j in e.jornadas],
+        motor.viaticos_del_servicio(db, servicio_id)))
+
     # --- los dos relojes
     if registro and registro.estatus == m.EstatusCierre.ABIERTO:
         # Corren las 24 h del personal: el visto bueno todavia no abre.

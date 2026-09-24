@@ -548,7 +548,13 @@ function tarjetaHoy(f) {
         ? h("div", { clase: "dato" },
             h("span", { clase: "clave" }, t("cmp_unidad")),
             f.unidades.map(u => `${u.placa}${u.color ? " · " + u.color : ""}`)
-              .join(" · "))
+              .join(" · "),
+            /* Lo que la central ve de su camioneta no puede ser sorpresa
+               (seccion 60): se dice aqui, con cuando y para que. */
+            f.unidades.some(u => u.gps && u.mia)
+              ? h("div", { clase: "chico gris", style: "margin-top:4px;line-height:1.45" },
+                  t("cmp_unidad_gps"))
+              : null)
         : null,
       f.companeros.length
         ? h("div", { clase: "dato" },
@@ -570,7 +576,9 @@ function tarjetaHoy(f) {
       h("button", { clase: "claro", onclick: (e) => decirQueVoy(e, f) },
         t("cmp_voy_en_camino")),
       h("div", { clase: "chico gris", style: "margin-top:8px;text-align:center" },
-        t("cmp_voy_en_camino_pie"))));
+        t("cmp_voy_en_camino_pie")
+        + (f.unidades.some(u => u.gps && u.mia)
+             ? ` ${t("cmp_voy_en_camino_gps")}` : ""))));
   }
 
   /* Un paso a la vez. Seis botones son seis oportunidades de marcar el

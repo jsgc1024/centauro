@@ -975,6 +975,22 @@ class AsignacionVehiculo(Base):
     relevado_por_vehiculo_id: Mapped[int | None] = mapped_column(
         ForeignKey("vehiculo.id"), nullable=True)
 
+    # Lo que la unidad recorrio ese dia segun su GPS (seccion 60): de que
+    # salio hacia el punto a que se guardo despues del fin. De aqui salen
+    # la gasolina contra los kilometros y el manejo de quien la trajo.
+    # `gps_cerrado_en` con fecha y `km_gps` vacio: no hubo como saberlo.
+    km_gps: Mapped[float | None] = mapped_column(Numeric(8, 1), nullable=True)
+    km_gps_desde: Mapped[datetime | None] = mapped_column(DateTime,
+                                                          nullable=True)
+    km_gps_hasta: Mapped[datetime | None] = mapped_column(DateTime,
+                                                          nullable=True)
+    # Lo que Pegasus conto en esa misma ventana: excesos de velocidad
+    # ("spd") y arrancones o frenadas bruscas ("posac", "negac").
+    excesos_gps: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bruscos_gps: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    gps_cerrado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
     jornada: Mapped[Jornada] = relationship(back_populates="vehiculos")
     vehiculo: Mapped[Vehiculo] = relationship(foreign_keys=[vehiculo_id])
     relevado_por_vehiculo: Mapped["Vehiculo | None"] = relationship(
@@ -1371,6 +1387,11 @@ class TipoAlerta(str, enum.Enum):
     PERSONAL_DE_BAJA = "personal_de_baja"
     # Odoo archivo una unidad que tenia dias asignados (seccion 52).
     UNIDAD_DE_BAJA = "unidad_de_baja"
+    # Lo que dice el GPS de la unidad, del camino al punto a la marca de
+    # fin (seccion 60). Fuera de esa ventana las vigila Centauro
+    # Satelital.
+    INHIBIDOR = "inhibidor"
+    SIN_CORRIENTE = "sin_corriente"
 
 
 class Destinatario(str, enum.Enum):
@@ -1450,8 +1471,33 @@ class Hito(Base):
     motivo_anulacion: Mapped[str | None] = mapped_column(String(400),
                                                          nullable=True)
 
+    # El segundo testigo (seccion 60): lo que decia la unidad de quien
+    # marco, en el momento de la marca. No cambia la marca ni frena nada:
+    # la bitacora lo ensena y el cierre lo deja "para revisar".
+    #
+    # `unidad_distancia_m` es de la unidad a donde se marco. En el fin
+    # importa otra cosa --si la camioneta ya se habia guardado--:
+    # `unidad_guardada_en` dice desde cuando estaba parada sin volver a
+    # moverse y `unidad_guardada_m` a cuanto del ultimo punto del dia.
+    # `unidad_revisada_en` vacio quiere decir que todavia no se le
+    # pregunto a Pegasus; con fecha y todo lo demas vacio, que no hubo
+    # como saberlo --la unidad no tenia senal, o no tiene GPS--, y
+    # entonces la marca se queda como esta, sin palomita ni aviso.
+    unidad_vehiculo_id: Mapped[int | None] = mapped_column(
+        ForeignKey("vehiculo.id", ondelete="SET NULL"), nullable=True)
+    unidad_distancia_m: Mapped[int | None] = mapped_column(Integer,
+                                                           nullable=True)
+    unidad_guardada_en: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True)
+    unidad_guardada_m: Mapped[int | None] = mapped_column(Integer,
+                                                          nullable=True)
+    unidad_revisada_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
     jornada: Mapped[Jornada] = relationship()
     persona: Mapped[Persona] = relationship(foreign_keys=[persona_id])
+    unidad: Mapped["Vehiculo | None"] = relationship(
+        foreign_keys=[unidad_vehiculo_id])
     registrado_a_mano_por: Mapped[Persona | None] = relationship(
         foreign_keys=[registrado_a_mano_por_id])
     anulado_por: Mapped[Persona | None] = relationship(
@@ -1564,12 +1610,40 @@ class Trayecto(Base):
     por_telefono_nota: Mapped[str | None] = mapped_column(String(200),
                                                           nullable=True)
 
+    # Lo que dice la unidad que trae (seccion 60). Aparte de lo del
+    # telefono a proposito: son dos testigos, y mezclar sus lecturas en
+    # la misma cuenta de "cuanto avanzo" daria un avance inventado --el
+    # telefono a 8 km y la camioneta a 29--. Solo se llena para quien
+    # trae una unidad con GPS, y solo en la ventana del camino. Las horas
+    # van en hora de pared del pais, como el resto del trayecto.
+    unidad_vehiculo_id: Mapped[int | None] = mapped_column(
+        ForeignKey("vehiculo.id", ondelete="SET NULL"), nullable=True)
+    # en_el_punto, viene, se_mueve, quieta, no_sale, no_llega, sin_senal
+    unidad_estado: Mapped[str | None] = mapped_column(String(14),
+                                                      nullable=True)
+    unidad_distancia_m: Mapped[int | None] = mapped_column(Integer,
+                                                           nullable=True)
+    unidad_distancia_anterior_m: Mapped[int | None] = mapped_column(
+        Integer, nullable=True)
+    # De cuando es la posicion de la unidad, no cuando se leyo.
+    unidad_leida_en: Mapped[datetime | None] = mapped_column(DateTime,
+                                                             nullable=True)
+    unidad_anterior_en: Mapped[datetime | None] = mapped_column(DateTime,
+                                                                nullable=True)
+    # Desde cuando esta apagada o parada, o desde cuando no reporta.
+    unidad_desde: Mapped[datetime | None] = mapped_column(DateTime,
+                                                          nullable=True)
+    unidad_apagada: Mapped[bool | None] = mapped_column(Boolean,
+                                                        nullable=True)
+
     jornada: Mapped["Jornada"] = relationship()
     persona: Mapped["Persona"] = relationship(foreign_keys=[persona_id])
     por_telefono_por: Mapped["Persona | None"] = relationship(
         foreign_keys=[por_telefono_por_id])
     lecturas: Mapped[list["LecturaTrayecto"]] = relationship(
         cascade="all, delete-orphan", order_by="LecturaTrayecto.momento")
+    unidad: Mapped["Vehiculo | None"] = relationship(
+        foreign_keys=[unidad_vehiculo_id])
 
 
 class LecturaTrayecto(Base):
@@ -1605,8 +1679,15 @@ class Alerta(Base):
     atendida: Mapped[bool] = mapped_column(Boolean, default=False)
     atendida_por_id: Mapped[int | None] = mapped_column(ForeignKey("persona.id"), nullable=True)
     resolucion: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    # De que unidad es, cuando la levanto su GPS (seccion 60): el
+    # inhibidor y la corriente se resuelven solos cuando esa unidad
+    # vuelve a estar bien, y para eso hay que saber cual era.
+    vehiculo_id: Mapped[int | None] = mapped_column(
+        ForeignKey("vehiculo.id", ondelete="SET NULL"), nullable=True)
 
     jornada: Mapped[Jornada] = relationship()
+    vehiculo: Mapped["Vehiculo | None"] = relationship(
+        foreign_keys=[vehiculo_id])
     # Hay dos llaves a persona --esta y atendida_por_id-- asi que hay que
     # decir cual: sin esto el modelo entero no se puede armar.
     persona: Mapped["Persona | None"] = relationship(foreign_keys=[persona_id])
@@ -3063,6 +3144,14 @@ class AlertaIncidencia(Base):
         ForeignKey("persona.id"), nullable=True)
     canal: Mapped[CanalAlerta] = mapped_column(Enum(CanalAlerta))
     descripcion: Mapped[str | None] = mapped_column(String(600), nullable=True)
+    # El boton de la camioneta (seccion 60): de que unidad salio, y el
+    # evento de Pegasus que la levanto. El segundo es unico: el mismo
+    # panico llega por el aviso de Pegasus y por la revision de cada dos
+    # minutos, y tiene que sonar una vez.
+    vehiculo_id: Mapped[int | None] = mapped_column(
+        ForeignKey("vehiculo.id", ondelete="SET NULL"), nullable=True)
+    origen: Mapped[str | None] = mapped_column(String(80), nullable=True,
+                                               unique=True)
     # Donde estaba quien la disparo. El boton de panico casi nunca viene
     # con descripcion, asi que la ubicacion es lo unico que hay.
     lat: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
@@ -3088,6 +3177,8 @@ class AlertaIncidencia(Base):
     # y quien cierra-- asi que cada relacion tiene que decir cual usa.
     tomada_por: Mapped["Persona | None"] = relationship(
         foreign_keys=[tomada_por_id])
+    vehiculo: Mapped["Vehiculo | None"] = relationship(
+        foreign_keys=[vehiculo_id])
 
 
 class TipoRecurso(str, enum.Enum):
@@ -3152,6 +3243,109 @@ class TallerVehiculo(Base):
         if dia < self.desde:
             return False
         return self.hasta is None or dia <= self.hasta
+
+
+class GrupoGps(Base):
+    """Un grupo de Pegasus, el GPS de las unidades (seccion 60).
+
+    Uno por pais: «2025 P.E.» en Mexico y «CENTAURO BRASIL» en Brasil.
+    El gateway de Centauro Satelital trae tambien las unidades de otras
+    areas y de clientes, y aqui no tienen nada que hacer: solo se leen
+    estos dos grupos, y de los demas ni el nombre.
+
+    Tambien dice como va la conexion --la ultima lectura buena y el
+    ultimo error--, que es lo que la pantalla de Unidades ensena arriba.
+    Las horas son instantes (con zona): no son de ningun pais.
+    """
+    __tablename__ = "grupo_gps"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    pais_id: Mapped[int] = mapped_column(ForeignKey("pais.id"), unique=True)
+    nombre: Mapped[str] = mapped_column(String(120))
+    # Con que numero lo conoce Pegasus. Se busca por nombre la primera
+    # vez y se guarda.
+    pegasus_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    leido_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    # Hasta donde ya se revisaron los panicos: la siguiente vuelta pide
+    # desde ahi, para que una caida del reloj no se trague uno.
+    panico_hasta: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    error: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    error_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    unidades: Mapped[int] = mapped_column(Integer, default=0,
+                                          server_default=text("0"))
+
+    pais: Mapped["Pais"] = relationship()
+
+
+class UnidadGps(Base):
+    """Una unidad de Pegasus y lo ultimo que dijo (seccion 60).
+
+    Se liga sola con la unidad de Centauro por la placa, escrita sin
+    espacios ni guiones. Lo que no liga se corrige en su origen --la
+    placa en Odoo o en Pegasus-- y se liga sola en la siguiente vuelta:
+    nada se captura dos veces.
+
+    De la posicion se guarda solo la ultima, y se sobreescribe en cada
+    lectura. El recorrido no se guarda: esto no es un rastreo. Las horas
+    son instantes (con zona), las de Pegasus, que vienen en UTC.
+    """
+    __tablename__ = "unidad_gps"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    pegasus_id: Mapped[int] = mapped_column(Integer, unique=True)
+    grupo_id: Mapped[int] = mapped_column(
+        ForeignKey("grupo_gps.id", ondelete="CASCADE"), index=True)
+    # Como viene en Pegasus, y como se compara.
+    placa: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    placa_normal: Mapped[str | None] = mapped_column(String(20),
+                                                     nullable=True,
+                                                     index=True)
+    # Para reconocer la que no liga: marca, modelo, color y año que dice
+    # Pegasus. El nombre de la unidad en Pegasus no se guarda: a veces
+    # trae el de una persona.
+    marca_modelo: Mapped[str | None] = mapped_column(String(80),
+                                                     nullable=True)
+    color: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    anio: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    vehiculo_id: Mapped[int | None] = mapped_column(
+        ForeignKey("vehiculo.id", ondelete="SET NULL"), nullable=True,
+        index=True)
+
+    # Lo ultimo que reporto el equipo.
+    reporte_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    lat: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
+    lon: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
+    velocidad_kmh: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    en_movimiento: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Desde cuando esta parada. Vacio andando, o cuando no se sabe.
+    parada_desde: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    # Vacio en el encendido quiere decir que el equipo no lo manda: se
+    # sabe si se mueve, no si esta apagada.
+    encendida: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    encendida_desde: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    corriente: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    corriente_desde: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    inhibidor: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    inhibidor_desde: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    odometro_km: Mapped[float | None] = mapped_column(Numeric(10, 1),
+                                                      nullable=True)
+    # Cuando la leyo Centauro, y la ultima vez que venia en el grupo: la
+    # que sale del grupo deja de contarse sin borrarse.
+    leida_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    en_el_grupo: Mapped[bool] = mapped_column(Boolean, default=True,
+                                              server_default="true")
+
+    grupo: Mapped[GrupoGps] = relationship()
+    vehiculo: Mapped["Vehiculo | None"] = relationship()
 
 
 class ReemplazoRecurso(Base):
@@ -3439,6 +3633,10 @@ class DimensionProfesionalismo(str, enum.Enum):
     INCIDENCIAS = "incidencias"      # historial, solo las ya autorizadas
     CAPACITACION = "capacitacion"    # meses con la capacitacion al corriente
     EXPERIENCIA = "experiencia"      # horas acumuladas en Centauro
+    # Los excesos y los arrancones o frenadas bruscas que conto el GPS,
+    # por cada mil km al volante en servicio (seccion 60). Solo a quien
+    # maneja: al escolta no le aplica.
+    MANEJO = "manejo"
 
 
 class PesoProfesionalismo(Base):
@@ -3476,3 +3674,7 @@ class ParametroProfesionalismo(Base):
         Numeric(5, 2), default=25, server_default="25")
     castigo_grave: Mapped[float] = mapped_column(
         Numeric(5, 2), default=60, server_default="60")
+    # El manejo arranca en 100 y baja esto por cada evento del GPS por
+    # cada mil km (seccion 60). De ejemplo, como los castigos de arriba.
+    puntos_por_evento_manejo: Mapped[float] = mapped_column(
+        Numeric(5, 2), default=3, server_default="3")

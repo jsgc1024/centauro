@@ -528,6 +528,13 @@ def revisar(db: Session, contrato: m.ContratoImplantado,
                 "mensaje": f"{alertas} alerta(s) de la central siguen abiertas",
                 "accion": "Cierra cada alerta con su resolucion."})
 
+    # Lo que dice la unidad (seccion 60), para revisar: en el implantado
+    # la gasolina se compara con los kilometros del mes, que es mas
+    # justo que dia por dia.
+    from app import gps
+    observaciones.extend(gps.observaciones(db, dias,
+                                           viaticos_del_mes(db, contrato)))
+
     # Los dos relojes del mes.
     if fila is None:
         observaciones.append({

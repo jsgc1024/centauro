@@ -182,6 +182,16 @@ export function etiqueta(texto, tono = "") {
   return h("span", { clase: `etiqueta ${tono}`.trim() }, texto);
 }
 
+/* Lo que dice un testigo --la unidad o el telefono-- en un renglon
+   (seccion 60). La unidad habla en verde azulado y el telefono en azul:
+   en cualquier pantalla se ve de un vistazo quien lo dijo, y lo dicho
+   por una camioneta nunca se lee como lo dicho por una persona. */
+export function testigo(fuente, dice, tono = "", cual = "unidad") {
+  return h("div", { clase: "testigo" },
+    h("span", { clase: `fuente ${cual}` }, fuente),
+    h("span", { clase: `dice ${tono}`.trim() }, dice));
+}
+
 /* Los estatus llegan del servidor en su clave: "en_comprobacion",
    "pagada". Antes se pintaban tal cual, asi que la consola en ingles
    decia "calculada" y la portuguesa "cancelado". El mapa va escrito

@@ -253,6 +253,14 @@ ACTIVIDADES: dict[str, dict] = {
         "descripcion": "Tomar y cerrar una alerta que levanto el campo",
         "roles": {R.CENTRAL, R.DIRECTOR_OPERACIONES},
     },
+    # El GPS de las unidades (seccion 60): la flota con su GPS y lo que
+    # hay que arreglar. No ensena donde esta ninguna unidad.
+    "unidades.ver": {
+        "descripcion": "Ver la flota con su GPS: que unidad reporta, cual "
+                       "no liga y que trae cada una hoy",
+        "roles": {R.CONSULTOR, R.CENTRAL, R.DIRECTOR_OPERACIONES,
+                  R.DIRECTOR_GENERAL},
+    },
     "relevos.mover": {
         "descripcion": "Relevar personal o unidad, registrar el regreso y "
                        "deshacer un relevo",

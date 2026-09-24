@@ -112,8 +112,8 @@ def test_cambiar_los_pesos_cambia_la_calificacion(cliente, sesion, datos):
     r = cliente.put("/profesionalismo/pesos",
                     json={"pais_id": datos["mx"]["id"],
                           "pesos": {"estrellas": 10, "satisfaccion": 10,
-                                    "incidencias": 70, "capacitacion": 5,
-                                    "experiencia": 5}},
+                                    "incidencias": 65, "capacitacion": 5,
+                                    "experiencia": 5, "manejo": 5}},
                     headers=sesion("admin"))
     assert r.status_code == 200, r.text
     despues = _ficha(cliente, sesion, juan)["calificacion"]

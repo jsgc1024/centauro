@@ -16,6 +16,7 @@ from datetime import date, datetime, time
 
 from sqlalchemy.orm import Session
 
+from app import gps
 from app import models as m
 
 # Cada renglon dice de donde salio. La pantalla los dibuja distinto, y
@@ -84,6 +85,20 @@ def _meet_and_greet(db: Session, jornada: m.Jornada) -> dict:
                         for a in jornada.personal
                         if a.persona_id and not a.relevado_en],
     }
+
+
+def _hora_del_pais(db: Session, instante: datetime | None,
+                   jornada: m.Jornada):
+    """Un instante (con zona) en la hora de pared del servicio."""
+    from app import reloj
+
+    if instante is None:
+        return None
+    if instante.tzinfo is None:
+        return instante
+    pais_id = reloj.pais_de_la_jornada(jornada)
+    return reloj.ahora_en(db.get(m.Pais, pais_id) if pais_id else None,
+                          instante)
 
 
 def del_dia(db: Session, jornada_id: int) -> dict:
@@ -174,6 +189,10 @@ def del_dia(db: Session, jornada_id: int) -> dict:
             "detalle": " · ".join(partes) or None,
             "marca": marca, "tono": tono,
             "de": hito.persona.nombre if hito.persona else None,
+            # El segundo testigo (seccion 60): lo que decia la unidad de
+            # quien marco. No es una posicion del camino --esas no
+            # entran aqui--, es una sola medida por marca.
+            "unidad": gps.testimonio(hito),
         })
 
     # ----------------------------------------------------- las alertas
@@ -186,6 +205,31 @@ def del_dia(db: Session, jornada_id: int) -> dict:
             "detalle": alerta.mensaje,
             "marca": "atendida" if alerta.atendida else None,
             "tono": "ok" if alerta.atendida else "alerta",
+        })
+
+    # El boton de panico --de la app o de la camioneta-- tambien es parte
+    # del dia. Vivia solo en la banda de "Atender ahora" y se iba de ahi
+    # al cerrarse: el dia siguiente nadie podia ver que habia sonado.
+    canales = {m.CanalAlerta.BOTON_APP: "boton de panico de la app",
+               m.CanalAlerta.BOTON_VEHICULO: "boton de la unidad",
+               m.CanalAlerta.LLAMADA: "llamada"}
+    for alerta in (db.query(m.AlertaIncidencia)
+                   .filter_by(jornada_id=jornada_id).all()):
+        partes = [canales.get(alerta.canal, alerta.canal.value)]
+        if alerta.reporta:
+            partes.append(alerta.reporta.nombre)
+        if alerta.descripcion:
+            partes.append(alerta.descripcion)
+        if alerta.resolucion:
+            partes.append(alerta.resolucion)
+        cerrada = alerta.estatus == m.EstatusAlerta.CERRADA
+        renglones.append({
+            "fuente": ALERTA,
+            "momento": _hora_del_pais(db, alerta.reportada_en, jornada),
+            "titulo": "panico",
+            "detalle": " · ".join(partes),
+            "marca": "atendida" if cerrada else None,
+            "tono": "ok" if cerrada else "grave",
         })
 
     # ------------------------------------------------- lo que se toco

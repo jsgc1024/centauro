@@ -72,6 +72,18 @@ class Settings(BaseSettings):
     odoo_api_key: str = ""
     odoo_bd: str = ""
 
+    # Pegasus, el GPS de las unidades (seccion 60). Solo lectura, con un
+    # usuario propio de la conexion --no el de una persona-- que solo ve
+    # los grupos de Proteccion Ejecutiva. Vacio = no se lee nada.
+    pegasus_sitio: str = ""        # "https://www.centaurosatelital.mx"
+    pegasus_usuario: str = ""
+    pegasus_clave: str = ""
+    # Que grupo se lee en cada pais: "MX=2025 P.E.;BR=CENTAURO BRASIL".
+    pegasus_grupos: str = "MX=2025 P.E.;BR=CENTAURO BRASIL"
+    # El aviso con el que Pegasus despierta la revision de panicos. Vacio
+    # = la ruta no existe y el panico se revisa cada dos minutos.
+    pegasus_secreto_aviso: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

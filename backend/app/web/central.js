@@ -14,8 +14,8 @@
      4. la semana   para ver venir el lunes de seis servicios
 */
 import { api } from "./api.js";
-import { aviso, campo, conAyuda, entrada, estatus, etiqueta, h, hora,
-         lista, mensaje } from "./util.js";
+import { aviso, campo, conAyuda, entrada, estatus, etiqueta, fecha, h,
+         hora, lista, mensaje, testigo } from "./util.js";
 import { t } from "./idioma.js";
 
 const REFRESCO_SEGUNDOS = 45;
@@ -82,7 +82,7 @@ async function bandaCamino() {
   catch { return null; }
   if (!d.cuantos) return null;
 
-  const tono = { no_llega: "grave", sin_respuesta: "grave",
+  const tono = { no_llega: "grave", no_sale: "grave", sin_respuesta: "grave",
                  esperando: "alerta", en_camino: "ok" };
 
   const caja = h("div", { clase: "tarjeta" },
@@ -102,9 +102,12 @@ async function bandaCamino() {
         h("div", { clase: "gris chico" },
           [q.servicio,
            t("cen_camino_punto").replace("{hora}", q.estar_en_el_punto),
-           q.distancia_km != null
-             ? t("cen_camino_km").replace("{km}", q.distancia_km) : null,
           ].filter(Boolean).join(" · ")),
+        /* Dos testigos, cada uno con lo suyo (seccion 60): lo que dijo
+           el telefono y lo que dice la unidad que trae. Para quien la
+           trae, lo que tiene que llegar al punto es la camioneta. */
+        lineaDelTelefono(q),
+        q.unidad ? lineaDelCamino(q.unidad) : null,
         /* Quien lo dijo y a que hora. Sin esto, "va en camino" por
            telefono se leeria igual que una posicion del GPS, y esa es
            justamente la diferencia que importa el dia que no llegue. */
@@ -133,6 +136,195 @@ async function bandaCamino() {
     caja.append(renglon);
   }
   return caja;
+}
+
+
+/* ------------------------------ lo que dice la unidad (seccion 60) */
+
+function reemplazar(texto, valores) {
+  return Object.entries(valores).reduce(
+    (s, [k, v]) => s.split(`{${k}}`).join(v ?? ""), texto);
+}
+
+/* "22:40", "22:40 de ayer" o "22:40 del sab 19": una unidad apagada
+   desde hace tres dias no puede decir "de ayer". Los dias los cuenta el
+   servidor con el calendario del pais de la unidad; el del navegador
+   solo si no vienen, porque quien mira puede estar en otro pais. */
+function lasHoras(iso, diasDelPais) {
+  if (!iso) return null;
+  const dia = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const dias = Number.isInteger(diasDelPais) ? diasDelPais
+    : Math.round((dia(new Date()) - dia(new Date(iso))) / 86400000);
+  if (dias <= 0) return hora(iso);
+  if (dias === 1) return reemplazar(t("gps_de_ayer"), { hora: hora(iso) });
+  return reemplazar(t("gps_del_dia"), { hora: hora(iso), f: fecha(iso) });
+}
+
+function fuenteUnidad(placa) {
+  return placa ? `${t("gps_unidad")} ${placa}` : t("gps_unidad");
+}
+
+/* Lo que dijo el telefono: a que hora contesto y donde estaba, o a que
+   avisos no contesto. */
+function lineaDelTelefono(q) {
+  if (q.contesto_en) {
+    return testigo(t("gps_telefono"),
+      [reemplazar(t("gps_tel_contesto"), { hora: hora(q.contesto_en) }),
+       q.distancia_km != null
+         ? reemplazar(t("gps_a_km"), { km: q.distancia_km }) : null,
+      ].filter(Boolean).join(" · "), "", "telefono");
+  }
+  if (!q.avisos || !q.avisos.length) return null;
+  const horas = q.avisos.map(hora);
+  const texto = horas.length === 1
+    ? reemplazar(t("gps_tel_no_contesto_uno"), { hora: horas[0] })
+    : reemplazar(t("gps_tel_no_contesto"),
+                 { horas: horas.slice(0, -1).join(", "),
+                   ultima: horas[horas.length - 1] });
+  const viene = q.unidad && q.unidad.estado === "viene";
+  return testigo(t("gps_telefono"), texto, viene ? "gris" : "", "telefono");
+}
+
+/* Lo que dice la unidad en el camino al punto. */
+function lineaDelCamino(u) {
+  const km = u.distancia_km;
+  const aKm = km != null ? reemplazar(t("gps_a_km"), { km }) : null;
+  const las = lasHoras(u.desde, u.desde_dias);
+  const quieta = () => (u.apagada
+    ? (las ? reemplazar(t("gps_apagada_desde"), { hora: las })
+           : t("gps_apagada"))
+    : (las ? reemplazar(t("gps_parada_desde"), { hora: las })
+           : t("gps_parada")));
+  let texto, tono = "";
+  switch (u.estado) {
+    case "viene":
+      /* "viene hacia el punto · a 12 km": el punto ya esta dicho. */
+      texto = [t("gps_viene"),
+               km != null ? t("cen_camino_km").replace("{km}", km) : null,
+               u.hace_min != null
+                 ? reemplazar(t("gps_hace"), { n: u.hace_min }) : null];
+      tono = "ok";
+      break;
+    case "en_el_punto":
+      texto = [t("gps_en_el_punto")];
+      tono = "ok";
+      break;
+    case "se_mueve":
+      texto = [t("gps_en_movimiento"), aKm];
+      break;
+    case "no_llega":
+      texto = [t("gps_en_movimiento"), aKm, t("gps_no_alcanza")];
+      tono = "grave";
+      break;
+    case "no_sale":
+      texto = [quieta(), aKm, t("gps_ya_tendria")];
+      tono = "grave";
+      break;
+    case "sin_senal":
+      texto = [las ? reemplazar(t("gps_sin_senal_desde"), { hora: las })
+                   : t("gps_sin_senal"),
+               t("gps_cuenta_el_telefono")];
+      tono = "alerta";
+      break;
+    default:
+      texto = [quieta(), aKm];
+  }
+  return testigo(fuenteUnidad(u.placa), texto.filter(Boolean).join(" · "),
+                 tono);
+}
+
+/* Lo que dice la unidad ahora mismo, en "En curso" y en "Atender
+   ahora". No apaga nada: un equipo callado sigue en rojo aunque su
+   camioneta se mueva. Solo agrega lo que sabe. */
+function dichoDeLaUnidad(l) {
+  const las = lasHoras(l.desde, l.desde_dias);
+  switch (l.estado) {
+    case "sin_senal":
+      return [las ? reemplazar(t("gps_sin_senal_desde"), { hora: las })
+                  : t("gps_sin_senal"), "alerta"];
+    case "inhibidor":
+      return [reemplazar(t("gps_inhibidor_desde"), { hora: las || "—" }),
+              "grave"];
+    case "sin_corriente":
+      return [reemplazar(t("gps_sin_corriente_desde"), { hora: las || "—" }),
+              "alerta"];
+    case "en_movimiento":
+      return [t("gps_en_movimiento"), ""];
+    case "apagada":
+      return [las ? reemplazar(t("gps_apagada_desde"), { hora: las })
+                  : t("gps_apagada"), ""];
+    default: {
+      let texto = l.parada_min != null && l.parada_min <= 15
+        ? reemplazar(t("gps_se_movio"), { n: Math.max(1, l.parada_min) })
+        : (las ? reemplazar(t("gps_detenida_desde"), { hora: las })
+               : t("gps_detenida"));
+      if (l.encendida) texto += ` · ${t("gps_encendida")}`;
+      return [texto, ""];
+    }
+  }
+}
+
+function lineaDeLaUnidad(l, conPosicion = false) {
+  const [texto, tono] = dichoDeLaUnidad(l);
+  const extra = conPosicion && l.hace_min != null
+    && !["sin_senal", "inhibidor"].includes(l.estado)
+    ? ` · ${reemplazar(t("gps_ultima_posicion"), { n: l.hace_min })}` : "";
+  return testigo(fuenteUnidad(l.placa), texto + extra, tono);
+}
+
+function aBordo(gente) {
+  if (!gente || !gente.length) return null;
+  /* Con su papel: a quien se llama primero depende de quien maneja. */
+  const nombres = gente.map(p => (p.rol ? `${p.nombre || "—"} (${p.rol})`
+                                        : (p.nombre || "—")));
+  const lista_ = nombres.length === 1 ? nombres[0]
+    : `${nombres.slice(0, -1).join(", ")} ${t("gps_y")} ${nombres[nombres.length - 1]}`;
+  return reemplazar(t("cen_a_bordo"), { gente: lista_ });
+}
+
+function telefonos(gente) {
+  return (gente || []).filter(p => p.telefono).map(p =>
+    h("a", { clase: "chico", href: `tel:${p.telefono}`,
+             style: "margin-right:12px" }, `${p.nombre} · ${p.telefono}`));
+}
+
+/* El inhibidor y la corriente cortada, con lo que hay que saber antes
+   de llamar. Se cierran solos cuando la unidad vuelve a estar bien, o al
+   terminar el servicio: fuera de esa ventana los vigila Centauro
+   Satelital. */
+function fichaDeLaUnidad(a) {
+  const inhibidor = a.tipo === "inhibidor";
+  const l = a.unidad || {};
+  let dice, tono;
+  if (inhibidor && l.estado === "inhibidor") {
+    dice = reemplazar(t("gps_detecto_inhibidor"),
+                      { hora: lasHoras(l.desde, l.desde_dias) || "—" });
+    tono = "grave";
+  } else if (!inhibidor && l.estado === "sin_corriente") {
+    dice = reemplazar(t("gps_perdio_corriente"),
+                      { hora: lasHoras(l.desde, l.desde_dias) || "—" });
+    tono = "alerta";
+  } else {
+    [dice, tono] = a.unidad ? dichoDeLaUnidad(a.unidad) : [a.mensaje, ""];
+  }
+  const servicio = { servicio_id: a.servicio_id, tipo: a.tipo_servicio };
+  return h("div", { clase: "tarjeta lisa", style: "margin:0 0 10px" },
+    h("div", { style: "display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center" },
+      h("div", {},
+        etiqueta(t(inhibidor ? "cen_inhibidor" : "cen_sin_corriente"),
+                 inhibidor ? "grave" : "alerta"), " ",
+        h("b", {}, [a.folio, a.cliente].filter(Boolean).join(" · ")),
+        aBordo(a.a_bordo)
+          ? h("div", { clase: "gris chico" }, aBordo(a.a_bordo)) : null,
+        conPrincipal(a),
+        testigo(fuenteUnidad(a.placa), dice, tono)),
+      h("div", { clase: "acciones chico" },
+        h("a", { clase: "chico", href: rutaDelServicio(servicio) },
+          t("cen_ver_servicio")),
+        botonBitacora(a.jornada_id, enLaTarjeta))),
+    h("div", { style: "margin-top:8px" }, ...telefonos(a.a_bordo),
+      h("div", { clase: "gris chico", style: "margin-top:6px" },
+        t(inhibidor ? "cen_inhibidor_pie" : "cen_corriente_pie"))));
 }
 
 
@@ -261,6 +453,9 @@ function bandaRoto(roto, zona) {
   for (const a of roto.panico) {
     caja.append(fichaPanico(a, zona));
   }
+  for (const a of roto.unidad || []) {
+    caja.append(fichaDeLaUnidad(a));
+  }
   for (const f of roto.callados) {
     caja.append(renglonRoto(t("cen_callado"), "grave",
       `${f.folio} · ${f.cliente || ""}`,
@@ -353,7 +548,8 @@ function renglonRoto(titulo, tono, principal, detalle, ficha, extra) {
       h("div", {},
         etiqueta(titulo, tono), " ",
         h("b", {}, principal),
-        h("div", { clase: "gris chico" }, detalle)),
+        h("div", { clase: "gris chico" }, detalle),
+        ...((ficha && ficha.gps) || []).map(l => lineaDeLaUnidad(l))),
       /* Las dos salidas juntas: el servicio completo, y el dia de este
          renglon. La segunda es la que se usa al triar --lo que hay que
          saber es que paso HOY con este equipo-- y hasta ahora obligaba
@@ -446,15 +642,19 @@ function fichaPanico(a, zona) {
     } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
   }
 
+  /* align-items: sin el, la etiqueta del estatus se estiraba hasta el
+     alto de toda la ficha --una pastilla roja de diez renglones--. */
   return h("div", { clase: "tarjeta lisa", style: "margin:0 0 12px" },
-    h("div", { style: "display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap" },
+    h("div", { style: "display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start" },
       h("div", {},
         etiqueta(t("cen_panico"), "grave"), " ",
         /* De quien es, ANTES del canal. Lo primero que hace quien lee
            esto es llamar a esa persona, y con el panico sin servicio no
            hay folio del que deducirlo: el nombre es lo unico que
            identifica la alerta. */
-        h("b", {}, a.quien || t("cen_panico_sin_nombre")),
+        h("b", {}, a.quien
+          || (a.placa ? reemplazar(t("cen_panico_unidad"), { placa: a.placa })
+                      : t("cen_panico_sin_nombre"))),
         h("div", { clase: "gris chico" },
           `${canal} · ${t("central_reportada")} ${hora(a.reportada_en)}`),
         /* En que servicio esta. Estaba en el sistema y habia que ir a
@@ -474,6 +674,13 @@ function fichaPanico(a, zona) {
            quien lee esto tiene que saber que esta leyendo la ultima
            noticia, no la situacion. */
         conPrincipal(a),
+        /* El boton de la camioneta (seccion 60): quien va a bordo --a
+           quien se llama-- y lo que dice ahora la unidad. */
+        aBordo(a.a_bordo)
+          ? h("div", { clase: "chico", style: "margin-top:4px" },
+              aBordo(a.a_bordo))
+          : null,
+        a.unidad ? lineaDeLaUnidad(a.unidad, true) : null,
         /* Y se dice que no trae servicio, en vez de dejar el hueco.
            Un renglon sin folio se lee como un error de la pantalla; asi
            se lee como lo que es --alguien que apreto el boton fuera de
@@ -483,11 +690,15 @@ function fichaPanico(a, zona) {
           : h("div", { clase: "chico", style: "color:#7a5c07;margin-top:4px" },
               t("cen_panico_sin_servicio"))),
       etiqueta(estatus(a.estatus), urgente ? "grave" : "alerta")),
-    /* El telefono a un toque: es la primera accion, siempre. */
-    a.telefono
+    /* El telefono a un toque: es la primera accion, siempre. Con la
+       camioneta, el de cada quien va a bordo. */
+    a.a_bordo && a.a_bordo.some(p => p.telefono)
       ? h("div", { clase: "chico", style: "margin-top:6px" },
-          h("a", { href: `tel:${a.telefono}` }, a.telefono))
-      : null,
+          ...telefonos(a.a_bordo))
+      : a.telefono
+        ? h("div", { clase: "chico", style: "margin-top:6px" },
+            h("a", { href: `tel:${a.telefono}` }, a.telefono))
+        : null,
     /* Quien la tomo y desde cuando. Una tomada hace dos minutos por
        otro no se toca; una en atencion desde hace cuarenta minutos y
        sin cerrar es una que se quedo sola. */
@@ -497,7 +708,11 @@ function fichaPanico(a, zona) {
             .replace("{hora}", hora(a.tomada_en)),
           h("div", {}, t("central_sin_prisa")))
       : null,
-    a.descripcion ? h("p", { style: "margin:8px 0 0" }, a.descripcion) : null,
+    /* La del boton de la camioneta la escribe el sistema, y lo que dice
+       --que unidad-- ya esta arriba, en el idioma de la pantalla. La que
+       manda la app la escribe quien la aprieta: esa si se lee. */
+    a.descripcion && a.canal !== "boton_vehiculo"
+      ? h("p", { style: "margin:8px 0 0" }, a.descripcion) : null,
     /* La central estabiliza y el consultor formaliza. Verlo aqui ahorra
        la llamada de "oye, ¿ya lo cambiaste?". */
     a.cambio
@@ -715,7 +930,8 @@ function tablaPulso(filas) {
           ? h("div", { clase: "gris chico" },
               `${t("cen_ultimo")}: ${t(HITOS[f.ultimo_hito] || "")} `
               + `${hora(f.ultimo_en)}`)
-          : null),
+          : null,
+        ...(f.gps || []).map(l => lineaDeLaUnidad(l))),
       h("td", { clase: "chico" },
         f.por_entrar_en_extra
           ? etiqueta(`${t("cen_extra")} · ${f.minutos_para_horas_extra} min`,

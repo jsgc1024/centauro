@@ -1129,7 +1129,7 @@ class ClasificarEncuestaIn(Base):
 
 
 class PesosProfesionalismoIn(Base):
-    """Los cinco pesos, que tienen que sumar 100."""
+    """Los seis pesos, que tienen que sumar 100."""
     pais_id: int
     pesos: dict[str, Decimal]
     meses_ventana: int | None = None
@@ -1137,3 +1137,5 @@ class PesosProfesionalismoIn(Base):
     castigo_error_menor: Decimal | None = None
     castigo_leve: Decimal | None = None
     castigo_grave: Decimal | None = None
+    # Cuanto baja el manejo por cada evento del GPS cada mil km.
+    puntos_por_evento_manejo: Decimal | None = None

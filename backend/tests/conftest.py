@@ -57,6 +57,9 @@ TABLAS_DE_OPERACION = [
     # Postgres se lleva vehiculo por el CASCADE, quiera uno o no. Se
     # vuelve a sembrar despues de cada vaciado.
     "vehiculo",
+    # Lo que se leyo de Pegasus (seccion 60): cada prueba arma su propio
+    # Pegasus de mentiras y no puede heredar las unidades de otra.
+    "unidad_gps", "grupo_gps",
 ]
 
 

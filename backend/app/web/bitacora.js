@@ -9,7 +9,8 @@
    meet and greet, donde hay una decision que tomar, y se apagan al
    marcar la llegada: meterlas aqui convertiria esto en un rastreo. */
 import { api } from "./api.js";
-import { aviso, campo, conAyuda, entrada, h, hora, lista } from "./util.js";
+import { aviso, campo, conAyuda, entrada, h, hora, lista,
+         testigo } from "./util.js";
 import { t } from "./idioma.js";
 
 const ICONO = { plan: "▲", hito: "●", alerta: "◆", central: "■", nota: "✎" };
@@ -180,7 +181,36 @@ function bloqueManana(d, refrescar) {
     h("div", { clase: "acciones" }, boton));
 }
 
+function reemplazar(texto, valores) {
+  return Object.entries(valores).reduce(
+    (s, [k, v]) => s.split(`{${k}}`).join(v ?? ""), texto);
+}
+
+function distancia(metros) {
+  if (metros === null || metros === undefined) return "—";
+  /* "14 km", no "14.0 km"; "2.4 km" sigue con su decimal. */
+  return metros < 1000 ? `${metros} m`
+                       : `${Number((metros / 1000).toFixed(1))} km`;
+}
+
+/* El segundo testigo (seccion 60): lo que decia la unidad de quien
+   marco, en el momento de la marca. Una sola medida por marca --las
+   posiciones del camino siguen sin entrar aqui--. */
+function chipDeLaUnidad(u) {
+  let texto;
+  if (u.veredicto === "ok") {
+    texto = `✓ ${reemplazar(t("bit_unidad_a"), { d: distancia(u.distancia_m) })}`;
+  } else if (u.guardada_en) {
+    texto = reemplazar(t("bit_unidad_guardada"), { hora: hora(u.guardada_en) });
+  } else {
+    texto = reemplazar(t("bit_unidad_lejos"), { d: distancia(u.distancia_m) });
+  }
+  return h("span", { clase: `marca ${u.veredicto === "ok" ? "ok" : "alerta"}` },
+    texto);
+}
+
 function renglon(r, d, refrescar) {
+  const u = r.unidad;
   return h("div", { clase: `paso ${r.fuente}` },
     h("div", { clase: "hora" }, r.momento ? hora(r.momento) : t("bit_sin_hora")),
     h("div", { clase: "eje" }, h("span", { clase: "punto" }, ICONO[r.fuente])),
@@ -188,8 +218,16 @@ function renglon(r, d, refrescar) {
       h("div", { clase: "titulo" }, titulo(r),
         r.marca
           ? h("span", { clase: `marca ${r.tono}`.trim() }, r.marca)
-          : null),
+          : null,
+        u ? chipDeLaUnidad(u) : null),
       r.detalle ? h("div", { clase: "detalle" }, r.detalle) : null,
+      u && u.guardada_en
+        ? testigo(`${t("gps_unidad")} ${u.placa || ""}`.trim(),
+                  reemplazar(t("bit_unidad_guardada_detalle"), {
+                    hora: hora(u.guardada_en),
+                    km: Number((u.guardada_m / 1000).toFixed(1)) }),
+                  "alerta")
+        : null,
       /* Corregir la hora de una marca vive AQUI y en ningun otro lado:
          es el unico lugar donde las marcas se ven en su contexto, que
          es lo que hace falta para saber si una hora esta mal. */

@@ -113,6 +113,21 @@ celery.conf.update(
             "task": "odoo.sincronizar_flota",
             "schedule": crontab(minute=27),
         },
+        # El GPS de las unidades (seccion 60). Cada dos minutos: el
+        # panico del vehiculo, el camino al punto, el inhibidor y la
+        # corriente, y el segundo testigo de las marcas. Sin nadie en la
+        # calle, las posiciones solo se leen cada quince. Sin usuario de
+        # Pegasus en el .env no hace nada.
+        "gps-leer": {
+            "task": "gps.leer",
+            "schedule": crontab(minute="*/2"),
+        },
+        # Lo que recorrio cada unidad en el dia y su manejo, cuando ya se
+        # guardo: dos horas despues del fin. Cada hora, a los 41.
+        "gps-cerrar-dias": {
+            "task": "gps.cerrar_dias",
+            "schedule": crontab(minute=41),
+        },
     },
 )
 
@@ -315,5 +330,31 @@ def sincronizar_flota_de_odoo():
     db = SessionLocal()
     try:
         return odoo_flota.sincronizar_si_toca(db)
+    finally:
+        db.close()
+
+
+@celery.task(name="gps.leer")
+def leer_el_gps():
+    """La vuelta de cada dos minutos por Pegasus. Solo lee."""
+    from app.db import SessionLocal
+    from app import gps
+
+    db = SessionLocal()
+    try:
+        return gps.leer(db)
+    finally:
+        db.close()
+
+
+@celery.task(name="gps.cerrar_dias")
+def cerrar_los_dias_del_gps():
+    """Los km y el manejo de cada unidad en los dias ya terminados."""
+    from app.db import SessionLocal
+    from app import gps
+
+    db = SessionLocal()
+    try:
+        return gps.cerrar_dias(db)
     finally:
         db.close()

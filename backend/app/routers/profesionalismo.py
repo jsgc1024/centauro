@@ -57,6 +57,7 @@ def ver_pesos(pais_id: int, db: Session = Depends(get_db), _=Depends(LECTURA)):
             "leve": float(p.castigo_leve),
             "grave": float(p.castigo_grave),
         },
+        "puntos_por_evento_manejo": float(p.puntos_por_evento_manejo),
         "configurado": bool(db.query(m.PesoProfesionalismo)
                             .filter_by(pais_id=pais_id).first()),
     }
@@ -65,7 +66,7 @@ def ver_pesos(pais_id: int, db: Session = Depends(get_db), _=Depends(LECTURA)):
 @router.put("/pesos", summary="Definir los pesos de cada dimension")
 def definir_pesos(datos: s.PesosProfesionalismoIn,
                   db: Session = Depends(get_db), _=Depends(CONFIGURA)):
-    """Los cinco pesos tienen que sumar 100. Si no, la calificacion no
+    """Los seis pesos tienen que sumar 100. Si no, la calificacion no
     significaria lo mismo entre una persona y otra."""
     suma = sum(datos.pesos.values())
     if abs(suma - 100) > 0.01:
@@ -105,6 +106,8 @@ def definir_pesos(datos: s.PesosProfesionalismoIn,
         p.castigo_grave = datos.castigo_grave
     if datos.castigo_error_menor is not None:
         p.castigo_error_menor = datos.castigo_error_menor
+    if datos.puntos_por_evento_manejo is not None:
+        p.puntos_por_evento_manejo = datos.puntos_por_evento_manejo
 
     db.commit()
     return {"resultado": "guardado", "pais_id": datos.pais_id,

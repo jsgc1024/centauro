@@ -8,6 +8,7 @@ import { pantallaNomina } from "./nomina.js";
 import { pantallaBonos } from "./bonos.js";
 import { pantallaEncuestas } from "./encuestas.js";
 import { pantallaPersonal } from "./personal.js";
+import { pantallaUnidades } from "./unidades.js";
 import { carteraImplantados, nuevoImplantado,
          pantallaImplantado } from "./implantado.js";
 import { detenerPanorama, pantallaPanorama } from "./panorama.js";
@@ -104,6 +105,12 @@ const MENU = [
      de operacion, y se toma mirando la misma cartera. */
   { ruta: "/equipo", texto: "nav_personal", grupo: "nav_operaciones_ep",
     cuenta: "rec_personal", quienes: CONSULTA },
+  /* La flota con su GPS (seccion 60), junto a Personal: a quien se
+     manda y en que se manda se deciden mirando lo mismo. La abre quien
+     monitorea --consultor, central y direccion--; no dice donde esta
+     ninguna unidad. */
+  { ruta: "/unidades", texto: "nav_unidades", grupo: "nav_operaciones_ep",
+    cuenta: "rec_unidades", quienes: MONITOREO },
   /* El desempeno del personal y su bono del mes vencido, que se
      calcula el dia 3 y se deposita el 5. Va en Operaciones EP
      --decision de Salvador, 23 sep--, junto a Personal: lo que mide
@@ -418,6 +425,7 @@ const RUTAS = [
   [/^#\/implantado\/(\d+)$/, pantallaImplantado, CONSULTA],
   [/^#\/central$/, tableroCentral, MONITOREO],
   [/^#\/equipo$/, pantallaPersonal, CONSULTA],
+  [/^#\/unidades$/, pantallaUnidades, MONITOREO],
   [/^#\/finanzas$/, bandejaFinanzas, DINERO],
   [/^#\/facturacion$/, pantallaFacturacion, DINERO],
   [/^#\/nomina$/, pantallaNomina, DINERO],

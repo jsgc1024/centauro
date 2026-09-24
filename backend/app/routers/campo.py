@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app import auth
+from app import gps
 from app import models as m
 from app import reloj
 from app import revision as revision_unidad
@@ -179,10 +180,15 @@ def _ficha(db: Session, jornada: m.Jornada, persona_id: int,
                         "telefono": a.persona.telefono}
                        for a in jornada.personal
                        if a.persona_id != persona_id and a.persona],
+        # Si la unidad tiene GPS y si es la suya (seccion 60): la app le
+        # dice a quien la trae que su GPS acompana el servicio, y para
+        # que. Lo que la central ve de su camioneta no puede ser sorpresa.
         "unidades": [{"placa": a.vehiculo.placa,
                       "unidad": (a.vehiculo.categoria.nombre
                                  if a.vehiculo.categoria else None),
-                      "color": a.vehiculo.color}
+                      "color": a.vehiculo.color,
+                      "gps": gps.unidad_de(db, a.vehiculo_id) is not None,
+                      "mia": a.vehiculo_id in mias}
                      for a in jornada.vehiculos if a.vehiculo],
         # La hora que importa: a la que hay que estar parado en el punto.
         "presentacion": jornada.inicio_programado.isoformat(),

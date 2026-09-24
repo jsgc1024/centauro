@@ -683,6 +683,10 @@ AYUDA_POR_PANTALLA = {
     "idioma.js": 0,     # la tabla de textos
     "mapa.js": 0,       # el buscador de direcciones, que vive dentro de otra pantalla
     "util.js": 0,       # aqui vive `conAyuda`, entre otras cosas
+    # La flota con su GPS (seccion 60). Cada renglon dice que le falta y
+    # donde se corrige, y la cabeza dice que se lee y de donde: un "?"
+    # repetiria lo que ya esta escrito en la misma linea.
+    "unidades.js": 0,
     # El recorrido ES ayuda: la capa 3. Ponerle un "?" a la ayuda seria
     # explicar la explicacion.
     "recorrido.js": 0,

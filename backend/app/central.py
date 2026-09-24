@@ -16,10 +16,11 @@ Cuatro bandas, en el orden en que se leen:
 Todo sale de lo que ya existe en otros modulos. La gracia es el orden y
 que lo urgente se vea primero.
 """
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
+from app import gps
 from app import implantado as imp
 from app import models as m
 from app import reloj
@@ -373,12 +374,17 @@ def camino(db: Session, ahora: datetime | None = None) -> dict:
 
     # El peor primero. Lo que la central necesita decidir es a quien
     # manda, y eso empieza por quien no va a llegar.
-    ORDEN = {"no_llega": 0, "sin_respuesta": 1, "esperando": 2,
-             "por_telefono": 3, "en_camino": 4, "cerca": 5, "llego": 6}
+    ORDEN = {"no_sale": 0, "no_llega": 0, "sin_respuesta": 1,
+             "esperando": 2, "por_telefono": 3, "en_camino": 4, "cerca": 5,
+             "llego": 6}
 
+    relojes = reloj.Relojes(db, ahora)
     filas = []
     for jornada in jornadas:
-        gente = trayecto.en_camino(db, jornada.id)
+        # Para quien trae una unidad con GPS, la unidad manda: lo que
+        # tiene que llegar al punto es la camioneta (seccion 60).
+        gente = trayecto.en_camino(db, jornada.id,
+                                   relojes.de_la_jornada(jornada))
         if not gente:
             continue
         estar = trayecto.hora_de_estar(db, jornada)
@@ -400,7 +406,8 @@ def camino(db: Session, ahora: datetime | None = None) -> dict:
     filas.sort(key=lambda f: (ORDEN.get(f["estado"], 9), f["faltan_minutos"]))
     return {"cuantos": len(filas),
             "en_riesgo": len([f for f in filas
-                              if f["estado"] in ("no_llega", "sin_respuesta")]),
+                              if f["estado"] in ("no_llega", "no_sale",
+                                                 "sin_respuesta")]),
             "gente": filas}
 
 
@@ -443,6 +450,7 @@ def _en_curso(db: Session, jornada: m.Jornada, ahora: datetime,
 
     abiertas = (db.query(m.Alerta)
                 .filter_by(jornada_id=jornada.id, atendida=False).count())
+    pais = relojes.pais(servicio.pais_id) if relojes else None
 
     return {
         "jornada_id": jornada.id,
@@ -489,6 +497,11 @@ def _en_curso(db: Session, jornada: m.Jornada, ahora: datetime,
         "por_entrar_en_extra": (para_extra is not None
                                 and 0 <= para_extra <= AVISO_HORAS_EXTRA),
         "alertas_abiertas": abiertas,
+        # Lo ultimo que dijo cada unidad del dia (seccion 60). No apaga
+        # nada: un equipo callado sigue en rojo aunque su camioneta se
+        # mueva --que se mueva no dice que el equipo este bien--. Solo
+        # agrega lo que sabe.
+        "gps": gps.lineas_del_dia(db, jornada, pais, _utc(ahora)),
     }
 
 
@@ -522,6 +535,12 @@ def _dia_abandonado(ficha: dict) -> bool:
     if desde_el_fin is None or desde_el_fin <= HORAS_DE_GRACIA * 60:
         return False
     return ficha.get("silencio") in ("rojo", "sin_reporte")
+
+
+def _utc(ahora: datetime) -> datetime:
+    """El `ahora` de esta pantalla es la hora del servidor, sin zona; el
+    GPS habla en instantes."""
+    return ahora.astimezone(timezone.utc)
 
 
 def pulso(db: Session, ahora: datetime | None = None) -> dict:
@@ -619,9 +638,23 @@ def _folio_de_la_alerta(db: Session, a) -> tuple[str | None, str | None]:
     return (None, None)
 
 
-def _ficha_de_panico(db: Session, a) -> dict:
+def _a_bordo(db: Session, jornada: m.Jornada | None,
+             vehiculo_id: int | None) -> list[dict]:
+    """Quienes van en esa unidad, con su telefono: a quien se llama."""
+    if not jornada or not vehiculo_id:
+        return []
+    return [{"persona_id": a.persona_id,
+             "nombre": a.persona.nombre if a.persona else None,
+             "rol": a.rol.nombre if a.rol else None,
+             "telefono": a.persona.telefono if a.persona else None}
+            for a in gps.a_bordo(jornada, vehiculo_id)]
+
+
+def _ficha_de_panico(db: Session, a, ahora: datetime | None = None) -> dict:
     """Una alerta de panico, con lo que hay que saber antes de llamar."""
     folio, equipo = _folio_de_la_alerta(db, a)
+    pais = db.get(m.Pais, reloj.pais_de_la_jornada(a.jornada)) \
+        if a.jornada else None
     return {
         "id": a.id,
         "canal": a.canal.value,
@@ -658,6 +691,38 @@ def _ficha_de_panico(db: Session, a) -> dict:
         "lon": float(a.lon) if a.lon is not None else None,
         "reportada_en": (a.reportada_en.isoformat()
                          if a.reportada_en else None),
+        # El boton de la camioneta (seccion 60): de que unidad, quien va
+        # a bordo, y lo que dice ahora la unidad.
+        "placa": a.vehiculo.placa if a.vehiculo_id and a.vehiculo else None,
+        "a_bordo": _a_bordo(db, a.jornada, a.vehiculo_id),
+        "unidad": (gps.linea(gps.unidad_de(db, a.vehiculo_id), pais,
+                             _utc(ahora or datetime.now()))
+                   if a.vehiculo_id else None),
+    }
+
+
+def _alerta_de_la_unidad(db: Session, alerta: m.Alerta,
+                         ahora: datetime) -> dict:
+    """El inhibidor o la corriente cortada, con el servicio, quien va a
+    bordo y si el principal va con ellos."""
+    jornada = alerta.jornada
+    servicio = jornada.equipo.servicio
+    pais = db.get(m.Pais, servicio.pais_id)
+    return {
+        "id": alerta.id,
+        "tipo": alerta.tipo.value,
+        "jornada_id": jornada.id,
+        "servicio_id": servicio.id,
+        "tipo_servicio": servicio.tipo.value,
+        "folio": servicio.folio,
+        "cliente": servicio.cliente.nombre if servicio.cliente else None,
+        "equipo": jornada.equipo.alias,
+        "placa": alerta.vehiculo.placa if alerta.vehiculo else None,
+        "mensaje": alerta.mensaje,
+        "a_bordo": _a_bordo(db, jornada, alerta.vehiculo_id),
+        "principal": _con_quien_va(db, jornada.id),
+        "unidad": gps.linea(gps.unidad_de(db, alerta.vehiculo_id), pais,
+                            _utc(ahora)),
     }
 
 
@@ -683,9 +748,18 @@ def roto(db: Session, ahora: datetime, manana_: dict, pulso_: dict) -> dict:
     extras = [f for f in pulso_["eventuales"] + pulso_["implantados"]
               if f["por_entrar_en_extra"]]
 
+    # El inhibidor y la corriente cortada: solo existen del camino al
+    # punto a la marca de fin, y se cierran solos (seccion 60).
+    de_la_unidad = (db.query(m.Alerta)
+                    .filter(m.Alerta.tipo.in_(gps.DE_LA_UNIDAD),
+                            m.Alerta.atendida.is_(False))
+                    .order_by(m.Alerta.creada_en.desc()).all())
+
     return {
-        "hay": bool(panico or callados or vencidos or extras),
-        "panico": [_ficha_de_panico(db, a) for a in panico],
+        "hay": bool(panico or callados or vencidos or extras
+                    or de_la_unidad),
+        "panico": [_ficha_de_panico(db, a, ahora) for a in panico],
+        "unidad": [_alerta_de_la_unidad(db, a, ahora) for a in de_la_unidad],
         "callados": callados,
         "manana_vencido": vencidos,
         "por_entrar_en_extra": extras,

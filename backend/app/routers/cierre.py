@@ -204,8 +204,11 @@ def viaticos_del_servicio(servicio_id: int, db: Session = Depends(get_db),
         raise HTTPException(404, f"No existe el servicio {servicio_id}")
     ahora = reloj.ahora_del_servicio(db, servicio)
     viaticos = motor.viaticos_del_servicio(db, servicio_id)
+    # Con la gasolina contra los kilometros de la unidad (seccion 60).
+    from app import gps
     return {"momento": ahora.isoformat(),
-            "personas": bolson.revision(viaticos, ahora)}
+            "personas": gps.con_gasolina(db, bolson.revision(viaticos, ahora),
+                                         viaticos)}
 
 
 @router.get("/cierre/servicio/{servicio_id}/desglose-gastos",

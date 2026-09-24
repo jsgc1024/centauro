@@ -362,11 +362,44 @@ function antesDeMandarlo(revision, fallo, viaticos) {
   }
   if (revisar.length) {
     zona.append(h("div", { clase: "chico gris", style: "margin:4px 0 0" },
-      h("b", {}, t("cie_para_revisar")), " ",
-      ...revisar.map((o, i) => h("span", {},
-        i ? " · " : "", `${asunto(o.asunto)}: ${o.mensaje || ""}`))));
+      h("b", {}, t("cie_para_revisar")),
+      h("ul", { style: "margin:6px 0 0;padding-left:18px" },
+        ...revisar.map(o => {
+          const dicho = paraRevisar(o);
+          return h("li", { style: "margin-bottom:6px" },
+            h("b", { style: "color:var(--texto)" }, `${dicho.asunto}:`), " ",
+            dicho.mensaje,
+            dicho.accion ? h("div", {}, dicho.accion) : "");
+        }))));
   }
   return zona;
+}
+
+/* Lo que dice la unidad (seccion 60) llega con su clave y sus datos, y
+   se dice en el idioma de la pantalla. Lo demas, como lo manda el
+   revisor. */
+function paraRevisar(o) {
+  const d = o.datos || {};
+  switch (o.clave) {
+    case "fin":
+    case "fin_extra":
+      return { asunto: reemplazar(t("cie_gps_fin_asunto"), d),
+               mensaje: reemplazar(t(`cie_gps_${o.clave}`), d),
+               accion: t("cie_gps_fin_accion") };
+    case "marca":
+      return { asunto: reemplazar(t("cie_gps_marca_asunto"), {
+                 tipo: t(`cen_hito_${d.tipo}`), fecha: d.fecha }),
+               mensaje: reemplazar(t("cie_gps_marca"), d),
+               accion: t("cie_gps_marca_accion") };
+    case "gasolina":
+      return { asunto: reemplazar(t("cie_gps_gasolina_asunto"), d),
+               mensaje: reemplazar(t("cie_gps_gasolina"), {
+                 comprobado: dinero(d.comprobado, d.moneda || undefined),
+                 cuenta: dinero(d.cuenta, d.moneda || undefined), km: d.km }),
+               accion: t("cie_gps_gasolina_accion") };
+    default:
+      return { asunto: asunto(o.asunto), mensaje: o.mensaje || "" };
+  }
 }
 
 /* ------------------------------------------------------------ el dinero del personal */
@@ -597,6 +630,51 @@ function pieDePersona(p, recargar) {
     `${queFrena(p)} ${plazo}`);
 }
 
+/* La gasolina contra los kilometros de la unidad (seccion 60): la misma
+   cuenta del deposito, con los km del GPS. Solo se ensena cuando lo
+   comprobado pasa de esa cuenta: si cuadra, ninguna noticia. No frena
+   nada; el ticket se valida o se rechaza como siempre. */
+function bloqueGasolina(p) {
+  const g = p.gasolina;
+  if (!g || !g.excede) return null;
+  const m = p.moneda;
+  const pie = g.rendimiento
+    ? reemplazar(t("cie_gas_pie"), { rend: Number(g.rendimiento),
+                                     precio: dinero(g.precio, m),
+                                     holgura: Number(g.holgura) })
+    : reemplazar(t("cie_gas_pie_varias"), { precio: dinero(g.precio, m),
+                                            holgura: Number(g.holgura) });
+  return h("div", { clase: "gasolina" },
+    h("div", { clase: "cabeza-gas" },
+      etiqueta(reemplazar(t("cie_gas_de_mas"), { m: dinero(g.de_mas, m) }),
+               "alerta"),
+      h("b", { clase: "chico" }, t("cie_gas_titulo"))),
+    h("table", { clase: "tabla-cierre" },
+      h("thead", {}, h("tr", {},
+        h("th", {}), h("th", { clase: "der" }, t("cie_gas_col_km")),
+        h("th", { clase: "der" }, t("cie_gas_col_gasolina")))),
+      h("tbody", {},
+        Number(g.depositado) > 0
+          ? h("tr", {},
+              h("td", {}, t("cie_gas_deposito")),
+              h("td", { clase: "der num" },
+                g.km_estimados ? `${g.km_estimados} km` : "—"),
+              h("td", { clase: "der num" }, dinero(g.depositado, m)))
+          : null,
+        h("tr", {},
+          h("td", {}, reemplazar(t(g.placas.length === 1 ? "cie_gas_recorrio"
+                                                         : "cie_gas_recorrieron"),
+                                 { placas: g.placas.join(", ") }),
+            h("span", { clase: "gris chico" }, ` · ${t("cie_gas_segun_gps")}`)),
+          h("td", { clase: "der num" },
+            `${Number(g.km).toLocaleString()} km`),
+          h("td", { clase: "der num" }, dinero(g.cuenta, m))),
+        h("tr", { clase: "total" },
+          h("td", {}, h("b", {}, t("cie_gas_comprobo"))), h("td"),
+          h("td", { clase: "der num fuerte" }, dinero(g.comprobado, m))))),
+    h("p", { clase: "chico gris", style: "margin:0" }, pie));
+}
+
 function tarjetaPersona(p, recargar) {
   const m = p.moneda;
   const numeros = [
@@ -615,6 +693,7 @@ function tarjetaPersona(p, recargar) {
       h("div", { clase: "chico num" }, numeros),
       chipDePersona(p)),
     lista,
+    bloqueGasolina(p),
     pieDePersona(p, recargar));
 }
 

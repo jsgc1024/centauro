@@ -3699,6 +3699,92 @@ regreso, los intentos de factura y la factura anulada, y al mes del
 implantado su monto de gastos. Los cierres ya enviados toman su envío
 como primer visto bueno.
 
+## 60. El GPS de las unidades
+
+Decisiones de Salvador, 23 de septiembre, después de ver los seis
+tableros: «adelante con las pantallas». Y a la pregunta de si Centauro
+Satelital ya vigila las alertas de la unidad las 24 horas: «alertas, si
+las manejan ellos. adelante con lo demas». El GPS es Pegasus Gateway, de
+DCT: el que ya trae la flota de Protección Ejecutiva y que opera
+Centauro Satelital.
+
+- **Solo se lee.** Centauro no escribe nada en Pegasus. Lee con un
+  usuario propio de solo lectura, limitado a los dos grupos de
+  Protección Ejecutiva —«2025 P.E.» en México y «CENTAURO BRASIL»—; de
+  los demás grupos no guarda ni el nombre. La lectura corre cada dos
+  minutos (`gps.leer`) desde el reloj de Celery, como las demás
+  vigilancias: ninguna pantalla llama a Pegasus. De cada unidad se
+  guarda solo su última lectura —si se mueve, encendido, corriente,
+  inhibidor, odómetro y dónde estaba—, que se sobreescribe; recorridos,
+  ninguno. El cliente no ve nada (sección 53).
+- **La unidad de Odoo y la de Pegasus se ligan solas por la placa**,
+  sin espacios ni guiones (`gps_reglas.normal_placa`). La que no liga
+  dice por qué y dónde se corrige: sin placa en Pegasus, placa repetida
+  en Pegasus, o una placa que ninguna unidad de Odoo trae. Nada se
+  captura dos veces.
+- **La pantalla «Unidades»**, en Operaciones EP junto a Personal. La
+  abren consultores, la central y dirección (`unidades.ver`). Cada
+  unidad con su GPS: si reporta y desde cuándo, qué trae hoy —servicio,
+  taller o libre— y su odómetro; arriba, lo que hay que arreglar antes
+  de que haga falta, empezando por la que no reporta y mañana sale a
+  servicio. No dice dónde está ninguna.
+- **El pánico de la camioneta suena siempre**, con o sin servicio. Cae
+  en el mismo «Atender ahora» que el de la app, con canal «Botón del
+  vehículo»: de qué unidad, quién va a bordo con su teléfono, si el
+  principal va con ellos y qué dice la unidad en ese momento. Suena una
+  sola vez por evento. Pegasus puede avisar al instante con un
+  disparador (`POST /gps/pegasus/aviso/{secreto}`); el aviso no trae
+  nada que se crea —solo adelanta la lectura— y sin secreto en el
+  `.env` la ruta no existe.
+- **El inhibidor y la corriente cortada** (más de dos minutos) suenan
+  solo durante el servicio, del camino al punto a la marca de fin, con
+  quién va a bordo. Se cierran solos cuando la unidad vuelve a estar
+  bien o cuando termina el servicio. **Fuera del servicio los vigila
+  Centauro Satelital**, que ya lo hace las 24 horas.
+- **El camino al punto** (sección 38). Para quien trae la unidad, lo
+  que tiene que llegar al punto es la camioneta. Si viene hacia el
+  punto, cuenta como si hubiera contestado: no se le toca el teléfono
+  ni se cobra el silencio. Si sigue apagada lejos y ya no le alcanza el
+  tiempo, suena «La unidad no ha salido» aunque el teléfono diga que
+  va. La unidad sin señal no inventa nada: cuenta el teléfono. La
+  central ve los dos testigos, cada uno con lo suyo.
+- **El segundo testigo de las marcas.** Cada marca de quien trae la
+  unidad guarda dónde estaba la unidad en ese momento, y la bitácora
+  lo dice junto a la marca: «unidad a 90 m». En el fin, si la unidad se
+  guardó lejos y mucho antes de la marca, lo dice, y cuánto de las
+  horas extra cae con la unidad ya guardada. Lo firmado a mano no tiene
+  testigo.
+- **Los kilómetros del día y el manejo.** Dos horas después del fin
+  (`gps.cerrar_dias`, cada hora) se cuentan los km de la unidad —de que
+  salió hacia el punto a que se guardó después del fin—, los excesos de
+  velocidad y las frenadas o arrancones bruscos. Con esos km, la
+  gasolina comprobada se compara contra la misma cuenta del depósito
+  —rendimiento de la categoría, precio del litro y holgura—; si pasa,
+  se enseña en la tarjeta de la persona.
+- **Nada de esto frena.** El testigo de las marcas y la gasolina van a
+  «Para revisar»: la unidad señala y el consultor decide. Nunca detienen
+  el visto bueno.
+- **El manejo entra al desempeño con 10 %**: las estrellas del bono
+  bajan de 30 a 25 y las incidencias de 25 a 20. Es de quien maneja,
+  cuenta desde 50 km, y resta 3 puntos por cada evento en 1,000 km
+  (`puntos_por_evento_manejo`, configurable). Un país con pesos a la
+  medida queda con manejo en 0 hasta que se decida.
+- **La app le dice al conductor que su unidad tiene GPS**, cuándo se
+  mira y para qué: «Durante tu servicio —del camino al punto a tu marca
+  de fin— confirma tus marcas y cuenta los kilómetros. Fuera del
+  servicio no se mira dónde está; solo cuenta su botón de pánico.»
+
+La migración `b5d8e3a1c7f4` agrega las unidades y los grupos de
+Pegasus, los dos tipos de alerta nuevos, la dimensión de manejo con sus
+pesos, y a las marcas, al camino y a cada unidad del día lo que dijo el
+GPS. Las credenciales viven solo en el `.env` del servidor
+(`PEGASUS_SITIO`, `PEGASUS_USUARIO`, `PEGASUS_CLAVE` y, para el
+disparador, `PEGASUS_SECRETO_AVISO`); sin ellas no se lee nada y la
+pantalla lo dice. Antes de encender la lectura, `backend/ensayo_pegasus.py`
+hace una vez lo mismo que ella con el usuario del `.env` y dice solo
+cuántos: unidades, placas, eventos y tramos, sin nombres, placas ni
+coordenadas.
+
 ## 14. Lo que falta
 
 ### Abierto
@@ -3717,13 +3803,14 @@ busca, está en las secciones 15 y 16.*
   Centauro la da por anulada, pero en Odoo alguien tiene que cancelarla
   —quien reciba las facturas, o finanzas a mano—. Hoy no muerde: sin
   conexión no sale ninguna factura.
-- **El GPS de las unidades** (Pegasus Gateway de DCT, con API en JSON).
-  Aprobado por Salvador (23 sep): la unidad como segundo testigo de las
-  marcas del conductor, la alerta si no sale a tiempo al punto, el botón
-  de pánico del vehículo con el contexto del servicio, y los kilómetros
-  reales contra la gasolina comprobada. Primero, el reconocimiento de
-  solo lectura (`backend/reconocer_pegasus.py`) para ver qué da de
-  verdad; con eso, la propuesta con pantallas.
+- **El GPS: lo que le toca a Centauro Satelital** (sección 60). Las 14
+  unidades de Brasil que no traen placa en Pegasus —48126, 48127,
+  48129, 55122, 57564 a 57566 y 57597 a 57603— no se ligan hasta que
+  la capturen. Y cuando el servidor tenga su dirección con HTTPS, el
+  disparador de pánico en Pegasus hacia `/gps/pegasus/aviso/{secreto}`;
+  mientras tanto el pánico llega con la lectura de cada dos minutos. De
+  este lado, las placas ligan contra la flota leída de Odoo: sin ella,
+  ninguna.
 - **El correo: falta el proveedor y el dominio.** El despachador ya
   existe (sección 29): SMTP, apagado por omisión, con reintentos y con
   el error del proveedor escrito al lado. Lo que falta es **tuyo**: a qué

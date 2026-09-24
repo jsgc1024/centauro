@@ -284,6 +284,8 @@ def pulsar(db: Session, ahora: datetime | None = None) -> dict:
     han empezado y, de cada persona asignada, decide si le toca un toque
     o si ya lleva demasiado callada.
     """
+    from app import gps
+
     relojes = reloj.Relojes(db, ahora)
     margen = reloj.margen_de_paises(db)
     referencia = ahora or datetime.now()
@@ -332,6 +334,12 @@ def pulsar(db: Session, ahora: datetime | None = None) -> dict:
             if (via.por_telefono_en
                     and (suyo - via.por_telefono_en).total_seconds() / 60
                     <= MINUTOS_DE_GRACIA_POR_TELEFONO):
+                continue
+
+            # La unidad que trae viene hacia el punto (seccion 60): no se
+            # le toca el telefono a quien va manejando y su silencio no
+            # cuenta. Si todo va bien, ninguna noticia.
+            if gps.contesta_la_unidad(via, suyo):
                 continue
 
             # El silencio pesa igual que no ir.
@@ -425,22 +433,61 @@ def cerrar(db: Session, jornada_id: int, persona_id: int,
         + hora + ".")
 
 
-def en_camino(db: Session, jornada_id: int) -> list[dict]:
-    """Quien va en camino y como va. Para la central."""
+def en_camino(db: Session, jornada_id: int,
+              ahora: datetime | None = None) -> list[dict]:
+    """Quien va en camino y como va. Para la central.
+
+    Dos testigos por persona (seccion 60): lo que dijo su telefono y lo
+    que dice la unidad que trae, cada uno con lo suyo. El estado que se
+    ensena lo decide la unidad para quien la trae --lo que tiene que
+    llegar al punto es la camioneta-- y el telefono para los demas."""
+    from app import gps
+
     filas = (db.query(m.Trayecto).filter_by(jornada_id=jornada_id).all())
-    return [{
-        "persona_id": v.persona_id,
-        "persona": v.persona.nombre if v.persona else None,
-        "telefono": v.persona.telefono if v.persona else None,
-        "estado": v.estado,
-        "por_telefono": (v.por_telefono_en.strftime("%H:%M")
-                         if v.por_telefono_en else None),
-        "por_telefono_por": (v.por_telefono_por.nombre
-                             if v.por_telefono_por else None),
-        "por_telefono_nota": v.por_telefono_nota,
-        "distancia_km": (round(v.distancia_ultima_m / 1000, 1)
-                         if v.distancia_ultima_m is not None else None),
-        "ultima_lectura": (v.ultima_lectura_en.isoformat()
-                           if v.ultima_lectura_en else None),
-        "toques": v.toques,
-    } for v in filas]
+    salida = []
+    for v in filas:
+        jornada = v.jornada
+        estar = hora_de_estar(db, jornada)
+        # A que hora se le pregunto, para decir que no contesto a cuales.
+        avisos = [(estar - timedelta(minutes=TOQUES[i])).isoformat()
+                  for i in range(min(v.toques or 0, len(TOQUES)))]
+        primera = v.lecturas[0].momento if v.lecturas else None
+        unidad = None
+        if v.unidad_estado:
+            unidad = {
+                "placa": v.unidad.placa if v.unidad else None,
+                "estado": v.unidad_estado,
+                "distancia_km": (round(v.unidad_distancia_m / 1000, 1)
+                                 if v.unidad_distancia_m is not None
+                                 else None),
+                "leida_en": (v.unidad_leida_en.isoformat()
+                             if v.unidad_leida_en else None),
+                "desde": v.unidad_desde.isoformat() if v.unidad_desde else None,
+                "desde_dias": gps.dias_atras(v.unidad_desde, ahora),
+                "apagada": v.unidad_apagada,
+                "hace_min": (int((ahora - v.unidad_leida_en).total_seconds()
+                                 // 60)
+                             if ahora and v.unidad_leida_en else None),
+            }
+        salida.append({
+            "persona_id": v.persona_id,
+            "persona": v.persona.nombre if v.persona else None,
+            "telefono": v.persona.telefono if v.persona else None,
+            "estado": (gps.estado_del_camino(v, ahora) if ahora
+                       else (v.estado.value if hasattr(v.estado, "value")
+                             else v.estado)),
+            "por_telefono": (v.por_telefono_en.strftime("%H:%M")
+                             if v.por_telefono_en else None),
+            "por_telefono_por": (v.por_telefono_por.nombre
+                                 if v.por_telefono_por else None),
+            "por_telefono_nota": v.por_telefono_nota,
+            "distancia_km": (round(v.distancia_ultima_m / 1000, 1)
+                             if v.distancia_ultima_m is not None else None),
+            "ultima_lectura": (v.ultima_lectura_en.isoformat()
+                               if v.ultima_lectura_en else None),
+            "contesto_en": primera.isoformat() if primera else None,
+            "avisos": avisos,
+            "toques": v.toques,
+            "unidad": unidad,
+        })
+    return salida

@@ -1200,3 +1200,27 @@ h4.seccion { margin: 18px 0 6px; font-size: 13px; color: var(--centauro); }
   .camino { grid-template-columns: repeat(2, 1fr); }
   .comprobante .estado { flex: 1 1 100%; text-align: left; }
 }
+
+/* ------------------------------------------- lo que dice la unidad
+   Seccion 60. Dos testigos, cada uno con su color: la unidad en verde
+   azulado --el de "arribado"--, el telefono en azul. */
+.testigo { display: flex; gap: 7px; align-items: baseline; font-size: 12.5px;
+           margin-top: 4px; line-height: 1.45; }
+.testigo .fuente { flex: 0 0 auto; font-size: 9.5px; font-weight: 700;
+                   letter-spacing: .5px; text-transform: uppercase;
+                   border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+.testigo .fuente.unidad { background: #ddf1f2; color: #0f6b74; }
+.testigo .fuente.telefono { background: #e4edfd; color: #1f4fbf; }
+.testigo .dice { color: #3b4450; }
+.testigo .dice.grave { color: var(--grave); font-weight: 600; }
+.testigo .dice.alerta { color: #7a5c07; font-weight: 600; }
+.testigo .dice.ok { color: var(--ok); }
+.testigo .dice.gris { color: var(--gris); }
+/* La gasolina contra los kilometros, dentro de la tarjeta de la persona. */
+.gasolina { margin-top: 12px; border: 1px solid #f0e2bd; background: #fffaf0;
+            border-radius: 8px; padding: 10px 12px; }
+.gasolina .cabeza-gas { display: flex; gap: 8px; align-items: center;
+                        flex-wrap: wrap; margin-bottom: 4px; }
+.gasolina table.tabla-cierre { background: #fff; margin: 8px 0 6px; }
+.gasolina td.fuerte { font-weight: 700; color: #7a5c07; }
+

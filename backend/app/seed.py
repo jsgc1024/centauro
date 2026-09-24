@@ -361,11 +361,12 @@ def sembrar_parametros() -> dict:
         # Pesos del tablero de profesionalismo. SON DE EJEMPLO: la
         # direccion tiene que definir los suyos, suman 100.
         pesos = {
-            m.DimensionProfesionalismo.ESTRELLAS: D("30"),
+            m.DimensionProfesionalismo.ESTRELLAS: D("25"),
             m.DimensionProfesionalismo.SATISFACCION: D("25"),
-            m.DimensionProfesionalismo.INCIDENCIAS: D("25"),
+            m.DimensionProfesionalismo.INCIDENCIAS: D("20"),
             m.DimensionProfesionalismo.CAPACITACION: D("10"),
             m.DimensionProfesionalismo.EXPERIENCIA: D("10"),
+            m.DimensionProfesionalismo.MANEJO: D("10"),
         }
         for dimension, peso in pesos.items():
             _obtener_o_crear(

@@ -28,12 +28,16 @@ from app.experiencia import horas_acumuladas
 CERO = Decimal("0")
 CIEN = Decimal("100")
 
+# El manejo entra con 10 %, que sale de estrellas (30 -> 25) e
+# incidencias (25 -> 20): decision de Salvador, 23 sep (seccion 60).
+# Siguen siendo de ejemplo.
 PESOS_POR_DEFECTO = {
-    m.DimensionProfesionalismo.ESTRELLAS: Decimal("30"),
+    m.DimensionProfesionalismo.ESTRELLAS: Decimal("25"),
     m.DimensionProfesionalismo.SATISFACCION: Decimal("25"),
-    m.DimensionProfesionalismo.INCIDENCIAS: Decimal("25"),
+    m.DimensionProfesionalismo.INCIDENCIAS: Decimal("20"),
     m.DimensionProfesionalismo.CAPACITACION: Decimal("10"),
     m.DimensionProfesionalismo.EXPERIENCIA: Decimal("10"),
+    m.DimensionProfesionalismo.MANEJO: Decimal("10"),
 }
 
 
@@ -55,6 +59,7 @@ POR_DEFECTO = {
     "castigo_error_menor": Decimal("0"),
     "castigo_leve": Decimal("25"),
     "castigo_grave": Decimal("60"),
+    "puntos_por_evento_manejo": Decimal("3"),
 }
 
 
@@ -179,6 +184,16 @@ def _capacitacion(db: Session, persona_id: int, desde: tuple[int, int]) -> dict:
             "detalle": f"{cumplidos} de {len(evaluaciones)} meses al corriente"}
 
 
+def _manejo(db: Session, persona_id: int, desde: tuple[int, int],
+            p: "_Parametros") -> dict:
+    """Los excesos y los arrancones o frenadas bruscas que conto el GPS,
+    por cada mil km al volante en servicio (seccion 60). Solo los dias en
+    que esa persona iba al volante: al escolta no le aplica, y su peso se
+    reparte entre lo demas, como con cualquier dimension sin datos."""
+    from app import gps
+    return gps.manejo_de(db, persona_id, desde, p.puntos_por_evento_manejo)
+
+
 def _experiencia(db: Session, persona_id: int,
                  p: "_Parametros") -> dict:
     horas = horas_acumuladas(db, persona_id)
@@ -225,6 +240,7 @@ def ficha(db: Session, persona_id: int, hoy: date | None = None) -> dict:
         D.INCIDENCIAS: _incidencias(db, persona_id, desde, p),
         D.CAPACITACION: _capacitacion(db, persona_id, desde),
         D.EXPERIENCIA: _experiencia(db, persona_id, p),
+        D.MANEJO: _manejo(db, persona_id, desde, p),
     }
 
     # El peso de lo que no se puede medir se reparte entre lo que si.

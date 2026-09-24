@@ -183,9 +183,12 @@ def viaticos_del_mes(contrato_id: int, db: Session = Depends(get_db),
     """La misma revision que la del eventual, con el dinero del mes."""
     contrato = cierre_mes.contrato_o_404(db, contrato_id)
     ahora = reloj.ahora_del_servicio(db, contrato.servicio)
+    viaticos = cierre_mes.viaticos_del_mes(db, contrato)
+    # Con la gasolina del mes contra los kilometros del mes (seccion 60).
+    from app import gps
     return {"momento": ahora.isoformat(), "periodo": cierre_mes.periodo(contrato),
-            "personas": bolson.revision(
-                cierre_mes.viaticos_del_mes(db, contrato), ahora)}
+            "personas": gps.con_gasolina(
+                db, bolson.revision(viaticos, ahora), viaticos)}
 
 
 @router.get("/contratos/{contrato_id}/desglose-gastos",
