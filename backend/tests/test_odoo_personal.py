@@ -62,7 +62,9 @@ def empleado(n, **cambios):
          "job_id": [90, "Personal de Seguridad"],
          "job_title": "Personal de Seguridad",
          "work_location_id": [30, "Ciudad de México"],
-         "work_email": f"agente{n}@{DOMINIO}", "private_email": False,
+         # Entra con el personal; el de trabajo se va a suspender.
+         "work_email": f"agente{n}.trabajo@{DOMINIO}",
+         "private_email": f"agente{n}@{DOMINIO}",
          "mobile_phone": f"55 5000 {n:04d}", "registration_number": f"PO-{n}",
          "first_contract_date": "2024-03-01",
          "write_date": "2026-01-01 10:00:00", "active": True}
@@ -209,10 +211,12 @@ def test_lo_dudoso_queda_pendiente_y_no_se_toca(db):
     informe = leer(db, OdooFalso(
         empleado(1, work_location_id=False),
         empleado(2, work_location_id=[31, "Home"]),
-        empleado(3, work_email="agente3@gamil.com"),
-        empleado(4, work_email=f"repetido@{DOMINIO}"),
-        empleado(5, work_email=f"repetido@{DOMINIO}"),
-        empleado(6, work_email=False, private_email=False)))
+        empleado(3, private_email="agente3@gamil.com"),
+        empleado(4, private_email=f"repetido@{DOMINIO}"),
+        empleado(5, private_email=f"repetido@{DOMINIO}"),
+        empleado(6, work_email=False, private_email=False),
+        # Con el de trabajo solo no entra: ese se va a suspender.
+        empleado(7, private_email=False)))
     assert not informe["altas"]
     faltas = {p["odoo_id"] - ODOO0: p["falta"] for p in informe["pendientes"]}
     assert faltas == {
@@ -221,7 +225,8 @@ def test_lo_dudoso_queda_pendiente_y_no_se_toca(db):
         3: ["correo con error de dedo"],
         4: ["correo repetido en Odoo"],
         5: ["correo repetido en Odoo"],
-        6: ["sin correo"],
+        6: ["sin correo personal"],
+        7: ["sin correo personal"],
     }
     assert de_prueba(db) == 0
 
@@ -239,7 +244,7 @@ def test_el_estado_de_mexico_va_como_ciudad_de_mexico(db):
 def test_lo_que_cambia_en_odoo_cambia_aqui_y_lo_vacio_no_borra(db):
     odoo = OdooFalso(empleado(1))
     leer(db, odoo)
-    odoo.cambiar(1, name="Agente Odoo Uno", work_email=f"uno@{DOMINIO}",
+    odoo.cambiar(1, name="Agente Odoo Uno", private_email=f"uno@{DOMINIO}",
                  work_location_id=[33, "Guadalajara"],
                  mobile_phone="33 1111 2222")
     informe = leer(db, odoo)
@@ -303,6 +308,40 @@ def test_quien_ya_estaba_en_centauro_se_vincula_por_su_correo(
     # La misma persona, con lo que dice Odoo, y un solo acceso.
     assert (p.id, p.nombre) == (r.json()["id"], "Agente Odoo 1")
     assert db.query(m.Usuario).filter_by(persona_id=p.id).count() == 1
+
+
+def test_quien_estaba_con_el_correo_de_trabajo_pasa_a_entrar_con_el_personal(
+        cliente, sesion, datos, db):
+    # Salvador, 23 de septiembre: los correos de trabajo del personal de
+    # seguridad se van a suspender. El de trabajo reconoce a la persona la
+    # primera vez; desde ahi entra con el personal.
+    h = sesion("admin")
+    r = cliente.post("/catalogos/personal", headers=h, json={
+        "nombre": "Capturado Con El De Trabajo",
+        "correo": f"agente1.trabajo@{DOMINIO}",
+        "plaza_id": datos["cdmx"]["id"]})
+    assert r.status_code == 201, r.text
+    alta = cliente.post("/auth/usuarios", headers=h, json={
+        "persona_id": r.json()["id"], "rol": "personal_seguridad"})
+    assert alta.status_code == 201, alta.text
+
+    odoo = OdooFalso(empleado(1))
+    informe = leer(db, odoo)
+    assert not informe["altas"]
+    assert [v["persona_id"] for v in informe["vinculadas"]] == [r.json()["id"]]
+    assert "correo" in informe["cambios"][0]["que"]
+    p = persona(db, 1)
+    assert (p.id, p.correo) == (r.json()["id"], f"agente1@{DOMINIO}")
+    usuario = db.query(m.Usuario).filter_by(persona_id=p.id).one()
+    assert usuario.correo == f"agente1@{DOMINIO}"
+
+    # Si RH le borra el personal en Odoo, sigue entrando con el que tenia
+    # y queda pendiente hasta que se lo pongan.
+    odoo.cambiar(1, private_email=False)
+    informe = leer(db, odoo)
+    assert [(q["odoo_id"] - ODOO0, q["falta"]) for q in informe["pendientes"]] == [
+        (1, ["sin correo personal"])]
+    assert persona(db, 1).correo == f"agente1@{DOMINIO}"
 
 
 def test_el_circulo_de_iniciales_no_es_foto_y_la_foto_nueva_se_toma(db):

@@ -299,16 +299,17 @@ def calcular(odoo, filas):
         propuestas[e["id"]] = {c: v for c, v in nuevo.items()
                                if not igual(c, v, e)}
 
-    # El correo con el que entra a la app --el de trabajo o, si no tiene, el
-    # personal-- no puede ser el de otra persona. Lo que la hoja trae y
-    # causaria la repeticion no se escribe.
+    # El correo con el que entra a la app --el personal, siempre: los de
+    # trabajo del personal de seguridad se van a suspender-- no puede ser el
+    # de otra persona. Lo que la hoja trae y causaria la repeticion no se
+    # escribe.
     def valor(ident, campo):
         if campo in propuestas.get(ident, {}):
             return propuestas[ident][campo]
         return texto(seguridad[ident].get(campo)).lower()
 
     def acceso_de(ident):
-        return valor(ident, "work_email") or valor(ident, "private_email")
+        return valor(ident, "private_email")
 
     grupos = collections.defaultdict(list)
     for ident in seguridad:
@@ -319,11 +320,8 @@ def calcular(odoo, filas):
             continue
         for ident in ids:
             p = propuestas.get(ident, {})
-            quitados = [c for c in ("work_email", "private_email")
-                        if p.get(c) == correo]
-            for c in quitados:
-                p.pop(c)
-            if quitados:
+            if p.get("private_email") == correo:
+                p.pop("private_email")
                 no_se_escribe["correo repetido con otra persona"] += 1
     # Lo que sigue repetido despues de esto ya venia asi de Odoo.
     quedan = collections.Counter(acceso_de(i) for i in seguridad if acceso_de(i))

@@ -11,16 +11,21 @@ Las decisiones de Salvador (23 de septiembre) que viven aqui:
   * Entra el personal de seguridad: puesto «Personal de Seguridad...» o
     «Security Driver...». Monitoristas, oficina y guardias no.
   * La llave es el numero interno de Odoo.
-  * El correo con el que entra a la app es el de trabajo o, si no tiene,
-    el personal.
   * El Estado de Mexico va como Ciudad de Mexico: es la misma zona
     metropolitana.
   * Lo dudoso no se adivina: se reporta como pendiente y no se toca.
 
-Y del 24 de septiembre: un celular que no es un numero --en Odoo hay
-fichas que dicen «sin dispositivo»-- no se guarda como telefono ni borra
-el que Centauro ya tiene; el informe lo cuenta aparte. No detiene el
-alta: la persona entra sin celular.
+Y de esa misma noche, ya con la hoja de RH cargada:
+
+  * El correo con el que entra a la app es SIEMPRE el personal. Los
+    correos de trabajo del personal de seguridad se van a suspender. El de
+    trabajo solo sirve para reconocer, la primera vez, a quien ya estaba
+    en Centauro con el; desde ahi entra con el personal. (Antes era el de
+    trabajo y, si no tenia, el personal.)
+  * Un celular que no es un numero --en Odoo hay fichas que dicen «sin
+    dispositivo»-- no se guarda como telefono ni borra el que Centauro ya
+    tiene; el informe lo cuenta aparte. No detiene el alta: la persona
+    entra sin celular.
 """
 import collections
 import re
@@ -94,16 +99,18 @@ def es_de_seguridad(empleado: dict) -> bool:
 
 
 def correo_de(empleado: dict) -> str:
-    for campo in ("work_email", "private_email"):
-        valor = texto(empleado.get(campo)).lower()
-        if valor:
-            return valor
-    return ""
+    """El correo con el que entra a la app: el personal, siempre."""
+    return texto(empleado.get("private_email")).lower()
+
+
+def correo_de_trabajo(empleado: dict) -> str:
+    """Solo para reconocer a quien ya estaba en Centauro con este."""
+    return texto(empleado.get("work_email")).lower()
 
 
 def problema_de_correo(correo: str) -> str | None:
     if not correo:
-        return "sin correo"
+        return "sin correo personal"
     if not CORREO_VALIDO.match(correo):
         return "correo mal escrito"
     if correo.split("@")[-1] in DOMINIOS_RAROS:
@@ -154,6 +161,8 @@ def planear(empleados: list, personas: list, plazas: dict,
                   for p in personas if p.get("correo")}
     cuenta = collections.Counter(correo_de(e) for e in elegidos if correo_de(e))
     repetidos = {c for c, n in cuenta.items() if n > 1}
+    de_trabajo = collections.Counter(correo_de_trabajo(e) for e in elegidos
+                                     if correo_de_trabajo(e))
 
     plan = {"leidos": len(elegidos), "altas": [], "vinculos": [],
             "cambios": [], "fotos": [], "pendientes": [], "sin_cambio": 0,
@@ -186,8 +195,17 @@ def planear(empleados: list, personas: list, plazas: dict,
         plaza, lugar = plaza_de(e, plazas)
 
         persona, vinculo = por_odoo.get(e["id"]), False
-        if persona is None and correo and not problema:
-            candidata = por_correo.get(correo)
+        if persona is None:
+            # Quien ya estaba en Centauro se reconoce por su correo: el
+            # personal o, si lo capturaron con el de trabajo, ese. Solo un
+            # correo bien escrito y que nadie mas trae en Odoo.
+            trabajo = correo_de_trabajo(e)
+            posibles = [c for c, sirve in (
+                (correo, correo and not problema),
+                (trabajo, trabajo and de_trabajo[trabajo] == 1
+                 and not problema_de_correo(trabajo))) if sirve]
+            candidata = next((por_correo[c] for c in posibles
+                              if c in por_correo), None)
             if candidata is not None:
                 if candidata.get("odoo_id") and candidata["odoo_id"] != e["id"]:
                     pendiente(e, candidata["id"],
@@ -259,6 +277,10 @@ def planear(empleados: list, personas: list, plazas: dict,
                 valores["correo"] = correo
                 que.append("correo")
                 tomados.add(correo)
+        elif not correo:
+            # Sigue entrando con el que ya tenia, pero RH tiene que poner
+            # el personal: el de trabajo se va a suspender.
+            avisos.append(problema)
 
         # La foto se vuelve a pedir solo si Odoo toco la ficha despues de
         # la ultima lectura: subir una foto cambia el write_date. Quien

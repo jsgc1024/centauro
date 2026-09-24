@@ -30,18 +30,20 @@ def empleado(n):
             "registration_number": False}
 
 
-def fila(n, plaza, nombre=None):
-    return {"id": n, "nombre": nombre or f"Agente {n}",
-            "work_location_id": plaza, "mobile_phone": None,
-            "work_email": None, "private_email": None,
-            "registration_number": None, "notas": None}
+def fila(n, plaza, nombre=None, **valores):
+    f = {"id": n, "nombre": nombre or f"Agente {n}",
+         "work_location_id": plaza, "mobile_phone": None,
+         "work_email": None, "private_email": None,
+         "registration_number": None, "notas": None}
+    f.update(valores)
+    return f
 
 
 GDL, MTY = hoja.PLAZAS.index("Guadalajara") + 1, hoja.PLAZAS.index("Monterrey") + 1
 
 
 def test_una_fila_movida_no_le_quita_su_numero_a_la_fila_buena():
-    # Paso con la hoja del 24 de septiembre: un bloque de filas quedo con
+    # Paso con la hoja que RH devolvio el 23 de septiembre: un bloque quedo con
     # el No. Odoo de otras personas. La fila movida se salta y la buena,
     # que viene despues con el mismo numero, se toma.
     ops, resumen = hoja.calcular(OdooFalso(empleado(1), empleado(2)), [
@@ -60,3 +62,12 @@ def test_la_misma_persona_dos_veces_solo_cuenta_la_primera():
         fila(1, "Guadalajara")])
     assert [op["valores"] for op in ops] == [{"work_location_id": MTY}]
     assert "      1  la persona viene dos veces" in resumen
+
+
+def test_el_correo_personal_de_otra_persona_no_se_escribe():
+    # Con el correo personal entra a la app (los de trabajo del personal de
+    # seguridad se van a suspender): no puede ser el de alguien mas.
+    ops, resumen = hoja.calcular(OdooFalso(empleado(1), empleado(2)), [
+        fila(2, "Monterrey", private_email="AGENTE1@correo.lat")])
+    assert [op["valores"] for op in ops] == [{"work_location_id": MTY}]
+    assert "      1  correo repetido con otra persona" in resumen

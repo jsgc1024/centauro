@@ -3861,6 +3861,32 @@ De paso, dos arreglos:
   tiene al menos diez—, no se guarda ni borra el que había, el alta sigue
   sin celular, y el informe y `sincronizar_personal.py` lo cuentan aparte.
 
+## 63. El personal de seguridad entra con su correo personal
+
+Decisión de Salvador, 23 de septiembre en la noche: «será mejor que
+siempre tomes el correo personal como bueno. muy pronto suspenderé las
+cuentas de correo del personal de seguridad únicamente». Hasta entonces la
+lectura del personal (sección 51) tomaba el correo de trabajo y, si no
+había, el personal.
+
+- **El correo con el que entra a la app es siempre el personal.** Quien no
+  lo tiene en Odoo queda pendiente —«sin correo personal»— y no se da de
+  alta, aunque tenga el de trabajo.
+- **El de trabajo solo sirve para reconocer**, la primera vez, a quien ya
+  estaba capturado en Centauro con él. Desde esa lectura entra con el
+  personal, y su acceso cambia de correo con él.
+- **A quien ya está y le falta el personal no se le cierra el acceso**:
+  sigue entrando con el que tenía y queda pendiente hasta que RH se lo
+  ponga en Odoo.
+- La hoja para RH (`hoja_rh_odoo.py`) marca en amarillo el correo personal
+  que falta y lo pide en sus instrucciones, y el cargador
+  (`cargar_hoja_rh.py`) revisa las repeticiones contra el personal.
+
+En Odoo, 16 del personal de seguridad tienen correo de trabajo y todos
+tienen el personal: esos 16 entrarán con el personal. Como la lectura del
+personal todavía no se aplica en el servidor, nadie tiene que cambiar de
+acceso.
+
 ## 14. Lo que falta
 
 ### Abierto

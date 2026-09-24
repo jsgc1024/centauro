@@ -131,8 +131,10 @@ def main():
             falta.append("celular")
         if not texto(e.get("registration_number")):
             falta.append("referencia")
-        if not trabajo and not personal:
-            falta.append("correo")
+        # Con el personal entra a la app: los de trabajo del personal de
+        # seguridad se van a suspender.
+        if not personal:
+            falta.append("correo personal")
         if not foto:
             falta.append("foto")
         dudosos = [c for c in (trabajo, personal) if c and (
@@ -195,7 +197,7 @@ def main():
                 celda.fill = amarillo
             elif clave in ("trabajo", "personal") and valor in fila["dudosos"]:
                 celda.fill = naranja
-            elif clave == "personal" and not fila["trabajo"] and not fila["personal"]:
+            elif clave == "personal" and not fila["personal"]:
                 celda.fill = amarillo
         if fila["foto"] == "No":
             hoja.cell(row=r, column=9).fill = amarillo
@@ -215,9 +217,10 @@ def main():
         (f"Hecha el {datetime.now():%d/%m/%Y} desde Odoo. {len(filas)} personas.", False),
         ("", False),
         ("Qué hacer", True),
-        ("1. Llenar las casillas en amarillo: plaza, celular de trabajo y referencia de empleado.", False),
+        ("1. Llenar las casillas en amarillo: plaza, celular de trabajo, correo personal y referencia de empleado.", False),
         ("2. Revisar las casillas en naranja: son correos con un error de dedo probable o repetidos.", False),
-        ("3. Cada persona necesita al menos un correo que funcione: con él entra a la app de campo.", False),
+        ("3. Cada persona necesita su correo personal: con él entra a la app de campo. "
+         "Los correos de trabajo del personal de seguridad se van a suspender.", False),
         ("4. Si algo ya estaba pero está mal, se corrige aquí mismo, encima.", False),
         ("5. La foto no va en esta hoja: se sube en Odoo, en la ficha de la persona. "
          "El círculo con iniciales no es foto.", False),
@@ -243,7 +246,7 @@ def main():
 
     print(f"Hoja lista: {nombre}, con {len(filas)} personas.")
     print("Faltan: " + " · ".join(f"{k} {falta_total[k]}" for k in
-                                   ("plaza", "celular", "referencia", "correo", "foto")))
+                                   ("plaza", "celular", "referencia", "correo personal", "foto")))
     print(f"Personas con un correo que revisar: {revisar}")
     return 0
 
