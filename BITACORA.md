@@ -4037,21 +4037,26 @@ las horas de un día:
 
 ### Para probarlo a mano
 
-`python3 probar_horas_extra.py` arma en desarrollo un eventual de cuatro
-días ya pasados —cliente, personal y unidades de la siembra, nunca el
-personal real—. La central asienta a mano la llegada, el meet and greet y
-el término de cada día con horas conocidas (0, 2, 1 y 1 h extra: a tiempo,
-con llegada tarde, con meet and greet antes de la presentación y con un
-minuto de más), y la corrida revisa el panel del día, el visto bueno y que
-la unidad no las cobre. Después se corrige una hora y se da el visto bueno
-en la consola, como consultora, y `python3 probar_horas_extra.py <id>`
-revisa la corrección con su hora original, el candado del visto bueno y lo
-que ve finanzas. Cada corrida crea un servicio nuevo; no imprime nombres.
-Si una cuenta de prueba ya no tiene la contraseña de demostración, la
-pide en la terminal sin mostrarla y no la guarda; si nadie la sabe,
-`python3 probar_horas_extra.py cuentas` les pone una nueva a la
-consultora, la central y finanzas de la siembra, dentro del contenedor,
-solo en desarrollo y con las reglas de la consola.
+En una base aparte, no en la de desarrollo: la de desarrollo ya no tiene
+las cuentas de demostración. `python3 probar_horas_extra.py base` arma
+`centauro_prueba` en el mismo Postgres, sembrada desde cero igual que la
+de las pruebas automáticas, y la levanta con un segundo contenedor de la
+API en localhost:8001 —solo para esa máquina, sin llaves de Google,
+Pegasus, Odoo ni correo, con su propia llave de sesiones y su propia cola
+de Redis, que el worker de desarrollo no lee—. Desarrollo sigue igual en
+localhost:8000.
+
+`python3 probar_horas_extra.py` arma ahí un eventual de cuatro días ya
+pasados: la central asienta a mano la llegada, el meet and greet y el
+término con horas conocidas (0, 2, 1 y 1 h extra: a tiempo, con llegada
+tarde, con meet and greet antes de la presentación y con un minuto de
+más), y la corrida revisa el panel del día, el visto bueno y que la unidad
+no las cobre. Como ahí no corre beat, la corrida pasa una vez el barrido
+que abre el visto bueno. Después se corrige una hora y se da el visto
+bueno en esa consola, como consultora, y `python3 probar_horas_extra.py
+<id>` revisa la corrección con su hora original, el candado del visto
+bueno y lo que ve finanzas. `python3 probar_horas_extra.py apagar` la
+apaga y la borra. No imprime nombres.
 
 ## 14. Lo que falta
 

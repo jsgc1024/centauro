@@ -1,19 +1,28 @@
 #!/usr/bin/env python3
-"""Las horas extra (seccion 65), probadas contra el sistema de desarrollo.
+"""Las horas extra (seccion 65), probadas a mano en una base aparte.
 
-    python3 probar_horas_extra.py          arma un servicio de prueba y
-                                           revisa como cuenta las horas
-    python3 probar_horas_extra.py 123      revisa ese servicio despues de
-                                           corregir y dar el visto bueno
-    python3 probar_horas_extra.py cuentas  le pone una contrasena nueva a
-                                           las tres cuentas de prueba
+    python3 probar_horas_extra.py base       arma la base de prueba y la
+                                             levanta en localhost:8001
+    python3 probar_horas_extra.py            arma un servicio de prueba y
+                                             revisa como cuenta las horas
+    python3 probar_horas_extra.py 123        revisa ese servicio despues de
+                                             corregir y dar el visto bueno
+    python3 probar_horas_extra.py apagar     la apaga y la borra
 
-La primera corrida arma un eventual de cuatro dias full day ya pasados,
-del Cliente Demo AAA, con el personal y las unidades de la siembra (nunca
-el personal real). La central hace lo que hace cuando el telefono no marca:
-asienta a mano la llegada y el meet and greet, y cierra el dia a mano con
-su hora de termino. La corrida revisa que las horas extra salgan como se
-decidio el 24 de septiembre:
+La base de prueba no es la de desarrollo: es otra (centauro_prueba), en el
+mismo Postgres, sembrada desde cero con la siembra de siempre --la misma
+de las pruebas automaticas: el Cliente Demo AAA, el personal, las unidades
+y las cuentas de demostracion--. La levanta un segundo contenedor de la
+API en localhost:8001, solo para esta maquina, sin llaves de Google,
+Pegasus, Odoo ni correo, con su propia llave de sesiones y su propia cola:
+lo que ahi pase no sale a ningun lado ni lo toca el worker de desarrollo.
+Desarrollo sigue igual en localhost:8000.
+
+La primera corrida arma un eventual de cuatro dias full day ya pasados.
+La central hace lo que hace cuando el telefono no marca: asienta a mano la
+llegada y el meet and greet, y cierra el dia a mano con su hora de
+termino. La corrida revisa que las horas extra salgan como se decidio el
+24 de septiembre:
 
   dia 1  termina 5 min antes de que corran             0 h
   dia 2  llega 5 min tarde, termina 1 h 50 despues     2 h  corren desde la
@@ -23,26 +32,21 @@ decidio el 24 de septiembre:
   dia 4  termina 1 min despues de que corran           1 h  un minuto ya
                                                             cuenta
 
-Despues tu, en la consola y como consultora, corriges una hora y das el
-visto bueno. La segunda corrida revisa lo que quedo: la correccion con su
-hora original, el candado del visto bueno y lo que ve finanzas.
+Despues tu, en la consola de la base de prueba y como consultora, corriges
+una hora y das el visto bueno. La segunda corrida revisa lo que quedo: la
+correccion con su hora original, el candado del visto bueno y lo que ve
+finanzas.
 
-Cada corrida crea un servicio nuevo y no toca los que ya estan. No lleva
-marcas de la calle ni direcciones, asi que no sale a Google ni a Pegasus.
-No imprime nombres.
-
-Entra con la consultora, la central y finanzas de la siembra. Si alguna ya
-no tiene la contrasena de demostracion, la pide en la terminal sin
-mostrarla y no la guarda. Si no se sabe, `cuentas` les pone una nueva a
-las tres: la pide igual, sin mostrarla, y la asienta dentro del
-contenedor, solo si el entorno es de desarrollo y con las reglas de la
-consola (la de demostracion ya no se acepta).
+Ahi no corre beat. Lo unico suyo que hace falta --el barrido que abre el
+visto bueno cuando no hay viaticos que esperar-- lo pasa la primera
+corrida. No imprime nombres.
 """
-import getpass
 import json
 import os
+import secrets
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -55,16 +59,31 @@ try:
 except Exception:  # sin base de zonas: la fecha de esta maquina
     HOY = datetime.now().date()
 
-BASE = os.environ.get("CENTAURO_API", "http://localhost:8000")
+PUERTO = 8001
+BASE = os.environ.get("CENTAURO_API", f"http://localhost:{PUERTO}")
+AQUI = os.path.dirname(os.path.abspath(__file__))
+CONTENEDOR = "centauro-prueba"
+# La misma cuenta del Postgres de desarrollo que usan las pruebas
+# automaticas (tests/conftest.py), en otra base.
+URL_BD = "postgresql+psycopg://centauro:centauro_dev@db:5432/centauro_prueba"
+# Otra base de Redis: su cola no la lee el worker de desarrollo.
+URL_REDIS = "redis://redis:6379/9"
+# Sin salida a ningun lado.
+SIN_LLAVES = ("GOOGLE_MAPS_KEY", "ODOO_URL", "ODOO_TOKEN", "ODOO_BASE",
+              "ODOO_API_KEY", "ODOO_BD", "PEGASUS_SITIO", "PEGASUS_USUARIO",
+              "PEGASUS_CLAVE", "PEGASUS_SECRETO_AVISO", "CORREO_HOST",
+              "CORREO_USUARIO", "CORREO_CLAVE", "VAPID_PUBLIC",
+              "VAPID_PRIVATE", "URL_PUBLICA")
+
 CUENTAS = {"consultora": "ana.solis@centauro.lat",
            "central": "central@centauro.lat",
            "finanzas": "finanzas@centauro.lat"}
+DEMO = "centauro2026"   # la de la siembra; el README la dice
 CONSULTORA = "Ana Solis"
 CLIENTE = "Cliente Demo AAA"
 PERSONAL = ("Juan Ramirez", "Luis Mendoza", "Miguel Torres", "Hector Palacios")
 UNIDADES = ("ABC-1234", "ABC-5678")
 PRESENTACION = "07:00:00"
-DEMO = "centauro2026"   # la de la siembra; el README la dice
 MOTIVO = ("Prueba de horas extra (seccion 65): el telefono no marco y la "
           "central asienta las horas que confirmo el equipo")
 
@@ -79,11 +98,147 @@ CASOS = [
 
 fallas, avisos = [], []
 
+SIN_BASE = ("No contesta la base de prueba en {base}. Primero:\n\n"
+            "    python3 probar_horas_extra.py base\n")
+
 
 def alto(mensaje):
     print("\nALTO: " + mensaje)
     sys.exit(1)
 
+
+# --------------------------------------------------------------- la base aparte
+
+# Corre como el proceso del contenedor de prueba. Todo lo que toca lo
+# revisa dos veces: que el entorno sea de desarrollo y que la base sea la
+# de prueba. Nunca la de desarrollo: la siembra de accesos reescribe las
+# contrasenas de las cuentas que encuentra.
+LANZADOR = r"""
+import os, sys
+import psycopg
+from sqlalchemy.engine import make_url
+from app.config import es_desarrollo, settings
+BD = "centauro_prueba"
+if not es_desarrollo(settings):
+    sys.exit("Esto no es desarrollo: no se arma nada.")
+url = make_url(settings.database_url)
+if url.database != BD:
+    sys.exit("La base de este contenedor no es la de prueba: no se toca.")
+servidor = url.set(drivername="postgresql", database="postgres")
+with psycopg.connect(servidor.render_as_string(hide_password=False),
+                     autocommit=True) as con:
+    con.execute(f"DROP DATABASE IF EXISTS {BD} WITH (FORCE)")
+    con.execute(f"CREATE DATABASE {BD}")
+from app.db import Base, engine
+if engine.url.database != BD:
+    sys.exit("El motor no quedo en la base de prueba: no se siembra.")
+from app import models  # noqa: F401
+from app.seed import (sembrar, sembrar_accesos, sembrar_bonos,
+                      sembrar_festivos, sembrar_lugares, sembrar_parametros,
+                      sembrar_recursos)
+Base.metadata.create_all(bind=engine)
+sembrar(); sembrar_recursos(); sembrar_parametros(); sembrar_accesos()
+sembrar_festivos(); sembrar_bonos(); sembrar_lugares()
+engine.dispose()
+print("SEMBRADA", flush=True)
+os.execvp("uvicorn", ["uvicorn", "app.main:app", "--host", "0.0.0.0",
+                      "--port", "8000"])
+"""
+
+# El barrido de cada cinco minutos de beat, una vez, en la base de prueba.
+RELOJ = r"""
+import sys
+from app.db import SessionLocal, engine
+if engine.url.database != "centauro_prueba":
+    sys.exit("Este contenedor no esta en la base de prueba.")
+from app import cierre
+with SessionLocal() as db:
+    movidos = cierre.avanzar_cierres(db)
+    db.commit()
+print("RELOJ", len(movidos))
+"""
+
+# Corre en el contenedor de desarrollo: borra la base de prueba y su cola.
+BORRAR = r"""
+import psycopg, redis
+with psycopg.connect("postgresql://centauro:centauro_dev@db:5432/postgres",
+                     autocommit=True) as con:
+    con.execute("DROP DATABASE IF EXISTS centauro_prueba WITH (FORCE)")
+redis.Redis.from_url("redis://redis:6379/9").flushdb()
+print("BORRADA")
+"""
+
+
+def docker(*args):
+    try:
+        return subprocess.run(["docker", *args], cwd=AQUI, text=True,
+                              capture_output=True)
+    except FileNotFoundError:
+        alto("No encontre docker en esta terminal.")
+
+
+def primer_renglon(texto):
+    return (texto.strip().splitlines() or ["sin respuesta"])[0][:200]
+
+
+def arriba():
+    try:
+        with urllib.request.urlopen(BASE + "/health", timeout=2) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
+def base():
+    print("Armando la base de prueba, aparte de la de desarrollo...")
+    docker("rm", "-f", CONTENEDOR)            # la de una vez anterior
+    entorno = ["-e", f"DATABASE_URL={URL_BD}", "-e", f"REDIS_URL={URL_REDIS}",
+               "-e", f"SECRET_KEY={secrets.token_urlsafe(32)}"]
+    for llave in SIN_LLAVES:
+        entorno += ["-e", f"{llave}="]
+    r = docker("compose", "run", "-d", "--name", CONTENEDOR,
+               "-p", f"127.0.0.1:{PUERTO}:8000", *entorno,
+               "api", "python3", "-c", LANZADOR)
+    if r.returncode != 0:
+        alto("No se pudo levantar: " + primer_renglon(r.stderr))
+    for _ in range(150):
+        time.sleep(1)
+        if arriba():
+            break
+        corre = docker("inspect", "-f", "{{.State.Running}}", CONTENEDOR)
+        if corre.stdout.strip() == "false":
+            bitacora = docker("logs", "--tail", "12", CONTENEDOR)
+            print((bitacora.stdout + bitacora.stderr)[-1500:])
+            alto("La base de prueba no arranco; pegame esta salida.")
+    else:
+        alto("La base de prueba no contesto en dos minutos y medio.")
+    print(f"""
+Lista en {BASE}: la siembra de siempre, sin conexion a Google, Pegasus,
+Odoo ni correo. Desarrollo sigue igual en localhost:8000.
+
+Ahora:
+
+    python3 probar_horas_extra.py
+""")
+
+
+def apagar():
+    docker("rm", "-f", CONTENEDOR)
+    r = docker("compose", "exec", "-T", "api", "python3", "-c", BORRAR)
+    if "BORRADA" not in r.stdout:
+        alto("Se apago, pero no pude borrar la base de prueba: "
+             + primer_renglon(r.stderr))
+    print("Apagada y borrada: la base de prueba ya no existe.")
+
+
+def pasar_el_reloj():
+    r = docker("exec", CONTENEDOR, "python3", "-c", RELOJ)
+    if "RELOJ" not in r.stdout:
+        aviso("no pude pasar el reloj de la base de prueba: el visto bueno "
+              "no se va a abrir solo")
+
+
+# --------------------------------------------------------------- la API
 
 def pedir(metodo, ruta, cuerpo=None, token=None):
     cab = {"Content-Type": "application/json"}
@@ -102,17 +257,12 @@ def pedir(metodo, ruta, cuerpo=None, token=None):
         except ValueError:
             return e.code, bruto.decode(errors="replace")[:300]
     except urllib.error.URLError:
-        alto(f"No contesta el sistema en {BASE}. Esta arriba docker compose?")
+        alto(SIN_BASE.format(base=BASE))
 
 
-# Las contrasenas que se escribieron en esta corrida: solo en memoria, para
-# no pedir tres veces la misma.
-_escritas = []
-
-
-def _token(correo, clave):
-    datos = urllib.parse.urlencode({"username": correo,
-                                    "password": clave}).encode()
+def entrar(quien):
+    datos = urllib.parse.urlencode({"username": CUENTAS[quien],
+                                    "password": DEMO}).encode()
     req = urllib.request.Request(
         BASE + "/auth/token", data=datos, method="POST",
         headers={"Content-Type": "application/x-www-form-urlencoded"})
@@ -120,87 +270,11 @@ def _token(correo, clave):
         with urllib.request.urlopen(req) as r:
             return json.loads(r.read())["access_token"]
     except urllib.error.HTTPError as e:
-        if e.code == 403:
-            alto(f"La cuenta {correo} esta desactivada en desarrollo.")
-        if e.code == 429:
-            alto(f"Demasiados intentos con {correo}: espera 15 minutos.")
-        return None
+        alto(f"La cuenta de prueba {CUENTAS[quien]} no entra ({e.code}). "
+             f"Esta {BASE} en la base de prueba? Rehazla con:\n\n"
+             "    python3 probar_horas_extra.py base\n")
     except urllib.error.URLError:
-        alto(f"No contesta el sistema en {BASE}. Esta arriba docker compose?")
-
-
-def entrar(quien):
-    correo = CUENTAS[quien]
-    for clave in [DEMO] + _escritas:
-        token = _token(correo, clave)
-        if token:
-            return token
-    if not sys.stdin.isatty():
-        alto(f"{correo} no entra con la contrasena de demostracion.")
-    clave = getpass.getpass(f"Contrasena de {correo} en desarrollo "
-                            "(no se ve al escribirla): ")
-    token = _token(correo, clave)
-    if not token:
-        alto(f"{correo} tampoco entra con esa. Si no la sabes, ponle una "
-             "nueva a las tres cuentas de prueba:\n\n"
-             "    python3 probar_horas_extra.py cuentas\n")
-    _escritas.append(clave)
-    return token
-
-
-# Lo que corre dentro del contenedor para `cuentas`. La contrasena entra
-# por la entrada estandar: no queda en la linea de comandos ni en el
-# ambiente. Se revisa con las mismas reglas de la consola.
-EN_EL_CONTENEDOR = r"""
-import sys
-from fastapi import HTTPException
-from app.config import es_desarrollo, settings
-from app.db import SessionLocal
-from app import contrasenas, models as m
-if not es_desarrollo(settings):
-    sys.exit("Esto no es desarrollo: no se toca ninguna cuenta.")
-clave = sys.stdin.readline().rstrip("\n")
-try:
-    contrasenas.validar(clave)
-except HTTPException as e:
-    d = e.detail
-    sys.exit("Esa no sirve: " + (d.get("mensaje") if isinstance(d, dict)
-                                 else str(d)))
-with SessionLocal() as db:
-    for correo in sys.argv[1:]:
-        u = db.query(m.Usuario).filter_by(correo=correo).first()
-        if not u:
-            print("  " + correo + ": no existe")
-        elif not u.activo:
-            print("  " + correo + ": esta desactivada, no se toca")
-        else:
-            contrasenas._asentar(db, u, clave)
-            print("  " + correo + ": lista")
-    db.commit()
-"""
-
-
-def cuentas():
-    print("Una contrasena nueva para las tres cuentas de prueba de tu "
-          "desarrollo:")
-    for correo in CUENTAS.values():
-        print("  " + correo)
-    print()
-    clave = getpass.getpass("Contrasena nueva (no se ve al escribirla): ")
-    if getpass.getpass("Otra vez: ") != clave:
-        alto("No coinciden. No se cambio nada.")
-    try:
-        r = subprocess.run(
-            ["docker", "compose", "exec", "-T", "api",
-             "python3", "-c", EN_EL_CONTENEDOR, *CUENTAS.values()],
-            cwd=os.path.dirname(os.path.abspath(__file__)),
-            input=clave + "\n", text=True)
-    except FileNotFoundError:
-        alto("No encontre docker en esta terminal.")
-    if r.returncode != 0:
-        alto("No se cambio nada.")
-    print("\nListo. Ahora corre la prueba y, cuando te pida la contrasena, "
-          "escribe esta misma:\n\n    python3 probar_horas_extra.py\n")
+        alto(SIN_BASE.format(base=BASE))
 
 
 def detalle(cuerpo):
@@ -251,7 +325,7 @@ def uno(filas, que, **igual):
     for f in filas:
         if all(f.get(k) == v for k, v in igual.items()):
             return f
-    alto(f"No encontre {que} en los catalogos de desarrollo.")
+    alto(f"No encontre {que} en los catalogos de la base de prueba.")
 
 
 def horas_del_dia(jornada_id, token):
@@ -372,6 +446,9 @@ def armar():
                "cerrar a mano el " + dia(j["fecha"]))
     exigir(pedir("POST", f"/cierre/servicio/{sid}/abrir", token=ana),
            "abrir el visto bueno")
+    # Sin viaticos no hay nada que esperar: en desarrollo, beat lo pasaria
+    # al visto bueno en menos de cinco minutos.
+    pasar_el_reloj()
 
     print(f"Servicio de prueba {servicio['folio']} (id {sid}): "
           f"{len(jornadas)} dias full day, presentacion "
@@ -430,25 +507,23 @@ def armar():
     for o in renglones:
         print("         " + o["mensaje"])
     estatus = estatus_del_cierre(sid, ana)
-    print(f"         el cierre esta en: {estatus}" + (
-        " (corre la comprobacion de viaticos; sin viaticos que esperar, el "
-        "reloj del sistema lo pasa al visto bueno en menos de cinco minutos)"
-        if estatus == "abierto" else ""))
+    revisar(estatus == "sin_visto_bueno",
+            f"el visto bueno ya se puede dar (el cierre esta en {estatus})")
 
     dos = jornadas[1]
     fin_dos = datetime.fromisoformat(dos["fin_programado"])
     corregido = (fin_dos + timedelta(minutes=40)).strftime("%H:%M")
     print(f"""
-Ahora tu, en la consola ({BASE}), con la cuenta de la consultora
-({CUENTAS['consultora']}):
+Ahora tu, en la consola de la base de prueba ({BASE}), con la cuenta
+de la consultora ({CUENTAS['consultora']}) y la contrasena de
+demostracion del README:
 
   a. Abre el servicio {servicio['folio']}. En «Dias de servicio», el dia 2
      ({dia(dos['fecha'])}) -> «Punto de origen y agenda». Abajo, en «Horas
      del dia»: 2 h extra.
   b. «Corregir horas»: termino a las {corregido} y un motivo. Antes de
      guardar, la vista previa dice 1 h. Guarda: queda la hora original.
-  c. Mas abajo, «Visto bueno y facturacion» (se abre sola en menos de
-     cinco minutos; si aun no, recarga): las horas por dia y tu
+  c. Mas abajo, «Visto bueno y facturacion»: las horas por dia y tu
      correccion. Da el visto bueno.
   d. Vuelve al dia 2: el boton de corregir ya no sale.
 
@@ -528,17 +603,23 @@ def despues(sid):
     ejecutado = comparativo["ejecutado"]
     print(f"         {ejecutado['horas_extra']} h extra por "
           f"{pesos(ejecutado['importe_horas_extra'])}")
+    print("\nCuando termines de revisar, la base de prueba se apaga y se "
+          "borra con:\n\n    python3 probar_horas_extra.py apagar")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "cuentas":
-        cuentas()
+    que = sys.argv[1] if len(sys.argv) > 1 else ""
+    if que == "base":
+        base()
         sys.exit(0)
-    if len(sys.argv) > 1:
-        if not sys.argv[1].isdigit():
-            alto("Pasa el id del servicio, el numero que imprimio la primera "
-                 "corrida.")
-        despues(int(sys.argv[1]))
+    if que == "apagar":
+        apagar()
+        sys.exit(0)
+    if que and not que.isdigit():
+        alto("Eso no lo conozco: base, apagar, nada, o el id del servicio "
+             "que imprimio la primera corrida.")
+    if que:
+        despues(int(que))
     else:
         armar()
     if fallas:
