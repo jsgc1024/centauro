@@ -72,7 +72,8 @@ URL_REDIS = "redis://redis:6379/9"
 SIN_LLAVES = ("GOOGLE_MAPS_KEY", "ODOO_URL", "ODOO_TOKEN", "ODOO_BASE",
               "ODOO_API_KEY", "ODOO_BD", "PEGASUS_SITIO", "PEGASUS_USUARIO",
               "PEGASUS_CLAVE", "PEGASUS_SECRETO_AVISO", "CORREO_HOST",
-              "CORREO_USUARIO", "CORREO_CLAVE", "VAPID_PUBLIC",
+              "CORREO_USUARIO", "CORREO_CLAVE", "CORREO_MS_TENANT",
+              "CORREO_MS_CLIENTE", "CORREO_MS_SECRETO", "VAPID_PUBLIC",
               "VAPID_PRIVATE", "URL_PUBLICA")
 
 CUENTAS = {"consultora": "ana.solis@centauro.lat",

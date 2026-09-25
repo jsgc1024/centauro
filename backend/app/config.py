@@ -33,16 +33,28 @@ class Settings(BaseSettings):
     # servidor de la casa-- asi que elegir proveedor manana es cambiar
     # cuatro renglones del `.env` y no una linea de codigo. Si algun dia
     # hace falta uno que solo hable HTTP, lo unico que se toca es
-    # `correo.entregar()`.
+    # `correo.entregar()`. Ese dia llego con Microsoft 365 (abajo).
     #
-    # Mientras `correo_host` y `correo_de` esten vacios, no sale nada: el
-    # aviso se guarda pendiente y espera. Un sistema que se cree
-    # configurado y no lo esta es peor que uno apagado.
+    # Mientras no haya a donde mandar --SMTP o Microsoft-- y `correo_de`
+    # este vacio, no sale nada: el aviso se guarda pendiente y espera. Un
+    # sistema que se cree configurado y no lo esta es peor que uno
+    # apagado.
     correo_host: str = ""
     correo_puerto: int = 587
     correo_usuario: str = ""
     correo_clave: str = ""
-    correo_de: str = ""            # "Centauro <avisos@centauro.lat>"
+    correo_de: str = ""            # "Centauro <ai@centauro.lat>"
+    # Microsoft 365 (seccion 67). Decision de Salvador, 25 de septiembre:
+    # el correo sale del buzon de la empresa. Microsoft apaga la entrada
+    # por SMTP con usuario y contrasena el 31 de diciembre de 2026, asi
+    # que no va por SMTP: va por Microsoft Graph, con la aplicacion
+    # registrada en Entra y permiso para mandar solo desde el buzon de
+    # `correo_de`. Con estos tres llenos manda Microsoft y los de SMTP de
+    # arriba no se usan. El secreto vence --Entra lo da por 24 meses como
+    # maximo--: anota el dia.
+    correo_ms_tenant: str = ""     # Id. de directorio (inquilino)
+    correo_ms_cliente: str = ""    # Id. de aplicacion (cliente)
+    correo_ms_secreto: str = ""    # el Valor del secreto, no su Id.
     # De donde cuelgan los enlaces que van dentro de un correo. Sin
     # esto, el enlace de una encuesta seria "/encuestas/pagina/abc" y no
     # llevaria a ningun lado fuera del servidor.

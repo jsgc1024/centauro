@@ -16,8 +16,15 @@ la casa-- asi que elegir proveedor es llenar cuatro renglones del `.env`
 y no cambiar codigo. El dia que haga falta uno que solo hable HTTP, la
 unica funcion que se reescribe es `entregar()`.
 
-**Apagado por omision.** Sin `CORREO_HOST` y `CORREO_DE` no sale nada:
-el aviso se queda pendiente y espera. Un sistema que se cree configurado
+**Microsoft 365** (seccion 67). El correo de Centauro sale del buzon de
+la empresa, y Microsoft apaga el SMTP con usuario y contrasena el 31 de
+diciembre de 2026. Asi que ese camino no va por SMTP: va por Microsoft
+Graph, con la aplicacion registrada en Entra y un permiso que solo deja
+mandar desde el buzon de `CORREO_DE`. Se arma el mismo mensaje --texto y
+HTML-- y se le entrega a Graph tal cual; lo demas no se entera.
+
+**Apagado por omision.** Sin a donde mandar --SMTP o Microsoft-- y sin
+`CORREO_DE` no sale nada: el aviso se queda pendiente y espera. Un sistema que se cree configurado
 y no lo esta es peor que uno apagado, porque nadie va a buscar el correo
 que nunca llego.
 
@@ -26,10 +33,14 @@ una direccion mal escrita no se arregla sola. Despues de TOPE_INTENTOS
 el aviso queda en fallida, con lo ultimo que dijo el proveedor escrito
 al lado, y deja de gastar la cola.
 """
+import base64
 import smtplib
+import time
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
+from email.utils import parseaddr
 
+import httpx
 from sqlalchemy.orm import Session
 
 from app import correo_html
@@ -62,9 +73,26 @@ POR_VUELTA = 50
 HORAS_DE_VIDA = 24
 
 
+# Microsoft Graph: de donde sale el permiso y a donde se entrega.
+LOGIN_MICROSOFT = "https://login.microsoftonline.com"
+GRAPH = "https://graph.microsoft.com/v1.0"
+# El permiso dura una hora; se pide otro cinco minutos antes, para que no
+# venza a media vuelta.
+MARGEN_TOKEN = 300
+_token_microsoft = {"valor": None, "vence": 0.0}
+
+
+def por_microsoft() -> bool:
+    """Si el correo sale por Microsoft 365. Con los tres datos de la
+    aplicacion puestos manda Microsoft, aunque haya SMTP configurado."""
+    return bool(settings.correo_ms_tenant and settings.correo_ms_cliente
+                and settings.correo_ms_secreto)
+
+
 def configurado() -> bool:
     """Si hay a donde entregar. Sin esto, la cola solo se acumula."""
-    return bool(settings.correo_host and settings.correo_de)
+    return bool((settings.correo_host or por_microsoft())
+                and settings.correo_de)
 
 
 def con_dominio(enlace: str | None) -> str | None:
@@ -104,12 +132,85 @@ def entregar(destino: str, asunto: str, cuerpo: str,
     if html:
         mensaje.add_alternative(html, subtype="html", charset="utf-8")
 
+    if por_microsoft():
+        _por_microsoft(mensaje)
+        return
     with smtplib.SMTP(settings.correo_host, settings.correo_puerto,
                       timeout=20) as servidor:
         servidor.starttls()
         if settings.correo_usuario:
             servidor.login(settings.correo_usuario, settings.correo_clave)
         servidor.send_message(mensaje)
+
+
+def _lo_que_dijo(respuesta: httpx.Response) -> str:
+    """El porque de un rechazo de Microsoft, corto y legible.
+
+    Es lo que queda en el `ultimo_error` del aviso: ahi se lee si fue el
+    secreto vencido, el permiso que falta o el buzon que no existe. Nunca
+    trae el secreto ni el permiso: Microsoft no los repite.
+    """
+    try:
+        datos = respuesta.json()
+    except ValueError:
+        return respuesta.text[:200]
+    falla = datos.get("error")
+    if isinstance(falla, dict):             # Graph
+        return f"{falla.get('code')}: {falla.get('message')}"[:200]
+    return f"{falla}: {datos.get('error_description', '')}"[:200]
+
+
+def _permiso_de_microsoft(renovar: bool = False) -> str:
+    """El permiso para mandar, pedido con el secreto de la aplicacion.
+
+    Se guarda mientras dura: pedirlo por cada correo es una vuelta mas a
+    Microsoft por nada, y con muchos avisos juntos, un freno.
+    """
+    ahora = time.monotonic()
+    if (not renovar and _token_microsoft["valor"]
+            and ahora < _token_microsoft["vence"]):
+        return _token_microsoft["valor"]
+    respuesta = httpx.post(
+        f"{LOGIN_MICROSOFT}/{settings.correo_ms_tenant}/oauth2/v2.0/token",
+        data={"client_id": settings.correo_ms_cliente,
+              "client_secret": settings.correo_ms_secreto,
+              "scope": "https://graph.microsoft.com/.default",
+              "grant_type": "client_credentials"},
+        timeout=20)
+    if respuesta.status_code != 200:
+        raise RuntimeError(
+            f"Microsoft no dio el permiso para mandar "
+            f"({respuesta.status_code}) {_lo_que_dijo(respuesta)}")
+    datos = respuesta.json()
+    _token_microsoft["valor"] = datos["access_token"]
+    _token_microsoft["vence"] = (ahora + int(datos.get("expires_in", 3600))
+                                 - MARGEN_TOKEN)
+    return _token_microsoft["valor"]
+
+
+def _por_microsoft(mensaje: EmailMessage) -> None:
+    """Entrega el mensaje armado a Microsoft Graph, en MIME.
+
+    Va el mismo mensaje que iria por SMTP --texto y HTML en uno--, en
+    base64, al buzon de `correo_de`. Microsoft lo deja en Enviados de ese
+    buzon. Si el permiso guardado ya no sirve, se pide otro una vez.
+    """
+    remitente = parseaddr(settings.correo_de)[1]
+    cuerpo = base64.b64encode(
+        mensaje.as_bytes(policy=mensaje.policy.clone(linesep="\r\n")))
+    for intento in (1, 2):
+        respuesta = httpx.post(
+            f"{GRAPH}/users/{remitente}/sendMail", content=cuerpo,
+            headers={"Authorization":
+                     f"Bearer {_permiso_de_microsoft(renovar=intento == 2)}",
+                     "Content-Type": "text/plain"},
+            timeout=30)
+        if respuesta.status_code != 401:
+            break
+    if respuesta.status_code >= 300:
+        raise RuntimeError(
+            f"Microsoft no acepto el correo ({respuesta.status_code}) "
+            f"{_lo_que_dijo(respuesta)}")
 
 
 def cuerpo_con_enlace(aviso: m.Notificacion) -> str:
@@ -314,7 +415,10 @@ def estado(db: Session) -> dict:
     return {
         "configurado": configurado(),
         "desde": settings.correo_de or None,
-        "servidor": settings.correo_host or None,
+        "por": ("microsoft" if por_microsoft()
+                else "smtp" if settings.correo_host else None),
+        "servidor": ("graph.microsoft.com" if por_microsoft()
+                     else settings.correo_host or None),
         "url_publica": settings.url_publica or None,
         "horas_de_vida": HORAS_DE_VIDA,
         "saldrian": len(en_espera) - viejos,

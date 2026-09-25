@@ -108,12 +108,13 @@ def pegasus():
     return PegasusFalso()
 
 
-def _dia_de_hoy(cliente, sesion, datos, hora="18:00:00", escolta=False):
+def _dia_de_hoy(cliente, sesion, datos, hora="18:00:00", escolta=False,
+                fecha=None):
     h = sesion("consultor")
     servicio = crear_servicio(
         cliente, h, datos,
-        [jornada(date.today(), datos["modalidades"]["full_day"]["id"],
-                 hora=hora)])
+        [jornada(fecha or date.today(),
+                 datos["modalidades"]["full_day"]["id"], hora=hora)])
     j = servicio["equipos"][0]["jornadas"][0]
     asignar(cliente, h, j["id"],
             persona_id=datos["personal"]["Juan Ramirez"]["id"],
@@ -134,11 +135,14 @@ def _estar(db, j):
 def _en_curso(cliente, sesion, datos, escolta=False):
     """Un servicio de hoy que ya arranco: llegada y contacto marcados."""
     ahora = datetime.now().replace(second=0, microsecond=0)
-    hora = (ahora - timedelta(minutes=50)).strftime("%H:%M:00")
-    servicio, j = _dia_de_hoy(cliente, sesion, datos, hora=hora,
-                              escolta=escolta)
-    inicio = datetime.combine(date.today(),
-                              datetime.strptime(hora, "%H:%M:%S").time())
+    # El dia es el del arranque, no el de hoy: pasada la medianoche, lo
+    # que arranco hace 50 minutos es de ayer. Con la fecha de hoy, entre
+    # las 00:00 y las 00:50 el servicio "en curso" arrancaba hasta la
+    # noche y tres pruebas fallaban solo a esa hora.
+    inicio = ahora - timedelta(minutes=50)
+    servicio, j = _dia_de_hoy(cliente, sesion, datos,
+                              hora=inicio.strftime("%H:%M:00"),
+                              escolta=escolta, fecha=inicio.date())
     r = marcar(cliente, sesion("juan"), j["id"], "llegada_origen",
                inicio - timedelta(minutes=10))
     assert r.status_code in (200, 201), r.text

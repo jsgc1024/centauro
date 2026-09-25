@@ -4152,6 +4152,54 @@ ni forma de pagarse.
   sin el suyo no genera comisión al validar, y su corte lo dice arriba
   con un guion en vez del número.
 
+## 67. El correo sale por Microsoft 365
+
+Decisión de Salvador, 25 de septiembre: el correo del sistema sale del
+buzón de la empresa, `ai@centauro.lat`, en Microsoft 365. Se le
+propusieron Postmark y Amazon SES; eligió Microsoft.
+
+### Por qué no por SMTP
+
+El despachador hablaba SMTP con usuario y contraseña. Microsoft apaga
+esa entrada en Exchange Online el 31 de diciembre de 2026: después se
+puede reactivar por un tiempo, y el retiro definitivo lo anuncia en 2027.
+Encender el correo así era encenderlo con fecha de caducidad.
+
+### Lo que cambió
+
+- **Con los tres datos de la aplicación de Entra** —`CORREO_MS_TENANT`,
+  `CORREO_MS_CLIENTE` y `CORREO_MS_SECRETO`— el correo sale por
+  Microsoft Graph. Se arma el mismo mensaje de siempre, texto y HTML, y
+  se entrega en MIME al buzón de `CORREO_DE`; queda en sus Enviados. El
+  SMTP sigue ahí para otro proveedor: sin esos tres datos, manda él.
+- **El permiso para mandar** se pide con el secreto y se guarda la hora
+  que dura; si Microsoft lo rechaza a media vuelta, se pide otro una vez.
+- **Lo que Microsoft rechace queda en el aviso** con su código —el
+  secreto vencido, el permiso que falta sobre el buzón—, sin el secreto.
+  `GET /sistema/correo` dice por dónde sale.
+- **`probar_correo.py`** manda uno de prueba desde el servidor y dice
+  por dónde salió o qué contestó Microsoft.
+- **La guía de despliegue** (paso 7b) dice cómo registrar la aplicación
+  y darle permiso solo sobre `ai@centauro.lat`: con los permisos de
+  aplicación de Exchange, no con `Mail.Send` en Entra, que la dejaría
+  mandar como cualquier persona de la empresa. Queda con `centauro.cc`
+  como dominio.
+- La base aparte de la prueba a mano deja vacíos también los datos de
+  Microsoft.
+- De paso: tres pruebas del GPS fallaban si la batería pasaba por ellas
+  entre las 00:00 y las 00:50. Armaban el servicio «en curso» de hace 50
+  minutos con la fecha de hoy, y pasada la medianoche arrancaba hasta la
+  noche. Ahora lleva la fecha de su arranque.
+
+### Lo que falta, de tu lado
+
+- Que exista el buzón `ai@centauro.lat` —compartido, sin licencia— y
+  decidir quién lee lo que contesten los clientes.
+- Registrar la aplicación, sacar su secreto y darle el permiso en
+  Exchange (paso 7b). Anotar el día que vence el secreto: 24 meses.
+- Poner los tres datos en el `.env` del servidor y probar con
+  `probar_correo.py`.
+
 ## 14. Lo que falta
 
 ### Abierto
@@ -4178,15 +4226,13 @@ busca, está en las secciones 15 y 16.*
   mientras tanto el pánico llega con la lectura de cada dos minutos. De
   este lado, las placas ligan contra la flota leída de Odoo: sin ella,
   ninguna.
-- **El correo: falta el proveedor y el dominio.** El despachador ya
-  existe (sección 29): SMTP, apagado por omisión, con reintentos y con
-  el error del proveedor escrito al lado. Lo que falta es **tuyo**: a qué
-  servidor SMTP, con qué credenciales, desde qué dirección y bajo qué
-  dominio cuelgan los enlaces. Son cinco renglones del `.env`
-  —`CORREO_HOST`, `CORREO_PUERTO`, `CORREO_USUARIO`, `CORREO_CLAVE`,
-  `CORREO_DE`— más `URL_PUBLICA`. La invitación y la recuperación de
-  contraseña ya salen por él (sección 58): con esos renglones puestos,
-  llegan solas.
+- **El correo: lo que falta es de Microsoft 365** (sección 67). Ya se
+  decidió: sale del buzón `ai@centauro.lat` por Microsoft Graph y los
+  enlaces cuelgan de `https://centauro.cc`. Falta el buzón, registrar la
+  aplicación en Entra con su secreto, darle permiso en Exchange solo
+  sobre ese buzón y poner los tres datos en el `.env` del servidor; el
+  paso 7b de `despliegue/LEEME.md` lo dice en orden. Con eso, la
+  invitación y la recuperación de contraseña llegan solas (sección 58).
 
   *(Lo de abajo es el texto de cuando no existía el envío, que explica
   por qué la tabla es como es.)*

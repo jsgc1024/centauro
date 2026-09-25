@@ -275,3 +275,147 @@ def test_el_estado_dice_cuantos_saldrian_antes_de_encender(db, monkeypatch):
     assert r["viejos"] == 1
     assert r["saldrian"] == 1
     assert r["horas_de_vida"] == correo.HORAS_DE_VIDA
+
+
+# ------------------------------------------------ Microsoft 365 (seccion 67)
+#
+# El correo sale del buzon de la empresa por Microsoft Graph: Microsoft
+# apaga el SMTP con usuario y contrasena el 31 de diciembre de 2026. Aqui
+# Microsoft no existe: se le contesta como contestaria, y lo que se cuida
+# es lo nuestro --que se le mande el mensaje completo al buzon correcto,
+# que el permiso no se pida por cada correo y que lo que rechace quede
+# escrito sin el secreto--.
+
+class _Respuesta:
+    def __init__(self, codigo, datos=None):
+        self.status_code = codigo
+        self._datos = datos
+        self.text = ""
+
+    def json(self):
+        if self._datos is None:
+            raise ValueError("sin cuerpo")
+        return self._datos
+
+
+def _microsoft(monkeypatch, envio=None):
+    """Los tres datos de la aplicacion de Entra puestos, sin SMTP, y un
+    Microsoft de mentira que anota lo que se le pidio."""
+    monkeypatch.setattr(correo.settings, "correo_host", "")
+    monkeypatch.setattr(correo.settings, "correo_de",
+                        "Centauro <ai@centauro.lat>")
+    monkeypatch.setattr(correo.settings, "correo_ms_tenant", "inquilino-x")
+    monkeypatch.setattr(correo.settings, "correo_ms_cliente", "aplicacion-x")
+    monkeypatch.setattr(correo.settings, "correo_ms_secreto", "secreto-x")
+    monkeypatch.setattr(correo, "_token_microsoft",
+                        {"valor": None, "vence": 0.0})
+    llamadas = []
+    respuestas = iter(envio or [])
+
+    def post(url, **kw):
+        llamadas.append((url, kw))
+        if url.endswith("/oauth2/v2.0/token"):
+            return _Respuesta(200, {"access_token": f"permiso-{len(llamadas)}",
+                                    "expires_in": 3600})
+        return next(respuestas, _Respuesta(202))
+
+    monkeypatch.setattr(correo.httpx, "post", post)
+    return llamadas
+
+
+def test_microsoft_manda_el_mismo_mensaje_desde_el_buzon_de_la_empresa(
+        monkeypatch):
+    """Con la aplicacion puesta sale por Graph --no por SMTP--, desde el
+    buzon de CORREO_DE y con el texto y el HTML en el mismo mensaje."""
+    import base64
+    import email
+
+    llamadas = _microsoft(monkeypatch)
+    monkeypatch.setattr(correo.smtplib, "SMTP",
+                        lambda *a, **k: pytest.fail("salio por SMTP"))
+    assert correo.configurado() and correo.por_microsoft()
+
+    correo.entregar("ejecutivo@cliente.com", "Su equipo llego", "Texto",
+                    "<p>HTML</p>")
+
+    (permiso, pedido), (envio, mandado) = llamadas
+    assert permiso == ("https://login.microsoftonline.com/inquilino-x"
+                       "/oauth2/v2.0/token")
+    assert pedido["data"]["grant_type"] == "client_credentials"
+    assert pedido["data"]["scope"] == "https://graph.microsoft.com/.default"
+    assert envio == ("https://graph.microsoft.com/v1.0/users/"
+                     "ai@centauro.lat/sendMail")
+    assert mandado["headers"]["Authorization"] == "Bearer permiso-1"
+    assert mandado["headers"]["Content-Type"] == "text/plain"
+    mime = email.message_from_bytes(base64.b64decode(mandado["content"]))
+    assert mime["From"] == "Centauro <ai@centauro.lat>"
+    assert mime["To"] == "ejecutivo@cliente.com"
+    assert mime["Subject"] == "Su equipo llego"
+    assert [p.get_content_type() for p in mime.walk()
+            if not p.is_multipart()] == ["text/plain", "text/html"]
+
+
+def test_el_permiso_de_microsoft_se_pide_una_vez_y_no_por_correo(monkeypatch):
+    llamadas = _microsoft(monkeypatch)
+    for _ in range(3):
+        correo.entregar("a@cliente.com", "Aviso", "Texto")
+    permisos = [u for u, _ in llamadas if u.endswith("/token")]
+    assert len(permisos) == 1, "se pidio permiso por cada correo"
+
+    # Vencido, se pide otro.
+    correo._token_microsoft["vence"] = 0.0
+    correo.entregar("a@cliente.com", "Aviso", "Texto")
+    assert len([u for u, _ in llamadas if u.endswith("/token")]) == 2
+
+
+def test_si_el_permiso_ya_no_sirve_se_pide_otro_una_vez(monkeypatch):
+    llamadas = _microsoft(monkeypatch, envio=[_Respuesta(401, {
+        "error": {"code": "InvalidAuthenticationToken",
+                  "message": "Lifetime validation failed"}})])
+    correo.entregar("a@cliente.com", "Aviso", "Texto")
+    assert [u.rsplit("/", 1)[-1] for u, _ in llamadas] == \
+        ["token", "sendMail", "token", "sendMail"]
+
+
+def test_lo_que_rechaza_microsoft_queda_escrito_sin_el_secreto(db,
+                                                               monkeypatch):
+    """Sin permiso para mandar desde ese buzon, Graph contesta 403. El
+    aviso se queda con el porque --es lo que TI necesita para saber que
+    falta--, y el secreto no aparece en ningun lado."""
+    _microsoft(monkeypatch, envio=[_Respuesta(403, {
+        "error": {"code": "ErrorAccessDenied",
+                  "message": "Access is denied. Check credentials and try "
+                             "again."}})])
+    aviso = _aviso(db)
+
+    r = correo.despachar(db)
+    assert r["enviados"] == 0
+    db.refresh(aviso)
+    assert aviso.estado == "pendiente" and aviso.intentos == 1
+    assert "ErrorAccessDenied" in aviso.ultimo_error
+    assert "secreto-x" not in aviso.ultimo_error
+
+
+def test_el_secreto_vencido_se_dice(monkeypatch):
+    """Entra da el secreto por 24 meses como maximo. El dia que vence, lo
+    que queda escrito lo dice."""
+    _microsoft(monkeypatch)
+    monkeypatch.setattr(correo.httpx, "post", lambda url, **kw: _Respuesta(
+        401, {"error": "invalid_client",
+              "error_description": "AADSTS7000222: The provided client "
+                                   "secret keys are expired."}))
+    with pytest.raises(RuntimeError) as falla:
+        correo.entregar("a@cliente.com", "Aviso", "Texto")
+    assert "AADSTS7000222" in str(falla.value)
+    assert "secreto-x" not in str(falla.value)
+
+
+def test_el_estado_dice_por_donde_sale_y_no_ensena_el_secreto(db,
+                                                              monkeypatch):
+    _microsoft(monkeypatch)
+    r = correo.estado(db)
+    assert r["configurado"] is True
+    assert r["por"] == "microsoft"
+    assert r["servidor"] == "graph.microsoft.com"
+    assert r["desde"] == "Centauro <ai@centauro.lat>"
+    assert "secreto-x" not in str(r)

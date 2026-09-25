@@ -53,7 +53,7 @@ docker compose -f docker-compose.prod.yml up -d api worker beat
 historial de la terminal— y no va al repositorio.
 
 ```
-DOMINIO=operacion.centauro.lat
+DOMINIO=centauro.cc
 POSTGRES_PASSWORD=...
 REDIS_PASSWORD=...
 DATABASE_URL=postgresql+psycopg://centauro:LA_DE_ARRIBA@db:5432/centauro
@@ -66,16 +66,21 @@ VAPID_PUBLIC=...
 VAPID_PRIVATE=...
 VAPID_CONTACTO=mailto:operaciones@centauro.lat
 
-# De donde cuelgan los enlaces que van en correos y task sheets.
-URL_PUBLICA=https://operacion.centauro.lat
+# De donde cuelgan los enlaces que van en correos y task sheets. Es
+# el mismo DOMINIO de arriba.
+URL_PUBLICA=https://centauro.cc
 
-# El correo que sale de la empresa (SMTP). Mientras CORREO_HOST y
-# CORREO_DE esten vacios no sale nada: los avisos quedan pendientes.
+# El correo que sale de la empresa: del buzon de Microsoft 365 (paso 7b).
+# Con los tres CORREO_MS_ llenos manda Microsoft y el SMTP de abajo no se
+# usa. Sin ninguno de los dos, no sale nada: los avisos quedan pendientes.
+CORREO_DE=Centauro <ai@centauro.lat>
+CORREO_MS_TENANT=
+CORREO_MS_CLIENTE=
+CORREO_MS_SECRETO=
 CORREO_HOST=
 CORREO_PUERTO=587
 CORREO_USUARIO=
 CORREO_CLAVE=
-CORREO_DE=Centauro <avisos@centauro.lat>
 
 # Odoo, de salida: la factura del servicio. Vacio = nada sale; el
 # cierre se queda en "por facturar" y se manda despues.
@@ -161,6 +166,59 @@ no llega.
 referrer—, con **solo** Places API (New) y Maps Static API habilitadas, y
 con **cuota diaria**. Sin tope, un error en un ciclo se convierte en una
 factura.
+
+**7b. El correo, por Microsoft 365.** Sale del buzón `ai@centauro.lat`
+y no por SMTP: Microsoft apaga el SMTP con usuario y contraseña el 31 de
+diciembre de 2026. Va por Microsoft Graph, con una aplicación registrada
+en Entra que **solo puede mandar desde ese buzón**. El DNS no se toca:
+el correo de `centauro.lat` ya sale de Microsoft. Conviene confirmar que
+DKIM de `centauro.lat` esté activo en Microsoft, porque ayuda a no caer
+en correo no deseado.
+
+1. **El buzón.** `ai@centauro.lat` tiene que existir en Microsoft 365. Si
+   no existe, como buzón compartido —no gasta licencia—, con acceso para
+   quien vaya a leer lo que contesten los clientes.
+2. **La aplicación**, en Entra → *Registros de aplicaciones* → *Nuevo
+   registro*: nombre `Centauro correo (servidor)`, solo esta
+   organización, sin dirección de redirección. De su página salen el
+   *Id. de directorio (inquilino)* → `CORREO_MS_TENANT` y el *Id. de
+   aplicación (cliente)* → `CORREO_MS_CLIENTE`.
+3. **El secreto**, en la misma aplicación → *Certificados y secretos* →
+   *Nuevo secreto de cliente*, con el vencimiento más largo (24 meses).
+   Se copia el **Valor** —no el Id. del secreto—, se ve una sola vez y se
+   pega directo en el `.env` del servidor → `CORREO_MS_SECRETO`. Nunca
+   por correo ni por chat. **Anota el día que vence**: ese día el correo
+   deja de salir y `probar_correo.py` dice «AADSTS7000222». El nuevo se
+   pega aquí y se reinician `api`, `worker` y `beat`.
+4. **Sin permisos de Graph en Entra.** A la aplicación **no** se le
+   agrega `Mail.Send` en *Permisos de API*: con ese permiso podría mandar
+   como cualquier persona de la empresa, incluida dirección general. El
+   permiso lo da Exchange, solo sobre `ai@centauro.lat`, desde PowerShell
+   con una cuenta de administración de Exchange. El *Id. de objeto* es el
+   de *Aplicaciones empresariales*, no el de *Registros de aplicaciones*:
+   son distintos.
+
+   ```powershell
+   Connect-ExchangeOnline
+   New-ServicePrincipal -AppId <Id. de aplicacion> -ObjectId <Id. de objeto> -DisplayName "Centauro correo"
+   New-ManagementScope -Name "Solo ai@centauro.lat" -RecipientRestrictionFilter "PrimarySmtpAddress -eq 'ai@centauro.lat'"
+   New-ManagementRoleAssignment -App <Id. de objeto> -Role "Application Mail.Send" -CustomResourceScope "Solo ai@centauro.lat"
+   Test-ServicePrincipalAuthorization -Identity <Id. de objeto> -Resource ai@centauro.lat
+   ```
+
+   La última tiene que decir `InScope: True`; contra cualquier otro
+   buzón, `False`. Exchange tarda hasta dos horas en aplicarlo.
+5. **Probarlo**, con los tres datos en el `.env`:
+
+   ```bash
+   docker compose -f docker-compose.prod.yml restart api worker beat
+   docker compose -f docker-compose.prod.yml run --rm api python probar_correo.py tu@correo.com
+   ```
+
+   Dice por dónde salió y, si no salió, lo que contestó Microsoft. Antes
+   de soltar la cola, `GET /sistema/correo` —en `/docs`, con una cuenta
+   de administración— dice cuántos avisos esperan y cuántos ya no
+   saldrían por viejos.
 
 **8. El respaldo.** En el cron del servidor, no en Celery: si la
 aplicación está caída es justo cuando más falta hace.
