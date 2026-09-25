@@ -1,8 +1,12 @@
-"""Nomina semanal del personal de seguridad.
+"""Nominas: el corte semanal del personal de seguridad y el mensual de
+las comisiones de los consultores (seccion 66).
 
-Corre los lunes despues de mediodia. La calcula y la paga finanzas; el
-consultor y la direccion la pueden ver.
+El del personal se arma solo el lunes a las 7:00, queda listo a las
+11:00 y se paga a mediodia; lo calcula y lo paga finanzas. El de las
+comisiones lo autoriza direccion de operaciones cuando termina el mes y
+lo paga finanzas. El consultor ve el suyo.
 """
+from datetime import datetime
 
 from decimal import Decimal
 
@@ -11,8 +15,10 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app import auth
+from app import comisiones as motor_comisiones
 from app import models as m
 from app import nomina as motor
+from app import reloj
 from app import schemas as s
 from app.db import get_db
 
@@ -25,6 +31,7 @@ FINANZAS = auth.puede("nomina.calcular")
 PAGAR = auth.puede("nomina.pagar")
 TABULADOR = auth.puede("nomina.tabulador")
 LECTURA = auth.puede("nomina.ver")
+COMISIONES = auth.puede("comisiones.ver")
 
 
 # --------------------------------------------------------- el tabulador
@@ -153,11 +160,94 @@ def guardar_tabulador(datos: TabuladorComisionIn,
 
 @router.post("/calcular", summary="Armar el corte de la semana")
 def calcular(datos: s.CalcularNominaIn, db: Session = Depends(get_db),
-             _=Depends(FINANZAS)):
-    """Se puede correr las veces que haga falta mientras no se pague."""
-    resultado = motor.calcular(db, datos.pais_id, datos.fecha_corte)
+             usuario: m.Usuario = Depends(FINANZAS)):
+    """Se puede correr las veces que haga falta mientras no se pague y
+    hasta las 11:00 del lunes (seccion 66). El reloj lo arma solo a las
+    7:00; esto es el "Recalcular" de finanzas."""
+    resultado = motor.calcular(db, datos.pais_id, datos.fecha_corte,
+                               usuario.persona_id)
     db.commit()
     return resultado
+
+
+# Estas van antes de "/{nomina_id}": FastAPI se queda con la primera ruta
+# que coincide, y "semana" no es un numero.
+
+@router.get("/semana", summary="El corte de este lunes, o lo que va para el que sigue")
+def semana(pais_id: int, ahora: datetime | None = None,
+           db: Session = Depends(get_db), _=Depends(LECTURA)):
+    """La pestana del personal: el corte con lo que entra y por que, lo
+    que todavia no entra y el horario del lunes. `ahora` solo mueve el
+    reloj en las pruebas."""
+    return motor.semana(db, pais_id, reloj.de_prueba(ahora))
+
+
+@router.get("/implantados", summary="El corte general del mes de cada implantado")
+def implantados(pais_id: int, ahora: datetime | None = None,
+                db: Session = Depends(get_db), _=Depends(LECTURA)):
+    """Lo pagado cada semana contra lo que corresponde, mes por mes, y si
+    el mes ya quedo cerrado."""
+    if not db.get(m.Pais, pais_id):
+        raise HTTPException(404, f"No existe el pais {pais_id}")
+    return {"meses": motor.meses_implantado(db, pais_id,
+                                            reloj.de_prueba(ahora))}
+
+
+# --------------------------------------------------------- comisiones
+
+@router.get("/comisiones", summary="El corte de comisiones del mes")
+def comisiones(pais_id: int, anio: int, mes: int,
+               ahora: datetime | None = None,
+               db: Session = Depends(get_db),
+               usuario: m.Usuario = Depends(COMISIONES)):
+    """Lo que se le paga a cada consultor, lo que no y por que, sus
+    diferencias y lo que viene en camino. El consultor ve el suyo."""
+    return motor_comisiones.corte_del_mes(db, pais_id, anio, mes, usuario,
+                                          reloj.de_prueba(ahora))
+
+
+@router.post("/comisiones/visto-bueno",
+             summary="Dar el visto bueno al corte de comisiones del mes")
+def visto_bueno_comisiones(datos: s.VistoBuenoComisionesIn,
+                           ahora: datetime | None = None,
+                           db: Session = Depends(get_db),
+                           usuario: m.Usuario = Depends(
+                               auth.puede("comisiones.visto_bueno"))):
+    """Con el mes terminado. Deja fijo lo de cada consultor; si alguno
+    queda debajo de cero, cobra cero y el resto pasa al mes siguiente."""
+    resultado = motor_comisiones.visto_bueno(
+        db, datos.pais_id, datos.anio, datos.mes, usuario,
+        reloj.de_prueba(ahora))
+    db.commit()
+    return resultado
+
+
+@router.post("/comisiones/pagos/{pago_id}/pagar",
+             summary="Registrar la transferencia de un consultor")
+def pagar_comision(pago_id: int, datos: s.PagoComisionIn,
+                   db: Session = Depends(get_db),
+                   usuario: m.Usuario = Depends(
+                       auth.puede("comisiones.pagar"))):
+    resultado = motor_comisiones.pagar(db, pago_id, datos.referencia, usuario)
+    db.commit()
+    return resultado
+
+
+@router.post("/comisiones/diferencias", status_code=201,
+             summary="Registrar una diferencia en la comision de un consultor")
+def diferencia_comision(datos: s.DiferenciaComisionIn,
+                        ahora: datetime | None = None,
+                        db: Session = Depends(get_db),
+                        usuario: m.Usuario = Depends(
+                            auth.puede("comisiones.ajustar"))):
+    """Con signo: negativo es descuento. Entra en el mes que siga
+    abierto."""
+    ajuste = motor_comisiones.diferencia_a_mano(
+        db, datos.pais_id, datos.consultor_id, datos.monto, datos.motivo,
+        usuario, datos.servicio_id, reloj.de_prueba(ahora))
+    db.commit()
+    return {"ajuste_id": ajuste.id, "anio": ajuste.anio, "mes": ajuste.mes,
+            "monto": ajuste.monto}
 
 
 @router.get("/{nomina_id}", summary="Ver el detalle del corte")
@@ -172,7 +262,9 @@ def ver(nomina_id: int, db: Session = Depends(get_db), _=Depends(LECTURA)):
     dias_totales = 0
     for r in n.renglones:
         for c in r.conceptos:
-            if c.ajuste_id:
+            # Solo los dias: un ajuste o el renglon del saldo en contra no
+            # son un dia de nadie.
+            if not c.jornada_id:
                 continue
             dias_totales += 1
             clave = c.rol_id or 0
@@ -183,7 +275,13 @@ def ver(nomina_id: int, db: Session = Depends(get_db), _=Depends(LECTURA)):
             fila["dias"] += 1
             fila["monto"] += Decimal(str(c.monto))
 
+    # Lo mismo que la pestana del lunes: de donde sale cada peso, por
+    # persona y el saldo en contra que pasa al siguiente (seccion 66).
+    detalle = motor.armar_detalle(db, motor.filas_del_corte(db, n),
+                                  n.fecha_corte)
     return {
+        **detalle,
+        **motor.ficha(db, n),
         "id": n.id,
         "fecha_corte": n.fecha_corte.isoformat(),
         "moneda": n.moneda.value,
@@ -196,7 +294,7 @@ def ver(nomina_id: int, db: Session = Depends(get_db), _=Depends(LECTURA)):
             "persona_id": r.persona_id,
             "persona": r.persona.nombre,
             "total": r.total,
-            "dias": len([c for c in r.conceptos if not c.ajuste_id]),
+            "dias": len([c for c in r.conceptos if c.jornada_id]),
             "conceptos": [{"descripcion": c.descripcion, "monto": c.monto,
                            "jornada_id": c.jornada_id,
                            "rol": c.rol.nombre if c.rol else None,
@@ -217,6 +315,7 @@ def listar(pais_id: int | None = None, db: Session = Depends(get_db),
     filas = consulta.order_by(m.NominaSemanal.fecha_corte.desc()).all()
     return [{"id": n.id, "fecha_corte": n.fecha_corte.isoformat(),
              "estatus": n.estatus.value, "total": n.total,
+             "estado": motor.ficha(db, n)["estado"],
              "moneda": n.moneda.value, "personas": len(n.renglones)}
             for n in filas]
 
@@ -238,7 +337,7 @@ def descartar(nomina_id: int, db: Session = Depends(get_db),
 
 @router.post("/{nomina_id}/pagar", summary="Marcar el corte como pagado")
 def pagar(nomina_id: int, db: Session = Depends(get_db),
-          usuario: m.Usuario = Depends(FINANZAS)):
+          usuario: m.Usuario = Depends(PAGAR)):
     """Despues de esto el corte ya no se recalcula: solo se corrige por ajuste."""
     resultado = motor.pagar(db, nomina_id, usuario.persona_id)
     db.commit()
@@ -249,6 +348,7 @@ CONCEPTO_EN_PALABRAS = {
     motor.AJUSTE_CORRECCION: "Correccion del pago del dia",
     motor.AJUSTE_VIATICO: "Viaticos sin comprobar",
     motor.AJUSTE_MANUAL: "Capturado a mano",
+    motor.AJUSTE_SALDO: "Saldo en contra de un corte anterior",
 }
 
 

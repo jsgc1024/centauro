@@ -2934,6 +2934,11 @@ class ComisionConsultor(Base):
         Enum(EstatusComision), default=EstatusComision.GENERADA)
     motivo: Mapped[str | None] = mapped_column(String(400), nullable=True)
     creada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # El corte del mes que la llevo (seccion 66). Se pone con el visto
+    # bueno de direccion de operaciones: desde ahi el monto ya no se
+    # mueve, y lo que cambie despues es una diferencia en el mes que siga.
+    corte_id: Mapped[int | None] = mapped_column(
+        ForeignKey("corte_comision.id"), nullable=True)
 
     consultor: Mapped[Persona] = relationship(foreign_keys=[consultor_id])
     servicio: Mapped[Servicio] = relationship()
@@ -2953,19 +2958,95 @@ class PorcentajeComision(Base):
 
 
 class AjusteComision(Base):
-    """Si una factura ya comisionada no se cobra, se resta en el corte siguiente."""
+    """Una diferencia en la comision del consultor, con signo, que se
+    paga o se descuenta en el corte del mes en que cae (seccion 66).
+
+    De cuatro clases (`tipo`): la factura que no se cobro, el servicio
+    que se volvio a facturar despues de pagada su comision, la que
+    captura finanzas a mano y el saldo en contra de un corte que quedo
+    en negativo. Las dos ultimas no cuelgan de una comision.
+    """
     __tablename__ = "ajuste_comision"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    comision_id: Mapped[int] = mapped_column(ForeignKey("comision_consultor.id"))
+    comision_id: Mapped[int | None] = mapped_column(
+        ForeignKey("comision_consultor.id"), nullable=True)
     consultor_id: Mapped[int] = mapped_column(ForeignKey("persona.id"))
     anio: Mapped[int] = mapped_column(Integer)
     mes: Mapped[int] = mapped_column(Integer)
-    monto: Mapped[float] = mapped_column(Numeric(12, 2))   # negativo
+    monto: Mapped[float] = mapped_column(Numeric(12, 2))   # con signo
     motivo: Mapped[str] = mapped_column(String(400))
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    tipo: Mapped[str] = mapped_column(
+        String(30), default="no_cobrada", server_default="no_cobrada")
+    pais_id: Mapped[int | None] = mapped_column(
+        ForeignKey("pais.id"), nullable=True)
+    servicio_id: Mapped[int | None] = mapped_column(
+        ForeignKey("servicio.id"), nullable=True)
+    creado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    # El corte que la llevo; se pone con el visto bueno del mes.
+    corte_id: Mapped[int | None] = mapped_column(
+        ForeignKey("corte_comision.id"), nullable=True)
 
-    comision: Mapped[ComisionConsultor] = relationship()
+    comision: Mapped[ComisionConsultor | None] = relationship()
+    servicio: Mapped[Servicio | None] = relationship()
+
+
+class CorteComision(Base):
+    """El corte mensual de las comisiones de los consultores de un pais
+    (seccion 66, decisiones de Salvador del 25 de septiembre).
+
+    Nace con el visto bueno de direccion de operaciones, una vez que el
+    mes termino: ese visto bueno deja fijo lo de cada consultor. Luego
+    finanzas registra cada transferencia con su referencia. Quien
+    autoriza no es quien paga, como en el bono del mes.
+    """
+    __tablename__ = "corte_comision"
+    __table_args__ = (UniqueConstraint("pais_id", "anio", "mes"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    pais_id: Mapped[int] = mapped_column(ForeignKey("pais.id"))
+    anio: Mapped[int] = mapped_column(Integer)
+    mes: Mapped[int] = mapped_column(Integer)
+    # "autorizado" con el visto bueno; "pagado" cuando salio todo.
+    estatus: Mapped[str] = mapped_column(String(20), default="autorizado")
+    autorizado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    autorizado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    pagado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+    pagos: Mapped[list["PagoComision"]] = relationship(
+        back_populates="corte", cascade="all, delete-orphan")
+
+
+class PagoComision(Base):
+    """Lo que se le paga a un consultor en su corte del mes, fijo desde
+    el visto bueno. Uno por moneda: un servicio cotizado en otra moneda
+    no se suma con los de la local."""
+    __tablename__ = "pago_comision"
+    __table_args__ = (UniqueConstraint("corte_id", "consultor_id", "moneda"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    corte_id: Mapped[int] = mapped_column(ForeignKey("corte_comision.id"))
+    consultor_id: Mapped[int] = mapped_column(ForeignKey("persona.id"))
+    moneda: Mapped[str] = mapped_column(String(3))
+    se_paga: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
+    diferencias: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
+    # Lo que sale: nunca en negativo (seccion 66). Si lo de arriba da
+    # menos de cero, esto va en cero y el resto pasa al mes siguiente.
+    total: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
+    saldo_en_contra: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
+    referencia: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    pagado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    pagado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+
+    corte: Mapped[CorteComision] = relationship(back_populates="pagos")
+    consultor: Mapped[Persona] = relationship(foreign_keys=[consultor_id])
 
 
 # ================================================================ TASK SHEET
@@ -3478,6 +3559,14 @@ class NominaSemanal(Base):
     pagada_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     pagada_por_id: Mapped[int | None] = mapped_column(
         ForeignKey("persona.id"), nullable=True)
+    # El lunes a las 11:00, hora del pais (seccion 66): el reloj lo
+    # recalcula por ultima vez y lo deja listo para pagar. Desde ahi ya
+    # no se recalcula; lo que llegue despues pasa al lunes siguiente.
+    # Hora de pared del pais, como el resto de las fechas de operacion.
+    lista_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Quien lo armo la ultima vez. Vacio es el reloj del sistema.
+    calculada_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
 
     renglones: Mapped[list["RenglonNomina"]] = relationship(
         back_populates="nomina", cascade="all, delete-orphan")
@@ -3548,6 +3637,14 @@ class ConceptoNomina(Base):
     # semana ya pagada no puede cambiar solo.
     rol_id: Mapped[int | None] = mapped_column(
         ForeignKey("perfil_personal.id"), nullable=True)
+    # Cuanto del monto son horas extra, para decirlo en el corte.
+    monto_horas_extra: Mapped[float | None] = mapped_column(
+        Numeric(12, 2), nullable=True)
+    # El renglon que deja en cero a quien quedo en contra (seccion 66):
+    # nadie cobra en negativo. Al pagar el corte, lo que este renglon
+    # compensa pasa como saldo en contra al lunes siguiente.
+    saldo_en_contra: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"))
 
     renglon: Mapped[RenglonNomina] = relationship(back_populates="conceptos")
     rol: Mapped["PerfilPersonal | None"] = relationship()

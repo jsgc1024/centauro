@@ -153,7 +153,10 @@ def test_un_ajuste_a_mano_entra_al_siguiente_corte(cliente, sesion, datos):
 
     resultado = _calcular(cliente, sesion, datos)
     assert resultado["ajustes_aplicados"] == 1
-    assert resultado["total"] == -350
+    # Nadie cobra en negativo (seccion 66): queda en cero, y los 350 pasan
+    # a su siguiente corte cuando este se pague.
+    assert resultado["total"] == 0
+    assert resultado["en_contra"] == 1
 
 
 def test_el_ajuste_se_salda_al_pagar(cliente, sesion, datos):

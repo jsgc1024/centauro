@@ -664,7 +664,10 @@ AYUDA_POR_PANTALLA = {
     "facturacion.js": 1,
     "finanzas.js": 5,
     "implantado.js": 9,
-    "nomina.js": 3,
+    # Nominas (seccion 66): lo que entra al corte, lo que todavia no, el
+    # corte general del mes del implantado y el de comisiones, ademas de
+    # los tres de siempre --cortes, por rol y ajustes--.
+    "nomina.js": 7,
     # La lectura de Odoo (seccion 64): uno por lectura --el personal y la
     # flota--, el de lo pendiente y el de las ultimas lecturas.
     "odoo.js": 4,

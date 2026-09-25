@@ -4058,6 +4058,100 @@ bueno en esa consola, como consultora, y `python3 probar_horas_extra.py
 bueno y lo que ve finanzas. `python3 probar_horas_extra.py apagar` la
 apaga y la borra. No imprime nombres.
 
+## 66. Nóminas: el corte del lunes y las comisiones de los consultores
+
+Pedido de Salvador, 24 de septiembre: «también me gustaría que agregues un
+panel de gestion de comisiones de pago al consultor en nominas, se paga 3%
+de la facturacion en servicios eventuales y 1% en impkantados, todo menos
+gastos e impuestos. para que de ahi se pueda visualizar el corte y
+gestionar si existe alguna diferencia. que se pueda visualizar lo que se
+le pa a pagar y lo que no para dar un visti bueno y cerrar sus pagos.
+tambien quiero que revises la nomina del personal de seguridad».
+
+La revisión de la nómina encontró que la regla ya era la suya —el
+eventual entra con el visto bueno del consultor, el implantado por día
+trabajado y la diferencia del mes como ajuste—. Faltaba verla: el corte
+era una lista de nombres y montos sin decir de dónde salía cada peso, lo
+que todavía no entraba no se veía en ningún lado, nada armaba el corte el
+lunes, el cierre del mes del implantado no tenía pantalla y una
+diferencia más grande que la semana dejaba a la persona cobrando en
+negativo. La comisión del consultor se calculaba y no tenía ni pantalla
+ni forma de pagarse.
+
+### Las decisiones de Salvador
+
+25 de septiembre, con las maquetas aprobadas:
+
+- **El corte del personal es de cada lunes.** A las 7:00 se arma solo con
+  lo que ya se debe; hasta las 11:00 finanzas lo puede recalcular; a las
+  11:00 se recalcula por última vez y queda listo, y lo que llegue
+  después entra al lunes siguiente. Finanzas paga a las 12:00.
+- **Nadie cobra en negativo.** «si por alguna razon en el pago del
+  implantado se genera el ajuste y queda en negativo, ese negativo se
+  guarda para el siguinte corte hasta que la cantidad de a positivo». Vale
+  para todos: el personal cobra cero y lo que falta pasa a su siguiente
+  corte; el consultor, a su mes siguiente.
+- **El implantado** se paga cada semana por los días trabajados. Con el
+  visto bueno del mes, la diferencia entra al lunes siguiente —se paga o
+  se descuenta— y el mes queda cerrado.
+- **La comisión del consultor se paga con un corte mensual.** Entra lo que
+  finanzas validó en el mes. Dirección de operaciones le da el visto bueno
+  con el mes terminado y finanzas registra cada pago con su referencia.
+
+### Lo que cambió
+
+- **Nóminas tiene tres pestañas**: Personal de seguridad, Comisiones de
+  consultores y Tabulador, que era la mitad de abajo de la pantalla.
+- **El corte del lunes dice de dónde sale cada peso**: el eventual con el
+  visto bueno de quién y de cuándo, el implantado con sus días, la
+  diferencia del corte general del mes, los viáticos sin comprobar, los
+  ajustes y el saldo que viene de un corte anterior, con las horas extra
+  aparte. Luego por persona —cada una abre su recibo— y por rol. Debajo,
+  «Todavía no entra»: los eventuales ya trabajados sin visto bueno, con lo
+  que les falta, su plazo y cuánto serían.
+- **El reloj del lunes** (`nomina.lunes`, cada quince minutos en beat)
+  arma el borrador a las 7:00 y lo cierra a las 11:00, en la hora de cada
+  país; un país sin nada que pagar no arma nada. Listo ya no se recalcula
+  ni se tira. Si no sale —casi siempre por una tarifa—, la pantalla lo
+  dice con el nombre y el día, y finanzas lo arma en cuanto la carga.
+- **El saldo en contra**: quien queda debajo de cero cobra cero, su
+  recibo lo dice en un renglón y, al pagarse el corte, lo que falta queda
+  como ajuste del lunes siguiente.
+- **El corte general del mes del implantado**: por contrato y mes, lo
+  pagado por semana contra lo que corresponde, la diferencia de cada
+  persona y día, y cómo va —se cierra en el corte del día tal, cerrado,
+  sin visto bueno o en curso—. Un día que se pagó y después se canceló
+  cuenta en lo pagado y su diferencia sale ahí.
+- **Las comisiones**: el corte de cada mes y país, con sus tres pasos
+  —se acumula, visto bueno, pagado—. Por consultor, lo que se paga con lo
+  facturado sin impuestos, los gastos, la base y el porcentaje; lo que no
+  se paga y por qué —se pierde por visto bueno fuera de plazo, o se
+  retiene por incidencia grave y la decide dirección general ahí mismo—;
+  las diferencias —se volvió a facturar, factura que no se cobró, a mano
+  con su motivo o el saldo del mes anterior—, y lo que va en camino: ya
+  tiene visto bueno y espera a finanzas. El porcentaje que se lee arriba
+  sale de lo configurado en el país.
+- Con el visto bueno, el monto de cada consultor queda fijo. Lo que cambie
+  después va al mes que siga abierto: volver a facturar deja una
+  diferencia, y una retenida que se decide pagar entra ahí.
+- Quien da el visto bueno de las comisiones no registra su pago: las dos
+  actividades son incompatibles.
+- El consultor entra a Nóminas y ve solo su comisión.
+- El motivo de una diferencia del mes se escribe como se lee en el
+  recibo: «el día se canceló y ya se había pagado 700.00».
+- Migración `d6a2f9c41e7b`: las tablas `corte_comision` y
+  `pago_comision`; `comision_consultor.corte_id`; en `ajuste_comision` su
+  clase, su país, su servicio, quién la capturó y el corte que la llevó;
+  `nomina_semanal.lista_en` y `calculada_por_id`, y en `concepto_nomina`
+  cuánto son horas extra y si es saldo en contra.
+
+### Para después de aplicarlo
+
+- Reiniciar el worker y beat: la tarea del lunes es nueva.
+- La siembra solo trae el porcentaje de la comisión de México. Un país
+  sin el suyo no genera comisión al validar, y su corte lo dice arriba
+  con un guion en vez del número.
+
 ## 14. Lo que falta
 
 ### Abierto
@@ -4067,15 +4161,6 @@ contraseñas, los puestos configurables, las 43 puertas mudadas a
 actividades y la bitácora de catálogos— salió de aquí; si algo de eso se
 busca, está en las secciones 15 y 16.*
 
-- **Las comisiones del consultor y la nómina del personal** (pedido
-  del 24 de septiembre, para después de probar las horas extra). Un panel
-  en Nóminas para la comisión del consultor —3 % de lo facturado en el
-  eventual y 1 % en el implantado, sin gastos ni impuestos— con su corte,
-  lo que se paga y lo que no, las diferencias y su visto bueno. Y revisar
-  la nómina del personal: corte semanal los lunes; el eventual paga lo que
-  ya tiene visto bueno del consultor; el implantado paga cada semana los
-  días trabajados, y en el corte del cierre del mes, con el visto bueno,
-  se pagan o descuentan las diferencias y queda cerrado. Maquetas antes.
 - **Odoo: dos datos para cuando se conecte la facturación** (sección 59).
   El acuerdo autorizado que manda Odoo (`ODOO_LO_QUE_NECESITAMOS.md`,
   5b) solo trae renglones de recurso y vehículo; a precio alzado tiene

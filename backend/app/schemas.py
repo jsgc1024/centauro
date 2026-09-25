@@ -1099,6 +1099,27 @@ class CalcularNominaIn(Base):
     fecha_corte: date | None = None
 
 
+class VistoBuenoComisionesIn(Base):
+    """El corte de comisiones de un mes y un pais (seccion 66)."""
+    pais_id: int
+    anio: int
+    mes: int = Field(ge=1, le=12)
+
+
+class PagoComisionIn(Base):
+    referencia: str = Field(max_length=120)
+
+
+class DiferenciaComisionIn(Base):
+    """Lo que finanzas corrige a mano en la comision de un consultor. Con
+    signo: negativo es descuento."""
+    pais_id: int
+    consultor_id: int
+    monto: Decimal
+    motivo: str = Field(max_length=400)
+    servicio_id: int | None = None
+
+
 class AjusteNominaIn(Base):
     persona_id: int
     pais_id: int

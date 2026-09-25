@@ -36,7 +36,11 @@ TABLAS_DE_OPERACION = [
     # castigos por incidencia. Se vacian como el movimiento, para que cada
     # prueba arranque de los valores por omision y no de lo que dejo otra.
     "peso_profesionalismo", "parametro_profesionalismo",
-    "ajuste_comision", "comision_consultor", "resultado_criterio",
+    "ajuste_comision", "comision_consultor",
+    # El corte mensual de comisiones (seccion 66): con su visto bueno, el
+    # mes de la prueba siguiente amanecia autorizado y sus comisiones se
+    # iban al mes que sigue.
+    "pago_comision", "corte_comision", "resultado_criterio",
     "evaluacion_mensual", "incidencia", "reemplazo", "contrato_implantado",
     "desviacion", "cierre", "linea_cotizacion", "cotizacion",
     "registro_accion", "registro_admin", "notificacion", "alerta", "hito",

@@ -34,6 +34,10 @@ const MONITOREO = ["central", "consultor", "director_operaciones",
                    "director_general", "admin"];
 /* La bandeja de finanzas la abre finanzas; direccion la mira sin tocar. */
 const DINERO = ["finanzas", "director_operaciones", "director_general", "admin"];
+/* Nominas (seccion 66): lo de DINERO, y el consultor para ver su propia
+   comision --lo que se le va a pagar, lo que no y por que--. La pantalla
+   solo le ensena esa pestana, y el servidor solo le manda lo suyo. */
+const NOMINAS = [...DINERO, "consultor"];
 /* Quien le dicta el codigo al personal de campo. La central porque
    esta despierta a las 5:40, que es cuando de verdad pasa; el
    consultor porque conoce a su gente por la voz, que es lo unico que
@@ -96,7 +100,8 @@ const MENU = [
     cuenta: "rec_central", quienes: MONITOREO },
   /* Gestion Administrativa: lo que se paga y quien puede que cosa.
      Dos bolsas distintas y dos pantallas: los gastos del servicio
-     —viaticos y compras— y la nomina del personal de seguridad. */
+     —viaticos y compras— y las nominas: la del personal de seguridad y
+     la comision de los consultores. */
   { ruta: "/finanzas", texto: "nav_finanzas", grupo: "nav_administrativa",
     cuenta: "rec_finanzas", quienes: DINERO },
   /* Lo que ya tiene el visto bueno del consultor y espera a finanzas:
@@ -105,7 +110,7 @@ const MENU = [
   { ruta: "/facturacion", texto: "nav_facturacion", grupo: "nav_administrativa",
     cuenta: "rec_facturacion", quienes: DINERO },
   { ruta: "/nomina", texto: "nav_nomina", grupo: "nav_administrativa",
-    cuenta: "rec_nomina", quienes: DINERO },
+    cuenta: "rec_nomina", quienes: NOMINAS },
   /* El personal va en Operaciones EP: a quien se manda es una decision
      de operacion, y se toma mirando la misma cartera. */
   { ruta: "/equipo", texto: "nav_personal", grupo: "nav_operaciones_ep",
@@ -438,7 +443,7 @@ const RUTAS = [
   [/^#\/unidades$/, pantallaUnidades, MONITOREO],
   [/^#\/finanzas$/, bandejaFinanzas, DINERO],
   [/^#\/facturacion$/, pantallaFacturacion, DINERO],
-  [/^#\/nomina$/, pantallaNomina, DINERO],
+  [/^#\/nomina$/, pantallaNomina, NOMINAS],
   [/^#\/bonos$/, pantallaBonos, DESEMPENO],
   [/^#\/encuestas$/, pantallaEncuestas, VOZ_CLIENTE],
   [/^#\/codigo$/, pantallaCodigo, CODIGO],

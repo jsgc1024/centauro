@@ -75,6 +75,14 @@ celery.conf.update(
             "task": "cierre.avanzar",
             "schedule": crontab(minute="*/5"),
         },
+        # El corte del lunes (seccion 66): a las 7:00 de cada pais se
+        # arma el borrador y a las 11:00 queda listo para pagar. Cada
+        # quince minutos, y la tarea decide a que pais le toca: el
+        # calendario tiene un solo reloj y la operacion tiene tres.
+        "nomina-del-lunes": {
+            "task": "nomina.lunes",
+            "schedule": crontab(minute="*/15"),
+        },
         # Los certificados que se vencen. Una vez al dia, temprano:
         # avisa a los treinta dias y el dia que vence, y nada mas. El
         # campo existia desde hacia meses y nada lo miraba.
@@ -151,6 +159,20 @@ def recordar_la_vispera():
     db = SessionLocal()
     try:
         return push.recordar_la_vispera(db)
+    finally:
+        db.close()
+
+
+@celery.task(name="nomina.lunes")
+def nomina_del_lunes():
+    """El borrador del corte a las 7:00 y su cierre a las 11:00, en hora
+    de cada pais. Lo que pasa a las 12:00 --pagarlo-- es de finanzas."""
+    from app import nomina
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        return nomina.reloj_del_lunes(db)
     finally:
         db.close()
 

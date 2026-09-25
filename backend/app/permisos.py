@@ -26,6 +26,9 @@ R = m.Rol
 # permite a quien la abre darse a si mismo lo que le falta.
 INCOMPATIBLES: list[tuple[str, str]] = [
     ("bonos.autorizar", "bonos.pagar"),
+    # La comision del consultor, igual (seccion 66): quien le da el visto
+    # bueno al corte del mes no es quien la transfiere.
+    ("comisiones.visto_bueno", "comisiones.pagar"),
 ]
 
 
@@ -190,7 +193,25 @@ ACTIVIDADES: dict[str, dict] = {
         "roles": {R.FINANZAS, R.DIRECTOR_OPERACIONES},
     },
     "comisiones.ajustar": {
-        "descripcion": "Restar del corte siguiente una factura que no se cobro",
+        "descripcion": "Registrar una diferencia en la comision de un "
+                       "consultor: una factura que no se cobro o una "
+                       "correccion a mano",
+        "roles": {R.FINANZAS},
+    },
+    # El corte mensual de comisiones, en Nominas (seccion 66).
+    "comisiones.ver": {
+        "descripcion": "Ver el corte de comisiones de los consultores. El "
+                       "consultor ve solo el suyo",
+        "roles": {R.FINANZAS, R.DIRECTOR_OPERACIONES, R.CONSULTOR},
+    },
+    "comisiones.visto_bueno": {
+        "descripcion": "Dar el visto bueno al corte de comisiones del mes: "
+                       "deja fijo lo que se le paga a cada consultor",
+        "roles": {R.DIRECTOR_OPERACIONES},
+    },
+    "comisiones.pagar": {
+        "descripcion": "Registrar la transferencia de la comision de cada "
+                       "consultor, con su referencia",
         "roles": {R.FINANZAS},
     },
     "comisiones.resolver": {

@@ -1568,6 +1568,17 @@ def desarmar_servicio(db: Session, servicio: m.Servicio,
             m.ContratoImplantado.id.in_(contratos)).delete(
                 synchronize_session=False)
 
+    # La diferencia de una comision es dinero de un corte del consultor
+    # (seccion 66): se queda en su mes, sin el enlace al servicio ni a la
+    # comision que se van.
+    comisiones = [c.id for c in db.query(m.ComisionConsultor.id).filter_by(
+        servicio_id=servicio.id).all()]
+    if comisiones:
+        db.query(m.AjusteComision).filter(
+            m.AjusteComision.comision_id.in_(comisiones)).update(
+                {"comision_id": None}, synchronize_session=False)
+    db.query(m.AjusteComision).filter_by(servicio_id=servicio.id).update(
+        {"servicio_id": None}, synchronize_session=False)
     for tabla in (m.TaskSheet, m.Notificacion, m.RegistroAccion, m.Hospedaje,
                   m.Encuesta, m.AlertaIncidencia, m.ReemplazoRecurso,
                   m.ComisionConsultor, m.RevisionUnidad):
