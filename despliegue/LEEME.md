@@ -8,6 +8,58 @@ así vive en `ARQUITECTURA.md`, en la raíz.
 | `../docker-compose.prod.yml` | Los seis procesos de producción |
 | `Caddyfile` | El proxy con TLS. Saca y renueva el certificado solo |
 | `respaldo.sh` | `pg_dump` diario **que se restaura y se cuenta** |
+| `crear_env.py` | El `.env` de la primera vez, con sus contraseñas generadas en el servidor |
+| `gcp/crear_servidor.sh` | El servidor en Google Cloud: red, IP fija, máquina, depósito de respaldos y foto diaria del disco |
+| `gcp/preparar_maquina.sh` | La máquina lista: parches solos, Docker, hora de México, swap y el agente de Google |
+| `../backend/primer_arranque.py` | Los catálogos sin nada de ejemplo y la primera cuenta |
+| `../backend/subir_a_google.py` | La copia del respaldo al depósito de Google, sin llaves |
+
+---
+
+## Dónde vive: Google Cloud
+
+Desde el 25 de septiembre de 2026 (sección 68 de la bitácora). Lo
+montó Salvador directamente, sin intermediario.
+
+- **Proyecto** «Centauro produccion» (`project-8fda7c0c-0799-4989-9c2`),
+  región Querétaro (`northamerica-south1`, zona `-a`). Créditos de
+  Google hasta el 25 de diciembre de 2026.
+- **La máquina** `centauro`: `e2-standard-2` (2 procesadores, 8 GB),
+  disco de 100 GB, Ubuntu 24.04, IP fija **34.51.121.227**. Protegida
+  contra borrado.
+- **La red** es propia (`centauro-red`): al mundo solo 80 y 443. La
+  administración entra **solo por el túnel de Google** (IAP) y con la
+  cuenta de Google de quien entra (OS Login): en la máquina no hay
+  contraseñas ni llaves SSH que robar.
+- **La cuenta de la máquina**, `centauro-vm`, con lo mínimo: escribir
+  registros y métricas, y crear y leer en el depósito de respaldos. No
+  puede borrar.
+- **El depósito de respaldos**, `gs://centauro-respaldos-project-8fda7c0c-0799-4989-9c2`,
+  en EE. UU. —otra región que la máquina—, sin acceso público, con
+  **retención de 14 días** (nada se borra ni se reemplaza antes) y
+  borrado automático a los 90.
+- **Foto diaria del disco completo**, a las 3:00, guardada 14 días.
+  Además del respaldo de la base, no en su lugar.
+- **La organización** nace con políticas seguras por defecto; una de
+  ellas prohíbe IP pública en las máquinas. Se abrió la excepción solo
+  para esta máquina (`compute.vmExternalIpAccess`). Para verla, en Cloud
+  Shell: `gcloud org-policies describe compute.vmExternalIpAccess
+  --project=project-8fda7c0c-0799-4989-9c2`.
+
+**Entrar a la máquina**, desde Cloud Shell:
+
+```bash
+gcloud compute ssh centauro --zone=northamerica-south1-a --tunnel-through-iap
+```
+
+**Cómo se armó**: `gcp/crear_servidor.sh` en Cloud Shell y
+`gcp/preparar_maquina.sh` dentro de la máquina, con `sudo`. Los dos se
+pueden volver a correr: lo que ya existe se deja como está.
+
+**Solo, cada noche**: los parches de seguridad de Ubuntu a las 3:30 y,
+si alguno pide reinicio, la máquina se reinicia a las 4:00. Los seis
+procesos vuelven solos (`restart: unless-stopped`). Docker no se
+actualiza solo: eso se hace a mano, en un rato tranquilo.
 
 ---
 
@@ -15,7 +67,8 @@ así vive en `ARQUITECTURA.md`, en la raíz.
 
 **1. El servidor.** Ubuntu LTS o Debian estable, con Docker y Docker
 Compose. Zona horaria en `America/Mexico_City`. Solo los puertos 80 y
-443 abiertos al mundo.
+443 abiertos al mundo. En Google Cloud lo dejan así los dos scripts de
+`gcp/` (arriba).
 
 **1b. El código llega por git.** El repositorio vive en GitHub
 (`jsgc1024/centauro`, privado). El servidor lo clona con una **llave de
@@ -26,16 +79,21 @@ modificarlo ni tocar otros repositorios.
 En el servidor, como el usuario que va a operar:
 
 ```bash
-ssh-keygen -t ed25519 -C "servidor-centauro" -f ~/.ssh/id_ed25519 -N ""
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+[ -f ~/.ssh/id_ed25519 ] || ssh-keygen -t ed25519 -C "servidor-centauro-gcp" -f ~/.ssh/id_ed25519 -N ""
+curl -fsSL https://api.github.com/meta | python3 -c 'import json,sys; print("\n".join("github.com " + k for k in json.load(sys.stdin)["ssh_keys"]))' >> ~/.ssh/known_hosts
 cat ~/.ssh/id_ed25519.pub
 ```
 
-La línea que imprime se pega en GitHub: repositorio → *Settings* →
-*Deploy keys* → *Add deploy key*, título `servidor centauro`, **sin**
-marcar *Allow write access*. Luego:
+La tercera línea le dice al servidor cuáles son las llaves de GitHub,
+leídas de GitHub por HTTPS: así `git clone` no pregunta si confía en
+un desconocido. La última imprime la llave del servidor, y esa línea se
+pega en GitHub: repositorio → *Settings* → *Deploy keys* → *Add deploy
+key*, título `servidor centauro (Google Cloud)`, **sin** marcar *Allow
+write access*. Luego:
 
 ```bash
-sudo mkdir -p /opt/centauro && sudo chown "$USER" /opt/centauro
+sudo mkdir -p /opt/centauro && sudo chown "$USER": /opt/centauro
 git clone git@github.com:jsgc1024/centauro.git /opt/centauro
 cd /opt/centauro
 ```
@@ -49,8 +107,19 @@ docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
 docker compose -f docker-compose.prod.yml up -d api worker beat
 ```
 
-**2. El `.env`.** Se edita con `nano`, nunca con `echo` —queda en el
-historial de la terminal— y no va al repositorio.
+**2. El `.env`.** La primera vez lo crea `crear_env.py`, con la
+contraseña de Postgres, la de Redis y la clave de sesión generadas ahí
+mismo: no salen en pantalla ni quedan en el historial, y el archivo solo
+lo lee quien lo creó. Si ya hay un `.env`, no lo toca.
+
+```bash
+cd /opt/centauro && python3 despliegue/crear_env.py
+```
+
+Lo demás —las llaves de Google, Microsoft, Odoo y Pegasus— se pega con
+`nano .env` cuando llega cada una, nunca con `echo` —queda en el
+historial de la terminal— y no va al repositorio. Estos son los
+renglones que puede llevar:
 
 ```
 DOMINIO=centauro.cc
@@ -62,8 +131,6 @@ APP_ENV=produccion
 SECRET_KEY=...
 GOOGLE_MAPS_KEY=...
 TELEFONO_CENTRAL=+525550221022
-VAPID_PUBLIC=...
-VAPID_PRIVATE=...
 VAPID_CONTACTO=mailto:operaciones@centauro.lat
 
 # De donde cuelgan los enlaces que van en correos y task sheets. Es
@@ -92,11 +159,28 @@ ODOO_TOKEN=
 # no la de una persona, y Odoo la da por tres meses como maximo.
 ODOO_BASE=https://centauro.odoo.com
 ODOO_API_KEY=
+
+# Pegasus, el GPS de las unidades. Vacio = no se lee nada.
+PEGASUS_SITIO=https://www.centaurosatelital.mx
+PEGASUS_USUARIO=
+PEGASUS_CLAVE=
+PEGASUS_SECRETO_AVISO=
+
+# A donde va la copia del respaldo (paso 8).
+RESPALDO_GCS_DESTINO=gs://centauro-respaldos-project-8fda7c0c-0799-4989-9c2/postgres
 ```
 
-`VAPID_PUBLIC` y `VAPID_PRIVATE` se dejan vacías al principio: las
+`VAPID_PUBLIC` y `VAPID_PRIVATE` **no van**, ni siquiera vacías: las
 escribe el paso 6. Las demás llaves y contraseñas se pegan aquí, en el
 servidor, y en ningún otro lado.
+
+**Un cambio en el `.env` no se aplica con `restart`.** `docker compose
+restart` vuelve a arrancar el mismo contenedor con los valores de antes;
+lo que relee el `.env` es volver a crearlo:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d api worker beat
+```
 
 **La conexión con Odoo.** El usuario «Centauro (conexión)» se crea en
 Odoo con permiso de *Empleados: Oficial* —para leer el correo personal
@@ -104,7 +188,8 @@ y la referencia— y ocupa una licencia. Su llave se genera en su perfil
 → *Seguridad de la cuenta* → *Claves API*, con el vencimiento más largo
 que Odoo permita (tres meses). **Anota el día que vence**: ese día la
 lectura se detiene y el registro del worker dice «Odoo rechazó la
-llave». La nueva se pega aquí y se reinician `api`, `worker` y `beat`.
+llave». La nueva se pega aquí y se aplica con `up -d api worker beat`
+(arriba).
 
 La primera lectura del personal y la de la flota se hacen a mano,
 después de ver el ensayo; las tareas de cada hora no arrancan hasta que
@@ -125,7 +210,7 @@ Para la flota, el usuario de la conexión también necesita leer
 carpeta (`fotos_de_categoria.py`, instrucciones adentro): la base de
 cada categoría y una por color.
 
-Las contraseñas y la clave de sesión:
+Si alguna vez hace falta una contraseña o clave nueva a mano:
 
 ```bash
 python3 -c "import secrets; print(secrets.token_urlsafe(48))"
@@ -137,30 +222,64 @@ despliega tarde o temprano sin él.
 
 **3. El DNS.** El dominio tiene que apuntar al servidor *antes* de
 levantar el proxy: Caddy pide el certificado al arrancar y Let's Encrypt
-verifica que el dominio sea tuyo.
+verifica que el dominio sea tuyo. Para `centauro.cc`: un registro **A**
+hacia `34.51.121.227`.
 
-**4. Levantar.**
+**4. Levantar, todavía sin la puerta a internet.**
 
 ```bash
+docker compose -f docker-compose.prod.yml build api
 docker compose -f docker-compose.prod.yml up -d db redis
 docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
-docker compose -f docker-compose.prod.yml up -d api worker beat proxy
+docker compose -f docker-compose.prod.yml up -d api worker beat
 ```
 
-**5. Los catálogos, una sola vez.** Países, plazas, modalidades,
-perfiles, categorías de vehículo.
+El proxy va al final (6b): primero tiene que existir la primera cuenta.
 
-**6. Las llaves de los avisos.**
+**5. Los catálogos y la primera cuenta, una sola vez.**
 
 ```bash
-docker compose -f docker-compose.prod.yml exec -T api python generar_llaves_push.py
-docker compose -f docker-compose.prod.yml restart api worker beat
+docker compose -f docker-compose.prod.yml run --rm api python primer_arranque.py --correo tu@correo.com --nombre "Tu nombre completo"
+```
+
+Carga países, plazas, perfiles, categorías de vehículo, modalidades,
+tarifario, tabulador, comisiones, festivos, hospitales y hoteles —**sin**
+el personal, la flota ni el cliente de ejemplo: en producción la gente y
+las unidades llegan de Odoo—. Luego pide la contraseña de esa primera
+cuenta, que queda con rol de dirección general; no se ve al escribirla.
+Las demás cuentas se dan de alta desde la consola (*Accesos*), cada una
+con su invitación. Con cualquier usuario ya creado no hace nada.
+
+Al terminar dice qué revisar en la consola: **los montos de la semilla
+son de ejemplo**.
+
+En producción el sembrado por la API (`/sistema/sembrar-catalogos`) no
+se abre sin credenciales ni la primera vez, y nunca siembra el personal,
+la flota ni el cliente de ejemplo.
+
+**6. Las llaves de los avisos.** Con el `.env` del servidor montado
+encima del contenedor: sin el `-v`, el script escribiría en un `.env`
+que solo existe dentro de ese contenedor y las llaves se perderían.
+
+```bash
+docker compose -f docker-compose.prod.yml run --rm -v "$PWD/.env:/code/.env" api python generar_llaves_push.py
+docker compose -f docker-compose.prod.yml up -d api worker beat
 ```
 
 Escribe las dos en el `.env` y **solo imprime la pública**. Si ya
 existen, no las toca: regenerarlas deja mudos todos los teléfonos que ya
 se suscribieron, y nadie se entera hasta el día que un aviso importante
 no llega.
+
+**6b. Abrir la puerta.** Con la primera cuenta creada y el dominio
+apuntando aquí (paso 3):
+
+```bash
+docker compose -f docker-compose.prod.yml up -d proxy
+```
+
+Caddy saca el certificado en el primer minuto. Si no lo consigue, lo
+dice en `docker compose -f docker-compose.prod.yml logs proxy`.
 
 **7. La llave de Google.** Restringida por **IP del servidor** —no por
 referrer—, con **solo** Places API (New) y Maps Static API habilitadas, y
@@ -189,7 +308,7 @@ en correo no deseado.
    pega directo en el `.env` del servidor → `CORREO_MS_SECRETO`. Nunca
    por correo ni por chat. **Anota el día que vence**: ese día el correo
    deja de salir y `probar_correo.py` dice «AADSTS7000222». El nuevo se
-   pega aquí y se reinician `api`, `worker` y `beat`.
+   pega aquí y se aplica con `up -d api worker beat` (paso 2).
 4. **Sin permisos de Graph en Entra.** A la aplicación **no** se le
    agrega `Mail.Send` en *Permisos de API*: con ese permiso podría mandar
    como cualquier persona de la empresa, incluida dirección general. El
@@ -211,7 +330,7 @@ en correo no deseado.
 5. **Probarlo**, con los tres datos en el `.env`:
 
    ```bash
-   docker compose -f docker-compose.prod.yml restart api worker beat
+   docker compose -f docker-compose.prod.yml up -d api worker beat
    docker compose -f docker-compose.prod.yml run --rm api python probar_correo.py tu@correo.com
    ```
 
@@ -221,16 +340,38 @@ en correo no deseado.
    saldrían por viejos.
 
 **8. El respaldo.** En el cron del servidor, no en Celery: si la
-aplicación está caída es justo cuando más falta hace.
+aplicación está caída es justo cuando más falta hace. En Google Cloud,
+la copia va al depósito del proyecto con la cuenta de la máquina y sin
+llaves. El destino se escribe solo, leyendo el proyecto de la propia
+máquina:
 
-```
-0 3 * * *  /opt/centauro/despliegue/respaldo.sh >> /var/log/centauro-respaldo.log 2>&1
+```bash
+cd /opt/centauro
+grep -q '^RESPALDO_GCS_DESTINO=' .env || echo "RESPALDO_GCS_DESTINO=gs://centauro-respaldos-$(curl -fsS -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/project/project-id)/postgres" >> .env
 ```
 
 Córrelo **a mano una vez** y lee la salida completa antes de confiar en
-él.
+él:
 
-**9. Las contraseñas sembradas.** Cambiarlas antes de repartir accesos.
+```bash
+sudo /opt/centauro/despliegue/respaldo.sh
+```
+
+Y cada noche a las 2:30, antes de la foto del disco de las 3:00, con su
+registro rotado cada mes:
+
+```bash
+echo '30 2 * * * root /opt/centauro/despliegue/respaldo.sh >> /var/log/centauro-respaldo.log 2>&1' | sudo tee /etc/cron.d/centauro-respaldo
+printf '/var/log/centauro-respaldo.log {\n  monthly\n  rotate 12\n  compress\n  missingok\n  notifempty\n}\n' | sudo tee /etc/logrotate.d/centauro-respaldo
+```
+
+El resultado de cada noche queda también en el registro del sistema
+(`centauro-respaldo`): de ahí lo lee el agente de Google, y de ahí sale
+la alerta si una noche falla.
+
+**9. Las contraseñas sembradas.** Con `primer_arranque.py` no hay
+ninguna: cada cuenta pone la suya. Si la base se armó con la semilla de
+demostración, cambiarlas antes de repartir accesos.
 
 ---
 
@@ -280,11 +421,27 @@ hace falta.
 
 ### La copia fuera del servidor
 
-Va a **object storage S3 multizona**. Es lo único que protege del caso
-que de verdad importa: perder el servidor. Un respaldo en el mismo disco
-que la base no es un respaldo, es una copia.
+Es lo único que protege del caso que de verdad importa: perder el
+servidor. Un respaldo en el mismo disco que la base no es un respaldo,
+es una copia.
 
-En el `.env`:
+**En Google Cloud** va al depósito del proyecto (arriba), con
+`RESPALDO_GCS_DESTINO` en el `.env`. La sube `backend/subir_a_google.py`
+con la cuenta de la propia máquina: el permiso se le pide a Google en
+cada subida y no hay llave guardada que alguien se pueda llevar. Sube por
+partes, sigue desde donde se quedó si se corta, nunca escribe encima de
+un respaldo que ya exista y al final **pregunta el tamaño y el md5 de lo
+que llegó** y los compara con el archivo. Los dos candados de abajo ya
+están puestos del lado de Google: la cuenta de la máquina no puede
+borrar y el depósito no deja borrar ni reemplazar nada antes de 14 días.
+
+Para ver lo que hay allá, en Cloud Shell:
+
+```bash
+gcloud storage ls -l gs://centauro-respaldos-project-8fda7c0c-0799-4989-9c2/postgres/
+```
+
+**Fuera de Google** va a **object storage S3 multizona**. En el `.env`:
 
 ```
 RESPALDO_S3_DESTINO=s3://centauro-respaldos/postgres
@@ -331,6 +488,10 @@ docker compose -f docker-compose.prod.yml logs -f --tail=100 api
 # La api se ve a si misma, a la base y a Redis
 docker compose -f docker-compose.prod.yml exec -T api \
   python -c "import urllib.request,json; print(json.load(urllib.request.urlopen('http://127.0.0.1:8000/health')))"
+
+# Como salio el respaldo de las ultimas noches
+sudo tail -40 /var/log/centauro-respaldo.log
+journalctl -t centauro-respaldo --since "7 days ago"
 ```
 
 **Si la app de campo deja de funcionar en los teléfonos**, lo primero

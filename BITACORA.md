@@ -4200,9 +4200,100 @@ Encender el correo así era encenderlo con fecha de caducidad.
 - Poner los tres datos en el `.env` del servidor y probar con
   `probar_correo.py`.
 
+## 68. El servidor, en Google Cloud
+
+Decisión de Salvador, 25 de septiembre: el servidor de producción lo
+monta él mismo en Google Cloud, sin esperar más al proveedor que lo
+estaba configurando. El proveedor conserva por ahora los dominios
+—`centauro.cc` y el DNS de `centauro.lat`— y el servidor de OVH; se le
+pidió la transferencia de `centauro.cc`.
+
+### Lo que quedó montado
+
+- **Proyecto** «Centauro produccion», región Querétaro. La máquina
+  `centauro` —2 procesadores, 8 GB, disco de 100 GB, Ubuntu 24.04— con
+  IP fija `34.51.121.227` y protegida contra borrado.
+- **Red propia**: al mundo solo 80 y 443. La administración entra solo
+  por el túnel de Google (IAP) y con la cuenta de Google de quien entra
+  (OS Login): en la máquina no hay contraseñas ni llaves SSH que robar.
+- **La cuenta de la máquina** con lo mínimo: registros, métricas, y crear
+  y leer en el depósito de respaldos, sin poder borrar.
+- **El depósito de respaldos**, en otra región, sin acceso público, con
+  retención de 14 días —nada se borra ni se reemplaza antes— y borrado a
+  los 90. Y una foto diaria del disco completo, 14 días.
+- La organización nace con políticas seguras por defecto, y una prohíbe
+  IP pública en las máquinas: se abrió la excepción solo para esta.
+- **La máquina**: parches de seguridad solos cada noche (3:30; si piden
+  reinicio, a las 4:00), Docker del repositorio oficial con registros
+  que no llenan el disco, hora de México, 4 GB de swap y el agente de
+  Google que mide memoria y disco.
+- **Centauro**, clonado con llave de solo lectura; `.env` con la
+  contraseña de Postgres, la de Redis y la clave de sesión generadas en
+  el servidor, sin pasar por pantalla; migraciones hasta la última y los
+  cinco procesos arriba. El proxy todavía no: sin dominio no hay
+  certificado, y sin certificado no hay app de campo.
+
+Los dos scripts con los que se armó quedan en `despliegue/gcp/`, y la
+guía de despliegue empieza por dónde vive y cómo se entra.
+
+### Lo que se corrigió al subirlo
+
+Cuatro cosas de la guía que en la máquina de desarrollo no se notaban:
+
+- **El sembrado metía ejemplos en producción.** El paso de los catálogos
+  cargaba también el personal, la flota con placas inventadas y el
+  «Cliente Demo AAA», que en producción se cuelan a la lista de
+  disponibles. Y se abría sin credenciales mientras no hubiera usuarios:
+  justo el rato en que un servidor recién encendido tiene dirección
+  pública y nadie mirando. Ahora la primera vez la hace
+  `primer_arranque.py` desde la terminal del servidor: catálogos sin
+  ejemplos y la primera cuenta, de dirección general, con su contraseña
+  pedida ahí mismo. En producción el endpoint ya no se abre sin
+  credenciales ni la primera vez, y nunca siembra los ejemplos.
+- **Las llaves de los avisos se perdían.** `generar_llaves_push.py`
+  escribía en un `.env` que en producción solo existía dentro del
+  contenedor: la app no las veía y se iban con la siguiente
+  actualización. Y la plantilla de la guía traía los dos renglones
+  vacíos, que el script tomaba por llaves. Ahora se corre con el `.env`
+  del servidor montado, llena los renglones vacíos sin duplicarlos y, sin
+  el `.env` montado, se detiene y dice cómo.
+- **`restart` no relee el `.env`.** La guía decía reiniciar después de
+  pegar una llave, y `restart` vuelve a arrancar el mismo contenedor con
+  los valores de antes: la llave nueva de Odoo o de Microsoft no se
+  habría usado nunca. Es `up -d`, que los vuelve a crear.
+- **La copia del respaldo nunca habría salido.** `respaldo.sh` leía el
+  destino del entorno, y en el cron el entorno está vacío: cada noche
+  habría dicho que no tenía a dónde subir. Ahora lee lo suyo del `.env`,
+  y en Google sube con `subir_a_google.py`: con la cuenta de la máquina,
+  sin llaves, por partes, sin escribir nunca encima de otro respaldo y
+  comparando al final el tamaño y el md5 de lo que llegó. El dump queda
+  legible solo para quien lo saca, y el resultado de cada noche va al
+  registro del sistema, de donde saldrá la alerta.
+
+### Lo que falta, de tu lado
+
+- Aplicar esto en el servidor: la primera cuenta, las llaves de los
+  avisos y el respaldo de cada noche.
+- `centauro.cc`: que el proveedor lo transfiera y apuntarlo a
+  `34.51.121.227`; con eso se abre la puerta (paso 6b de la guía).
+- La llave de Google Maps nueva, en el proyecto de Centauro y restringida
+  a la IP del servidor.
+- Revisar en la consola los montos de ejemplo de la semilla.
+- Las alertas —la máquina caída, el disco lleno, el respaldo fallido— y
+  un ensayo de restauración.
+- Cuando todo corra aquí: apagar el servidor de OVH, quitar la llave del
+  proveedor en GitHub y dejar de usar su llave de Google Maps.
+
 ## 14. Lo que falta
 
 ### Abierto
+
+- **El servidor: el dominio y el proveedor** (sección 68). Producción ya
+  vive en Google Cloud. Falta que el proveedor transfiera `centauro.cc`
+  —y de preferencia el DNS de `centauro.lat`— para apuntarlo a
+  `34.51.121.227` y abrir la puerta (paso 6b de `despliegue/LEEME.md`).
+  Después: apagar el servidor de OVH, quitar la llave del proveedor en
+  GitHub y dejar de usar su llave de Google Maps.
 
 *Al 18 de septiembre. Lo que se cerró —el panel de accesos, las
 contraseñas, los puestos configurables, las 43 puertas mudadas a

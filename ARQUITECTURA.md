@@ -318,9 +318,18 @@ Cómo se generan las que faltan:
 python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 
 # Las llaves de avisos: el script las escribe en .env
-# y solo imprime la pública.
+# y solo imprime la pública. En desarrollo:
 docker compose exec -T api python generar_llaves_push.py
+
+# En el servidor, con el .env montado encima: el contenedor de
+# producción no tiene la carpeta, y sin el -v las llaves se quedaban
+# adentro y se perdían (sección 68).
+docker compose -f docker-compose.prod.yml run --rm -v "$PWD/.env:/code/.env" api python generar_llaves_push.py
 ```
+
+Un cambio en el `.env` del servidor se aplica volviendo a crear los
+contenedores (`up -d api worker beat`), no con `restart`, que los vuelve
+a arrancar con los valores de antes.
 
 `APP_ENV` con cualquier valor que no sea `local`, `dev`, `desarrollo`,
 `test`, `pruebas` o `ci` se trata como producción. Un nombre que nadie
@@ -388,14 +397,19 @@ la CPU, va a ser el disco y el pozo de conexiones.
 
 ## Orden de encendido
 
-1. Servidor listo, Docker instalado, zona horaria puesta.
+1. Servidor listo, Docker instalado, zona horaria puesta. En Google
+   Cloud, `despliegue/gcp/` (sección 68).
 2. `.env` completo. `SECRET_KEY` propia — si no, la aplicación no arranca.
+   La primera vez lo crea `despliegue/crear_env.py`.
 3. `docker compose -f docker-compose.prod.yml up -d db redis`
 4. `docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head`
-5. Sembrar catálogos **una sola vez**.
+5. Catálogos y primera cuenta, **una sola vez**: `primer_arranque.py`.
+   Sin el personal, la flota ni el cliente de ejemplo.
 6. `docker compose -f docker-compose.prod.yml up -d api worker beat`
-7. Proxy inverso con TLS y certificado válido.
+7. Proxy inverso con TLS y certificado válido, **después** de la primera
+   cuenta y con el dominio apuntando al servidor.
 8. Llave de Google restringida por la IP del servidor, con cuota diaria.
 9. Respaldo programado y **una restauración de prueba verificada**.
-10. Cambiar las contraseñas de los usuarios sembrados antes de repartir
-    accesos.
+10. Si la base se armó con la semilla de demostración, cambiar las
+    contraseñas de los usuarios sembrados antes de repartir accesos. Con
+    `primer_arranque.py` no hay ninguna: cada cuenta pone la suya.

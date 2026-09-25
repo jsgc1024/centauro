@@ -12,13 +12,32 @@
 # no es un respaldo, es un archivo grande.
 #
 # Se agenda en el cron del servidor, no en Celery: si la aplicacion esta
-# caida es justo cuando mas falta hace.
+# caida es justo cuando mas falta hace. En el servidor de Google va en
+# /etc/cron.d/centauro-respaldo (ver despliegue/LEEME.md, paso 8), a las
+# 2:30, antes de la foto diaria del disco de las 3:00:
 #
-#   0 3 * * *  /opt/centauro/despliegue/respaldo.sh >> /var/log/centauro-respaldo.log 2>&1
+#   30 2 * * *  root  /opt/centauro/despliegue/respaldo.sh >> /var/log/centauro-respaldo.log 2>&1
 #
 set -euo pipefail
 
+# El dump es la empresa entera: servicios, dinero, fotos y firmas. Lo
+# que crea este script solo lo lee quien lo corre.
+umask 077
+
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Lo que este script necesita del .env del servidor. En el cron no hay
+# nada en el entorno --el .env lo lee docker compose, no bash--, y sin
+# esto la copia fuera del servidor no se hacia nunca: cada noche decia
+# "sin RESPALDO_S3_DESTINO" aunque estuviera en el .env. Se lee renglon
+# por renglon y no con `source`: el .env no es bash (CORREO_DE lleva < y >).
+del_env() {
+  local valor="${!1:-}"
+  if [ -z "$valor" ] && [ -f "$RAIZ/.env" ]; then
+    valor="$(grep -E "^$1=" "$RAIZ/.env" | tail -1 | cut -d= -f2- | tr -d '\r')"
+  fi
+  printf '%s' "$valor"
+}
 
 # En modo prueba no se rota nada, no se sube nada y el dump se borra al
 # terminar. Es para correrlo en la maquina de desarrollo y ver con los
@@ -51,6 +70,30 @@ ARCHIVO="$DESTINO/centauro-$SELLO.dump"
 
 decir() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
+# La base desechable de la verificacion se borra pase lo que pase, y el
+# resultado de la noche se anota tambien en el registro del sistema: de
+# ahi lo lee el agente de Google, y un respaldo que falla en silencio se
+# descubre el dia que hace falta.
+PRUEBA=""
+limpiar() {
+  [ -n "$PRUEBA" ] || return 0
+  $COMPOSE exec -T db psql -U centauro -d postgres \
+    -c "DROP DATABASE IF EXISTS $PRUEBA;" >/dev/null 2>&1 || true
+}
+al_salir() {
+  local salida=$?
+  limpiar
+  if [ "$PROBANDO" = "0" ] && command -v logger >/dev/null 2>&1; then
+    if [ "$salida" = "0" ]; then
+      logger -t centauro-respaldo "Respaldo completo: $(basename "$ARCHIVO")" || true
+    else
+      logger -p user.err -t centauro-respaldo \
+        "ERROR: el respaldo fallo (salida $salida). Ver /var/log/centauro-respaldo.log" || true
+    fi
+  fi
+}
+trap al_salir EXIT
+
 mkdir -p "$DESTINO"
 
 # ---------------------------------------------------------------- sacar
@@ -75,12 +118,6 @@ decir "Respaldo en $ARCHIVO ($PESO)"
 # una base sin comillas. Se cambia por guion bajo aqui y solo aqui.
 PRUEBA="verificacion_${SELLO//-/_}"
 decir "Restaurando en $PRUEBA para verificar…"
-
-limpiar() {
-  $COMPOSE exec -T db psql -U centauro -d postgres \
-    -c "DROP DATABASE IF EXISTS $PRUEBA;" >/dev/null 2>&1 || true
-}
-trap limpiar EXIT
 
 $COMPOSE exec -T db psql -U centauro -d postgres \
   -c "CREATE DATABASE $PRUEBA;" >/dev/null
@@ -177,9 +214,20 @@ decir "Se guardan $DIAS_A_GUARDAR dias. Borrados: $BORRADOS"
 
 # ------------------------------------------------------- fuera del servidor
 #
-# Object storage S3 multizona. Es lo unico que protege del caso que de
-# verdad importa: perder el servidor. Un respaldo en el mismo disco que
-# la base no es un respaldo, es una copia.
+# En Google Cloud (seccion 68) va al deposito del proyecto, con la cuenta
+# de la propia maquina y sin llaves: lo sube backend/subir_a_google.py,
+# que pregunta al final que llego y compara tamano y md5. En el .env:
+#
+#   RESPALDO_GCS_DESTINO=gs://centauro-respaldos-<proyecto>/postgres
+#
+# La cuenta de la maquina puede crear y leer alla, no borrar, y el
+# deposito no deja borrar ni reemplazar nada antes de 14 dias: son los
+# mismos dos candados de abajo, puestos del lado de Google.
+#
+# Fuera de Google: object storage S3 multizona. Cualquiera de los dos es
+# lo unico que protege del caso que de verdad importa: perder el
+# servidor. Un respaldo en el mismo disco que la base no es un respaldo,
+# es una copia.
 #
 # Se sube con la imagen oficial del cliente de AWS para no tener que
 # instalar nada en el servidor, y con `--endpoint-url` sirve igual con
@@ -203,12 +251,28 @@ decir "Se guardan $DIAS_A_GUARDAR dias. Borrados: $BORRADOS"
 #      ciclo de vida que retire lo viejo. La rotacion remota la hace el
 #      bucket, no este script: si el script pudiera borrar alla,
 #      volveriamos al punto uno.
-if [ -n "${RESPALDO_S3_DESTINO:-}" ]; then
+GCS_DESTINO="$(del_env RESPALDO_GCS_DESTINO)"
+RESPALDO_S3_DESTINO="$(del_env RESPALDO_S3_DESTINO)"
+RESPALDO_S3_ENDPOINT="$(del_env RESPALDO_S3_ENDPOINT)"
+RESPALDO_S3_REGION="$(del_env RESPALDO_S3_REGION)"
+
+if [ -n "$GCS_DESTINO" ]; then
+  decir "Subiendo a $GCS_DESTINO…"
+  if python3 "$RAIZ/backend/subir_a_google.py" "$ARCHIVO" "$GCS_DESTINO"; then
+    decir "Fuera del servidor: completo."
+  else
+    decir "ERROR: no se pudo subir el respaldo fuera del servidor."
+    exit 1
+  fi
+elif [ -n "$RESPALDO_S3_DESTINO" ]; then
   decir "Subiendo a $RESPALDO_S3_DESTINO…"
+  AWS_ACCESS_KEY_ID="$(del_env AWS_ACCESS_KEY_ID)"
+  AWS_SECRET_ACCESS_KEY="$(del_env AWS_SECRET_ACCESS_KEY)"
+  export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
   LLAVE="$(basename "$ARCHIVO")"
 
   ENDPOINT=()
-  [ -n "${RESPALDO_S3_ENDPOINT:-}" ] && ENDPOINT=(--endpoint-url "$RESPALDO_S3_ENDPOINT")
+  [ -n "$RESPALDO_S3_ENDPOINT" ] && ENDPOINT=(--endpoint-url "$RESPALDO_S3_ENDPOINT")
 
   aws_() {
     docker run --rm \
@@ -242,6 +306,7 @@ if [ -n "${RESPALDO_S3_DESTINO:-}" ]; then
   fi
   decir "Verificado del otro lado: $REMOTO bytes."
 else
-  decir "AVISO: sin RESPALDO_S3_DESTINO. El respaldo se queda en este"
-  decir "       servidor, y eso no protege del unico caso que importa."
+  decir "AVISO: sin RESPALDO_GCS_DESTINO ni RESPALDO_S3_DESTINO. El respaldo"
+  decir "       se queda en este servidor, y eso no protege del unico caso"
+  decir "       que importa."
 fi

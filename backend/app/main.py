@@ -11,7 +11,8 @@ from sqlalchemy.exc import IntegrityError
 
 from app import models  # noqa: F401  (registra las tablas en Base)
 from app import auth
-from app.config import puertas_de_la_api, revisar_secretos, settings
+from app.config import (es_desarrollo, puertas_de_la_api, revisar_secretos,
+                        settings)
 from app.marca import logo_incrustado
 from app.db import engine, get_db
 from app.routers import (acceso, bonos, campo, catalogos, central, cierre,
@@ -135,14 +136,36 @@ def sembrar_catalogos(usuario=Depends(auth.usuario_opcional)):
     # dejaba la base recien creada en un circulo —sin catalogos no hay
     # usuarios, sin usuarios no hay admin, sin admin no hay catalogos.
     # En cuanto existe el primer usuario, la puerta se cierra sola.
+    #
+    # Eso, en la maquina de quien desarrolla. En produccion no hay puerta
+    # abierta ni la primera vez (seccion 68): la base nueva la arranca
+    # `primer_arranque.py` desde la terminal del servidor, que carga los
+    # catalogos y crea la primera cuenta en el mismo paso. Un endpoint
+    # que escribe sin credenciales, en un servidor con direccion publica,
+    # queda abierto justo el rato en que nadie esta mirando.
+    produccion = not es_desarrollo(settings)
     with Session(engine) as db:
         hay_usuarios = db.query(models.Usuario).first() is not None
-    if hay_usuarios and (not usuario or usuario.rol != models.Rol.ADMIN):
+    if (hay_usuarios or produccion) and (not usuario or usuario.rol != models.Rol.ADMIN):
+        if not hay_usuarios:
+            raise HTTPException(403, {
+                "mensaje": "En produccion la primera vez no se hace por aqui",
+                "que_hacer": "En el servidor: python primer_arranque.py "
+                             "(ver despliegue/LEEME.md, paso 5)."})
         raise HTTPException(403, {
             "mensaje": "Sembrar catalogos es cosa de administracion",
             "que_hacer": "Entra como admin. Esto ya no es una base nueva."})
 
-    return {"resultado": "ok", "catalogos": sembrar(), "recursos": sembrar_recursos(),
+    # Los catalogos primero: sin plazas ni perfiles no hay donde poner a
+    # nadie.
+    catalogos = sembrar()
+    # El personal, la flota y el cliente de ejemplo son para probar el
+    # motor de disponibilidad, no para una base de verdad: ahi la gente y
+    # las unidades llegan de Odoo, y una camioneta con placa inventada en
+    # la lista de disponibles termina asignada a un servicio real.
+    recursos = (sembrar_recursos() if not produccion else
+                "no se siembran: fuera de desarrollo llegan de Odoo")
+    return {"resultado": "ok", "catalogos": catalogos, "recursos": recursos,
             "parametros": sembrar_parametros(),
             "festivos": sembrar_festivos(),
             "bonos": sembrar_bonos(),
