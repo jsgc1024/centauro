@@ -237,9 +237,12 @@ def desglose_del_servicio(servicio_id: int, idioma: str | None = None,
     pais = db.get(m.Pais, servicio.pais_id)
     moneda = (vigente.moneda.value if vigente else
               pais.moneda_local.value if pais else None)
+    # Lo que va dentro de un paquete no se le cobra aparte, y no va en su
+    # desglose (seccion 79).
+    viaticos = (motor.viaticos_facturables(db, servicio, vigente.tarifario_id)
+                if vigente else motor.viaticos_del_servicio(db, servicio_id))
     return HTMLResponse(desglose.render(
-        servicio, plaza.nombre if plaza else None,
-        motor.viaticos_del_servicio(db, servicio_id),
+        servicio, plaza.nombre if plaza else None, viaticos,
         idioma if idioma in desglose.TEXTOS
         else desglose.idioma_del_cliente(db, servicio),
         moneda, factura=cierre.factura_odoo if cierre else None))

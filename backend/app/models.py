@@ -331,6 +331,12 @@ class Tarifario(Base):
     # La hora extra de la lista: en Odoo es un solo producto para todos.
     precio_hora_extra: Mapped[float | None] = mapped_column(Numeric(12, 2),
                                                             nullable=True)
+    # Si los paquetes de esta lista traen los viaticos del dia (seccion
+    # 79): los de HASBRO si. Lo marca finanzas en Centauro --Odoo no lo
+    # dice--, y ninguna lectura de Odoo lo toca. El dia que se cobra el
+    # paquete, los viaticos de quien fue en el no se facturan aparte.
+    paquetes_con_viaticos: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"))
 
     clientes: Mapped[list[Cliente]] = relationship(
         back_populates="tarifario", foreign_keys="Cliente.tarifario_id")
@@ -2368,6 +2374,9 @@ class TipoLinea(str, enum.Enum):
     RECURSO = "recurso"
     VEHICULO = "vehiculo"
     VIATICOS = "viaticos"
+    # Conductor + unidad en un solo precio (seccion 79): el renglon lleva
+    # el rol en `perfil_id` y la unidad en `categoria_id`.
+    PAQUETE = "paquete"
 
 
 class Cotizacion(Base):

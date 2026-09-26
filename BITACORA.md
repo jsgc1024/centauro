@@ -4977,14 +4977,66 @@ llegaron de Odoo son demasiados para un desplegable.
 
 - Sin migración.
 
+## 79. Los paquetes conductor + unidad
+
+Paso B de los tarifarios desde Odoo (sección 77; decisión 3 de la
+propuesta): el conductor con su unidad, en un solo precio, como lo cobran
+HASBRO, Amazon, Crisol y Repsol. Salvador, 26 de septiembre: «el paquete
+de HASBRO incluye viáticos» —por eso cuesta más que conductor y CUV por
+separado—, y que eso lo marque finanzas por lista.
+
+### Lo que cambió
+
+- **El día en que el equipo lleva ese rol con esa unidad, y la lista del
+  cliente tiene el paquete en esa modalidad, se cobra el paquete**: un
+  solo renglón con su precio, en vez de los dos por separado. Lo que no
+  hace pareja —un agente sin unidad, una segunda camioneta— se cobra
+  suelto, como siempre. Si un rol cabe en dos paquetes el mismo día, gana
+  el primero que se leyó de Odoo, y así siempre igual.
+- **La cotización hace lo mismo**: el rol y la unidad del mismo día y el
+  mismo equipo que la lista tiene en paquete se cotizan como paquete, y
+  también se puede cotizar un paquete directo. Así lo cotizado y lo
+  ejecutado se comparan igual. El paquete que la lista no tiene se dice,
+  como un rol sin precio (renglón nuevo `paquete`, migración
+  `b7e3a9c1d562`).
+- **Las horas extra del paquete** se cobran como las del conductor: con
+  el precio de hora extra de su rol en la lista y, si la lista no le pone
+  precio suelto a ese rol, con el de la hora extra de la lista.
+- **Lo que se factura, renglón por renglón**: un bloque nuevo en el
+  cierre del servicio y en Facturación, con el paquete a la vista —el
+  rol o la unidad o el paquete, su modalidad, cuántos días, su precio— y
+  las horas extra aparte. Es lo mismo que sale en la factura, y antes no
+  se veía en ningún lado.
+- **Los paquetes que traen los viáticos**: en Facturación → Tarifarios,
+  finanzas marca por lista si sus paquetes traen los viáticos del día
+  —HASBRO sí—. Odoo no lo dice y ninguna lectura lo toca. Con gastos
+  netos, los viáticos de quien fue en un paquete ese día no se facturan
+  aparte ni van en el desglose del cliente; el cierre dice cuánto va
+  dentro del paquete. A precio alzado no cambia nada: se factura el monto
+  de la propuesta. Al personal se le paga y se le comprueba igual.
+
+### Las pruebas
+
+- `tests/test_paquetes.py`: se empareja lo que va junto; el paquete se
+  cotiza, se cierra y se factura, con sus horas extra; lo que no hace
+  pareja se cobra suelto; sin paquete en la lista se cobra como siempre;
+  un paquete que la lista no tiene se dice; los viáticos van dentro del
+  paquete si la lista lo dice; y solo finanzas lo marca.
+
+### Para subirlo
+
+- Lleva migración (`b7e3a9c1d562`): el renglón de paquete y la marca de
+  los viáticos en `tarifario`.
+- Ya en el servidor: Facturación → Tarifarios → escoger a HASBRO y
+  marcar «Los paquetes de esta lista traen los viáticos del día».
+
 ## 14. Lo que falta
 
 ### Abierto
 
-- **Tarifarios desde Odoo: los pasos B y C** (sección 77). B: los
-  paquetes conductor + unidad en la cotización, el cierre y la factura.
-  C: el acuerdo del implantado toma sus precios de la lista de
-  implantados del cliente.
+- **Tarifarios desde Odoo: el paso C** (sección 77; el B es la 79): el
+  acuerdo del implantado toma sus precios de la lista de implantados del
+  cliente.
 - **La lista de Amazon, en dólares** (sección 77): no se lee hasta que
   Centauro sepa cobrar en otra moneda que la del país —*La moneda*, más
   abajo—. Mientras, Amazon se queda con el tarifario que tenga.

@@ -242,6 +242,7 @@ def _tarifario(t: m.Tarifario | None) -> dict | None:
         "de_odoo": t.odoo_id is not None, "general": t.general,
         "activo": t.activo, "resto_de": t.resto_de,
         "precio_hora_extra": t.precio_hora_extra,
+        "paquetes_con_viaticos": t.paquetes_con_viaticos,
         "leido_en": (t.odoo_sincronizado_en.isoformat()
                      if t.odoo_sincronizado_en else None),
         "personal": [fila(x, perfil=x.perfil.nombre, perfil_id=x.perfil_id,
@@ -258,7 +259,7 @@ def _tarifario(t: m.Tarifario | None) -> dict | None:
 
 @router.get("/cliente/{cliente_id}", summary="El tarifario de un cliente")
 def del_cliente(cliente_id: int, db: Session = Depends(get_db),
-                _=Depends(VER)):
+                usuario: m.Usuario = Depends(VER)):
     """Lo que se le cobra a un cliente: su lista de siempre y, si tiene, la
     de sus implantados. De solo lectura: se corrige en Odoo. Trae los
     roles y las unidades para pintar tambien lo que no tiene precio."""
@@ -270,7 +271,35 @@ def del_cliente(cliente_id: int, db: Session = Depends(get_db),
             "tarifario": _tarifario(cliente.tarifario),
             "implantados": _tarifario(cliente.tarifario_implantado),
             "desde_odoo": odoo_tarifarios.en_marcha(db),
+            # Si quien mira puede decir si los paquetes traen los viaticos.
+            "puede_editar": auth.puede_el_usuario(db, usuario, "cierre.facturar"),
             **_catalogo(db)}
+
+
+class ViaticosIn(BaseModel):
+    incluidos: bool
+
+
+@router.patch("/{tarifario_id}/viaticos",
+              summary="Si los paquetes de la lista traen los viaticos del dia")
+def paquetes_con_viaticos(tarifario_id: int, datos: ViaticosIn,
+                          db: Session = Depends(get_db),
+                          usuario: m.Usuario = Depends(PRODUCTOS)):
+    """Los paquetes de HASBRO traen los viaticos del dia: el dia que se
+    cobra el paquete, los de quien fue en el no se facturan aparte
+    (seccion 79). Odoo no lo dice, asi que lo marca finanzas aqui, y
+    ninguna lectura de Odoo lo toca."""
+    tarifario = db.get(m.Tarifario, tarifario_id)
+    if tarifario is None:
+        raise HTTPException(404, "No existe ese tarifario")
+    antes = tarifario.paquetes_con_viaticos
+    tarifario.paquetes_con_viaticos = datos.incluidos
+    accesos.anotar(db, usuario, "paquetes con viaticos", "tarifario",
+                   tarifario.id, antes=str(antes).lower(),
+                   despues=str(datos.incluidos).lower(),
+                   detalle=tarifario.nombre[:200])
+    db.commit()
+    return {"id": tarifario.id, "paquetes_con_viaticos": tarifario.paquetes_con_viaticos}
 
 
 @router.get("", summary="Los tarifarios y a cuantos clientes les tocan")

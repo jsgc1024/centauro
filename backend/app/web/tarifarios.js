@@ -91,7 +91,36 @@ function horaExtra(tar, perfiles) {
   }).filter(Boolean).join(" · ") });
 }
 
-function tablas(tar, perfiles, categorias) {
+/* Si los paquetes de la lista traen los viaticos del dia (seccion 79;
+   los de HASBRO si). Odoo no lo dice: lo marca finanzas aqui, y quien
+   cotiza solo lo lee. */
+function viaticosDelPaquete(tar, editable) {
+  if (!editable) {
+    return tar.paquetes_con_viaticos
+      ? h("p", { clase: "gris chico", style: "margin:6px 0 0" }, t("tar_con_viaticos"))
+      : null;
+  }
+  const casilla = h("input", { type: "checkbox", style: "width:auto;margin:0" });
+  casilla.checked = !!tar.paquetes_con_viaticos;
+  casilla.addEventListener("change", async () => {
+    casilla.disabled = true;
+    try {
+      const r = await api.patch(`/tarifarios/${tar.id}/viaticos`,
+                                { incluidos: casilla.checked });
+      tar.paquetes_con_viaticos = r.paquetes_con_viaticos;
+      mensaje(t(r.paquetes_con_viaticos ? "tar_viaticos_si" : "tar_viaticos_no"));
+    } catch (err) {
+      casilla.checked = !casilla.checked;
+      mensaje(err.message, "grave");
+    }
+    casilla.disabled = false;
+  });
+  return h("label", { style: "display:flex;gap:8px;align-items:center;margin:8px 0 0;"
+                             + "font-weight:400;font-size:13px" },
+    casilla, t("tar_con_viaticos_casilla"));
+}
+
+function tablas(tar, perfiles, categorias, editable = false) {
   const moneda = tar.moneda;
   const personal = perfiles.map(p => ({ nombre: p.nombre,
     precios: porModalidad(tar.personal.filter(x => x.perfil_id === p.id)) }));
@@ -111,7 +140,8 @@ function tablas(tar, perfiles, categorias) {
     tabla(t("tar_personal"), personal, moneda),
     h("p", { clase: "gris chico", style: "margin:6px 0 0" }, horaExtra(tar, perfiles)),
     tabla(t("tar_unidades"), unidades, moneda),
-    paquetes.length ? tabla(t("tar_paquetes"), paquetes, moneda) : "");
+    paquetes.length ? tabla(t("tar_paquetes"), paquetes, moneda) : "",
+    paquetes.length ? viaticosDelPaquete(tar, editable) : "");
 }
 
 /* De que lista es y de donde sale lo que no trae. */
@@ -152,7 +182,7 @@ export function vistaTarifario(d, conNombre = true) {
   const partes = [
     cabeza(d.tarifario, nombre),
     h("p", { clase: "gris chico", style: "margin:0" }, nota(d.tarifario, d)),
-    tablas(d.tarifario, d.perfiles, d.categorias),
+    tablas(d.tarifario, d.perfiles, d.categorias, d.puede_editar),
     h("p", { clase: "gris chico", style: "margin:12px 0 0" }, t("tar_leyenda")),
   ];
   /* La de los implantados, aparte y plegada: se usa en el acuerdo del
@@ -161,7 +191,7 @@ export function vistaTarifario(d, conNombre = true) {
     partes.push(h("div", { style: "margin-top:14px" }, plegable(
       reemplazar(t("tar_implantados"), { l: d.implantados.nombre }),
       h("div", { style: "margin-top:8px" }, cabeza(d.implantados, null),
-        tablas(d.implantados, d.perfiles, d.categorias)),
+        tablas(d.implantados, d.perfiles, d.categorias, d.puede_editar)),
       () => `${d.implantados.nombre} · ${d.implantados.moneda}`, {}, false)));
   }
   return h("div", {}, ...partes);

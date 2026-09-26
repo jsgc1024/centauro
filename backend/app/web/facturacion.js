@@ -20,6 +20,7 @@
    --lo confirma finanzas-- y el tarifario de cada cliente, como quedo de
    su lista de Odoo. Vive en tarifarios.js. */
 import { api, sesion } from "./api.js";
+import { tablaDeRenglones } from "./cierre.js";
 import { pestanaHistorial } from "./historial.js";
 import { pestanaTarifarios } from "./tarifarios.js";
 import { aviso, conAyuda, dinero, etiqueta, h, hora, mensaje } from "./util.js";
@@ -197,6 +198,10 @@ async function detalle(f, moneda, repintar) {
   if (rev.fallo) nodos.push(aviso(rev.fallo, "alerta"));
   const cmp = rev.comparativo;
   if (cmp) nodos.push(tablaDetalle(cmp, !!f.contrato_id, moneda));
+  /* Lo que sale en la factura, renglon por renglon, con el paquete a la
+     vista (seccion 79). El mes del implantado va con su contrato. */
+  const renglones = cmp && !f.contrato_id ? tablaDeRenglones(cmp, moneda) : null;
+  if (renglones) nodos.push(renglones);
   const revisar = (rev.observaciones || []).filter(o => o.nivel !== "corregir"
     && o.asunto !== "Plazo vencido" && o.asunto !== "Plazo por vencer");
   if (revisar.length) {

@@ -19,7 +19,7 @@
    maquina solo mide cuanto ha pasado desde que llego la respuesta. */
 import { api, sesion } from "./api.js";
 import { aviso, conAyuda, dinero, entrada, etiqueta, fecha, h, hora,
-         mensaje } from "./util.js";
+         mensaje, plegable } from "./util.js";
 import { IDIOMAS, t } from "./idioma.js";
 import { tiene } from "./menu.js";
 
@@ -179,7 +179,14 @@ function renglonGastos(g, moneda) {
 
 function notaGastos(g, moneda) {
   if (!g || !g.modo) return null;
-  if (g.modo === "netos") return t("cie_nota_netos");
+  if (g.modo === "netos") {
+    /* Lo de quien fue en un paquete que ya trae los viaticos no se cobra
+       aparte (seccion 79): se dice cuanto, para que la cuenta cuadre. */
+    return Number(g.en_paquete || 0)
+      ? `${t("cie_nota_netos")} ${reemplazar(t("cie_nota_en_paquete"),
+                                             { m: dinero(g.en_paquete, moneda) })}`
+      : t("cie_nota_netos");
+  }
   const cotizado = Number(g.cotizado || 0);
   if (!cotizado) return t("cie_nota_incluidos");
   const dif = cotizado - Number(g.comprobado || 0);
@@ -263,6 +270,59 @@ function comparativoMes(cmp, moneda) {
   };
 }
 
+/* ------------------------------------------------------------ renglon por renglon */
+
+const MODALIDAD = { full_day: "mod_full_day", medio_dia: "mod_medio_dia",
+                    transfer: "mod_transfer" };
+
+/* Lo que se factura, renglon por renglon (seccion 79): lo mismo que sale
+   en la factura, agrupado por lo que se cobra --el paquete, el rol o la
+   unidad-- en su modalidad y a su precio, y las horas extra aparte. Aqui
+   se ve el paquete: el conductor y la unidad que fueron juntos, en un
+   solo renglon. */
+export function tablaDeRenglones(cmp, moneda) {
+  const renglones = ((cmp || {}).ejecutado || {}).renglones || [];
+  if (!renglones.length) return null;
+  const nombre = (r) => {
+    if (r.tipo === "horas_extra") {
+      return reemplazar(t("cie_r_horas_extra"), { r: r.descripcion || "—" });
+    }
+    const modalidad = MODALIDAD[r.modalidad] ? t(MODALIDAD[r.modalidad]) : "";
+    return h("span", {},
+      h("b", {}, r.descripcion || "—"),
+      modalidad ? ` · ${modalidad}` : "",
+      r.tipo === "paquete"
+        ? h("span", { style: "margin-left:8px" }, etiqueta(t("cie_r_paquete"), "info"))
+        : "");
+  };
+  const cuantos = (r) => r.tipo === "horas_extra"
+    ? reemplazar(t("cie_r_horas"), { n: r.cantidad }) : String(r.cantidad);
+  const total = renglones.reduce((s, r) => s + Number(r.importe || 0), 0);
+  const conPaquete = renglones.some(r => r.tipo === "paquete");
+  return h("div", { style: "margin-top:12px" }, plegable(
+    reemplazar(t("cie_renglones"), { n: renglones.length }),
+    h("div", {},
+      h("table", { clase: "tabla-cierre", style: "margin-top:6px" },
+        h("thead", {}, h("tr", {}, h("th"),
+          h("th", { clase: "der" }, t("cie_r_dias")),
+          h("th", { clase: "der" }, t("cie_r_precio")),
+          h("th", { clase: "der" }, t("cie_r_importe")))),
+        h("tbody", {},
+          ...renglones.map(r => h("tr", {},
+            h("td", {}, nombre(r)),
+            h("td", { clase: "der num" }, cuantos(r)),
+            h("td", { clase: "der num" }, r.precio !== null && r.precio !== undefined
+              ? dinero(r.precio, moneda) : "—"),
+            h("td", { clase: "der num" }, dinero(r.importe, moneda)))),
+          h("tr", { clase: "total" },
+            h("td", {}, h("b", {}, t("cie_r_servicio"))), h("td"), h("td"),
+            h("td", { clase: "der num" }, h("b", {}, dinero(total, moneda)))))),
+      conPaquete
+        ? h("p", { clase: "gris chico", style: "margin:4px 0 0" }, t("cie_nota_paquete"))
+        : null),
+    null, {}, true));
+}
+
 function tablaComparativo(cmp, esMes, moneda, desglose) {
   if (!cmp) return null;
   const d = esMes ? comparativoMes(cmp, moneda) : comparativoEventual(cmp, moneda);
@@ -279,6 +339,7 @@ function tablaComparativo(cmp, esMes, moneda, desglose) {
       cuerpo),
     ...d.notas.filter(Boolean).map(n =>
       h("p", { clase: "gris chico", style: "margin:4px 0 0" }, n)),
+    esMes ? null : tablaDeRenglones(cmp, moneda),
     cmp.gastos && cmp.gastos.modo === "netos" && desglose
       ? botonDesglose(desglose) : null);
 }

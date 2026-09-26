@@ -49,8 +49,80 @@ def _horas_extra(jornada: m.Jornada) -> int:
     return horas_extra.horas(jornada)
 
 
+def _precio_hora_extra(db: Session, tarifario_id: int, rol_id: int | None,
+                       modalidad: m.Modalidad | None):
+    """El precio de la hora extra de un rol: el de su renglon del
+    tarifario en esa modalidad y, si el tarifario no le pone precio suelto
+    a ese rol --el conductor que solo va en paquete--, el de la lista, en
+    las modalidades que llevan horas extra (seccion 79)."""
+    if modalidad is None:
+        return None
+    fila = (db.query(m.TarifaRecurso)
+            .filter_by(tarifario_id=tarifario_id, perfil_id=rol_id,
+                       modalidad_id=modalidad.id).first()) if rol_id else None
+    if fila and fila.precio_hora_extra:
+        return fila.precio_hora_extra
+    if modalidad.aplica_horas_extra:
+        tarifario = db.get(m.Tarifario, tarifario_id)
+        if tarifario and tarifario.precio_hora_extra:
+            return tarifario.precio_hora_extra
+    return None
+
+
+def _se_ejecuto(j: m.Jornada) -> bool:
+    if j.estatus == m.EstatusJornada.CANCELADA:
+        return False
+    return j.fin_real is not None or j.estatus == m.EstatusJornada.TERMINADA
+
+
+def emparejar_el_dia(db: Session, tarifario_id: int, j: m.Jornada) -> tuple:
+    """(pares, personas, unidades) del dia de un equipo (seccion 79).
+
+    `pares`: [(paquete, asignacion de la persona, asignacion de la
+    unidad)] --el rol que la lista del cliente tiene en paquete con una
+    unidad que ese dia fue en el equipo--; `personas` y `unidades`: lo que
+    no hizo pareja y se cobra suelto. La asignacion relevada no cuenta: el
+    cliente tuvo un conductor ese dia, no dos (ver `ejecutado`).
+    """
+    personas = [a for a in j.personal if not a.relevado_en]
+    unidades = [a for a in j.vehiculos if not a.relevado_en]
+    pares = []
+    for paquete in cot.paquetes_del_tarifario(db, tarifario_id, j.modalidad_id):
+        while True:
+            a = next((x for x in personas if x.rol_id == paquete.perfil_id), None)
+            v = next((x for x in unidades if x.vehiculo
+                      and x.vehiculo.categoria_id == paquete.categoria_id), None)
+            if a is None or v is None:
+                break
+            personas.remove(a)
+            unidades.remove(v)
+            pares.append((paquete, a, v))
+    return pares, personas, unidades
+
+
+def viaticos_en_paquete(db: Session, servicio: m.Servicio,
+                        tarifario_id: int) -> set:
+    """{(jornada, persona)} cuyos viaticos van dentro del paquete: los de
+    quien fue en un paquete ese dia, si la lista del cliente dice que sus
+    paquetes traen los viaticos (seccion 79; HASBRO). Esos no se le
+    facturan aparte."""
+    tarifario = db.get(m.Tarifario, tarifario_id)
+    if not tarifario or not tarifario.paquetes_con_viaticos:
+        return set()
+    dentro = set()
+    for equipo in servicio.equipos:
+        for j in equipo.jornadas:
+            if _se_ejecuto(j):
+                pares, _, _ = emparejar_el_dia(db, tarifario_id, j)
+                dentro |= {(j.id, a.persona_id) for _, a, _ in pares}
+    return dentro
+
+
 def ejecutado(db: Session, servicio: m.Servicio, tarifario_id: int) -> dict:
-    """Lo que realmente se presto, valuado al tarifario del cliente."""
+    """Lo que realmente se presto, valuado al tarifario del cliente.
+
+    Cada renglon dice su modalidad y su precio, para que el cierre lo
+    pueda decir renglon por renglon (seccion 79)."""
     detalle = []
     total = CERO
     horas_extra_total = 0
@@ -59,68 +131,124 @@ def ejecutado(db: Session, servicio: m.Servicio, tarifario_id: int) -> dict:
     # horas y no solo en dinero (seccion 65).
     dias_con_extra = []
 
+    def horas_de_mas(linea, extras, precio_extra, rol):
+        """Suma al renglon las horas extra de quien las trabajo."""
+        nonlocal importe_extra_total
+        if extras and precio_extra:
+            extra_importe = _d(precio_extra) * extras
+            importe_extra_total += extra_importe
+            linea["horas_extra"] = extras
+            linea["importe_horas_extra"] = extra_importe
+            linea["precio_hora_extra"] = _d(precio_extra)
+            linea["rol_hora_extra"] = rol
+            linea["importe"] = linea["importe"] + extra_importe
+        elif extras:
+            # Sin precio de hora extra no se cobran, y antes nadie se
+            # enteraba: a la gente si se le pagan. El revisor lo dice en
+            # el visto bueno.
+            linea["horas_extra_sin_precio"] = extras
+
     for equipo in servicio.equipos:
         for j in equipo.jornadas:
-            if j.estatus == m.EstatusJornada.CANCELADA:
-                continue
-            ejecutada = j.fin_real is not None or j.estatus == m.EstatusJornada.TERMINADA
-            if not ejecutada:
+            if not _se_ejecuto(j):
                 continue
 
             extras = _horas_extra(j)
             horas_extra_total += extras
             if extras:
                 dias_con_extra.append(j)
+            codigo = j.modalidad.codigo.value if j.modalidad else None
 
-            for a in j.personal:
-                # La asignacion relevada no se le cobra al cliente. Ese
-                # dia hubo dos personas porque una salio a media jornada
-                # y entro otra: el cliente tuvo un conductor, no dos. A
-                # la empresa si le costaron los dos (ver `utilidad`), y
-                # esa diferencia es el costo de la contingencia.
-                if a.relevado_en:
-                    continue
+            # La asignacion relevada no se le cobra al cliente. Ese dia
+            # hubo dos personas porque una salio a media jornada y entro
+            # otra: el cliente tuvo un conductor, no dos. A la empresa si
+            # le costaron los dos (ver `utilidad`), y esa diferencia es el
+            # costo de la contingencia. Lo mismo con la unidad relevada.
+            #
+            # Y los paquetes del dia (seccion 79): el rol que la lista del
+            # cliente tiene en paquete con una unidad que ese dia fue en el
+            # equipo se cobra con ella, en un solo renglon. Lo que no hace
+            # pareja se cobra suelto, como siempre.
+            pares, personas, unidades = emparejar_el_dia(db, tarifario_id, j)
+            for paquete, a, _ in pares:
+                precio = _d(paquete.precio)
+                linea = {"fecha": j.fecha.isoformat(), "equipo": equipo.alias,
+                         "tipo": "paquete",
+                         "referencia_id": f"{paquete.perfil_id}-{paquete.categoria_id}",
+                         "descripcion": cot.nombre_del_paquete(paquete),
+                         "cantidad": 1, "importe": precio,
+                         "modalidad": codigo, "precio": precio}
+                horas_de_mas(linea, extras,
+                             _precio_hora_extra(db, tarifario_id, a.rol_id,
+                                                j.modalidad),
+                             a.rol.nombre if a.rol else None)
+                detalle.append(linea)
+                total += linea["importe"]
+
+            for a in personas:
                 # Se cobra el rol con el que fue ese dia, no lo que la
                 # persona es: eso es lo que se le vendio al cliente.
                 tarifa = cot.precio_recurso(db, tarifario_id, a.rol_id,
                                             j.modalidad_id)
-                importe = _d(tarifa.precio)
+                precio = _d(tarifa.precio)
                 linea = {"fecha": j.fecha.isoformat(), "equipo": equipo.alias,
                          "tipo": "recurso", "referencia_id": a.rol_id,
                          "descripcion": a.rol.nombre if a.rol else None,
-                         "cantidad": 1, "importe": importe}
-                if extras and tarifa.precio_hora_extra:
-                    extra_importe = _d(tarifa.precio_hora_extra) * extras
-                    importe += extra_importe
-                    importe_extra_total += extra_importe
-                    linea["horas_extra"] = extras
-                    linea["importe_horas_extra"] = extra_importe
-                    linea["importe"] = importe
-                elif extras:
-                    # Sin precio de hora extra no se cobran, y antes nadie
-                    # se enteraba: a la gente si se le pagan. El revisor
-                    # lo dice en el visto bueno.
-                    linea["horas_extra_sin_precio"] = extras
+                         "cantidad": 1, "importe": precio,
+                         "modalidad": codigo, "precio": precio}
+                horas_de_mas(linea, extras, tarifa.precio_hora_extra,
+                             a.rol.nombre if a.rol else None)
                 detalle.append(linea)
-                total += importe
+                total += linea["importe"]
 
-            for a in j.vehiculos:
-                # Lo mismo con la unidad relevada: el cliente tuvo una
-                # camioneta ese dia, aunque en la base haya dos filas.
-                if a.relevado_en:
-                    continue
+            for a in unidades:
                 tarifa = cot.precio_vehiculo(db, tarifario_id, a.vehiculo.categoria_id,
                                              j.modalidad_id)
-                importe = _d(tarifa.precio)
+                precio = _d(tarifa.precio)
                 detalle.append({"fecha": j.fecha.isoformat(), "equipo": equipo.alias,
                                 "tipo": "vehiculo", "referencia_id": a.vehiculo.categoria_id,
                                 "descripcion": a.vehiculo.categoria.nombre,
-                                "cantidad": 1, "importe": importe})
-                total += importe
+                                "cantidad": 1, "importe": precio,
+                                "modalidad": codigo, "precio": precio})
+                total += precio
 
     return {"detalle": detalle, "total": total, "horas_extra": horas_extra_total,
             "importe_horas_extra": importe_extra_total,
             "dias_con_extra": dias_con_extra}
+
+
+# El orden en que se dicen los renglones: lo que va junto primero.
+ORDEN_DE_RENGLON = {"paquete": 0, "recurso": 1, "vehiculo": 2, "horas_extra": 3}
+ORDEN_DE_MODALIDAD = {"full_day": 0, "medio_dia": 1, "transfer": 2}
+
+
+def renglones(detalle: list) -> list[dict]:
+    """Lo que se factura, renglon por renglon (seccion 79): el detalle del
+    ejecutado agrupado por lo que se cobra --el paquete, el rol o la
+    unidad-- en su modalidad y a su precio; y aparte, las horas extra de
+    cada rol. Suman lo mismo que el ejecutado."""
+    base, extra = {}, {}
+    for l in detalle:
+        clave = (l["tipo"], str(l["referencia_id"]), l.get("modalidad"),
+                 l.get("precio"))
+        r = base.setdefault(clave, {
+            "tipo": l["tipo"], "descripcion": l["descripcion"],
+            "modalidad": l.get("modalidad"), "precio": l.get("precio"),
+            "cantidad": 0, "importe": CERO})
+        r["cantidad"] += l["cantidad"]
+        r["importe"] += l["importe"] - (l.get("importe_horas_extra") or CERO)
+        if l.get("importe_horas_extra"):
+            clave = (l.get("rol_hora_extra") or l["descripcion"],
+                     l.get("precio_hora_extra"))
+            e = extra.setdefault(clave, {
+                "tipo": "horas_extra", "descripcion": clave[0], "modalidad": None,
+                "precio": clave[1], "cantidad": 0, "importe": CERO})
+            e["cantidad"] += l.get("horas_extra") or 0
+            e["importe"] += l["importe_horas_extra"]
+    return sorted(list(base.values()) + list(extra.values()),
+                  key=lambda r: (ORDEN_DE_RENGLON.get(r["tipo"], 9),
+                                 r["descripcion"] or "",
+                                 ORDEN_DE_MODALIDAD.get(r["modalidad"], 9)))
 
 
 # ---------------------------------------------------------------- comparativo
@@ -173,7 +301,8 @@ def _viatico_facturable(cotizacion, comprobado: Decimal) -> Decimal:
 
 
 def _viaticos_del_comparativo(cotizacion, asignado, comprobado, devuelto,
-                              rechazado, descontado, absorbido) -> dict:
+                              rechazado, descontado, absorbido,
+                              en_paquete=CERO) -> dict:
     alzado = cotizacion.viaticos_incluidos
     return {
         "asignado": asignado,
@@ -186,7 +315,10 @@ def _viaticos_del_comparativo(cotizacion, asignado, comprobado, devuelto,
         "absorbido_por_la_empresa": absorbido,
         "modo_cobro": modo_de_gastos(alzado),
         "gastos_cotizados": gastos_cotizados(cotizacion),
-        "facturable_al_cliente": _viatico_facturable(cotizacion, comprobado),
+        # Lo que ya va dentro de un paquete no se cobra aparte (seccion 79).
+        "en_paquete": en_paquete,
+        "facturable_al_cliente": _viatico_facturable(cotizacion,
+                                                     comprobado - en_paquete),
         "nota_facturacion": (
             "A precio alzado se factura el monto fijo de la propuesta, se "
             "gaste mas o menos. Si no lleva monto, los gastos van dentro "
@@ -207,12 +339,18 @@ def viaticos_por_cobrar(db: Session, servicio_id: int,
     """
     if cotizacion.viaticos_incluidos:
         return gastos_cotizados(cotizacion)
-    comprobado = sum((_d(v.monto_comprobado) for v in (
-        db.query(m.AsignacionViatico)
-        .join(m.Jornada, m.AsignacionViatico.jornada_id == m.Jornada.id)
-        .join(m.Equipo, m.Jornada.equipo_id == m.Equipo.id)
-        .filter(m.Equipo.servicio_id == servicio_id).all())), CERO)
-    return comprobado
+    return sum((_d(v.monto_comprobado) for v in viaticos_facturables(
+        db, db.get(m.Servicio, servicio_id), cotizacion.tarifario_id)), CERO)
+
+
+def viaticos_facturables(db: Session, servicio: m.Servicio,
+                         tarifario_id: int) -> list:
+    """El dinero del servicio que se le puede cobrar al cliente con gastos
+    netos: todo, menos lo de quien fue en un paquete que ya los trae
+    (seccion 79). Es lo que suma la factura y lo que lleva el desglose."""
+    dentro = viaticos_en_paquete(db, servicio, tarifario_id)
+    return [v for v in viaticos_del_servicio(db, servicio.id)
+            if (v.jornada_id, v.persona_id) not in dentro]
 
 
 def viaticos_del_servicio(db: Session, servicio_id: int) -> list:
@@ -301,10 +439,14 @@ def comparar(db: Session, servicio_id: int) -> dict:
     if not cotizacion:
         raise HTTPException(409, "El servicio no tiene cotizacion autorizada")
 
+    def referencia(l):
+        if l.tipo == m.TipoLinea.PAQUETE:
+            return f"{l.perfil_id}-{l.categoria_id}"
+        return l.perfil_id if l.tipo == m.TipoLinea.RECURSO else l.categoria_id
+
     cotizado = [{
         "fecha": l.fecha.isoformat(), "equipo": l.equipo_clave,
-        "tipo": l.tipo.value,
-        "referencia_id": l.perfil_id if l.tipo == m.TipoLinea.RECURSO else l.categoria_id,
+        "tipo": l.tipo.value, "referencia_id": referencia(l),
         "descripcion": l.descripcion, "cantidad": l.cantidad,
         "importe": _d(l.subtotal),
     } for l in cotizacion.lineas if l.tipo != m.TipoLinea.VIATICOS]
@@ -388,13 +530,21 @@ def comparar(db: Session, servicio_id: int) -> dict:
 
     desviaciones.extend(desviaciones_del_dinero(viaticos))
 
+    # Con gastos netos, lo de quien fue en un paquete que ya trae los
+    # viaticos no se cobra aparte (seccion 79): va dentro del paquete.
+    en_paquete = CERO
+    if not cotizacion.viaticos_incluidos:
+        dentro = viaticos_en_paquete(db, servicio, cotizacion.tarifario_id)
+        en_paquete = sum((_d(v.monto_comprobado) for v in viaticos
+                          if (v.jornada_id, v.persona_id) in dentro), CERO)
+
     # La cotizacion lleva el servicio y, a precio alzado, el monto fijo de
     # gastos. El comparativo los separa: la diferencia del servicio se
     # mide contra el servicio, y los gastos contra su propio trato.
     fijo = gastos_cotizados(cotizacion)
     total_cotizado = _d(cotizacion.total)
     servicio_cotizado = total_cotizado - fijo
-    gastos_a_facturar = _viatico_facturable(cotizacion, comprobado)
+    gastos_a_facturar = _viatico_facturable(cotizacion, comprobado - en_paquete)
     return {
         "servicio": servicio.folio,
         "cotizacion": {"version": cotizacion.version, "total": total_cotizado,
@@ -412,16 +562,19 @@ def comparar(db: Session, servicio_id: int) -> dict:
                           for l in real["detalle"]
                           if l.get("horas_extra_sin_precio")],
                       "dias": len({l["fecha"] for l in real["detalle"]}),
-                      "equipos": len({l["equipo"] for l in real["detalle"]})},
+                      "equipos": len({l["equipo"] for l in real["detalle"]}),
+                      # Lo que se factura, renglon por renglon (seccion 79).
+                      "renglones": renglones(real["detalle"])},
         "diferencia": real["total"] - servicio_cotizado,
         "gastos": {"modo": modo_de_gastos(cotizacion.viaticos_incluidos),
                    "cotizado": fijo, "comprobado": comprobado,
+                   "en_paquete": en_paquete,
                    "a_facturar": gastos_a_facturar},
         "a_facturar": {"servicio": real["total"], "gastos": gastos_a_facturar,
                        "total": real["total"] + gastos_a_facturar},
         "viaticos": _viaticos_del_comparativo(
             cotizacion, asignado, comprobado, devuelto, rechazado,
-            descontado, absorbido),
+            descontado, absorbido, en_paquete),
         "desviaciones": desviaciones,
         "sin_desviaciones": not desviaciones,
     }
