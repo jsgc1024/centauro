@@ -119,7 +119,7 @@ def test_la_invitacion_sale_al_guardar(cliente, sesion, datos, db,
     assert len(salieron) == 1, salieron
     enviado = salieron[0]
     assert enviado["a"] == alta["correo"]
-    assert enviado["asunto"] == "Tu acceso a Centauro"
+    assert enviado["asunto"] == "Tu acceso a Centauro Connect"
     token = _token(alta["invitacion"]["enlace"])
     liga = f"https://centauro.lat/#/crear-contrasena/{token}"
     assert liga in enviado["html"] and liga in enviado["texto"]
@@ -160,7 +160,7 @@ def test_el_correo_dice_la_hora_y_el_idioma_de_su_pais(cliente, sesion,
     aviso = _avisos(db, alta["correo"])[0]
     assert aviso.idioma == "pt"
     enviado = salieron[0]
-    assert enviado["asunto"] == "Seu acesso ao Centauro"
+    assert enviado["asunto"] == "Seu acesso ao Centauro Connect"
     assert "Criar minha senha" in enviado["html"]
     alla = aviso.expira_en.astimezone(ZoneInfo("America/Sao_Paulo"))
     assert f"às {alla:%H:%M}" in enviado["texto"], enviado["texto"]

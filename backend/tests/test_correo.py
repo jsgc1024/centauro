@@ -419,3 +419,57 @@ def test_el_estado_dice_por_donde_sale_y_no_ensena_el_secreto(db,
     assert r["servidor"] == "graph.microsoft.com"
     assert r["desde"] == "Centauro <ai@centauro.lat>"
     assert "secreto-x" not in str(r)
+
+
+# ------------------------------------------- la cara del correo (seccion 76)
+
+# Un punto PNG de verdad: con bytes que no son imagen la prueba no diria
+# nada de lo que llega a un buzon.
+PUNTO_PNG = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
+             "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+
+
+def test_la_cabecera_lleva_la_firma_de_la_consola():
+    """Logo, placa AI/EP y CONNECT con su lema, como la cabecera de la
+    consola; el lema del mismo largo que la palabra, y Outlook con su
+    tabla para que no los apile."""
+    import re
+
+    from app import correo_html
+
+    cabecera = correo_html.marca()
+    letras = re.sub(r"<!--.*?-->|<[^>]+>", "", cabecera).replace("&nbsp;", " ")
+    assert "AI/EP" in letras
+    assert "CONNECTHIGH PERFORMANCE" in letras
+    anchos = re.findall(r'width="(\d+)" style="width:\d+px"><tr><td', cabecera)
+    assert anchos == [str(correo_html.ANCHO_FIRMA)] * 2, anchos
+    assert "<!--[if mso]>" in cabecera
+    # Y la lleva todo correo del armazon.
+    assert cabecera in correo_html.armar("Aviso", "Cuerpo")
+
+
+def test_el_logo_va_pegado_al_correo(monkeypatch):
+    """Gmail y Outlook no pintan una imagen metida como texto: el logo
+    sale pegado al mensaje con su Content-ID, una sola vez aunque el
+    HTML lo use dos."""
+    import base64
+    import email
+    import email.policy
+
+    llamadas = _microsoft(monkeypatch)
+    imagen = f'<img src="data:image/png;base64,{PUNTO_PNG}">'
+    correo.entregar("ejecutivo@cliente.com", "Su equipo llego", "Texto",
+                    f"<p>{imagen}HTML{imagen}</p>")
+
+    mime = email.message_from_bytes(
+        base64.b64decode(llamadas[-1][1]["content"]),
+        policy=email.policy.default)
+    partes = [p for p in mime.walk() if not p.is_multipart()]
+    assert [p.get_content_type() for p in partes] == [
+        "text/plain", "text/html", "image/png"]
+    html, logo = partes[1].get_content(), partes[2]
+    assert "data:image" not in html
+    cid = logo["Content-ID"].strip("<>")
+    assert html.count(f'src="cid:{cid}"') == 2
+    assert logo.get_content() == base64.b64decode(PUNTO_PNG)
+    assert logo.get_content_disposition() == "inline"

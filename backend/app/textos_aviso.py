@@ -142,19 +142,18 @@ TEXTOS = {
         "que_hizo": "What they did",
         "detalle": "Detail",
         # --- el acceso: la invitacion y la recuperacion de contrasena
-        "acc_inv_asunto": "Your access to Centauro",
-        "acc_inv_cuerpo": ("Hi, {nombre}. You now have access to Centauro, "
-                           "the Executive Protection system. To sign in "
-                           "for the first time, create your password with "
-                           "the button."),
+        "acc_inv_asunto": "Your access to Centauro Connect",
+        "acc_inv_cuerpo": ("Hi, {nombre}. You now have access to Centauro "
+                           "Connect. To sign in for the first time, create "
+                           "your password with the button."),
         "acc_inv_boton": "Create my password",
         "acc_inv_nota": ("The link works only once and expires on {dia} "
                          "at {hora}."),
         "acc_rec_asunto": "To set a new password",
         "acc_rec_cuerpo": ("Someone asked to change the password of your "
-                           "Centauro account. If it was you, use the "
-                           "button. If it wasn't, ignore this email: your "
-                           "password stays the same."),
+                           "Centauro Connect account. If it was you, use "
+                           "the button. If it wasn't, ignore this email: "
+                           "your password stays the same."),
         "acc_rec_boton": "Set my new password",
         "acc_rec_nota": "The link works only once and expires at {hora}.",
         "acc_tu_correo": "Your email",
@@ -245,12 +244,12 @@ TEXTOS = {
         "enc_nota": "Calificación",
         "enc_dijo": "Lo que dijo",
         "enc_servicio": "Servicio",
-        "cap_vence_pronto": "{quien}: {curso} vence en {dias} dias",
+        "cap_vence_pronto": "{quien}: {curso} vence en {dias} días",
         "cap_vence_hoy": "{quien}: {curso} vence hoy",
-        "cap_vence_cuerpo": "El certificado de {quien} esta por vencer. Una certificacion vencida no es una certificacion, y el dia que el cliente pregunte quien va a cuidar a su ejecutivo, esa fecha es la respuesta. Reinscribirlo ahora evita sacarlo de servicios despues.",
-        "cap_quien": "Quien",
+        "cap_vence_cuerpo": "El certificado de {quien} está por vencer. Una certificación vencida no es una certificación, y el día que el cliente pregunte quién va a cuidar a su ejecutivo, esa fecha es la respuesta. Reinscribirlo ahora evita sacarlo de servicios después.",
+        "cap_quien": "Quién",
         "cap_curso": "Certificado",
-        "cap_institucion": "Institucion",
+        "cap_institucion": "Institución",
         "cap_vence": "Vence",
         "cob_asunto": "{folio}: {quien} movió tu servicio",
         "cob_cuerpo": ("{quien} trabajó en tu servicio mientras cubría "
@@ -261,18 +260,18 @@ TEXTOS = {
         "que_hizo": "Qué hizo",
         "detalle": "Detalle",
         # --- el acceso: la invitacion y la recuperacion de contrasena
-        "acc_inv_asunto": "Tu acceso a Centauro",
-        "acc_inv_cuerpo": ("Hola, {nombre}. Ya tienes acceso a Centauro, el "
-                           "sistema de Protección Ejecutiva. Para entrar la "
-                           "primera vez, crea tu contraseña con el botón."),
+        "acc_inv_asunto": "Tu acceso a Centauro Connect",
+        "acc_inv_cuerpo": ("Hola, {nombre}. Ya tienes acceso a Centauro "
+                           "Connect. Para entrar la primera vez, crea tu "
+                           "contraseña con el botón."),
         "acc_inv_boton": "Crear mi contraseña",
         "acc_inv_nota": ("El enlace sirve una sola vez y vence el {dia} a "
                          "las {hora}."),
         "acc_rec_asunto": "Para poner una nueva contraseña",
         "acc_rec_cuerpo": ("Alguien pidió cambiar la contraseña de tu acceso "
-                           "a Centauro. Si fuiste tú, usa el botón. Si no "
-                           "fuiste tú, ignora este correo: tu contraseña "
-                           "sigue igual."),
+                           "a Centauro Connect. Si fuiste tú, usa el botón. "
+                           "Si no fuiste tú, ignora este correo: tu "
+                           "contraseña sigue igual."),
         "acc_rec_boton": "Poner mi nueva contraseña",
         "acc_rec_nota": "El enlace sirve una sola vez y vence a las {hora}.",
         "acc_tu_correo": "Tu correo",
@@ -362,10 +361,10 @@ TEXTOS = {
         "enc_servicio": "Serviço",
         "cap_vence_pronto": "{quien}: {curso} vence em {dias} dias",
         "cap_vence_hoy": "{quien}: {curso} vence hoje",
-        "cap_vence_cuerpo": "O certificado de {quien} esta para vencer. Uma certificacao vencida nao e uma certificacao, e no dia em que o cliente perguntar quem vai cuidar do seu executivo, essa data e a resposta. Reinscreve-lo agora evita tira-lo de servicos depois.",
+        "cap_vence_cuerpo": "O certificado de {quien} está para vencer. Uma certificação vencida não é uma certificação, e no dia em que o cliente perguntar quem vai cuidar do seu executivo, essa data é a resposta. Reinscrevê-lo agora evita tirá-lo de serviços depois.",
         "cap_quien": "Quem",
         "cap_curso": "Certificado",
-        "cap_institucion": "Instituicao",
+        "cap_institucion": "Instituição",
         "cap_vence": "Vence",
         "cob_asunto": "{folio}: {quien} mexeu no seu serviço",
         "cob_cuerpo": ("{quien} trabalhou no seu serviço enquanto "
@@ -375,18 +374,18 @@ TEXTOS = {
         "que_hizo": "O que fez",
         "detalle": "Detalhe",
         # --- el acceso: la invitacion y la recuperacion de contrasena
-        "acc_inv_asunto": "Seu acesso ao Centauro",
-        "acc_inv_cuerpo": ("Olá, {nombre}. Você já tem acesso ao Centauro, o "
-                           "sistema de Proteção Executiva. Para entrar pela "
-                           "primeira vez, crie sua senha com o botão."),
+        "acc_inv_asunto": "Seu acesso ao Centauro Connect",
+        "acc_inv_cuerpo": ("Olá, {nombre}. Você já tem acesso ao Centauro "
+                           "Connect. Para entrar pela primeira vez, crie sua "
+                           "senha com o botão."),
         "acc_inv_boton": "Criar minha senha",
         "acc_inv_nota": ("O link funciona uma única vez e vence {dia}, às "
                          "{hora}."),
         "acc_rec_asunto": "Para definir uma nova senha",
         "acc_rec_cuerpo": ("Alguém pediu para mudar a senha do seu acesso ao "
-                           "Centauro. Se foi você, use o botão. Se não foi "
-                           "você, ignore este e-mail: sua senha continua a "
-                           "mesma."),
+                           "Centauro Connect. Se foi você, use o botão. Se "
+                           "não foi você, ignore este e-mail: sua senha "
+                           "continua a mesma."),
         "acc_rec_boton": "Definir minha nova senha",
         "acc_rec_nota": "O link funciona uma única vez e vence às {hora}.",
         "acc_tu_correo": "Seu e-mail",

@@ -4794,6 +4794,53 @@ su país. El tarifario sigue siendo de Centauro.
 - Ya en el servidor: Odoo → *Los clientes* → Ensayo, y si cuadra,
   Aplicar. Después, ahí mismo, *Clientes sin tarifario*.
 
+## 76. Los correos dicen Connect
+
+Salvador, 26 de septiembre, al ver el correo de invitación: que los
+correos se vean como la consola, de una vez.
+
+### Lo que cambió
+
+- **La cabecera de todos los correos es la de la consola**: el logo, la
+  placa AI/EP y la firma CONNECT con HIGH PERFORMANCE debajo, del mismo
+  largo, en el dorado de la puerta de entrada. Es una sola pieza
+  (`correo_html.marca`), así que la llevan todos: la invitación, la
+  recuperación, los avisos al ejecutivo y al solicitante, la encuesta y
+  su página. En el teléfono, donde no caben los tres en un renglón, la
+  placa y la firma se bajan solas debajo del logo; Outlook, que no
+  acomoda bloques, los ve con una tabla al lado.
+- **La firma mide lo mismo en cualquier buzón.** Cada letra va en su
+  celda y se reparten el ancho, como en la consola (`web/firma.js`): con
+  espaciado a ojo el lema quedaba más corto o más largo que la palabra
+  según la letra de cada buzón —Outlook no tiene Inter—.
+- **El acceso dice Centauro Connect**, en los tres idiomas: el asunto y
+  el texto de la invitación («Ya tienes acceso a Centauro Connect») y el
+  de la recuperación. Decía «Centauro, el sistema de Protección
+  Ejecutiva».
+- **El logo va pegado al correo.** Se incrustaba como texto dentro del
+  HTML, y Gmail y Outlook —los dos buzones que más se usan— no pintan
+  esa forma: el correo iba a llegar sin logo. Ahora, al salir, cada
+  imagen así se pega al mensaje con su Content-ID; la misma imagen dos
+  veces va una sola vez.
+- **Acentos que faltaban**, en lo que ve el cliente: las preguntas de la
+  encuesta en español y portugués («¿Cómo califica el servicio de
+  seguridad que recibió?»), su pie («Centauro, protección ejecutiva») y
+  el aviso de certificado por vencer.
+
+### Las pruebas
+
+- `tests/test_correo.py`: la cabecera trae la placa y la firma, con el
+  lema del mismo ancho que CONNECT y la tabla para Outlook, y la lleva
+  todo correo del armazón; el logo sale pegado con su Content-ID, una
+  sola vez aunque el HTML lo use dos, y en el HTML ya no queda ninguna
+  imagen como texto. Las del acceso, con el asunto nuevo.
+
+### Para subirlo
+
+- Sin migración. El correo sigue apagado hasta que esté el buzón de
+  Microsoft 365; mientras, esto se ve en la vista previa y en las
+  pantallas que se mandaron.
+
 ## 14. Lo que falta
 
 ### Abierto

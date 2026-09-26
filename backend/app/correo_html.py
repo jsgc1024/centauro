@@ -1,9 +1,10 @@
 """El armazon de los correos que salen de la empresa.
 
 Misma identidad del task sheet y de la consola: filo azul arriba, el
-logo, la placa AI/EP, Inter, y de ahi para abajo sin adornos. Es la cara
-que el ejecutivo ya conoce, y un correo que no se parece a lo que el
-cliente conoce es un correo que se lee como si fuera de otro.
+logo, la placa AI/EP, la firma CONNECT, Inter, y de ahi para abajo sin
+adornos. Es la cara que el ejecutivo ya conoce, y un correo que no se
+parece a lo que el cliente conoce es un correo que se lee como si fuera
+de otro.
 
 Uno solo para los diez avisos. El armazon pone la marca, el folio, el
 titulo y el pie; el cuerpo lo sigue escribiendo quien origina el aviso,
@@ -40,6 +41,15 @@ SUAVE = "#f0f3f5"
 GRIS = "#78828c"
 LINEA = "AI/EP"
 PIE = "Centauro · Protección ejecutiva"
+
+# La firma de la consola (secciones 72 y 76): CONNECT y debajo el lema,
+# del mismo largo, en el dorado de la puerta de entrada. Es un nombre y
+# no se traduce.
+DORADO = "#8c6f14"
+NOMBRE = "CONNECT"
+LEMA = "HIGH PERFORMANCE"
+ANCHO_FIRMA = 104          # lo que mide CONNECT en la cabecera de la consola
+LETRA = "Inter,-apple-system,'Segoe UI',Arial,sans-serif"
 
 
 def _esc(valor) -> str:
@@ -84,16 +94,53 @@ def _para_marcar(telefono: str) -> str:
     return "".join(c for c in str(telefono) if c.isdigit() or c == "+")
 
 
+def _repartido(texto: str, tamano: int, peso: int, alto: int) -> str:
+    """Un renglon de la firma: cada letra en su celda, repartidas a lo
+    ancho de la firma.
+
+    Es lo que hace la consola (web/firma.js), con tablas. El largo de
+    una palabra depende de la letra que tenga cada buzon --Outlook no
+    tiene Inter--, y con espaciado a ojo el lema quedaba mas corto o mas
+    largo que CONNECT segun quien lo abriera. Repartidas en el mismo
+    ancho, las dos miden lo mismo en cualquiera.
+    """
+    # Entre letra y letra, una celda vacia; todas del mismo ancho. Asi la
+    # primera letra queda en la orilla izquierda, la ultima en la derecha
+    # y los huecos iguales, como `space-between` en la consola.
+    hueco = f"{100 / (len(texto) - 1):.2f}"
+    celdas = []
+    for i, letra in enumerate(texto):
+        if i:
+            celdas.append(f'<td width="{hueco}%" style="width:{hueco}%;'
+                          f'font-size:0;line-height:0"></td>')
+        celdas.append(
+            f'<td style="padding:0;white-space:nowrap;font-family:{LETRA};'
+            f'font-size:{tamano}px;line-height:{alto}px;font-weight:{peso};'
+            f'color:{DORADO}">{"&nbsp;" if letra == " " else _esc(letra)}</td>')
+    return (f'<table role="presentation" cellpadding="0" cellspacing="0" '
+            f'border="0" width="{ANCHO_FIRMA}" style="width:{ANCHO_FIRMA}px">'
+            f'<tr>{"".join(celdas)}</tr></table>')
+
+
+def firma() -> str:
+    """CONNECT y debajo el lema, del mismo largo: la de la consola."""
+    return _repartido(NOMBRE, 13, 700, 16) + _repartido(LEMA, 8, 600, 11)
+
+
 def marca(alto: int = 46) -> str:
-    """El logo y la placa de la linea, uno al lado del otro.
+    """El logo, la placa de la linea y la firma: la cabecera de la consola.
 
     El logo ya trae su bajada --"Advanced Security Consulting"-- asi que
-    poner la placa AI/EP debajo dejaba tres renglones apilados antes de
-    que empezara el correo. Al lado, alineada abajo, pesa lo mismo y no
-    empuja el mensaje hacia el fondo.
+    la placa AI/EP va al lado, alineada abajo, y la firma CONNECT junto a
+    la placa y centrada con ella, como en la consola (seccion 76). Un
+    correo que se ve distinto de la consola se lee como si fuera de otro.
 
-    Se arma con una tabla y no con flex: el correo de Outlook no pinta
-    flex, y ahi quedarian uno encima del otro otra vez.
+    En la computadora caben los tres en un renglon; en el telefono no:
+    solo el logo mide 205 px y la caja del correo, ahi, 260. Por eso son
+    dos bloques que se acomodan solos --la placa y la firma se bajan
+    debajo del logo cuando no caben-- y, para Outlook, que no acomoda
+    bloques, una tabla que solo el ve y que los deja al lado. Nada de
+    flex: Outlook no lo pinta.
     """
     if logo_incrustado():
         izquierda = (f'<img src="{logo_incrustado()}" alt="Centauro" '
@@ -106,11 +153,21 @@ def marca(alto: int = 46) -> str:
              f'font-size:11px;letter-spacing:.5px;color:#fff;'
              f'background:{CENTAURO};padding:2px 8px;border-radius:4px">'
              f'{LINEA}</span>')
-    return ('<table role="presentation" cellpadding="0" cellspacing="0" '
+    lado = ('<table role="presentation" cellpadding="0" cellspacing="0" '
             'border="0"><tr>'
-            f'<td style="vertical-align:bottom">{izquierda}</td>'
-            f'<td style="vertical-align:bottom;padding:0 0 4px 14px">'
-            f'{placa}</td></tr></table>')
+            f'<td style="vertical-align:middle">{placa}</td>'
+            f'<td style="vertical-align:middle;padding-left:12px">{firma()}'
+            '</td></tr></table>')
+    return ('<!--[if mso]><table role="presentation" cellpadding="0" '
+            'cellspacing="0" border="0"><tr><td style="vertical-align:bottom">'
+            '<![endif]-->'
+            '<div style="display:inline-block;vertical-align:bottom;'
+            f'margin:0 14px 0 0">{izquierda}</div>'
+            '<!--[if mso]></td><td style="vertical-align:bottom;'
+            'padding:0 0 4px 0"><![endif]-->'
+            '<div style="display:inline-block;vertical-align:bottom;'
+            f'padding:8px 0 4px">{lado}</div>'
+            '<!--[if mso]></td></tr></table><![endif]-->')
 
 
 MESES = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",

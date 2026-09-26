@@ -34,11 +34,12 @@ el aviso queda en fallida, con lo ultimo que dijo el proveedor escrito
 al lado, y deja de gastar la cola.
 """
 import base64
+import re
 import smtplib
 import time
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
-from email.utils import parseaddr
+from email.utils import make_msgid, parseaddr
 
 import httpx
 from sqlalchemy.orm import Session
@@ -108,6 +109,37 @@ def con_dominio(enlace: str | None) -> str | None:
     return f"{raiz}{enlace}" if raiz else None
 
 
+# Una imagen metida en el HTML como texto: el logo de la cabecera.
+IMAGEN_ADENTRO = re.compile(
+    r'src="data:(image/[a-z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+)"')
+
+
+def imagenes_pegadas(html: str) -> tuple[str, list]:
+    """El HTML con cada imagen `data:` cambiada por una pegada al correo.
+
+    El armazon incrusta el logo como texto --asi la hoja y la vista
+    previa no dependen de internet--, pero Gmail y Outlook no pintan esa
+    forma: el correo llegaba sin logo justo en los dos buzones que mas
+    se usan (seccion 76). Pegada al mensaje con su Content-ID, la pintan
+    todos. La misma imagen dos veces va una sola vez.
+
+    Devuelve (html, [(bytes, tipo, subtipo, cid)]); el cid va con sus
+    <> y en el HTML sin ellos, como pide el estandar.
+    """
+    pegadas, vistas = [], {}
+
+    def pegar(encontrada):
+        tipo, datos = encontrada.group(1), "".join(encontrada.group(2).split())
+        if (tipo, datos) not in vistas:
+            cid = make_msgid(domain="centauro.lat")
+            vistas[(tipo, datos)] = cid
+            principal, secundario = tipo.split("/", 1)
+            pegadas.append((base64.b64decode(datos), principal, secundario, cid))
+        return f'src="cid:{vistas[(tipo, datos)][1:-1]}"'
+
+    return IMAGEN_ADENTRO.sub(pegar, html), pegadas
+
+
 def entregar(destino: str, asunto: str, cuerpo: str,
              html: str | None = None) -> None:
     """La unica funcion que sabe de SMTP. Revienta si no pudo.
@@ -130,7 +162,13 @@ def entregar(destino: str, asunto: str, cuerpo: str,
     # miran uno y clientes que miran el otro.
     mensaje.set_content(cuerpo, charset="utf-8")
     if html:
+        html, pegadas = imagenes_pegadas(html)
         mensaje.add_alternative(html, subtype="html", charset="utf-8")
+        parte_html = mensaje.get_payload()[-1]
+        for datos, principal, secundario, cid in pegadas:
+            parte_html.add_related(datos, maintype=principal,
+                                   subtype=secundario, cid=cid,
+                                   disposition="inline")
 
     if por_microsoft():
         _por_microsoft(mensaje)

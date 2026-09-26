@@ -49,15 +49,15 @@ def correo(encuesta, enlace: str, recordatorio: str = "") -> str:
     nombre = _esc(encuesta.destinatario_nombre or "")
     saludo = {"en": f"Hello{' ' + nombre if nombre else ''},",
               "es": f"Hola{' ' + nombre if nombre else ''},",
-              "pt": f"Ola{' ' + nombre if nombre else ''},"}[
+              "pt": f"Olá{' ' + nombre if nombre else ''},"}[
         encuesta.idioma if encuesta.idioma in ("en", "es", "pt") else "en"]
     boton = {"en": "Answer in one tap",
              "es": "Contestar en un toque",
              "pt": "Responder num toque"}[
         encuesta.idioma if encuesta.idioma in ("en", "es", "pt") else "en"]
     pie = {"en": "It takes less than a minute. Centauro, executive protection.",
-           "es": "Toma menos de un minuto. Centauro, proteccion ejecutiva.",
-           "pt": "Leva menos de um minuto. Centauro, protecao executiva."}[
+           "es": "Toma menos de un minuto. Centauro, protección ejecutiva.",
+           "pt": "Leva menos de um minuto. Centauro, proteção executiva."}[
         encuesta.idioma if encuesta.idioma in ("en", "es", "pt") else "en"]
 
     return f"""<!doctype html>
