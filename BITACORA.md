@@ -4421,15 +4421,80 @@ ya salieron con esa dirección siguen sirviendo.
   la quite y la vuelva a instalar desde `appep.mycentauro.lat/app/`: la
   app instalada y sus avisos son de la dirección donde se instaló.
 
+## 71. Dos puertas: la consola en mycentauro.lat, la app en appep.
+
+Decisión de Salvador, 26 de septiembre, la misma noche de la 70, que
+había dejado todo en `appep.mycentauro.lat` y a `mycentauro.lat`
+mandando ahí: «para accesar a la app del personal de campo debe de ser
+appep.mycentauro.lat con el diseño actual que ya tiene de connect app.
+Para entrar a la consola del sistema para el personal administrativo y
+consultores debe de ser mycentauro.lat», con otro nombre y un diseño
+parecido. Primero se le propuso *My Centauro Connect*; al verlo, pidió
+quitar «My Centauro» —repetía lo que ya dice el logo— y dejar solo
+*Connect*, limpio. De tres versiones eligió la más discreta.
+
+### Lo que cambió
+
+- **La entrada de la consola** —y las de crear y recuperar la
+  contraseña, que usan la misma tarjeta— lleva el logo de Centauro y,
+  pegado a él, CONNECT chico en dorado entre dos rayas (`consola_sello`),
+  sin la raya que lo separaba del logo. La pestaña del navegador:
+  «Centauro Connect». La app de campo se queda como en la 70.
+- **El `Caddyfile`** contesta en `DOMINIO` —la consola— y en
+  `DOMINIO_CAMPO` —la app—. La raíz de `appep.` abre `/app/`; la página
+  de la consola pedida en `appep.` se abre en `mycentauro.lat`, y solo
+  la página: la app carga de `/consola/` su `api.js` y su `idioma.js`, y
+  un módulo que salta a otra dirección no carga. La app pedida en
+  `mycentauro.lat` se abre en `appep.`, porque la app instalada y sus
+  avisos son de la dirección donde se instaló. Todos los saltos con 302.
+  Sin `DOMINIO_CAMPO` todo vive en `DOMINIO`, como antes: el servidor de
+  OVH no cambia aunque tome este código. Se probó con Caddy 2.11.4
+  levantado con certificados locales: dieciséis casos con las dos
+  direcciones y tres como OVH.
+- **`/consola/` abre la consola** (el montaje ya sirve su `index.html`).
+  Los avisos al teléfono del consultor mandaban a `/consola/#/servicio/…`
+  y contestaba 404. La app de campo manda ahí a quien entra con una
+  cuenta que no es de campo; antes mandaba a `/`, que en `appep.` ya es
+  la app.
+- `DOMINIO_RAIZ` se fue: `docker-compose.prod.yml` le pasa
+  `DOMINIO_CAMPO` al proxy. La guía, `crear_env.py` y `config.py` dicen
+  las dos puertas, y `URL_PUBLICA` es la de la consola.
+
+### Lo que se configuró esa noche en el servidor
+
+- **Odoo.** La llave es la de la cuenta de súper administrador de
+  Salvador y no vence: decisión suya, después de ver que una cuenta
+  aparte, con solo el personal y la flota, limita lo que puede hacer una
+  llave que se filtre. Si su cuenta cambia o se desactiva, la lectura se
+  detiene. Primera lectura del personal: 66 en Odoo, 61 altas; 5
+  pendientes (4 con una plaza que Centauro no tiene, 1 sin plaza) y 3
+  celulares que no son número. Ensayo de la flota: 21 unidades de
+  Protección Ejecutiva en Odoo, 12 altas, 9 sin *Ubicación* y 1 entrada
+  al taller sin fecha.
+- **Pegasus.** Un usuario exclusivo del servidor de Google; el de OVH
+  sigue con el suyo. Ve los dos grupos: 71 unidades en México (59
+  reportaron en el día) y 27 en Brasil, 14 de ellas sin placa. Pegasus
+  trae 98 unidades de Protección Ejecutiva y Odoo 21: las que no están
+  en Odoo salen en *Unidades* sin ligar hasta que se den de alta allá.
+- **OVH sigue prendido** hasta que toda la operación esté aquí.
+
+### Lo que falta, de tu lado
+
+- En el `.env`: `DOMINIO=mycentauro.lat`,
+  `DOMINIO_CAMPO=appep.mycentauro.lat` y
+  `URL_PUBLICA=https://mycentauro.lat`; quitar `DOMINIO_RAIZ`.
+
 ## 14. Lo que falta
 
 ### Abierto
 
-- **El servidor: lo que queda del proveedor** (secciones 68 y 70). El
-  dominio ya es de Centauro: `mycentauro.lat`, comprado en Akky a su
-  nombre, con el DNS en Google Cloud DNS; la app vive en
-  `appep.mycentauro.lat`. Falta apagar el servidor de OVH, quitar la
-  llave del proveedor en GitHub y dejar de usar su llave de Google Maps.
+- **El servidor: lo que queda del proveedor** (secciones 68, 70 y 71).
+  El dominio ya es de Centauro: `mycentauro.lat`, comprado en Akky a su
+  nombre, con el DNS en Google Cloud DNS; la consola vive en
+  `mycentauro.lat` y la app de campo en `appep.mycentauro.lat`. OVH
+  sigue prendido hasta que toda la operación esté aquí; ese día se
+  apaga, se quita la llave del proveedor en GitHub y se deja de usar su
+  llave de Google Maps.
 - **El plazo del archivo de comprobantes** (sección 69): que el contador
   confirme los seis años; con eso se sella el candado del depósito.
 
@@ -4451,13 +4516,13 @@ busca, está en las secciones 15 y 16.*
   unidades de Brasil que no traen placa en Pegasus —48126, 48127,
   48129, 55122, 57564 a 57566 y 57597 a 57603— no se ligan hasta que
   la capturen. Y el disparador de pánico en Pegasus hacia
-  `https://appep.mycentauro.lat/gps/pegasus/aviso/{secreto}`: la
-  dirección con HTTPS ya existe (sección 70); mientras no se configure,
+  `https://mycentauro.lat/gps/pegasus/aviso/{secreto}`: la
+  dirección con HTTPS ya existe (sección 71); mientras no se configure,
   el pánico llega con la lectura de cada dos minutos. De este lado, las
   placas ligan contra la flota leída de Odoo: sin ella, ninguna.
 - **El correo: lo que falta es de Microsoft 365** (sección 67). Ya se
   decidió: sale del buzón `ai@centauro.lat` por Microsoft Graph y los
-  enlaces cuelgan de `https://appep.mycentauro.lat`. Falta el buzón,
+  enlaces cuelgan de `https://mycentauro.lat`. Falta el buzón,
   registrar la aplicación en Entra con su secreto, darle permiso en
   Exchange solo sobre ese buzón y poner los tres datos en el `.env` del
   servidor; el paso 7b de `despliegue/LEEME.md` lo dice en orden. Con

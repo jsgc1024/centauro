@@ -106,3 +106,23 @@ def test_el_recorrido_se_ofrece_una_vez_y_por_persona(cliente, sesion):
     # Marcarlo dos veces no revienta ni mueve la fecha.
     assert cliente.post("/auth/recorrido-visto", headers=h,
                         json={}).status_code == 200
+
+
+def test_la_consola_se_abre_tambien_en_consola_con_diagonal():
+    """Los avisos al telefono del consultor llevan /consola/#/servicio/...
+    y la app de campo manda a /consola/ a quien entra con una cuenta que
+    no es de campo. Antes de la seccion 71, /consola/ contestaba 404: el
+    montaje no servia el index de la carpeta."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    cliente = TestClient(app)
+    raiz = cliente.get("/")
+    con_diagonal = cliente.get("/consola/")
+    assert raiz.status_code == 200 and con_diagonal.status_code == 200
+    assert con_diagonal.text == raiz.text
+    assert "<title>Centauro Connect</title>" in con_diagonal.text
+    assert con_diagonal.headers["cache-control"] == "no-store"
+    # Lo demas de la carpeta se sigue sirviendo igual.
+    assert cliente.get("/consola/app.js").status_code == 200
+    assert cliente.get("/consola/no-existe.js").status_code == 404

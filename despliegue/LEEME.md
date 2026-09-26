@@ -127,10 +127,10 @@ historial de la terminal— y no va al repositorio. Estos son los
 renglones que puede llevar:
 
 ```
-# La direccion de la app y la de la empresa sola, que manda a la app
-# mientras sea la unica (seccion 70).
-DOMINIO=appep.mycentauro.lat
-DOMINIO_RAIZ=mycentauro.lat
+# Las dos puertas (seccion 71): la consola --del personal
+# administrativo y los consultores-- y la app del personal de seguridad.
+DOMINIO=mycentauro.lat
+DOMINIO_CAMPO=appep.mycentauro.lat
 POSTGRES_PASSWORD=...
 REDIS_PASSWORD=...
 DATABASE_URL=postgresql+psycopg://centauro:LA_DE_ARRIBA@db:5432/centauro
@@ -142,8 +142,8 @@ TELEFONO_CENTRAL=+525550221022
 VAPID_CONTACTO=mailto:operaciones@centauro.lat
 
 # De donde cuelgan los enlaces que van en correos y task sheets. Es
-# el mismo DOMINIO de arriba.
-URL_PUBLICA=https://appep.mycentauro.lat
+# el mismo DOMINIO de arriba: la consola.
+URL_PUBLICA=https://mycentauro.lat
 
 # El correo que sale de la empresa: del buzon de Microsoft 365 (paso 7b).
 # Con los tres CORREO_MS_ llenos manda Microsoft y el SMTP de abajo no se
@@ -237,10 +237,15 @@ de levantar el proxy: Caddy pide el certificado al arrancar y Let's
 Encrypt verifica que el dominio sea tuyo. El dominio es `mycentauro.lat`,
 comprado en Akky, con el DNS en Google Cloud DNS (zona `mycentauro-lat`;
 en Akky van sus cuatro servidores, `ns-cloud-e1` a `ns-cloud-e4` de
-`googledomains.com`). Dos registros **A** hacia `34.51.121.227`:
-`mycentauro.lat`, la puerta de la empresa, y `appep.mycentauro.lat`,
-esta app (sección 70). La app de otra área, el día que exista, es un
-registro más y su propio bloque en el `Caddyfile`:
+`googledomains.com`). Dos registros **A** hacia `34.51.121.227`, uno
+por puerta (sección 71): `mycentauro.lat`, la consola —*Centauro
+Connect*, del personal administrativo y los consultores—, y
+`appep.mycentauro.lat`, la app del personal de seguridad —*Protección
+Ejecutiva Connect App*—. Las dos llegan al mismo servidor; el `Caddyfile`
+manda a cada quien a la suya: la raíz de `appep.` abre la app, la
+consola que se pide ahí se abre en `mycentauro.lat`, y la app que se pide
+en `mycentauro.lat` se abre en `appep.`. La app de otra área, el día que
+exista, es un registro más y su propio bloque en el `Caddyfile`:
 
 ```bash
 gcloud dns record-sets create appXX.mycentauro.lat. --zone=mycentauro-lat --type=A --ttl=300 --rrdatas=34.51.121.227

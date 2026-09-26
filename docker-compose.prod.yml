@@ -133,9 +133,9 @@ services:
     restart: unless-stopped
     environment:
       DOMINIO: ${DOMINIO:?falta DOMINIO en .env}
-      # La direccion de la empresa sola, que manda a la app (seccion
-      # 70). Vacia, el proxy solo contesta en DOMINIO.
-      DOMINIO_RAIZ: ${DOMINIO_RAIZ:-}
+      # La direccion de la app del personal de seguridad (seccion 71);
+      # DOMINIO es la de la consola. Vacia, todo vive en DOMINIO.
+      DOMINIO_CAMPO: ${DOMINIO_CAMPO:-}
     ports:
       - "80:80"
       - "443:443"

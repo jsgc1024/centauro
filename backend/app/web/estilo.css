@@ -324,25 +324,22 @@ body:has(.entrada) { background: #120e33; }
   border-radius: 14px; padding: 30px 30px 24px;
   box-shadow: 0 30px 70px rgba(5, 3, 20, .45), 0 2px 6px rgba(5, 3, 20, .25);
 }
-.portada { text-align: center; margin: 0 0 24px; }
+.portada { text-align: center; margin: 0 0 30px; }
 .portada img { display: block; margin: 0 auto; max-width: 100%; object-fit: contain; }
-/* El nombre de la app, debajo de la marca de la empresa y separado de
-   ella: la empresa es Centauro, la app es Proteccion Ejecutiva. */
-.portada .app-nombre {
-  margin-top: 18px; padding: 18px 0 0 2.4px; border-top: 1px solid var(--linea);
-  font-size: 19px; font-weight: 800; letter-spacing: 2.4px; line-height: 1.25;
-  text-transform: uppercase; color: var(--centauro);
-}
+/* El nombre de la consola, pegado a la marca de la empresa y sin
+   repetirla: el logo ya dice Centauro (seccion 71). Chico y en dorado,
+   entre dos rayas: de las tres que se le ensenaron, Salvador eligio la
+   mas discreta, la que deja mandar al logo. */
 .portada .app-sello {
-  display: flex; align-items: center; justify-content: center; gap: 12px;
-  margin-top: 8px; font-size: 12px; font-weight: 700; letter-spacing: 5px;
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  margin-top: 16px; font-size: 13px; font-weight: 700; letter-spacing: 7px;
   text-transform: uppercase; color: #8c6f14;
 }
 /* El espaciado de las letras deja aire despues de la ultima: se le
    quita para que el nombre quede centrado entre sus dos rayas. */
-.portada .app-sello span { margin-right: -5px; }
+.portada .app-sello span { margin-right: -7px; }
 .portada .app-sello::before, .portada .app-sello::after {
-  content: ""; width: 34px; height: 1px; background: #c9a227;
+  content: ""; width: 44px; height: 1px; background: #c9a227;
 }
 .pie-entrada {
   margin: 18px 0 0; text-align: center; font-size: 12px; letter-spacing: .3px;

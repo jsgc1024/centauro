@@ -6,9 +6,10 @@
 # —y sin certificado no hay service worker, ni camara, ni ubicacion, ni
 # avisos: la app de campo simplemente no existe.
 #
-# Las direcciones salen del .env: DOMINIO es la de la app
-# (appep.mycentauro.lat) y DOMINIO_RAIZ la de la empresa sola
-# (mycentauro.lat). Seccion 70.
+# Las direcciones salen del .env (seccion 71): DOMINIO es la de la
+# consola (mycentauro.lat) y DOMINIO_CAMPO la de la app del personal de
+# seguridad (appep.mycentauro.lat). Sin DOMINIO_CAMPO todo vive en
+# DOMINIO, como antes.
 
 {
 	# A donde escribe Let's Encrypt si un certificado esta por vencer y
@@ -16,20 +17,43 @@
 	email operaciones@centauro.lat
 }
 
-{$DOMINIO} {$DOMINIO_RAIZ} {
+{$DOMINIO} {$DOMINIO_CAMPO} {
 	encode zstd gzip
 
-	# mycentauro.lat sola es la puerta de la empresa. Vienen mas apps,
-	# una por area, y cada una vive en su propia direccion --appep. es
-	# la de Proteccion Ejecutiva-- para que sus sesiones, su app
-	# instalada en el telefono y su seguridad no se mezclen con las de
-	# las otras. Mientras haya una sola, la puerta manda directo a ella
-	# con la ruta completa: los enlaces que ya salieron con
-	# mycentauro.lat siguen sirviendo. 302 y no 301: el dia que la
-	# puerta tenga su pagina con un boton por app, ningun navegador se
-	# queda con el salto guardado para siempre.
-	@puerta not host {$DOMINIO}
-	redir @puerta https://{$DOMINIO}{uri} 302
+	# Dos puertas y un solo servidor (seccion 71). mycentauro.lat es la
+	# consola --Centauro Connect--, del personal administrativo y los
+	# consultores; appep.mycentauro.lat es la app del personal de
+	# seguridad --Proteccion Ejecutiva Connect App--. Cada una en su
+	# direccion, para que su sesion, lo que guarda el navegador y la app
+	# instalada en el telefono no se mezclen. Las dos hablan con la misma
+	# API, cada una desde su direccion. 302 y no 301 en todos los saltos:
+	# uno permanente se queda guardado en cada navegador para siempre.
+
+	# En la de la app, la raiz abre la app.
+	@campo_raiz {
+		not host {$DOMINIO}
+		path /
+	}
+	redir @campo_raiz /app/ 302
+
+	# Y la pagina de la consola se abre en la suya. Solo la pagina: la
+	# app carga de /consola/ su api.js y su idioma.js, y esos se sirven
+	# aqui mismo --un modulo que salta a otra direccion no carga--.
+	@campo_consola {
+		not host {$DOMINIO}
+		path /consola /consola/ /consola/index.html
+	}
+	redir @campo_consola https://{$DOMINIO}{uri} 302
+
+	# En la de la consola, la app se manda a la suya: la app instalada y
+	# sus avisos son de la direccion donde se instalo, y tiene que ser
+	# una sola. Sin DOMINIO_CAMPO no hay a donde mandarla y se queda.
+	@consola_app {
+		host {$DOMINIO}
+		path /app /app/*
+		expression `"{$DOMINIO_CAMPO}" != ""`
+	}
+	redir @consola_app https://{$DOMINIO_CAMPO}{uri} 302
 
 	# La IP real del cliente. Sin esto el registro de auditoria guarda la
 	# IP del proxy para todos, y el limite de intentos fallidos cuenta a

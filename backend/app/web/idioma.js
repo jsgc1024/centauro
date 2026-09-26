@@ -26,9 +26,11 @@ const TEXTOS = {
   es: {
     /* --- barra y acceso */
     linea: "Protección Ejecutiva",
-    /* El nombre de la app, en la puerta. Es un nombre: no se traduce. */
+    /* Los nombres de las dos puertas: la app de campo (app_) y la
+       consola (consola_). Son nombres: no se traducen. */
     app_nombre: "Protección Ejecutiva",
     app_sello: "Connect App",
+    consola_sello: "Connect",
     entrada_pie: "Acceso exclusivo para personal autorizado",
     correo: "Correo",
     contrasena: "Contraseña",
@@ -3000,6 +3002,7 @@ const TEXTOS = {
     linea: "Executive Protection",
     app_nombre: "Protección Ejecutiva",
     app_sello: "Connect App",
+    consola_sello: "Connect",
     entrada_pie: "Authorized personnel only",
     correo: "Email",
     contrasena: "Password",
@@ -5961,6 +5964,7 @@ const TEXTOS = {
     linea: "Proteção Executiva",
     app_nombre: "Protección Ejecutiva",
     app_sello: "Connect App",
+    consola_sello: "Connect",
     entrada_pie: "Acesso exclusivo para pessoal autorizado",
     correo: "E-mail",
     contrasena: "Senha",

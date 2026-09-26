@@ -2023,7 +2023,10 @@ function otraCuenta() {
       sesion.token = null; sesion.usuario = null;
       location.hash = ""; pintar();
     } }, t("cmp_entrar_otra")),
-    h("a", { href: "/", style: "text-decoration:none" },
+    /* La consola vive en otra direccion (seccion 71): /consola/ la
+       abre en el mismo servidor y, desde appep., el proxy la manda a
+       la de la consola. "/" aqui ya es la app. */
+    h("a", { href: "/consola/", style: "text-decoration:none" },
       h("button", { clase: "claro", style: "margin-top:10px" },
         t("cmp_ir_consola")))));
 }

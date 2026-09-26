@@ -185,17 +185,18 @@ function marca(alto = 40) {
                           font-size:${Math.round(alto / 3)}px` }, "CENTAURO");
 }
 
-/* La portada de las pantallas de antes de entrar: arriba la marca de la
-   empresa y debajo el nombre de la app, Proteccion Ejecutiva Connect
-   App. Lo pidio Salvador el 26 de septiembre de 2026: vienen mas apps,
-   una por area de la empresa, y quien llega tiene que saber en un
-   segundo a cual entro. El nombre no se traduce --es un nombre--; la
-   linea de abajo de la tarjeta, si. */
+/* La portada de las pantallas de antes de entrar: la marca de la
+   empresa y, pegado a ella, el nombre de la consola: Connect. Es la
+   puerta del personal administrativo y de los consultores, en
+   mycentauro.lat; la app del personal de seguridad es otra puerta, en
+   appep.mycentauro.lat, y se llama Proteccion Ejecutiva Connect App
+   (secciones 70 y 71). Salvador la quiso limpia: sin repetir Centauro
+   debajo del logo que ya lo dice. El nombre no se traduce --es un
+   nombre--; la linea de abajo de la tarjeta, si. */
 function portada() {
   return h("div", { clase: "portada" },
     marca(54),
-    h("div", { clase: "app-nombre" }, t("app_nombre")),
-    h("div", { clase: "app-sello" }, h("span", {}, t("app_sello"))));
+    h("div", { clase: "app-sello" }, h("span", {}, t("consola_sello"))));
 }
 
 /* La tarjeta va sobre el fondo navy de la puerta, con su pie afuera. */

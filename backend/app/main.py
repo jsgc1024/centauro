@@ -242,7 +242,13 @@ class ConsolaSinCache(StaticFiles):
 
 
 if WEB.is_dir():
-    app.mount("/consola", ConsolaSinCache(directory=WEB), name="consola")
+    # Con html=True, /consola/ abre la consola igual que /. Los avisos al
+    # telefono del consultor llevan /consola/#/servicio/... y la app de
+    # campo manda a /consola/ a quien no es de campo: sin esto los dos
+    # caian en un 404. Y desde appep.mycentauro.lat el proxy lo manda a
+    # la direccion de la consola (seccion 71).
+    app.mount("/consola", ConsolaSinCache(directory=WEB, html=True),
+              name="consola")
 
     # La app del personal de seguridad. Vive en el mismo servidor y usa
     # la misma sesion y los mismos endpoints que la consola, pero es
