@@ -25,7 +25,6 @@ export const IDIOMAS = [
 const TEXTOS = {
   es: {
     /* --- barra y acceso */
-    linea: "Protección Ejecutiva",
     /* Los nombres de las dos puertas: la app de campo (app_) y la
        consola (consola_). Son nombres: no se traducen. */
     app_nombre: "Protección Ejecutiva",
@@ -2999,7 +2998,6 @@ const TEXTOS = {
   },
 
   en: {
-    linea: "Executive Protection",
     app_nombre: "Protección Ejecutiva",
     app_sello: "Connect App",
     consola_sello: "Connect",
@@ -5961,7 +5959,6 @@ const TEXTOS = {
   },
 
   pt: {
-    linea: "Proteção Executiva",
     app_nombre: "Protección Ejecutiva",
     app_sello: "Connect App",
     consola_sello: "Connect",

@@ -44,9 +44,11 @@ header.barra .identidad { display: flex; align-items: center; gap: 14px; }
   color: #fff; background: var(--centauro);
   padding: 3px 9px; border-radius: 5px;
 }
+/* El nombre de la consola, en el mismo dorado de la puerta de entrada
+   (.app-sello): la misma firma adentro y afuera (Salvador, 26 sep). */
 .linea .nombre {
-  font-size: 10.5px; text-transform: uppercase; letter-spacing: 1.1px;
-  color: var(--gris); font-weight: 650;
+  font-size: 12px; text-transform: uppercase; letter-spacing: 4px;
+  color: #8c6f14; font-weight: 700;
 }
 /* El menu, en su propio renglon y con el renglon entero para el. Es lo
    unico de aqui arriba que se usa todo el dia; lo demas --quien eres, en

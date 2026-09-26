@@ -4510,6 +4510,11 @@ noche pidió que la app instalada no diga «Centauro» sino **EP Connect**.
 - **La app se llama EP Connect** debajo del ícono: `name` y
   `short_name` del manifiesto para Android, `apple-mobile-web-app-title`
   para iPhone, y la pestaña.
+- **La cabecera de la consola dice Connect** junto a la clave AI/EP, en
+  el mismo dorado de la puerta de entrada (`#8c6f14`): la misma firma
+  adentro y afuera. Decía «Protección Ejecutiva», que AI/EP ya dice
+  (Salvador, con una foto de la pantalla). Es un nombre: no se traduce,
+  y la clave de idioma `linea` se fue con él.
 - El armazón guardado en el teléfono sube a `centauro-campo-v10`: trae
   el ícono de los avisos.
 - Una prueba nueva revisa que cada ícono mida lo que dice medir —uno que

@@ -168,14 +168,18 @@ async function traerLogo() {
 
 /* Toda esta consola es de Proteccion Ejecutiva. Va dicho en el encabezado
    porque vienen mas lineas de operacion y no se deben confundir: el mismo
-   prefijo que llevan los folios, AI/EP. */
+   prefijo que llevan los folios, AI/EP.
+
+   Junto a la clave va el nombre de la consola, Connect, en el dorado de
+   la puerta de entrada: la misma firma adentro y afuera. Decia
+   "Proteccion Ejecutiva", que la clave AI/EP ya dice (Salvador, 26 sep).
+   Es un nombre: no se traduce. */
 const LINEA = "AI/EP";
-// El nombre de la linea se dice en el idioma de la consola; la clave no.
 
 function sello(conNombre = true) {
   return h("div", { clase: "linea" },
     h("span", { clase: "clave" }, LINEA),
-    conNombre ? h("span", { clase: "nombre" }, t("linea")) : null);
+    conNombre ? h("span", { clase: "nombre" }, t("consola_sello")) : null);
 }
 
 function marca(alto = 40) {
