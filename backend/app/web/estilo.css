@@ -37,8 +37,10 @@ header.barra .cinta {
 header.barra img { height: 40px; }
 header.barra .identidad { display: flex; align-items: center; gap: 14px; }
 
-/* La linea de operacion, con el mismo prefijo de los folios. */
-.linea { display: flex; align-items: baseline; gap: 8px; }
+/* La linea de operacion, con el mismo prefijo de los folios. La firma
+   --CONNECT y su lema-- va centrada con el recuadro de AI/EP, no pegada
+   a su renglon (Salvador, 26 sep). */
+.linea { display: flex; align-items: center; gap: 10px; }
 .linea .clave {
   font-weight: 700; font-size: 13px; letter-spacing: .5px;
   color: #fff; background: var(--centauro);
@@ -47,8 +49,20 @@ header.barra .identidad { display: flex; align-items: center; gap: 14px; }
 /* El nombre de la consola, en el mismo dorado de la puerta de entrada
    (.app-sello): la misma firma adentro y afuera (Salvador, 26 sep). */
 .linea .nombre {
-  font-size: 12px; text-transform: uppercase; letter-spacing: 4px;
+  font-size: 13px; text-transform: uppercase; letter-spacing: 6px;
   color: #8c6f14; font-weight: 700;
+}
+.linea .nombre .palabra { margin-right: -6px; }
+.linea .nombre .lema { font-size: 7.5px; margin-top: 2px; }
+
+/* La firma: la palabra y, debajo, el lema del mismo largo (firma.js). La
+   caja mide lo que mide la palabra --sin el aire que el espaciado deja
+   despues de la ultima letra, que cada lugar le quita-- y el lema
+   reparte sus letras en ese ancho. */
+.marca-connect { display: inline-flex; flex-direction: column; align-items: stretch; }
+.marca-connect .lema {
+  display: flex; justify-content: space-between;
+  letter-spacing: 0; font-weight: 600; line-height: 1.2;
 }
 /* El menu, en su propio renglon y con el renglon entero para el. Es lo
    unico de aqui arriba que se usa todo el dia; lo demas --quien eres, en
@@ -333,15 +347,19 @@ body:has(.entrada) { background: #120e33; }
    entre dos rayas: de las tres que se le ensenaron, Salvador eligio la
    mas discreta, la que deja mandar al logo. */
 .portada .app-sello {
-  display: flex; align-items: center; justify-content: center; gap: 14px;
+  display: flex; align-items: flex-start; justify-content: center; gap: 14px;
   margin-top: 16px; font-size: 13px; font-weight: 700; letter-spacing: 7px;
   text-transform: uppercase; color: #8c6f14;
 }
 /* El espaciado de las letras deja aire despues de la ultima: se le
    quita para que el nombre quede centrado entre sus dos rayas. */
-.portada .app-sello span { margin-right: -7px; }
+.portada .app-sello .palabra { margin-right: -7px; }
+.portada .app-sello .lema { font-size: 8px; margin-top: 5px; }
+/* Las rayas, a media altura de la palabra y no de la firma entera: el
+   lema cuelga debajo, entre ellas no. */
 .portada .app-sello::before, .portada .app-sello::after {
   content: ""; width: 44px; height: 1px; background: #c9a227;
+  margin-top: .62em;
 }
 .pie-entrada {
   margin: 18px 0 0; text-align: center; font-size: 12px; letter-spacing: .3px;

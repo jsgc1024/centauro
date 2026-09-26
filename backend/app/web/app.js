@@ -21,6 +21,7 @@ import { aviso, campo, entrada, h, lista, mensaje, vaciar,
          vigilarCapturas } from "./util.js";
 import { IDIOMAS, idioma, ponerIdioma, t } from "./idioma.js";
 import { abrirRecorrido } from "./recorrido.js";
+import { firma } from "./firma.js";
 
 /* La regla de captura vale para toda la consola, no para una
    pantalla: se engancha una sola vez al documento. */
@@ -179,7 +180,9 @@ const LINEA = "AI/EP";
 function sello(conNombre = true) {
   return h("div", { clase: "linea" },
     h("span", { clase: "clave" }, LINEA),
-    conNombre ? h("span", { clase: "nombre" }, t("consola_sello")) : null);
+    conNombre
+      ? h("span", { clase: "nombre" }, firma(t("consola_sello"), t("lema")))
+      : null);
 }
 
 function marca(alto = 40) {
@@ -200,7 +203,7 @@ function marca(alto = 40) {
 function portada() {
   return h("div", { clase: "portada" },
     marca(54),
-    h("div", { clase: "app-sello" }, h("span", {}, t("consola_sello"))));
+    h("div", { clase: "app-sello" }, firma(t("consola_sello"), t("lema"))));
 }
 
 /* La tarjeta va sobre el fondo navy de la puerta, con su pie afuera. */

@@ -4515,6 +4515,18 @@ noche pidió que la app instalada no diga «Centauro» sino **EP Connect**.
   adentro y afuera. Decía «Protección Ejecutiva», que AI/EP ya dice
   (Salvador, con una foto de la pantalla). Es un nombre: no se traduce,
   y la clave de idioma `linea` se fue con él.
+- **Debajo de CONNECT, el lema HIGH PERFORMANCE**, más chico, del mismo
+  largo que la palabra y en el mismo dorado, en las tres firmas: la
+  entrada de la consola, la entrada de la app —debajo de CONNECT APP— y
+  la cabecera de la consola, donde la firma va centrada con el recuadro
+  AI/EP (Salvador, 26 sep). Cada letra del lema es su propia caja y se
+  reparten el ancho de la palabra: mide lo mismo con cualquier letra y
+  en cualquier pantalla, sin medir nada con JavaScript (`web/firma.js`).
+  En la cabecera CONNECT sube de 12 a 13 px, con las letras más
+  separadas, para que el lema quepa del mismo largo sin quedar diminuto.
+  La app guarda `firma.js` en su armazón para abrir sin señal, y el
+  armazón sube a `centauro-campo-v11`; una prueba revisa que todo lo que
+  la app importa esté en esa lista.
 - El armazón guardado en el teléfono sube a `centauro-campo-v10`: trae
   el ícono de los avisos.
 - Una prueba nueva revisa que cada ícono mida lo que dice medir —uno que

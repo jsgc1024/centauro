@@ -17,7 +17,7 @@
    activarse, el trabajador nuevo borra los caches con otro nombre. Sin
    subirla, el telefono que ya tenia la app instalada seguiria sirviendo
    el armazon viejo del cache. */
-const CACHE = "centauro-campo-v10";
+const CACHE = "centauro-campo-v11";
 const ARMAZON = [
   "/app/",
   "/app/index.html",
@@ -31,6 +31,9 @@ const ARMAZON = [
      carga sin senal, el grafo falla entero y la app abre en blanco:
      justo el sotano para el que existe este archivo. */
   "/consola/idioma.js",
+  /* La firma de la entrada --CONNECT APP con su lema--, que app.js
+     importa igual que el idioma: sin ella, sin senal la app no abre. */
+  "/consola/firma.js",
   "/app/manifiesto.json",
   /* El icono del aviso se guarda tambien: si no, el aviso que llega en
      el estacionamiento sale sin icono, que es como se ven los avisos de

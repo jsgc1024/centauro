@@ -234,13 +234,22 @@ body:has(.entrada) {
   text-transform: uppercase; color: var(--centauro);
 }
 .portada .app-sello {
-  display: flex; align-items: center; justify-content: center; gap: 12px;
+  display: flex; align-items: flex-start; justify-content: center; gap: 12px;
   margin-top: 8px; font-size: 12px; font-weight: 700; letter-spacing: 5px;
   text-transform: uppercase; color: #8c6f14;
 }
-.portada .app-sello span { margin-right: -5px; }
+.portada .app-sello .palabra { margin-right: -5px; }
+/* El lema debajo, del mismo largo que la palabra (firma.js, 26 sep). */
+.marca-connect { display: inline-flex; flex-direction: column; align-items: stretch; }
+.marca-connect .lema {
+  display: flex; justify-content: space-between;
+  letter-spacing: 0; font-weight: 600; line-height: 1.2;
+}
+.portada .app-sello .lema { font-size: 9px; margin-top: 4px; }
+/* Las rayas, a media altura de la palabra: el lema cuelga debajo. */
 .portada .app-sello::before, .portada .app-sello::after {
   content: ""; width: 30px; height: 1px; background: #c9a227;
+  margin-top: .62em;
 }
 .pie-entrada {
   margin: 18px 0 0; text-align: center; font-size: 12px; letter-spacing: .3px;

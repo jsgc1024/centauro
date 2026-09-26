@@ -16,6 +16,7 @@ import { apartadas, encolar, limpiar, pendientes, retenida, sacar,
 import { guardar as guardarMemoria, hace, olvidar, recordar,
          traer } from "./memoria.js";
 import { reducir } from "./foto.js";
+import { firma } from "/consola/firma.js";
 
 const raiz = () => document.getElementById("app");
 
@@ -252,7 +253,7 @@ function puerta(...hijos) {
                        alt: t("cmp_marca") })
           : h("h1", {}, t("cmp_marca")),
         h("div", { clase: "app-nombre" }, t("app_nombre")),
-        h("div", { clase: "app-sello" }, h("span", {}, t("app_sello")))),
+        h("div", { clase: "app-sello" }, firma(t("app_sello"), t("lema")))),
       ...hijos),
     h("p", { clase: "pie-entrada" }, t("entrada_pie")));
 }

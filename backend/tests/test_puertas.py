@@ -179,3 +179,41 @@ def test_la_consola_y_la_app_traen_el_escudo_de_centauro():
 
     for ruta in ("/consola/icono-apple-180.png", "/app/icono-apple-180.png"):
         assert png(ruta)[2] == 2, ruta
+
+
+def test_la_app_guarda_todo_lo_que_importa_para_abrir_sin_senal():
+    """Seccion 72: la entrada de la app estrena la firma --CONNECT APP con
+    su lema, HIGH PERFORMANCE--, que vive en /consola/firma.js. La app la
+    importa al arrancar, igual que el idioma, y si el trabajador de fondo
+    no la guarda, sin senal ese modulo no carga, el grafo falla entero y
+    la app abre en blanco: justo en el sotano para el que existe el
+    armazon. Todo lo que la app importa --y lo que eso importa-- tiene que
+    estar en la lista."""
+    import os
+    import re
+
+    web = os.path.join(os.path.dirname(__file__), "..", "app", "web")
+
+    def archivo(ruta):
+        if ruta.startswith("/consola/"):
+            return os.path.join(web, ruta[len("/consola/"):])
+        return os.path.join(web, "campo", ruta[len("/app/"):])
+
+    sw = open(archivo("/app/sw.js"), encoding="utf-8").read()
+    lista = sw.split("const ARMAZON")[1].split("];")[0]
+    armazon = set(re.findall(r'"(/(?:app|consola)/[^"]+)"', lista))
+
+    pendientes, vistos = ["/app/app.js"], set()
+    while pendientes:
+        ruta = pendientes.pop()
+        if ruta in vistos:
+            continue
+        vistos.add(ruta)
+        assert ruta in armazon, f"{ruta} no esta en el armazon de sw.js"
+        fuente = open(archivo(ruta), encoding="utf-8").read()
+        base = ruta.rsplit("/", 1)[0]
+        for importado in re.findall(r'^import [^;]*? from "([^"]+)"', fuente,
+                                    re.M | re.S):
+            pendientes.append(importado if importado.startswith("/")
+                              else f"{base}/{importado[2:]}")
+    assert "/consola/firma.js" in vistos
