@@ -779,7 +779,8 @@ export async function nuevoImplantado(main) {
 
   const clientes = lista("cliente_id",
     [{ valor: "", texto: t("elige_cliente") },
-     ...cat.clientes.map(c => ({ valor: c.id, texto: c.nombre }))],
+     ...cat.clientes.map(c => ({ valor: c.id, texto: c.tarifario_id
+       ? c.nombre : `${c.nombre} ${t("cli_sin_tarifario")}` }))],
     { onchange: () => { cargarSolicitantes(); revisar(); } });
 
   const consultores = lista("consultor_id",

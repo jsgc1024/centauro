@@ -29,6 +29,8 @@ DE_ODOO = {
     m.Persona: ("nombre", "correo", "plaza_id", "odoo_id"),
     m.Vehiculo: ("placa", "categoria_id", "plaza_id", "marca_modelo",
                  "color", "modelo_anio"),
+    # Los clientes (seccion 75): el tarifario no, ese es de Centauro.
+    m.Cliente: ("nombre", "pais_id", "odoo_id", "rfc"),
 }
 
 
@@ -148,7 +150,12 @@ def crud_router(
             raise HTTPException(404, f"No existe el registro {item_id}")
 
         # Lo que llega de Odoo se corrige en Odoo (secciones 51 y 52).
+        # El cliente ligado a mano en el ensayo (seccion 75) todavia no
+        # trae nada de Odoo: hasta la primera lectura, el ligado se puede
+        # deshacer --un error al escoger en la lista no se queda pegado.
         de_odoo = DE_ODOO.get(modelo)
+        if modelo is m.Cliente and obj.odoo_sincronizado_en is None:
+            de_odoo = None
         if de_odoo and obj.odoo_id:
             nuevos = datos.model_dump(exclude_unset=True)
             tocados = [c for c in de_odoo
@@ -158,8 +165,8 @@ def crud_router(
                     "mensaje": "Viene de Odoo: se corrige en Odoo.",
                     "que_hacer": "Se cambia en Odoo --Recursos Humanos en la "
                                  "ficha del empleado, Flotilla en la de la "
-                                 "unidad-- y Centauro lo toma en la "
-                                 "siguiente lectura.",
+                                 "unidad, Facturacion en la del cliente-- y "
+                                 "Centauro lo toma en la siguiente lectura.",
                     "campos": tocados,
                 })
 

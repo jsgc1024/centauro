@@ -1,4 +1,4 @@
-/* Odoo: lo que Centauro lee de ahi (secciones 51, 52, 64 y 74).
+/* Odoo: lo que Centauro lee de ahi (secciones 51, 52, 64, 74 y 75).
 
    El personal de seguridad y la flota llegan de Odoo. La primera lectura
    de cada una se hace a mano, despues de ver el ensayo, y de ahi en
@@ -54,7 +54,7 @@ const FALTAS = {
   "activo en Odoo pero dado de baja en Centauro: reactivar a mano":
     "odo_f_reactivar_persona",
   "ya no tiene puesto de seguridad en Odoo": "odo_f_sin_puesto",
-  // La oficina (seccion 74).
+  /* La oficina (seccion 74). */
   "correo de trabajo mal escrito": "odo_f_trabajo_mal",
   "correo de trabajo con error de dedo": "odo_f_trabajo_dedo",
   "correo de trabajo repetido en Odoo": "odo_f_trabajo_repetido",
@@ -62,6 +62,10 @@ const FALTAS = {
   "su correo es de alguien del personal de seguridad en Centauro":
     "odo_f_correo_de_seguridad",
   "ahora es personal de seguridad en Odoo": "odo_f_ahora_seguridad",
+  /* Los clientes (seccion 75). */
+  "sin pais": "odo_f_sin_pais",
+  "se parece a mas de un cliente de Centauro": "odo_f_cliente_doble",
+  "ya no es cliente en Odoo": "odo_f_ya_no_cliente",
   "sin placa": "odo_f_sin_placa",
   "placa repetida en Odoo": "odo_f_placa_repetida",
   "sin categoria": "odo_f_sin_categoria",
@@ -82,6 +86,7 @@ const FALTAS = {
    corregir. */
 const CON_NOMBRE = [
   [/^la plaza «(.*)» no existe en Centauro$/, "odo_f_plaza_no_existe"],
+  [/^el pais «(.*)» no existe en Centauro$/, "odo_f_pais_no_existe"],
   [/^la categoria «(.*)» no existe en Centauro$/, "odo_f_categoria_no_existe"],
 ];
 
@@ -101,7 +106,8 @@ const QUE = {
   referencia: "odo_q_referencia", "fecha de ingreso": "odo_q_ingreso",
   correo: "odo_q_correo", placa: "odo_q_placa", categoria: "odo_q_categoria",
   "marca y modelo": "odo_q_modelo", color: "odo_q_color", ano: "odo_q_anio",
-  puesto: "odo_q_puesto", area: "odo_q_area",
+  puesto: "odo_q_puesto", area: "odo_q_area", rfc: "odo_q_rfc",
+  pais: "odo_q_pais",
 };
 
 function que(lista) {
@@ -143,6 +149,16 @@ const LECTURAS = {
   },
   /* La oficina (seccion 74): llega la persona, no su acceso. El acceso
      lo da Recursos Humanos en Accesos, con el puesto sugerido. */
+  /* Los clientes (seccion 75): llegan sin tarifario, que se les pone en
+     Centauro. */
+  clientes: {
+    ensayo: "/odoo/clientes/ensayo", aplicar: "/odoo/clientes/sincronizar",
+    leidos: (d) => reemplazar(t("odo_leidos_clientes"),
+                              { n: d.leidos, s: d.sin_cambio }),
+    quien: (x) => x.nombre || "—",
+    pieAltas: "odo_altas_clientes_pie", pieBajas: "odo_bajas_clientes_pie",
+    confirmar: "odo_confirmar_clientes",
+  },
   oficina: {
     ensayo: "/odoo/oficina/ensayo", aplicar: "/odoo/oficina/sincronizar",
     leidos: (d) => reemplazar(t("odo_leidos_oficina"),
@@ -163,11 +179,13 @@ export async function pantallaOdoo(main) {
   const personal = h("div");
   const flota = h("div");
   const oficina = h("div");
+  const clientes = h("div");
+  const tarifas = h("div");
   const historial = h("div");
   main.append(
     h("h1", {}, t("nav_odoo")),
     h("p", { clase: "sub" }, t("odo_sub")),
-    cabeza, personal, flota, oficina, historial);
+    cabeza, personal, flota, oficina, clientes, tarifas, historial);
 
   let estado;
   try {
@@ -178,12 +196,13 @@ export async function pantallaOdoo(main) {
   /* Despues de aplicar se vuelve a pintar solo esa tarjeta --ya con su
      "ultima lectura" y con lo que se hizo a la vista-- y el historial.
      La otra se queda como estaba: si tenia un ensayo abierto, sigue ahi. */
-  const cajas = { personal, flota, oficina };
+  const cajas = { personal, flota, oficina, clientes };
   const repintar = async (tipo, hecho) => {
     try {
       const nuevo = await api.get("/odoo/estado");
       tarjeta(cajas[tipo], tipo, nuevo, repintar, hecho);
       pintarHistorial(historial, nuevo);
+      if (tipo === "clientes") sinTarifario(tarifas);
     } catch (err) {
       mensaje(err.message, "grave");
     }
@@ -197,6 +216,8 @@ export async function pantallaOdoo(main) {
   tarjeta(personal, "personal", estado, repintar);
   tarjeta(flota, "flota", estado, repintar);
   tarjeta(oficina, "oficina", estado, repintar);
+  tarjeta(clientes, "clientes", estado, repintar);
+  sinTarifario(tarifas);
   pintarHistorial(historial, estado);
 }
 
@@ -286,7 +307,9 @@ function tarjeta(caja, tipo, estado, repintar, mostrar = null) {
     ? conAyuda("h3", t("odo_personal"), "ay_odo_personal")
     : tipo === "oficina"
       ? conAyuda("h3", t("odo_oficina"), "ay_odo_oficina")
-      : conAyuda("h3", t("odo_flota"), "ay_odo_flota");
+      : tipo === "clientes"
+        ? conAyuda("h3", t("odo_clientes"), "ay_odo_clientes")
+        : conAyuda("h3", t("odo_flota"), "ay_odo_flota");
   caja.replaceChildren(h("div", { clase: "tarjeta" },
     titulo,
     ...comoVa(tipo, estado),
@@ -299,7 +322,7 @@ function tarjeta(caja, tipo, estado, repintar, mostrar = null) {
    se cuenta una vez, igual que en el renglon de la lectura. */
 function tocadas(d) {
   return new Set([...d.cambios, ...d.vinculadas]
-    .map(x => x.persona_id ?? x.vehiculo_id)).size;
+    .map(x => x.persona_id ?? x.vehiculo_id ?? x.cliente_id)).size;
 }
 
 function cifras(d) {
@@ -339,6 +362,12 @@ function informe(tipo, d) {
         ? celda(t("odo_sin_correo_trabajo"), (d.sin_correo || []).length,
                 t("odo_sin_correo_trabajo_pie"),
                 (d.sin_correo || []).length ? "var(--alerta)" : "")
+        : "",
+      /* Sin RFC se le pueden dar servicios, pero no facturar: se cuenta
+         aparte, que es lo que facturacion corrige en Odoo. */
+      tipo === "clientes"
+        ? celda(t("odo_sin_rfc"), (d.sin_rfc || []).length, t("odo_sin_rfc_pie"),
+                (d.sin_rfc || []).length ? "var(--alerta)" : "")
         : ""),
   ];
 
@@ -371,7 +400,34 @@ function informe(tipo, d) {
       renglones(d.bajas, (x) => [cfg.quien(x), detalleBaja(x)]),
       null, {}, true));
   }
-  if (tipo === "oficina") {
+  if (tipo === "clientes") {
+    const sinRfc = d.sin_rfc || [];
+    if (sinRfc.length) {
+      partes.push(plegable(`${t("odo_l_sin_rfc")} (${sinRfc.length})`,
+        renglones(sinRfc, (x) => [x.nombre || "—", noOdoo(x.odoo_id)]),
+        null, {}, false));
+    }
+    /* Los de Centauro que no se encontraron en Odoo: si alguno es uno de
+       los que llegan con otro nombre, se liga aqui antes de aplicar, y no
+       se duplica. Solo en el ensayo: despues de aplicar ya se duplico. */
+    const sinLigar = d.sin_ligar || [];
+    if (d.ensayo && sinLigar.length && d.altas.length) {
+      const listas = [];
+      partes.push(plegable(`${t("odo_l_sin_ligar")} (${sinLigar.length})`,
+        h("div", {},
+          h("p", { clase: "gris chico", style: "margin:0 0 6px" }, t("odo_sin_ligar_pie")),
+          ...sinLigar.map(c => ligarAMano(c, d.altas, listas))),
+        null, {}, false));
+    }
+    if (d.sin_tarifario) {
+      partes.push(h("p", { clase: "gris chico", style: "margin:10px 0 0" },
+        reemplazar(t("odo_sin_tarifario"), { n: d.sin_tarifario })));
+    }
+    if ((d.pais_por_rfc || []).length) {
+      partes.push(h("p", { clase: "gris chico", style: "margin:6px 0 0" },
+        reemplazar(t("odo_pais_por_rfc"), { n: d.pais_por_rfc.length })));
+    }
+  } else if (tipo === "oficina") {
     const sinCorreo = d.sin_correo || [];
     if (sinCorreo.length) {
       partes.push(plegable(`${t("odo_l_sin_correo")} (${sinCorreo.length})`,
@@ -429,6 +485,72 @@ function informe(tipo, d) {
   return h("div", {}, ...partes);
 }
 
+/* Un cliente de Centauro que es uno de los que llegan de Odoo con otro
+   nombre: se le pone el No. Odoo de ese, y la lectura lo liga en vez de
+   darlo de alta dos veces. Mientras no se aplique se puede deshacer --un
+   error al escoger en la lista no se queda pegado--, y el de Odoo que ya
+   se escogio no se le ofrece a otro. `listas`: las de todo el bloque. */
+function ligarAMano(c, altas, listas) {
+  const sel = h("select", { style: "flex:0 1 380px;width:auto" },
+    h("option", { value: "" }, t("odo_es_de_odoo")),
+    ...altas.map(a => h("option", { value: String(a.odoo_id) },
+      [a.nombre, a.rfc].filter(Boolean).join(" · "))));
+  listas.push(sel);
+  const apartar = (valor, apartado) => {
+    for (const otra of listas) {
+      const opcion = [...otra.options].find(o => o.value === valor);
+      if (otra !== sel && opcion) opcion.disabled = apartado;
+    }
+  };
+  const guardar = (odooId) => api.patch(`/catalogos/clientes/${c.cliente_id}`, {
+    nombre: c.nombre, pais_id: c.pais_id, odoo_id: odooId });
+
+  const nombre = h("span", { style: "flex:1 1 220px" }, c.nombre || "—");
+  const boton = h("button", { type: "button", clase: "chico claro" }, t("odo_ligar"));
+  const fila = h("div", { style: "display:flex;gap:10px;align-items:center;flex-wrap:wrap;"
+                                 + "padding:5px 0;border-bottom:1px solid #f0f2f4" });
+  const escoger = () => {
+    sel.value = "";
+    boton.disabled = false;
+    fila.replaceChildren(nombre, sel, boton);
+  };
+  const ligado = (valor, deOdoo) => {
+    const deshacer = h("button", { type: "button", clase: "chico claro" }, t("odo_deshacer"));
+    deshacer.addEventListener("click", async () => {
+      deshacer.disabled = true;
+      try {
+        await guardar(null);
+        apartar(valor, false);
+        mensaje(reemplazar(t("odo_desligado"), { c: c.nombre }));
+        escoger();
+      } catch (err) {
+        mensaje(err.message, "grave");
+        deshacer.disabled = false;
+      }
+    });
+    fila.replaceChildren(
+      h("span", { clase: "gris chico", style: "flex:1 1 260px" },
+        reemplazar(t("odo_ligado_a"), { c: c.nombre, o: deOdoo })),
+      deshacer);
+  };
+  boton.addEventListener("click", async () => {
+    const valor = sel.value;
+    if (!valor) return;
+    boton.disabled = true;
+    try {
+      await guardar(Number(valor));
+      apartar(valor, true);
+      mensaje(t("odo_ligado"));
+      ligado(valor, sel.options[sel.selectedIndex].textContent);
+    } catch (err) {
+      mensaje(err.message, "grave");
+      boton.disabled = false;
+    }
+  });
+  escoger();
+  return fila;
+}
+
 function noOdoo(n) {
   return n ? reemplazar(t("odo_no_odoo"), { n }) : "";
 }
@@ -439,6 +561,9 @@ function detalleAlta(tipo, x) {
   }
   if (tipo === "oficina") {
     return [x.puesto_odoo, x.area_odoo, x.correo].filter(Boolean).join(" · ");
+  }
+  if (tipo === "clientes") {
+    return [x.rfc || t("odo_sin_rfc"), x.pais].filter(Boolean).join(" · ");
   }
   return [x.categoria, x.plaza].filter(Boolean).join(" · ");
 }
@@ -484,6 +609,107 @@ function renglones(lista, partes) {
   }));
 }
 
+/* ------------------------------------------------------------ tarifario */
+
+/* Los clientes llegan de Odoo sin tarifario (seccion 75), y hasta que se
+   les pone no se les puede cotizar. Se pone aqui mismo: uno por uno, o a
+   todos los de un pais de una vez --muchos comparten el mismo--. Si no
+   falta ninguno, esto no se ve. */
+async function sinTarifario(caja) {
+  let clientes, tarifarios, paises;
+  try {
+    [clientes, tarifarios, paises] = await Promise.all([
+      api.get("/catalogos/clientes"), api.get("/catalogos/tarifarios"),
+      api.get("/catalogos/paises")]);
+  } catch {
+    return caja.replaceChildren();
+  }
+  const nombrePais = (id) => (paises.find(p => p.id === id) || {}).nombre || "—";
+  const faltan = clientes.filter(c => c.activo && !c.tarifario_id);
+  if (!faltan.length) return caja.replaceChildren();
+
+  const deSuPais = (paisId) => tarifarios.filter(x => x.activo && x.pais_id === paisId);
+  const selector = (paisId) => h("select", {},
+    h("option", { value: "" }, t("odo_elige_tarifario")),
+    ...deSuPais(paisId).map(x => h("option", { value: String(x.id) }, x.nombre)));
+  const poner = (c, tarifarioId) => api.patch(`/catalogos/clientes/${c.id}`, {
+    nombre: c.nombre, pais_id: c.pais_id, tarifario_id: Number(tarifarioId) });
+
+  /* A todos los de un pais de una vez, confirmando en la misma tarjeta:
+     es el precio que se le va a cobrar a cada uno. */
+  const todos = [...new Set(faltan.map(c => c.pais_id))].map(paisId => {
+    const suyos = faltan.filter(c => c.pais_id === paisId);
+    const valores = { p: nombrePais(paisId), n: suyos.length };
+    /* Un pais sin ningun tarifario todavia --Brasil, hoy--: no hay que
+       escoger. Se dice, y se da de alta el tarifario primero. */
+    if (!deSuPais(paisId).length) {
+      return h("p", { clase: "gris chico", style: "margin:0 0 12px" },
+        reemplazar(t("odo_sin_tarifario_de_pais"), valores));
+    }
+    const sel = selector(paisId);
+    const confirmar = h("div");
+    const boton = h("button", { type: "button", clase: "chico" },
+      suyos.length === 1 ? t("odo_poner")
+                         : reemplazar(t("odo_poner_a_todos"), { n: suyos.length }));
+    boton.addEventListener("click", () => {
+      if (!sel.value) return mensaje(t("odo_elige_tarifario"), "alerta");
+      const nombre = sel.options[sel.selectedIndex].textContent;
+      const si = h("button", { type: "button", clase: "chico" }, t("odo_si_poner"));
+      const no = h("button", { type: "button", clase: "chico claro" }, t("cancelar"));
+      no.addEventListener("click", () => confirmar.replaceChildren());
+      si.addEventListener("click", async () => {
+        si.disabled = true;
+        no.disabled = true;
+        try {
+          for (const c of suyos) await poner(c, sel.value);
+          mensaje(t("acc_hecho"));
+          await sinTarifario(caja);
+        } catch (err) {
+          mensaje(err.message, "grave");
+          await sinTarifario(caja);
+        }
+      });
+      confirmar.replaceChildren(h("div", { clase: "aviso alerta", style: "margin:8px 0 0" },
+        h("p", { style: "margin:0 0 8px" },
+          reemplazar(t("odo_confirmar_tarifario"), { t: nombre, n: suyos.length })),
+        h("div", { clase: "acciones" }, si, no)));
+    });
+    return h("div", { style: "margin:0 0 12px" },
+      h("div", { clase: "chico", style: "font-weight:600;margin:0 0 4px" },
+        reemplazar(t("odo_tarifario_de_pais"), valores)),
+      h("div", { clase: "acciones" }, sel, boton), confirmar);
+  });
+
+  const uno = faltan.map(c => {
+    const sel = selector(c.pais_id);
+    const boton = h("button", { type: "button", clase: "chico claro" }, t("odo_poner"));
+    boton.addEventListener("click", async () => {
+      if (!sel.value) return;
+      boton.disabled = true;
+      try {
+        await poner(c, sel.value);
+        mensaje(t("acc_hecho"));
+        await sinTarifario(caja);
+      } catch (err) {
+        mensaje(err.message, "grave");
+        boton.disabled = false;
+      }
+    });
+    return h("div", { style: "display:flex;gap:10px;align-items:center;flex-wrap:wrap;"
+                              + "padding:5px 0;border-bottom:1px solid #f0f2f4" },
+      h("span", { style: "flex:1 1 260px" }, c.nombre,
+        h("span", { clase: "gris chico" }, ` · ${c.rfc || t("odo_sin_rfc")}`)),
+      sel, boton);
+  });
+
+  const lista = plegable(t("odo_uno_por_uno"), h("div", {}, ...uno), null, {}, false);
+  const tarjetaDeTarifas = h("div", { clase: "tarjeta" },
+    h("h3", {}, reemplazar(t("odo_sin_tarifario_titulo"), { n: faltan.length })),
+    h("p", { clase: "gris chico", style: "margin:0 0 12px" }, t("odo_sin_tarifario_pie")),
+    ...todos, lista);
+  caja.replaceChildren(tarjetaDeTarifas);
+}
+
 /* ------------------------------------------------------------ historial */
 
 function pintarHistorial(caja, estado) {
@@ -501,7 +727,8 @@ function pintarHistorial(caja, estado) {
     h("tbody", {}, ...filas.map((f) => h("tr", {},
       h("td", {}, cuando(f.hecha_en)),
       h("td", {}, t(f.tipo === "flota" ? "odo_t_flota"
-                    : f.tipo === "oficina" ? "odo_t_oficina" : "odo_t_personal")),
+                    : f.tipo === "oficina" ? "odo_t_oficina"
+                    : f.tipo === "clientes" ? "odo_t_clientes" : "odo_t_personal")),
       h("td", { clase: "gris" }, t(f.automatica ? "odo_sola_h" : "odo_a_mano")),
       h("td", {}, f.hecha_por || "—"),
       h("td", { clase: "num" }, String(f.altas)),

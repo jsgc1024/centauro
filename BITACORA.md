@@ -4732,13 +4732,75 @@ Cuando Odoo la archiva, su acceso se cierra.
   que dice cuadra, Aplicar. Después, RH da los accesos en Accesos →
   Personas → *Oficina, sin acceso*.
 
+## 75. Los clientes, desde Odoo
+
+Tercer paso de la propuesta *Puestos y Odoo* (sección 73): los clientes
+se dan de alta en Odoo y Centauro los lee de ahí, con su nombre, su RFC y
+su país. El tarifario sigue siendo de Centauro.
+
+### Lo que cambió
+
+- **Una cuarta lectura en la pantalla de Odoo**: *Los clientes*, con su
+  ensayo y su aplicar. Es cliente toda empresa de Odoo marcada como
+  cliente; sus contactos no —esos son los solicitantes, que se capturan
+  en Centauro—. La primera vez se aplica a mano; de ahí en adelante se
+  lee sola cada hora (a los :47).
+- **Llegan sin tarifario.** En la lista de clientes del servicio nuevo y
+  del implantado salen con «(sin tarifario)»: se les puede armar el
+  servicio, pero no cotizar hasta que se les ponga.
+- **El tarifario se pone en la misma pantalla de Odoo.** Debajo de la
+  tarjeta de los clientes sale *Clientes sin tarifario*: se le pone a
+  todos los de un país de una vez —confirmando, porque es lo que se les
+  va a cobrar— o uno por uno. Un país sin ningún tarifario todavía
+  —Brasil, hoy— lo dice. No había dónde ponerlo: el catálogo de clientes
+  no tenía pantalla.
+- **Al que ya estaba se le reconoce** por su RFC o, si no, por su nombre
+  sin la razón social —«Grupo Gamma» es «Grupo Gamma SA de CV»—, y solo
+  si se parece a uno. Si se parece a dos, queda pendiente.
+- **El que llega con otro nombre se liga a mano, antes de aplicar.** El
+  ensayo dice qué clientes de Centauro no encontró en Odoo; si alguno es
+  uno de los que llegan —«Transportes del Norte» es «Transportes Norte
+  SA de CV»—, se escoge cuál ahí mismo y se liga, y no se da de alta dos
+  veces. Hasta la primera lectura se puede deshacer, y el de Odoo que ya
+  se escogió no se le ofrece a otro.
+- **Lo de Odoo no se edita en Centauro**: el nombre, el RFC y el país de
+  un cliente que vino de Odoo se corrigen allá. El tarifario sí se pone
+  aquí.
+- **Sin RFC llega igual**, pero se cuenta aparte: sin RFC no se le puede
+  facturar. Un país que Odoo no dice se toma de un RFC mexicano, que
+  tiene su forma; si tampoco, queda pendiente.
+- **La baja no borra**: el cliente que Odoo archiva deja de ofrecerse
+  para un servicio nuevo, y sus servicios y facturas lo siguen nombrando.
+- **Un cliente de Centauro que no está en Odoo no se toca**: los de
+  Brasil, mientras no lleguen allá.
+
+### Las pruebas
+
+- `tests/test_odoo_clientes.py`, contra un Odoo de mentiras: se leen
+  solo las empresas cliente; el ensayo no guarda nada; llega con su RFC y
+  sin tarifario; sin RFC llega y se cuenta aparte; el país —de Odoo, del
+  RFC, o pendiente—; el nombre sin la razón social; a quien ya estaba se
+  le liga por su nombre y por su RFC; si se parece a dos no se adivina;
+  el que llega con otro nombre se liga a mano, y se deshace hasta la
+  primera lectura;
+  lo que cambia en Odoo se pone al día; la baja no borra y lo de Centauro
+  no se toca; lo de Odoo no se edita en Centauro pero el tarifario sí; la
+  de cada hora espera a la primera; y las puertas.
+
+### Para subirlo
+
+- Lleva migración (`d8e2f6a4b1c3`): el RFC y la hora de la última
+  lectura en `cliente`.
+- Ya en el servidor: Odoo → *Los clientes* → Ensayo, y si cuadra,
+  Aplicar. Después, ahí mismo, *Clientes sin tarifario*.
+
 ## 14. Lo que falta
 
 ### Abierto
 
-- **Puestos y Odoo: los pasos 3 y 4** (secciones 73 y 74). Los clientes
-  desde Odoo y la factura en borrador hacia Odoo —probada primero en una
-  copia—.
+- **Puestos y Odoo: el paso 4** (secciones 73 a 75). La factura en
+  borrador hacia Odoo, probada primero en una copia de Odoo: hace falta
+  la copia y una llave que pueda escribir en ella.
 - **El servidor: lo que queda del proveedor** (secciones 68, 70 y 71).
   El dominio ya es de Centauro: `mycentauro.lat`, comprado en Akky a su
   nombre, con el DNS en Google Cloud DNS; la consola vive en

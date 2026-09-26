@@ -252,6 +252,12 @@ class Cliente(Base):
     pais_id: Mapped[int] = mapped_column(ForeignKey("pais.id"))
     tarifario_id: Mapped[int | None] = mapped_column(ForeignKey("tarifario.id"), nullable=True)
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Lo que llega de Odoo (seccion 75): el RFC --sin el no se le puede
+    # facturar-- y cuando se leyo por ultima vez. El tarifario sigue
+    # siendo de Centauro: el cliente llega sin el y se le pone aqui.
+    rfc: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    odoo_sincronizado_en: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True)
 
     tarifario: Mapped["Tarifario | None"] = relationship(back_populates="clientes")
     solicitantes: Mapped[list["Solicitante"]] = relationship(back_populates="cliente")

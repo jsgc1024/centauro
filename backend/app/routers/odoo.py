@@ -11,7 +11,8 @@ hora. `POST /personal` se queda para quien todavia lo mande.
 
 La flota y el taller, igual (seccion 52): `/flota/ensayo` y
 `/flota/sincronizar`. Y el personal de oficina (seccion 74):
-`/oficina/ensayo` y `/oficina/sincronizar`.
+`/oficina/ensayo` y `/oficina/sincronizar`; y los clientes (seccion 75):
+`/clientes/ensayo` y `/clientes/sincronizar`.
 
 La pantalla de Odoo de la consola (seccion 64) usa estas mismas rutas y
 `/estado`, que dice si hay llave y como van las lecturas: en produccion
@@ -23,8 +24,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models as m
-from app import (odoo, odoo_api, odoo_flota, odoo_oficina, odoo_personal,
-                 schemas as s)
+from app import (odoo, odoo_api, odoo_clientes, odoo_flota, odoo_oficina,
+                 odoo_personal, schemas as s)
 from app.auth import requiere
 from app.config import settings
 from app.db import get_db
@@ -132,7 +133,8 @@ def estado(db: Session = Depends(get_db),
     reciente = (L.hecha_en.desc(), L.id.desc())
     ultimas = db.query(L).order_by(*reciente).limit(LECTURAS_EN_PANTALLA).all()
     por_tipo = {}
-    for tipo in (odoo_personal.TIPO, odoo_flota.TIPO, odoo_oficina.TIPO):
+    for tipo in (odoo_personal.TIPO, odoo_flota.TIPO, odoo_oficina.TIPO,
+                 odoo_clientes.TIPO):
         a_mano = (db.query(L).filter_by(tipo=tipo, automatica=False)
                   .order_by(*reciente).first())
         sola = (db.query(L).filter_by(tipo=tipo, automatica=True)
@@ -215,3 +217,25 @@ def oficina_sincronizar(db: Session = Depends(get_db),
     lectura. La primera vez se hace a mano; despues se lee sola cada
     hora."""
     return _leer(odoo_oficina, db, False, usuario)
+
+
+# ------------------------------------------------ los clientes (seccion 75)
+
+@router.get("/clientes/ensayo",
+            summary="Que cambiaria al leer los clientes de Odoo, sin guardar")
+def clientes_ensayo(db: Session = Depends(get_db),
+                    usuario: m.Usuario = Depends(requiere(m.Rol.ADMIN))):
+    """Lee Odoo y dice que haria con los clientes: cuales llegan, cuales
+    ya estaban, a cuales les falta el RFC y cuales se fueron. No guarda
+    nada, ni aqui ni en Odoo."""
+    return _leer(odoo_clientes, db, True, usuario)
+
+
+@router.post("/clientes/sincronizar",
+             summary="Leer los clientes de Odoo y guardarlos")
+def clientes_sincronizar(db: Session = Depends(get_db),
+                         usuario: m.Usuario = Depends(requiere(m.Rol.ADMIN))):
+    """Lo mismo que el ensayo, guardado. Los que llegan, llegan sin
+    tarifario: se les pone en Centauro. La primera vez se hace a mano;
+    despues se lee sola cada hora."""
+    return _leer(odoo_clientes, db, False, usuario)

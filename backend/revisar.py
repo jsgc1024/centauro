@@ -674,7 +674,7 @@ AYUDA_POR_PANTALLA = {
     "nomina.js": 7,
     # La lectura de Odoo (seccion 64): uno por lectura --el personal y la
     # flota--, el de lo pendiente y el de las ultimas lecturas.
-    "odoo.js": 5,
+    "odoo.js": 6,
     "panorama.js": 6,
     "servicio.js": 11,
 

@@ -116,6 +116,8 @@ class ClienteIn(Base):
     pais_id: int
     odoo_id: int | None = None
     tarifario_id: int | None = None
+    # Seccion 75: el de Odoo manda; a mano, solo el de quien no esta alla.
+    rfc: str | None = None
 
 
 class ClienteOut(ClienteIn):

@@ -205,9 +205,12 @@ export async function nuevoServicio(main) {
 
   /* =================================================== cliente y ciudad */
 
+  /* Los clientes llegan de Odoo sin tarifario (seccion 75): se ofrecen
+     igual, diciendolo, porque sin tarifario no se les puede cotizar. */
   const clientes = lista("cliente_id",
     [{ valor: "", texto: t("elige_cliente") },
-     ...cat.clientes.map(c => ({ valor: c.id, texto: c.nombre }))],
+     ...cat.clientes.map(c => ({ valor: c.id, texto: c.tarifario_id
+       ? c.nombre : `${c.nombre} ${t("cli_sin_tarifario")}` }))],
     { onchange: () => { cargarSolicitantes(); revisar(); } });
 
   const consultores = lista("consultor_id",
