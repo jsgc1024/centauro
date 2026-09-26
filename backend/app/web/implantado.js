@@ -15,7 +15,7 @@ import { aviso, buscador, campo, coincide, conAyuda, dinero, entrada,
 import { buscadorDeLugar } from "./mapa.js";
 import { bloqueRevisionUnidad } from "./servicio.js";
 import { IDIOMAS, idioma, t } from "./idioma.js";
-import { queda, tarjetaCierre } from "./cierre.js";
+import { CAMPO_DE_TERMINOS, queda, tarjetaCierre } from "./cierre.js";
 import { tiene } from "./menu.js";
 
 /* El dinero del mes --cuanto a cada quien y pedirselo a finanzas-- lo
@@ -1911,6 +1911,116 @@ function monedaDe(ficha) {
   return monedas[ficha.servicio_id] || "MXN";
 }
 
+function reemplazar(texto, valores) {
+  return Object.entries(valores).reduce(
+    (s, [k, v]) => s.split(`{${k}}`).join(v ?? ""), texto);
+}
+
+/* Los terminos del mes segun la lista de implantados del cliente
+   (seccion 80), renglon por renglon: cada quien por su rol, el conductor
+   con su unidad en paquete si la lista lo pacta, cada unidad por los
+   dias de servicio y la hora extra del equipo. Abajo, si el mes va con
+   la lista o en que no coincide. */
+function bloqueDeLaLista(x) {
+  const d = x.de_la_lista;
+  if (!d) return null;
+  if (!d.lista) {
+    return h("p", { clase: "gris chico", style: "margin:14px 0 0" },
+      t("imp_lista_sin_lista"));
+  }
+  const m = x.moneda || d.lista.moneda || "MXN";
+  const monto = (v) => (v === null || v === undefined ? t("imp_lista_sin_precio")
+                                                        : dinero(v, m));
+  const titulo = h("h4", { clase: "grupo", style: "margin:16px 0 6px" },
+    `${t(d.lista.de_implantados ? "imp_lista_titulo" : "imp_lista_titulo_siempre")}`
+      + ` · ${d.lista.nombre}`,
+    d.lista.de_odoo
+      ? h("span", { clase: "etiqueta info", style: "margin-left:6px" }, t("nav_odoo"))
+      : "");
+  if (d.motivo) return h("div", {}, titulo, aviso(t("imp_lista_otra_moneda"), "alerta"));
+
+  const fila = (que, precio, terminos, clase = "") => h("tr", { clase },
+    h("td", {}, ...que), h("td", { clase: "der num" }, precio),
+    h("td", { clase: "der num" }, terminos));
+  const filas = [];
+  const personas = d.renglones.filter(r => r.tipo === "recurso"
+                                           || r.tipo === "paquete");
+  for (const r of personas) {
+    const que = r.tipo === "paquete"
+      ? [`${r.quien || "—"} · ${r.rol} + ${r.unidad} ${r.placa}`,
+         h("span", { clase: "etiqueta info", style: "margin-left:6px" },
+           t("imp_lista_paquete"))]
+      : [`${r.quien || "—"} · ${r.rol}`];
+    filas.push(fila(que, reemplazar(t("imp_lista_por_dia"),
+                                    { p: dinero(r.precio_dia, m) }), ""));
+  }
+  for (const f of d.faltan.filter(f => f.que === "rol")) {
+    filas.push(fila([`${f.quien || "—"} · ${f.descripcion || t("imp_lista_sin_rol")}`],
+      h("span", { clase: "rojo" }, t("imp_lista_sin_precio")), ""));
+  }
+  filas.push(fila([h("b", {}, t("cie_personal_por_dia")), " ",
+                   h("span", { clase: "gris" }, t("imp_lista_y_adicional"))],
+    "", h("b", {}, monto(d.terminos.precio_dia_personal)), "total"));
+  for (const r of d.renglones) {
+    if (r.tipo === "unidad") {
+      filas.push(fila([`${r.placa} · ${r.unidad}`],
+        reemplazar(t("imp_lista_unidad_dias"),
+                   { p: dinero(r.precio_dia, m), n: r.dias }),
+        h("b", {}, reemplazar(t("imp_lista_al_mes"),
+                              { p: dinero(r.precio_mes, m) }))));
+    } else if (r.tipo === "unidad_en_paquete") {
+      filas.push(fila([`${r.placa} · ${r.unidad}`], t("imp_lista_en_paquete"),
+        h("b", {}, reemplazar(t("imp_lista_al_mes"), { p: dinero(0, m) }))));
+    }
+  }
+  for (const f of d.faltan.filter(f => f.que === "unidad")) {
+    filas.push(fila([`${f.quien} · ${f.descripcion}`],
+      h("span", { clase: "rojo" }, t("imp_lista_sin_precio")), ""));
+  }
+  const extras = personas.filter(r => r.precio_hora_extra !== null
+                                      && r.precio_hora_extra !== undefined)
+                         .map(r => dinero(r.precio_hora_extra, m));
+  filas.push(fila([t("cie_hora_extra")],
+    extras.length ? reemplazar(t("imp_lista_por_hora"), { p: extras.join(" + ") })
+                  : t("imp_lista_sin_precio"),
+    h("b", {}, d.terminos.precio_hora_extra === null ? "—"
+                                                     : dinero(d.terminos.precio_hora_extra, m))));
+
+  const tabla = h("table", { clase: "tabla-cierre", style: "width:100%" },
+    h("thead", {}, h("tr", {}, h("th", {}, ""),
+      h("th", { clase: "der" }, t("imp_lista_col_precio")),
+      h("th", { clase: "der" }, t("imp_lista_col_terminos")))),
+    h("tbody", {}, ...filas));
+
+  /* Como queda el mes frente a la lista. */
+  const pie = [];
+  if (x.esquema === "mes_completo") {
+    if (d.mes_completo !== null) {
+      pie.push(h("p", { clase: "gris chico", style: "margin:8px 0 0" },
+        reemplazar(t("imp_lista_mes_completo"), { p: dinero(d.mes_completo, m) })));
+    }
+  } else if (x.diferencias.length) {
+    pie.push(h("div", { clase: "aviso alerta", style: "margin:10px 0 0" },
+        h("b", {}, t("imp_lista_difiere")), " ",
+        x.diferencias.map(c => reemplazar(t("imp_lista_dif"), {
+          c: t(CAMPO_DE_TERMINOS[c.campo]), m: monto(c.mes), l: monto(c.lista) }))
+          .join(". ") + "."),
+      h("p", { clase: "gris chico", style: "margin:6px 0 0" },
+        t("imp_lista_nota_acuerdo")));
+  } else if (d.faltan.length) {
+    pie.push(h("div", { clase: "aviso alerta", style: "margin:10px 0 0" },
+      reemplazar(t("imp_lista_faltan"), {
+        q: d.faltan.map(f => f.descripcion || f.quien).join(", ") })));
+  } else {
+    pie.push(h("div", { clase: "aviso ok", style: "margin:10px 0 0" },
+      t(x.precios_de_la_lista ? "imp_lista_ok" : "imp_lista_iguales")));
+  }
+  return h("div", {}, titulo,
+    h("p", { clase: "gris chico", style: "margin:0 0 6px" },
+      t(d.lista.de_implantados ? "imp_lista_sub" : "imp_lista_sub_siempre")),
+    tabla, ...pie);
+}
+
 /* Los terminos del mes: como se cobra y como se cobran los gastos
    (seccion 59). Hasta hoy solo se capturaban al abrir el primer mes, y
    sin ellos el visto bueno de un mes cobrado por dia nunca pasaba.
@@ -2002,9 +2112,29 @@ function tarjetaTerminos(contratoId, periodo, alGuardar) {
           });
           mensaje(t("cie_terminos_guardados"));
           if (alGuardar) alGuardar();
+          // Lo de la lista se vuelve a decir con lo guardado.
+          pintar();
         } catch (err) { mensaje(err.message, "grave"); }
         e.target.disabled = false;
       } }, t("cie_guardar_terminos"));
+
+    /* «Usar los de la lista» (seccion 80): el mes vuelve a los precios
+       de la lista de implantados. Solo cuando no coinciden. */
+    const usarLista = h("button", { clase: "claro chico", type: "button",
+      onclick: async (e) => {
+        e.target.disabled = true;
+        try {
+          await api.post(`/implantados/contratos/${contratoId}/terminos/de-la-lista`, {});
+          mensaje(t("imp_lista_usados"));
+          if (alGuardar) alGuardar();
+          pintar();
+        } catch (err) {
+          mensaje(err.message, "grave");
+          e.target.disabled = false;
+        }
+      } }, t("imp_lista_usar"));
+    const conLista = x.de_la_lista && x.de_la_lista.lista && !x.de_la_lista.motivo
+                     && x.esquema === "por_dia" && x.diferencias.length;
 
     caja.replaceChildren(caja.firstChild,
       h("div", { clase: "rejilla dos", style: "margin-bottom:12px" },
@@ -2013,10 +2143,11 @@ function tarjetaTerminos(contratoId, periodo, alGuardar) {
         h("div", {}, h("label", {}, t("cie_gastos_del_servicio")),
           h("div", { clase: "bloque-radio" }, alzado, netos))),
       rejilla,
+      bloqueDeLaLista(x) || h("div"),
       h("p", { clase: "gris chico", style: "margin:10px 0 12px" },
         t("cie_terminos_pie")),
       x.editable
-        ? h("div", { clase: "acciones" }, guardar)
+        ? h("div", { clase: "acciones" }, guardar, conLista ? usarLista : "")
         : aviso(t("cie_terminos_cerrados"), "alerta"));
   };
   pintar();

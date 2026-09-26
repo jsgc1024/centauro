@@ -2645,6 +2645,14 @@ class ContratoImplantado(Base):
     # Pasa solo al mes siguiente.
     precio_hora_extra: Mapped[float | None] = mapped_column(Numeric(12, 2),
                                                             nullable=True)
+    # Si los precios del mes son los de la lista de implantados del
+    # cliente (seccion 80). Los pone el mes al abrirse y el boton «Usar
+    # los de la lista»; se apaga cuando el consultor guarda otros --un
+    # acuerdo especial--. El mes que sigue a uno que va con la lista los
+    # vuelve a tomar de la lista, con los dias de servicio de ese mes; el
+    # que sigue a uno puesto a mano los copia, como siempre.
+    precios_de_la_lista: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"))
 
     generado: Mapped[bool] = mapped_column(Boolean, default=False)
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

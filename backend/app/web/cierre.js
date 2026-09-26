@@ -390,6 +390,17 @@ const ASUNTOS = {
   "Marca fuera de horario sin revisar": "cie_asu_marca",
   "Alertas sin atender": "cie_asu_alertas",
   "Viaticos sin cerrar": "cie_desv_viatico_no_cerrado",
+  "Precios distintos a los de la lista": "cie_pl_asunto",
+  "La lista no tiene todo": "cie_li_asunto",
+};
+
+/* Como se llama cada precio de los terminos del implantado, para decir
+   en cual no coinciden con la lista de implantados (seccion 80). */
+export const CAMPO_DE_TERMINOS = {
+  precio_dia_personal: "cie_personal_por_dia",
+  precio_dia_adicional: "cie_dia_adicional",
+  precio_mes_vehiculo: "cie_vehiculo_al_mes",
+  precio_hora_extra: "cie_hora_extra",
 };
 
 /* Lo que ya dice el reloj de la tarjeta no se repite abajo. */
@@ -517,6 +528,21 @@ function paraRevisar(o) {
                  comprobado: dinero(d.comprobado, d.moneda || undefined),
                  cuenta: dinero(d.cuenta, d.moneda || undefined), km: d.km }),
                accion: t("cie_gps_gasolina_accion") };
+    /* Los precios del mes contra la lista de implantados (seccion 80). */
+    case "precios_lista": {
+      const monto = (v) => (v === null || v === undefined
+        ? t("imp_lista_sin_precio") : dinero(v, d.moneda || undefined));
+      return { asunto: t("cie_pl_asunto"),
+               mensaje: reemplazar(t("cie_pl_mensaje"), { l: d.lista }) + " "
+                 + (d.diferencias || []).map(x => reemplazar(t("imp_lista_dif"), {
+                     c: t(CAMPO_DE_TERMINOS[x.campo]), m: monto(x.mes),
+                     l: monto(x.lista) })).join("; ") + ".",
+               accion: t("cie_pl_accion") };
+    }
+    case "lista_incompleta":
+      return { asunto: t("cie_li_asunto"),
+               mensaje: reemplazar(t("cie_li_mensaje"), d),
+               accion: t("cie_li_accion") };
     default:
       return { asunto: asunto(o.asunto), mensaje: o.mensaje || "" };
   }

@@ -18,6 +18,7 @@ from app import cierre_mes
 from app import comisiones
 from app import reloj
 from app import implantado as motor
+from app import implantado_precios
 from app import tasksheet
 from app import viaticos_implantado as viaticos
 from app import models as m
@@ -234,6 +235,7 @@ class TerminosDelMesIn(BaseModel):
 
 def _terminos(db: Session, contrato: m.ContratoImplantado) -> dict:
     pais = db.get(m.Pais, contrato.servicio.pais_id)
+    propuesta = implantado_precios.de_la_lista(db, contrato)
     return {
         "contrato_id": contrato.id,
         "periodo": cierre_mes.periodo(contrato),
@@ -252,6 +254,11 @@ def _terminos(db: Session, contrato: m.ContratoImplantado) -> dict:
         # Con el visto bueno dado ya no se cambian: la factura del mes
         # salio, o esta por salir, con estos precios.
         "editable": not cierre_mes.con_visto_bueno(db, contrato),
+        # Los mismos terminos segun la lista de implantados del cliente
+        # (seccion 80), renglon por renglon, y en que no coinciden.
+        "precios_de_la_lista": contrato.precios_de_la_lista,
+        "de_la_lista": propuesta,
+        "diferencias": implantado_precios.diferencias(contrato, propuesta),
     }
 
 
@@ -282,6 +289,11 @@ def guardar_terminos(contrato_id: int, datos: TerminosDelMesIn,
     for campo, valor in datos.model_dump().items():
         setattr(contrato, campo, valor)
     db.flush()
+    # Si lo guardado es lo de la lista, el mes sigue con ella; si no, es un
+    # acuerdo especial y se queda a mano, tambien en los meses que siguen.
+    contrato.precios_de_la_lista = implantado_precios.sigue_la_lista(
+        contrato, implantado_precios.de_la_lista(db, contrato))
+    db.flush()
     despues = _terminos(db, contrato)
     cambios = [f"{k}: {antes[k]} -> {despues[k]}"
                for k in ("esquema", "precio_dia_personal",
@@ -293,6 +305,46 @@ def guardar_terminos(contrato_id: int, datos: TerminosDelMesIn,
         auditoria.registrar(db, usuario, contrato.servicio,
                             "terminos del mes",
                             (f"{cierre_mes.periodo(contrato)}: "
+                             + "; ".join(cambios))[:400])
+    db.commit()
+    db.refresh(contrato)
+    return _terminos(db, contrato)
+
+
+@router.post("/contratos/{contrato_id}/terminos/de-la-lista",
+             summary="Poner en el mes los precios de la lista de implantados")
+def terminos_de_la_lista(contrato_id: int, db: Session = Depends(get_db),
+                         usuario: m.Usuario = Depends(CONSULTOR)):
+    """«Usar los de la lista» (seccion 80): los precios del mes vuelven a
+    ser los de la lista de implantados del cliente, con la plantilla y los
+    dias de servicio del mes. Lo que la lista no tiene se queda como esta.
+    Con el visto bueno dado ya no se tocan."""
+    contrato = cierre_mes.contrato_o_404(db, contrato_id)
+    if cierre_mes.con_visto_bueno(db, contrato):
+        raise HTTPException(409, {
+            "mensaje": (f"El mes {cierre_mes.periodo(contrato)} ya tiene "
+                        "visto bueno: sus terminos ya no se cambian"),
+            "que_hacer": ("La factura del mes salio con estos precios. Si "
+                          "hay que corregirla, finanzas lo regresa.")})
+    propuesta = implantado_precios.de_la_lista(db, contrato)
+    if propuesta["lista"] is None or propuesta["motivo"]:
+        raise HTTPException(409, {
+            "mensaje": ("El cliente no tiene una lista de la que tomar los "
+                        "precios" if propuesta["lista"] is None else
+                        f"La lista {propuesta['lista']['nombre']} esta en "
+                        "otra moneda que la del pais del servicio"),
+            "que_hacer": "Los terminos del mes se capturan a mano."})
+    cambios = []
+    if contrato.esquema != m.EsquemaCotizacionImplantado.POR_DIA:
+        # La lista cobra por dia: el precio fijo por mes no sale de ella.
+        cambios.append(f"esquema: {contrato.esquema.value} -> por_dia")
+        contrato.esquema = m.EsquemaCotizacionImplantado.POR_DIA
+    cambios += implantado_precios.aplicar(contrato, propuesta)
+    if cambios:
+        auditoria.registrar(db, usuario, contrato.servicio,
+                            "terminos del mes",
+                            (f"{cierre_mes.periodo(contrato)}, de la lista "
+                             f"{propuesta['lista']['nombre']}: "
                              + "; ".join(cambios))[:400])
     db.commit()
     db.refresh(contrato)
@@ -617,6 +669,12 @@ def _abrir_mes(db: Session, usuario: m.Usuario, servicio: m.Servicio,
         [(p.persona_id, p.vehiculo_id, p.rol_id, p.empieza)
          for p in datos.personal],
         datos.unidades)
+    # Los precios del mes salen de la lista de implantados del cliente
+    # (seccion 80). Si vinieron escritos, mandan esos: son un acuerdo.
+    if (datos.esquema == m.EsquemaCotizacionImplantado.POR_DIA
+            and all(getattr(datos, c) is None
+                    for c in implantado_precios.CAMPOS)):
+        implantado_precios.al_abrir(db, contrato)
     db.commit()
     db.refresh(contrato)
 
@@ -957,6 +1015,13 @@ def guardar_acuerdo(servicio_id: int, datos: AcuerdoIn,
                 f"{contrato.mes:02d}/{contrato.anio} desde el dia "
                 f"{contrato.desde_dia} · dias base {base_antes} -> "
                 f"{contrato.dias_base}")
+            # Si el mes va con la lista de implantados (seccion 80), la
+            # unidad se cobra por los dias de servicio: con otros dias,
+            # otro precio del mes.
+            if (contrato.precios_de_la_lista
+                    and not cierre_mes.con_visto_bueno(db, contrato)):
+                implantado_precios.aplicar(
+                    contrato, implantado_precios.de_la_lista(db, contrato))
             db.commit()
             contrato_ajustado = {
                 "periodo": f"{contrato.mes:02d}/{contrato.anio}",

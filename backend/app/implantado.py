@@ -1650,6 +1650,14 @@ def abrir_siguiente(db: Session, servicio: m.Servicio,
     for fila in anterior.unidades:
         db.add(m.UnidadImplantado(contrato_id=contrato.id,
                                   vehiculo_id=fila.vehiculo_id))
+    # Si el mes que termina iba con la lista de implantados del cliente
+    # (seccion 80), el nuevo la vuelve a tomar: con sus dias de servicio y
+    # con lo que la lista diga hoy. Si iba a mano --un acuerdo especial--,
+    # se queda lo copiado, como siempre.
+    if (anterior.precios_de_la_lista
+            and anterior.esquema == m.EsquemaCotizacionImplantado.POR_DIA):
+        from app import implantado_precios
+        implantado_precios.al_abrir(db, contrato)
     db.commit()
     db.refresh(contrato)
 

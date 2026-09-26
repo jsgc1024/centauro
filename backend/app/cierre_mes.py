@@ -40,6 +40,7 @@ from app import comisiones
 from app import facturacion
 from app import horas_extra
 from app import implantado as motor_implantado
+from app import implantado_precios
 from app import models as m
 from app import nomina
 from app import reloj
@@ -500,6 +501,10 @@ def revisar(db: Session, contrato: m.ContratoImplantado,
         observaciones.append({
             "nivel": INFO, "asunto": "Del mes", "mensaje": nota,
             "accion": "Informativo."})
+    # Los precios del mes contra la lista de implantados del cliente
+    # (seccion 80). Se dice y no frena: puede ser un acuerdo especial.
+    observaciones.extend(implantado_precios.observaciones(
+        contrato, implantado_precios.de_la_lista(db, contrato)))
     for d in comparativo["desviaciones"]:
         if d["descripcion"] in respaldadas:
             observaciones.append({

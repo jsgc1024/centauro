@@ -5039,13 +5039,77 @@ separado—, y que eso lo marque finanzas por lista.
 - Ya en el servidor: Facturación → Tarifarios → escoger a HASBRO y
   marcar «Los paquetes de esta lista traen los viáticos del día».
 
+## 80. Los precios del implantado, de su lista de implantados
+
+Paso C de los tarifarios desde Odoo (sección 77; decisión 4 de la
+propuesta: «el acuerdo del implantado toma sus precios de ahí»). Salvador
+vio la maqueta el 26 de septiembre y dijo «de acuerdo».
+
+Hasta aquí un implantado abría su primer mes sin precios: el alta no los
+pedía, alguien los capturaba a mano en *Términos del mes* y, sin ellos,
+el visto bueno del mes no pasaba.
+
+### Lo que cambió
+
+- **Al abrir el mes, los términos salen de la lista de implantados del
+  cliente** —el campo de su ficha en Odoo, junto a la de siempre—, con la
+  plantilla del mes:
+  - cada persona, al precio de su rol;
+  - el conductor con su unidad, en paquete si la lista lo pacta (sección
+    79): un solo precio por día, y esa unidad ya no se cobra aparte;
+  - cada unidad, a su precio por día por los días de servicio del mes: la
+    unidad va por mes, apartada para el cliente aunque un día no salga;
+  - la hora extra del equipo, la suma de la de cada quien;
+  - el día adicional, al precio del día: la lista no trae otro.
+- **Sin lista de implantados, de su lista de siempre**, y se dice: es con
+  la que Odoo le cobraría. Una lista en otra moneda que la del país no
+  se usa (sección 77).
+- **En 12x36 se cobra una persona por día**: trabaja una de las dos.
+- **Lo que la lista no tiene no se adivina.** Si falta el precio de un
+  rol, el precio por día se queda vacío —una suma a medias cobraría de
+  menos sin que nadie lo viera— y el visto bueno lo pide, como siempre.
+- **En *Términos del mes*, un bloque nuevo** dice de qué lista sale cada
+  precio, renglón por renglón, y si el mes va con la lista.
+- **Un precio a mano se queda.** Si el consultor guarda otro —un acuerdo
+  especial con el cliente—, el mes lo conserva, pasa igual al mes
+  siguiente y la tarjeta dice en qué no coincide con la lista. El botón
+  *Usar los de la lista* lo regresa.
+- **El mes que sigue a uno que va con la lista la vuelve a tomar**, con
+  los días de servicio de ese mes y con lo que la lista diga ese día: un
+  cambio de precio en Odoo entra al abrir el mes siguiente. El que sigue
+  a uno puesto a mano lo copia, como siempre (migración `c5d1e8a2f470`:
+  la marca `precios_de_la_lista` en `contrato_implantado`). Si se mueve
+  el arranque del mes, el que va con la lista vuelve a contar la unidad
+  por los días nuevos.
+- **El visto bueno del mes lo dice**: si el mes no va a precios de la
+  lista, o si a la lista le falta algo, sale un aviso para finanzas que
+  no frena el visto bueno.
+- **Lo que no cambia**: los implantados que ya corren conservan sus
+  precios —la tarjeta les dice si no son los de la lista—, y el precio
+  fijo por mes se sigue capturando a mano, porque la lista no trae precio
+  por mes; la tarjeta dice cuánto sería a precios de la lista.
+
+### Las pruebas
+
+- `tests/test_implantado_lista.py`: el primer mes sale de la lista de
+  implantados, sin el paquete que la lista no pacta; el conductor con su
+  unidad va en paquete si la lista lo pacta; sin lista de implantados,
+  de la de siempre; los precios escritos en el alta mandan; un precio a
+  mano se queda, se dice y *Usar los de la lista* lo regresa; el mes que
+  sigue vuelve a tomar la lista, y el puesto a mano se copia; mover el
+  arranque vuelve a contar la unidad; lo que la lista no tiene no se
+  adivina; y en 12x36 se cobra una persona.
+
+### Para subirlo
+
+- Lleva migración (`c5d1e8a2f470`). Los meses que ya existen quedan como
+  puestos a mano: se pasan a la lista con *Usar los de la lista*, mes por
+  mes, cuando se quiera.
+
 ## 14. Lo que falta
 
 ### Abierto
 
-- **Tarifarios desde Odoo: el paso C** (sección 77; el B es la 79): el
-  acuerdo del implantado toma sus precios de la lista de implantados del
-  cliente.
 - **La lista de Amazon, en dólares** (sección 77): no se lee hasta que
   Centauro sepa cobrar en otra moneda que la del país —*La moneda*, más
   abajo—. Mientras, Amazon se queda con el tarifario que tenga.
@@ -5074,7 +5138,9 @@ busca, está en las secciones 15 y 16.*
   El acuerdo autorizado que manda Odoo (`ODOO_LO_QUE_NECESITAMOS.md`,
   5b) solo trae renglones de recurso y vehículo; a precio alzado tiene
   que traer también el monto fijo de gastos, como renglón `viaticos`:
-  sin él, ese servicio se factura sin sus gastos. Y la factura que sale
+  sin él, ese servicio se factura sin sus gastos. Desde la sección 79
+  también hay renglón `paquete`: el producto de paquete de Odoo se lee
+  con la tabla de productos (sección 77). Y la factura que sale
   después de un regreso lleva `sustituye_a` con el folio de la anulada:
   Centauro la da por anulada, pero en Odoo alguien tiene que cancelarla
   —quien reciba las facturas, o finanzas a mano—. Hoy no muerde: sin
