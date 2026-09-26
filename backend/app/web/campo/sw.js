@@ -17,7 +17,7 @@
    activarse, el trabajador nuevo borra los caches con otro nombre. Sin
    subirla, el telefono que ya tenia la app instalada seguiria sirviendo
    el armazon viejo del cache. */
-const CACHE = "centauro-campo-v8";
+const CACHE = "centauro-campo-v9";
 const ARMAZON = [
   "/app/",
   "/app/index.html",

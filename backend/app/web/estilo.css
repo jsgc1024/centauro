@@ -48,7 +48,6 @@ header.barra .identidad { display: flex; align-items: center; gap: 14px; }
   font-size: 10.5px; text-transform: uppercase; letter-spacing: 1.1px;
   color: var(--gris); font-weight: 650;
 }
-.entrada .linea { justify-content: center; margin: -10px 0 22px; }
 /* El menu, en su propio renglon y con el renglon entero para el. Es lo
    unico de aqui arriba que se usa todo el dia; lo demas --quien eres, en
    que idioma, la salida-- vive recogido en la pastilla de la derecha. */
@@ -307,14 +306,48 @@ button.peligro { background: var(--grave); }
 .vacio { color: var(--gris); padding: 26px; text-align: center; }
 
 /* ---------------------------------------------------------- entrada */
+/* La puerta de la app: el navy de la casa con una luz detras de la tarjeta,
+   y ahi la tarjeta blanca. El logo es navy y sobre oscuro se
+   pierde (assets/LEEME.txt), por eso vive adentro de la tarjeta. El
+   fondo va tambien en el body para que el rebote del telefono al
+   recorrer no ensene el gris de las demas pantallas. */
+body:has(.entrada) { background: #120e33; }
 .entrada {
-  min-height: 100vh; display: grid; place-items: center; padding: 20px;
+  min-height: 100vh; display: grid; place-items: center; padding: 32px 16px;
+  background:
+    radial-gradient(760px 520px at 50% 42%, rgba(96, 84, 200, .34), transparent 70%),
+    linear-gradient(165deg, #211a5a 0%, #1B1546 48%, #0f0b2a 100%);
 }
+.hoja-entrada { width: 100%; max-width: 400px; }
 .entrada form {
-  background: #fff; border: 1px solid var(--linea); border-radius: 10px;
-  padding: 30px; width: 100%; max-width: 380px;
+  background: #fff; border: 0; border-top: 4px solid #c9a227;
+  border-radius: 14px; padding: 30px 30px 24px;
+  box-shadow: 0 30px 70px rgba(5, 3, 20, .45), 0 2px 6px rgba(5, 3, 20, .25);
 }
-.entrada img { height: 62px; display: block; margin: 0 auto 22px; }
+.portada { text-align: center; margin: 0 0 24px; }
+.portada img { display: block; margin: 0 auto; max-width: 100%; object-fit: contain; }
+/* El nombre de la app, debajo de la marca de la empresa y separado de
+   ella: la empresa es Centauro, la app es Proteccion Ejecutiva. */
+.portada .app-nombre {
+  margin-top: 18px; padding: 18px 0 0 2.4px; border-top: 1px solid var(--linea);
+  font-size: 19px; font-weight: 800; letter-spacing: 2.4px; line-height: 1.25;
+  text-transform: uppercase; color: var(--centauro);
+}
+.portada .app-sello {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  margin-top: 8px; font-size: 12px; font-weight: 700; letter-spacing: 5px;
+  text-transform: uppercase; color: #8c6f14;
+}
+/* El espaciado de las letras deja aire despues de la ultima: se le
+   quita para que el nombre quede centrado entre sus dos rayas. */
+.portada .app-sello span { margin-right: -5px; }
+.portada .app-sello::before, .portada .app-sello::after {
+  content: ""; width: 34px; height: 1px; background: #c9a227;
+}
+.pie-entrada {
+  margin: 18px 0 0; text-align: center; font-size: 12px; letter-spacing: .3px;
+  color: rgba(255, 255, 255, .62);
+}
 .entrada button { width: 100%; margin-top: 6px; }
 /* Las pantallas de antes de entrar --crear la contrasena, pedir el
    enlace-- viven en la misma tarjeta, con su titulo y su texto. */

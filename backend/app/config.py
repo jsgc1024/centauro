@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     # De donde cuelgan los enlaces que van dentro de un correo. Sin
     # esto, el enlace de una encuesta seria "/encuestas/pagina/abc" y no
     # llevaria a ningun lado fuera del servidor.
-    url_publica: str = ""          # "https://centauro.lat"
+    url_publica: str = ""          # "https://appep.mycentauro.lat"
 
     # Odoo, del lado de SALIDA: la factura del servicio aprobado.
     #

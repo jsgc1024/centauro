@@ -206,19 +206,45 @@ body.senal-abierta { overflow: hidden; }
 
 .vacio { color: var(--gris); text-align: center; padding: 32px 16px; }
 
-.entrada { min-height: 76vh; display: flex; flex-direction: column;
-           justify-content: center; }
-/* La linea de operacion, igual que en la consola y el task sheet. */
-.linea { display: flex; align-items: baseline; gap: 8px;
-         justify-content: center; margin: 0 0 22px; }
-.linea .clave {
-  font-weight: 700; font-size: 13px; letter-spacing: .5px;
-  color: #fff; background: var(--centauro);
-  padding: 3px 9px; border-radius: 5px;
+/* La puerta de la app --la entrada, el codigo que dicta el consultor y
+   la cuenta que no es de campo--: el navy de la casa con una luz
+   detras de la tarjeta blanca, igual que la consola. El
+   logo es navy y sobre oscuro se pierde, por eso vive en la tarjeta. */
+body:has(.entrada) {
+  background-color: #120e33;
+  background-image:
+    radial-gradient(520px 560px at 50% 40%, rgba(96, 84, 200, .34), transparent 70%),
+    linear-gradient(170deg, #211a5a 0%, #1B1546 48%, #0f0b2a 100%);
+  min-height: 100vh;
 }
-.linea .nombre {
-  font-size: 10.5px; text-transform: uppercase; letter-spacing: 1.1px;
-  color: var(--gris); font-weight: 650;
+/* Lo alto de la pantalla menos el margen de #app, que deja abajo el
+   lugar de la barra: aqui no hay barra y la tarjeta va al centro. */
+.entrada { min-height: calc(100vh - 112px); display: flex; flex-direction: column;
+           justify-content: center; }
+.entrada .caja {
+  border: 0; border-top: 4px solid #c9a227; border-radius: 16px;
+  padding: 26px 20px 20px;
+  box-shadow: 0 24px 60px rgba(5, 3, 20, .45), 0 2px 6px rgba(5, 3, 20, .25);
+}
+.portada { text-align: center; margin: 0 0 22px; }
+.portada h1 { letter-spacing: 3px; text-transform: uppercase; }
+.portada .app-nombre {
+  margin-top: 16px; padding: 16px 0 0 2.2px; border-top: 1px solid var(--linea);
+  font-size: 18px; font-weight: 800; letter-spacing: 2.2px; line-height: 1.25;
+  text-transform: uppercase; color: var(--centauro);
+}
+.portada .app-sello {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  margin-top: 8px; font-size: 12px; font-weight: 700; letter-spacing: 5px;
+  text-transform: uppercase; color: #8c6f14;
+}
+.portada .app-sello span { margin-right: -5px; }
+.portada .app-sello::before, .portada .app-sello::after {
+  content: ""; width: 30px; height: 1px; background: #c9a227;
+}
+.pie-entrada {
+  margin: 18px 0 0; text-align: center; font-size: 12px; letter-spacing: .3px;
+  color: rgba(255, 255, 255, .62);
 }
 
 .marco { border-top: 1px solid var(--linea); margin-top: 14px;
@@ -306,5 +332,5 @@ a.botonazo {
    nunca empuje al boton de salir fuera del renglon. */
 .encabezado .logo.ancho { height: 34px; max-width: 62%; object-fit: contain;
                           object-position: left center; }
-.logo-entrada { max-width: 76%; max-height: 90px; display: block;
-                margin: 0 auto 6px; object-fit: contain; }
+.logo-entrada { max-width: 78%; max-height: 64px; display: block;
+                margin: 0 auto; object-fit: contain; }

@@ -16,11 +16,12 @@ import { ponerIdioma, t } from "./idioma.js";
 import { nombreDelRol } from "./categorias.js";
 
 /* La tarjeta de la entrada, con lo que toque adentro. `op` la da el
-   armazón: la marca de arriba y el camino de vuelta a la entrada. */
+   armazón: la marca de arriba, el fondo de la puerta y el camino de
+   vuelta a la entrada. */
 function tarjeta(cuerpo, op, ...hijos) {
   const f = h("form", { onsubmit: (e) => e.preventDefault() },
               ...op.cabecera(), ...hijos);
-  cuerpo.replaceChildren(h("div", { clase: "entrada" }, f));
+  cuerpo.replaceChildren(op.puerta(f));
   return f;
 }
 

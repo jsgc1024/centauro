@@ -26,6 +26,10 @@ const TEXTOS = {
   es: {
     /* --- barra y acceso */
     linea: "Protección Ejecutiva",
+    /* El nombre de la app, en la puerta. Es un nombre: no se traduce. */
+    app_nombre: "Protección Ejecutiva",
+    app_sello: "Connect App",
+    entrada_pie: "Acceso exclusivo para personal autorizado",
     correo: "Correo",
     contrasena: "Contraseña",
     entrar: "Entrar",
@@ -1723,7 +1727,6 @@ const TEXTOS = {
     nom_tab_guardar: "Guardar {t}",
     cmp_entrar: "Entrar",
     cmp_marca: "Centauro",
-    cmp_lema: "Protección ejecutiva",
     cmp_correo: "Correo",
     cmp_contrasena: "Contraseña",
     cmp_olvide: "Olvidé mi contraseña",
@@ -2995,6 +2998,9 @@ const TEXTOS = {
 
   en: {
     linea: "Executive Protection",
+    app_nombre: "Protección Ejecutiva",
+    app_sello: "Connect App",
+    entrada_pie: "Authorized personnel only",
     correo: "Email",
     contrasena: "Password",
     entrar: "Sign in",
@@ -4690,7 +4696,6 @@ const TEXTOS = {
     nom_tab_guardar: "Save {t}",
     cmp_entrar: "Sign in",
     cmp_marca: "Centauro",
-    cmp_lema: "Executive protection",
     cmp_correo: "Email",
     cmp_contrasena: "Password",
     cmp_olvide: "I forgot my password",
@@ -5954,6 +5959,9 @@ const TEXTOS = {
 
   pt: {
     linea: "Proteção Executiva",
+    app_nombre: "Protección Ejecutiva",
+    app_sello: "Connect App",
+    entrada_pie: "Acesso exclusivo para pessoal autorizado",
     correo: "E-mail",
     contrasena: "Senha",
     entrar: "Entrar",
@@ -7647,7 +7655,6 @@ const TEXTOS = {
     nom_tab_guardar: "Salvar {t}",
     cmp_entrar: "Entrar",
     cmp_marca: "Centauro",
-    cmp_lema: "Proteção executiva",
     cmp_correo: "E-mail",
     cmp_contrasena: "Senha",
     cmp_olvide: "Esqueci minha senha",

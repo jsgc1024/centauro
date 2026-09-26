@@ -185,6 +185,27 @@ function marca(alto = 40) {
                           font-size:${Math.round(alto / 3)}px` }, "CENTAURO");
 }
 
+/* La portada de las pantallas de antes de entrar: arriba la marca de la
+   empresa y debajo el nombre de la app, Proteccion Ejecutiva Connect
+   App. Lo pidio Salvador el 26 de septiembre de 2026: vienen mas apps,
+   una por area de la empresa, y quien llega tiene que saber en un
+   segundo a cual entro. El nombre no se traduce --es un nombre--; la
+   linea de abajo de la tarjeta, si. */
+function portada() {
+  return h("div", { clase: "portada" },
+    marca(54),
+    h("div", { clase: "app-nombre" }, t("app_nombre")),
+    h("div", { clase: "app-sello" }, h("span", {}, t("app_sello"))));
+}
+
+/* La tarjeta va sobre el fondo navy de la puerta, con su pie afuera. */
+function puerta(tarjeta) {
+  return h("div", { clase: "entrada" },
+    h("div", { clase: "hoja-entrada" },
+      tarjeta,
+      h("p", { clase: "pie-entrada" }, t("entrada_pie"))));
+}
+
 /* ------------------------------------------------------------ entrada */
 
 /* El correo con que se llega de las pantallas de antes de entrar: quien
@@ -219,8 +240,7 @@ async function pantallaEntrada() {
   }});
 
   f.append(
-    marca(62),
-    sello(),
+    portada(),
     campo(t("correo"), correo),
     campo(t("contrasena"), entrada("contrasena", { type: "password", required: "true",
                                                   autocomplete: "current-password" })),
@@ -235,7 +255,7 @@ async function pantallaEntrada() {
         location.hash = "#/olvide";
       } }, t("cc_olvide"))));
 
-  cuerpo.append(h("div", { clase: "entrada" }, f));
+  cuerpo.append(puerta(f));
 }
 
 /* Lo que se abre sin haber entrado: el enlace del correo para crear la
@@ -251,7 +271,8 @@ const ANTES_DE_ENTRAR = [
    camino de vuelta a la entrada, con el correo ya escrito. */
 function deAfuera() {
   const op = {
-    cabecera: () => [marca(62), sello()],
+    cabecera: () => [portada()],
+    puerta,
     correo: correoSugerido,
     irAEntrada: (correo = "", cerrarSesion = false) => {
       correoSugerido = correo;

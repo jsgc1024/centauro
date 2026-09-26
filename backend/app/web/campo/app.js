@@ -225,24 +225,36 @@ function entrada() {
     }
   }
 
-  raiz().replaceChildren(h("div", { clase: "entrada" },
-    /* La marca de verdad si ya se guardo alguna vez; el nombre en texto
-       la primera vez, que es cuando todavia no hay de donde sacarla. */
-    logoEmpresa
-      ? h("img", { clase: "logo-entrada", src: logoEmpresa,
-                   alt: t("cmp_marca") })
-      : h("h1", {}, t("cmp_marca")),
-    h("p", { clase: "gris" }, t("cmp_lema")),
-    h("div", { clase: "caja", style: "margin-top:22px" },
-      error,
-      h("div", { clase: "campo" }, h("label", {}, t("cmp_correo")), correo),
-      h("div", { clase: "campo" }, h("label", {}, t("cmp_contrasena")), clave),
-      boton,
-      /* Tu contraseña no va por correo: el correo es tuyo y la empresa
-         no lo controla. Va por tu consultor, que te reconoce la voz. */
-      h("button", { clase: "claro", style: "margin-top:10px",
-        onclick: () => conCodigo(correo.value.trim()) },
-        t("cmp_olvide")))));
+  raiz().replaceChildren(puerta(
+    error,
+    h("div", { clase: "campo" }, h("label", {}, t("cmp_correo")), correo),
+    h("div", { clase: "campo" }, h("label", {}, t("cmp_contrasena")), clave),
+    boton,
+    /* Tu contraseña no va por correo: el correo es tuyo y la empresa
+       no lo controla. Va por tu consultor, que te reconoce la voz. */
+    h("button", { clase: "claro", style: "margin-top:10px",
+      onclick: () => conCodigo(correo.value.trim()) },
+      t("cmp_olvide"))));
+}
+
+/* La puerta de la app, igual que la de la consola: el navy de la casa y
+   la tarjeta blanca con la marca de la empresa y, debajo, el nombre de
+   la app --Proteccion Ejecutiva Connect App, lo pidio Salvador el 26 de
+   septiembre de 2026--. La marca de verdad si ya se guardo alguna vez;
+   el nombre en texto la primera vez, que es cuando todavia no hay de
+   donde sacarla. */
+function puerta(...hijos) {
+  return h("div", { clase: "entrada" },
+    h("div", { clase: "caja" },
+      h("div", { clase: "portada" },
+        logoEmpresa
+          ? h("img", { clase: "logo-entrada", src: logoEmpresa,
+                       alt: t("cmp_marca") })
+          : h("h1", {}, t("cmp_marca")),
+        h("div", { clase: "app-nombre" }, t("app_nombre")),
+        h("div", { clase: "app-sello" }, h("span", {}, t("app_sello")))),
+      ...hijos),
+    h("p", { clase: "pie-entrada" }, t("entrada_pie")));
 }
 
 /* El agente llamó a su consultor --o a la central-- y le dictaron cuatro
@@ -287,19 +299,17 @@ function conCodigo(correoPrevio) {
     }
   }
 
-  raiz().replaceChildren(h("div", { clase: "entrada" },
-    h("h1", {}, t("cmp_marca")),
+  raiz().replaceChildren(puerta(
     h("p", { clase: "gris" }, t("cmp_pide_codigo")),
-    h("div", { clase: "caja", style: "margin-top:22px" },
-      error,
-      h("div", { clase: "campo" }, h("label", {}, t("cmp_correo")), correo),
-      h("div", { clase: "campo" },
-        h("label", {}, t("cmp_codigo_4")), codigo),
-      h("div", { clase: "campo" },
-        h("label", {}, t("cmp_contrasena_nueva")), clave),
-      boton,
-      h("button", { clase: "claro", style: "margin-top:10px",
-        onclick: () => entrada() }, t("cmp_regresar")))));
+    error,
+    h("div", { clase: "campo" }, h("label", {}, t("cmp_correo")), correo),
+    h("div", { clase: "campo" },
+      h("label", {}, t("cmp_codigo_4")), codigo),
+    h("div", { clase: "campo" },
+      h("label", {}, t("cmp_contrasena_nueva")), clave),
+    boton,
+    h("button", { clase: "claro", style: "margin-top:10px",
+      onclick: () => entrada() }, t("cmp_regresar"))));
 }
 
 /* --------------------------------------------------- la cola arriba */
@@ -1996,30 +2006,26 @@ const nombreRol = () => ({
 
 function otraCuenta() {
   const suyo = nombreRol()[sesion.usuario.rol] || sesion.usuario.rol;
-  raiz().replaceChildren(h("div", { clase: "entrada" },
-    h("div", { clase: "linea" },
-      h("span", { clase: "clave" }, "AI/EP"),
-      h("span", { clase: "nombre" }, t("cmp_lema"))),
-    h("div", { clase: "caja principal" },
-      h("h1", {}, t("cmp_otra_cuenta")),
-      h("p", { clase: "gris" },
-        t("cmp_entraste_como")
-          .replace("{nombre}", sesion.usuario.nombre)
-          .replace("{rol}", suyo)),
-      h("p", { clase: "gris chico" },
-        t("cmp_otra_cuenta_pie")),
-      h("button", { style: "margin-top:8px", onclick: () => {
-        if (pendientes().length
-            && !confirm(t("cmp_salir_con_pendientes")
-                          .replace("{n}", pendientes().length))) return;
-        olvidar();
-        limpiar();
-        sesion.token = null; sesion.usuario = null;
-        location.hash = ""; pintar();
-      } }, t("cmp_entrar_otra")),
-      h("a", { href: "/", style: "text-decoration:none" },
-        h("button", { clase: "claro", style: "margin-top:10px" },
-          t("cmp_ir_consola"))))));
+  raiz().replaceChildren(puerta(
+    h("h2", {}, t("cmp_otra_cuenta")),
+    h("p", { clase: "gris" },
+      t("cmp_entraste_como")
+        .replace("{nombre}", sesion.usuario.nombre)
+        .replace("{rol}", suyo)),
+    h("p", { clase: "gris chico" },
+      t("cmp_otra_cuenta_pie")),
+    h("button", { style: "margin-top:8px", onclick: () => {
+      if (pendientes().length
+          && !confirm(t("cmp_salir_con_pendientes")
+                        .replace("{n}", pendientes().length))) return;
+      olvidar();
+      limpiar();
+      sesion.token = null; sesion.usuario = null;
+      location.hash = ""; pintar();
+    } }, t("cmp_entrar_otra")),
+    h("a", { href: "/", style: "text-decoration:none" },
+      h("button", { clase: "claro", style: "margin-top:10px" },
+        t("cmp_ir_consola")))));
 }
 
 

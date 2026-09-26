@@ -25,9 +25,13 @@ def plantilla(pg: str, rd: str, sk: str) -> str:
     return f"""# Centauro en produccion. Este archivo no sale del servidor: no va al
 # repositorio, ni a un correo, ni a un chat. Se edita con nano.
 
+# La direccion de la app y la de la empresa sola, que manda a la app
+# (seccion 70). URL_PUBLICA es la de la app, con https.
+DOMINIO=appep.mycentauro.lat
+DOMINIO_RAIZ=mycentauro.lat
+URL_PUBLICA=https://appep.mycentauro.lat
+
 # Lo del servidor. Se genero aqui mismo y nadie tiene que saberlo.
-DOMINIO=centauro.cc
-URL_PUBLICA=https://centauro.cc
 APP_ENV=produccion
 POSTGRES_PASSWORD={pg}
 REDIS_PASSWORD={rd}

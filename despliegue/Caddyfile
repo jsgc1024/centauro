@@ -6,7 +6,9 @@
 # —y sin certificado no hay service worker, ni camara, ni ubicacion, ni
 # avisos: la app de campo simplemente no existe.
 #
-# El dominio sale del .env (DOMINIO=operacion.centauro.lat).
+# Las direcciones salen del .env: DOMINIO es la de la app
+# (appep.mycentauro.lat) y DOMINIO_RAIZ la de la empresa sola
+# (mycentauro.lat). Seccion 70.
 
 {
 	# A donde escribe Let's Encrypt si un certificado esta por vencer y
@@ -14,8 +16,20 @@
 	email operaciones@centauro.lat
 }
 
-{$DOMINIO} {
+{$DOMINIO} {$DOMINIO_RAIZ} {
 	encode zstd gzip
+
+	# mycentauro.lat sola es la puerta de la empresa. Vienen mas apps,
+	# una por area, y cada una vive en su propia direccion --appep. es
+	# la de Proteccion Ejecutiva-- para que sus sesiones, su app
+	# instalada en el telefono y su seguridad no se mezclen con las de
+	# las otras. Mientras haya una sola, la puerta manda directo a ella
+	# con la ruta completa: los enlaces que ya salieron con
+	# mycentauro.lat siguen sirviendo. 302 y no 301: el dia que la
+	# puerta tenga su pagina con un boton por app, ningun navegador se
+	# queda con el salto guardado para siempre.
+	@puerta not host {$DOMINIO}
+	redir @puerta https://{$DOMINIO}{uri} 302
 
 	# La IP real del cliente. Sin esto el registro de auditoria guarda la
 	# IP del proxy para todos, y el limite de intentos fallidos cuenta a

@@ -4359,18 +4359,77 @@ sin las fotos.
   `ARCHIVO_DESTINO` en el `.env` (guía, *El archivo de los comprobantes*).
 - Que el contador confirme el plazo; con eso se sella el candado.
 
+## 70. La puerta: el nombre de la app y su dirección
+
+Decisión de Salvador, 26 de septiembre. Las dos cosas son de la entrada.
+
+**El nombre.** La pantalla donde se pone el correo y la contraseña dice
+ahora, debajo de la marca de Centauro, el nombre de la app:
+**Protección Ejecutiva Connect App**, «para que se vea más vistoso y
+profesional». Se le enseñaron las pantallas antes de construir y lo
+aprobó con *Connect* como se escribe en inglés.
+
+**La dirección.** Vienen más apps, una por área de la empresa. Salvador
+propuso `mycentauro.lat/appep`; se le propuso `appep.mycentauro.lat` y
+la eligió, por tres cosas:
+
+- Cada app en su propia dirección no mezcla con las otras su sesión, lo
+  que el navegador guarda ni la app instalada en el teléfono, y un
+  problema de seguridad en una no alcanza a las demás. Con diagonal
+  todas viven en el mismo origen y comparten todo eso.
+- Cada una se puede ir a su propio servidor sin cambiar de dirección.
+- A esta no se le toca nada por dentro. Con diagonal había que
+  reacomodar los enlaces de los correos, los avisos al teléfono y la app
+  de campo.
+
+`mycentauro.lat` sola queda como la puerta de la empresa: mientras haya
+una sola app, manda a ella con la ruta completa, así que los enlaces que
+ya salieron con esa dirección siguen sirviendo.
+
+### Lo que cambió
+
+- **La entrada de la consola**, y con ella la de crear la contraseña y
+  la de recuperarla, que viven en la misma tarjeta: el navy de la casa
+  con una luz detrás de la tarjeta blanca, filo dorado arriba, la marca
+  de la empresa y, separado debajo, PROTECCIÓN EJECUTIVA con CONNECT APP
+  en dorado entre dos rayas. Afuera de la tarjeta: «Acceso exclusivo
+  para personal autorizado». El sello AI/EP se queda en el encabezado de
+  adentro. El nombre no se traduce, el pie sí (`app_nombre`,
+  `app_sello`, `entrada_pie`).
+- **La app de campo**, igual: la entrada, la del código de cuatro
+  dígitos y la de «esta app es del equipo de campo». Se fue `cmp_lema`,
+  que ya no usaba nadie. El trabajador de fondo sube a
+  `centauro-campo-v9`.
+- **La pestaña del navegador** dice «Protección Ejecutiva Connect App ·
+  Centauro».
+- **El `Caddyfile`** contesta en `DOMINIO` y en `DOMINIO_RAIZ`; lo que
+  llega a la segunda se manda a la primera con 302 y no con 301: el día
+  que la puerta tenga su página con un botón por app, ningún navegador
+  se queda con el salto guardado. `docker-compose.prod.yml` le pasa
+  `DOMINIO_RAIZ` al proxy; vacía, el proxy contesta solo en `DOMINIO`,
+  como antes. Se probó con Caddy 2.11.4 (`caddy adapt`), con y sin
+  `DOMINIO_RAIZ`.
+- **La documentación** deja de decir `centauro.cc`: la guía (el `.env`
+  y el paso 3, con el comando para la dirección de una app nueva),
+  `crear_env.py` y el comentario de `config.py`.
+
+### Lo que falta, de tu lado
+
+- El registro `appep.mycentauro.lat` en Cloud DNS, el `git pull` y los
+  tres renglones del `.env`: `DOMINIO`, `DOMINIO_RAIZ` y `URL_PUBLICA`.
+- Si alguien ya instaló la app de campo desde `mycentauro.lat/app/`, que
+  la quite y la vuelva a instalar desde `appep.mycentauro.lat/app/`: la
+  app instalada y sus avisos son de la dirección donde se instaló.
+
 ## 14. Lo que falta
 
 ### Abierto
 
-- **El servidor: el dominio y el proveedor** (sección 68). Producción ya
-  vive en Google Cloud. Decisión de Salvador (25 sep, noche): en vez de
-  esperar la transferencia de `centauro.cc`, Centauro contrata su propio
-  dominio, a su nombre, en Akky, y el DNS se maneja en Google (Cloud
-  DNS, en el mismo proyecto). Con eso se apunta a `34.51.121.227`, se
-  cambian `DOMINIO` y `URL_PUBLICA` en el `.env` y se abre la puerta
-  (paso 6b de `despliegue/LEEME.md`). Después: apagar el servidor de OVH
-  y dejar de usar la llave de Google Maps del proveedor.
+- **El servidor: lo que queda del proveedor** (secciones 68 y 70). El
+  dominio ya es de Centauro: `mycentauro.lat`, comprado en Akky a su
+  nombre, con el DNS en Google Cloud DNS; la app vive en
+  `appep.mycentauro.lat`. Falta apagar el servidor de OVH, quitar la
+  llave del proveedor en GitHub y dejar de usar su llave de Google Maps.
 - **El plazo del archivo de comprobantes** (sección 69): que el contador
   confirme los seis años; con eso se sella el candado del depósito.
 
@@ -4391,18 +4450,19 @@ busca, está en las secciones 15 y 16.*
 - **El GPS: lo que le toca a Centauro Satelital** (sección 60). Las 14
   unidades de Brasil que no traen placa en Pegasus —48126, 48127,
   48129, 55122, 57564 a 57566 y 57597 a 57603— no se ligan hasta que
-  la capturen. Y cuando el servidor tenga su dirección con HTTPS, el
-  disparador de pánico en Pegasus hacia `/gps/pegasus/aviso/{secreto}`;
-  mientras tanto el pánico llega con la lectura de cada dos minutos. De
-  este lado, las placas ligan contra la flota leída de Odoo: sin ella,
-  ninguna.
+  la capturen. Y el disparador de pánico en Pegasus hacia
+  `https://appep.mycentauro.lat/gps/pegasus/aviso/{secreto}`: la
+  dirección con HTTPS ya existe (sección 70); mientras no se configure,
+  el pánico llega con la lectura de cada dos minutos. De este lado, las
+  placas ligan contra la flota leída de Odoo: sin ella, ninguna.
 - **El correo: lo que falta es de Microsoft 365** (sección 67). Ya se
   decidió: sale del buzón `ai@centauro.lat` por Microsoft Graph y los
-  enlaces cuelgan de `https://centauro.cc`. Falta el buzón, registrar la
-  aplicación en Entra con su secreto, darle permiso en Exchange solo
-  sobre ese buzón y poner los tres datos en el `.env` del servidor; el
-  paso 7b de `despliegue/LEEME.md` lo dice en orden. Con eso, la
-  invitación y la recuperación de contraseña llegan solas (sección 58).
+  enlaces cuelgan de `https://appep.mycentauro.lat`. Falta el buzón,
+  registrar la aplicación en Entra con su secreto, darle permiso en
+  Exchange solo sobre ese buzón y poner los tres datos en el `.env` del
+  servidor; el paso 7b de `despliegue/LEEME.md` lo dice en orden. Con
+  eso, la invitación y la recuperación de contraseña llegan solas
+  (sección 58).
 
   *(Lo de abajo es el texto de cuando no existía el envío, que explica
   por qué la tabla es como es.)*

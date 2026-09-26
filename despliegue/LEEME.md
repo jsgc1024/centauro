@@ -127,7 +127,10 @@ historial de la terminal— y no va al repositorio. Estos son los
 renglones que puede llevar:
 
 ```
-DOMINIO=centauro.cc
+# La direccion de la app y la de la empresa sola, que manda a la app
+# mientras sea la unica (seccion 70).
+DOMINIO=appep.mycentauro.lat
+DOMINIO_RAIZ=mycentauro.lat
 POSTGRES_PASSWORD=...
 REDIS_PASSWORD=...
 DATABASE_URL=postgresql+psycopg://centauro:LA_DE_ARRIBA@db:5432/centauro
@@ -140,7 +143,7 @@ VAPID_CONTACTO=mailto:operaciones@centauro.lat
 
 # De donde cuelgan los enlaces que van en correos y task sheets. Es
 # el mismo DOMINIO de arriba.
-URL_PUBLICA=https://centauro.cc
+URL_PUBLICA=https://appep.mycentauro.lat
 
 # El correo que sale de la empresa: del buzon de Microsoft 365 (paso 7b).
 # Con los tres CORREO_MS_ llenos manda Microsoft y el SMTP de abajo no se
@@ -229,10 +232,19 @@ Si `SECRET_KEY` sigue siendo la del código, **la aplicación no arranca**.
 Es a propósito: un sistema que enciende igual con o sin secreto se
 despliega tarde o temprano sin él.
 
-**3. El DNS.** El dominio tiene que apuntar al servidor *antes* de
-levantar el proxy: Caddy pide el certificado al arrancar y Let's Encrypt
-verifica que el dominio sea tuyo. Para `centauro.cc`: un registro **A**
-hacia `34.51.121.227`.
+**3. El DNS.** Las direcciones tienen que apuntar al servidor *antes*
+de levantar el proxy: Caddy pide el certificado al arrancar y Let's
+Encrypt verifica que el dominio sea tuyo. El dominio es `mycentauro.lat`,
+comprado en Akky, con el DNS en Google Cloud DNS (zona `mycentauro-lat`;
+en Akky van sus cuatro servidores, `ns-cloud-e1` a `ns-cloud-e4` de
+`googledomains.com`). Dos registros **A** hacia `34.51.121.227`:
+`mycentauro.lat`, la puerta de la empresa, y `appep.mycentauro.lat`,
+esta app (sección 70). La app de otra área, el día que exista, es un
+registro más y su propio bloque en el `Caddyfile`:
+
+```bash
+gcloud dns record-sets create appXX.mycentauro.lat. --zone=mycentauro-lat --type=A --ttl=300 --rrdatas=34.51.121.227
+```
 
 **4. Levantar, todavía sin la puerta a internet.**
 
