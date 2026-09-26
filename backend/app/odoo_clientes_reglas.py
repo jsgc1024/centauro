@@ -8,7 +8,8 @@ sin leer ni escribir nada.
 
 Las decisiones que viven aqui:
 
-  * Es cliente toda empresa de Odoo marcada como cliente.
+  * Es cliente toda empresa de Odoo con la etiqueta «Protección
+    ejecutiva» (seccion 77; antes, toda empresa con ventas).
   * Los clientes se dan de alta en Odoo; Centauro los lee con su nombre,
     su RFC y su pais. El tarifario es de Centauro: el cliente llega sin
     el y se le pone aqui.
@@ -197,7 +198,8 @@ def clasificar_salidas(revisar: list, estados: dict) -> tuple:
         if f is not None and f.get("active", True) is not False:
             pendientes.append({"odoo_id": c["odoo_id"], "cliente_id": c["id"],
                                "nombre": c.get("nombre"),
-                               "falta": ["ya no es cliente en Odoo"]})
+                               "falta": ["ya no trae la etiqueta de "
+                                         "Proteccion Ejecutiva en Odoo"]})
         else:
             bajas.append({"odoo_id": c["odoo_id"], "cliente_id": c["id"],
                           "nombre": c.get("nombre"),

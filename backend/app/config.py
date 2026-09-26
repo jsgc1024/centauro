@@ -83,6 +83,13 @@ class Settings(BaseSettings):
     odoo_base: str = ""            # "https://centauro.odoo.com"
     odoo_api_key: str = ""
     odoo_bd: str = ""
+    # Seccion 77. Los clientes de Proteccion Ejecutiva son las empresas
+    # que traen esta etiqueta en Odoo --asi llegan los que todavia no
+    # tienen ventas y no llegan los de GPS ni los de carga--. Y la lista
+    # de precios de sus implantados vive en un campo que se agrega con
+    # Studio; se busca por su nombre visible, y si no, por este tecnico.
+    odoo_etiqueta_clientes: str = "Protección ejecutiva"
+    odoo_campo_implantados: str = "x_studio_lista_de_implantados"
 
     # Pegasus, el GPS de las unidades (seccion 60). Solo lectura, con un
     # usuario propio de la conexion --no el de una persona-- que solo ve

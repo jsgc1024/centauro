@@ -123,6 +123,8 @@ class ClienteIn(Base):
 class ClienteOut(ClienteIn):
     id: int
     activo: bool
+    # Seccion 77: la lista de implantados viene de Odoo; aqui no se pone.
+    tarifario_implantado_id: int | None = None
 
 
 class SolicitanteIn(Base):
@@ -154,6 +156,11 @@ class TarifarioIn(Base):
 class TarifarioOut(TarifarioIn):
     id: int
     activo: bool
+    # Lo que viene de Odoo (seccion 77): de solo lectura.
+    odoo_id: int | None = None
+    general: bool = False
+    resto_de: str | None = None
+    precio_hora_extra: Decimal | None = None
 
 
 class TarifaRecursoIn(Base):
@@ -166,6 +173,7 @@ class TarifaRecursoIn(Base):
 
 class TarifaRecursoOut(TarifaRecursoIn):
     id: int
+    origen: str | None = None
 
 
 class TarifaVehiculoIn(Base):
@@ -178,6 +186,7 @@ class TarifaVehiculoIn(Base):
 
 class TarifaVehiculoOut(TarifaVehiculoIn):
     id: int
+    origen: str | None = None
 
 
 # ---- viaticos

@@ -29,9 +29,27 @@ DE_ODOO = {
     m.Persona: ("nombre", "correo", "plaza_id", "odoo_id"),
     m.Vehiculo: ("placa", "categoria_id", "plaza_id", "marca_modelo",
                  "color", "modelo_anio"),
-    # Los clientes (seccion 75): el tarifario no, ese es de Centauro.
+    # Los clientes (seccion 75). Su tarifario tambien, desde que la lectura
+    # de tarifarios esta en marcha (seccion 77): se agrega abajo.
     m.Cliente: ("nombre", "pais_id", "odoo_id", "rfc"),
+    # Las listas de precios (seccion 77): se capturan en Odoo.
+    m.Tarifario: ("nombre", "pais_id", "moneda", "vigencia_desde",
+                  "vigencia_hasta"),
 }
+
+# Los precios de una lista de Odoo tampoco se tocan aqui: la siguiente
+# lectura los volveria a poner como estan alla.
+TARIFAS = (m.TarifaRecurso, m.TarifaVehiculo)
+LISTA_DE_ODOO = {
+    "mensaje": "Este tarifario viene de Odoo: se corrige en Odoo.",
+    "que_hacer": "Facturacion lo cambia en Odoo, en Ventas -> Listas de "
+                 "precios, y Centauro lo lee en la siguiente hora.",
+}
+
+
+def _de_una_lista_de_odoo(db: Session, tarifario_id) -> bool:
+    tarifario = db.get(m.Tarifario, tarifario_id) if tarifario_id else None
+    return bool(tarifario and tarifario.odoo_id)
 
 
 def _como_se_llama(obj) -> str | None:
@@ -133,6 +151,8 @@ def crud_router(
     @router.post("", response_model=esquema_out, status_code=201, summary=f"Crear {etiqueta}")
     def crear(datos: esquema_in, db: Session = Depends(get_db),
               actor: m.Usuario = Depends(escribir)):
+        if modelo in TARIFAS and _de_una_lista_de_odoo(db, datos.tarifario_id):
+            raise HTTPException(409, LISTA_DE_ODOO)
         obj = modelo(**datos.model_dump())
         db.add(obj)
         db.flush()
@@ -156,6 +176,14 @@ def crud_router(
         de_odoo = DE_ODOO.get(modelo)
         if modelo is m.Cliente and obj.odoo_sincronizado_en is None:
             de_odoo = None
+        if modelo is m.Cliente and de_odoo:
+            from app import odoo_tarifarios
+            if odoo_tarifarios.en_marcha(db):
+                de_odoo = de_odoo + ("tarifario_id",)
+        if modelo in TARIFAS and (
+                _de_una_lista_de_odoo(db, obj.tarifario_id)
+                or _de_una_lista_de_odoo(db, datos.tarifario_id)):
+            raise HTTPException(409, LISTA_DE_ODOO)
         if de_odoo and obj.odoo_id:
             nuevos = datos.model_dump(exclude_unset=True)
             tocados = [c for c in de_odoo
@@ -196,6 +224,11 @@ def crud_router(
         obj = db.get(modelo, item_id)
         if not obj:
             raise HTTPException(404, f"No existe el registro {item_id}")
+        # Una lista de Odoo, o un precio suyo, se archiva o se quita alla.
+        if ((modelo is m.Tarifario and obj.odoo_id)
+                or (modelo in TARIFAS
+                    and _de_una_lista_de_odoo(db, obj.tarifario_id))):
+            raise HTTPException(409, LISTA_DE_ODOO)
 
         # La regla que ya cuidaba el panel de accesos, que aqui faltaba:
         # quien trae dinero de la empresa no se va hasta comprobarlo.

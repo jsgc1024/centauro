@@ -4,7 +4,8 @@
 Tercer paso de la propuesta Puestos y Odoo (Salvador, 26 sep). Contra un
 Odoo de mentiras, en memoria: ninguna prueba sale a la red.
 
-Lo que se cuida: el cliente llega de Odoo con su RFC y su pais, sin
+Lo que se cuida: es cliente la empresa con la etiqueta «Protección
+ejecutiva» (seccion 77); llega de Odoo con su RFC y su pais, sin
 tarifario; al que ya estaba se le reconoce por su RFC o por su nombre sin
 la razon social, y solo si se parece a uno; sin RFC llega pero se cuenta
 aparte; y un cliente de Centauro que no esta en Odoo no se toca.
@@ -20,14 +21,21 @@ from app.odoo_clientes_reglas import nombre_llave
 
 ODOO0 = 9_000_000
 PREFIJO = "Cliente Odoo"
+# Las etiquetas de los contactos en Odoo: la de los clientes de Proteccion
+# Ejecutiva y la de los de GPS, que no lo son.
+ETIQUETA, GPS = 9_050_001, 9_050_002
 
 
 class OdooFalso:
     def __init__(self, *partners):
         self.partners = {p["id"]: p for p in partners}
+        self.etiquetas = [{"id": ETIQUETA, "name": "Protección ejecutiva"},
+                          {"id": GPS, "name": "GPS"}]
         self.dominios = []
 
     def leer(self, modelo, dominio, campos, archivados=False):
+        if modelo == "res.partner.category":
+            return [dict(e) for e in self.etiquetas]
         assert modelo == "res.partner"
         self.dominios.append(dominio)
         filas = [p for p in self.partners.values()
@@ -37,8 +45,9 @@ class OdooFalso:
                 filas = [p for p in filas if p["id"] in valor]
             elif (campo, operador) == ("is_company", "="):
                 filas = [p for p in filas if p.get("is_company", True) == valor]
-            elif (campo, operador) == ("customer_rank", ">"):
-                filas = [p for p in filas if p.get("customer_rank", 1) > valor]
+            elif (campo, operador) == ("category_id", "in"):
+                filas = [p for p in filas
+                         if set(p.get("category_id") or []) & set(valor)]
             else:
                 raise AssertionError((campo, operador))
         return [{"id": p["id"], **{c: p.get(c, False) for c in campos}}
@@ -54,7 +63,7 @@ class OdooFalso:
 def partner(n, **cambios):
     p = {"id": ODOO0 + n, "name": f"{PREFIJO} {n} SA de CV",
          "vat": f"COD{n:06d}AB1", "country_id": [156, "México"],
-         "is_company": True, "customer_rank": 1,
+         "is_company": True, "customer_rank": 1, "category_id": [ETIQUETA],
          "write_date": "2026-09-01 10:00:00", "active": True}
     p.update(cambios)
     return p
@@ -103,10 +112,33 @@ def de_centauro(cliente_http, sesion, nombre, **extra):
 
 # ================================================================ la lectura
 
-def test_lee_solo_las_empresas_cliente():
-    """Los contactos de cada empresa no: esos son los solicitantes."""
-    assert odoo_clientes.DOMINIO == [["is_company", "=", True],
-                                     ["customer_rank", ">", 0]]
+def test_son_clientes_las_empresas_con_la_etiqueta(db):
+    """Los contactos de cada empresa no --esos son los solicitantes-- ni
+    las empresas sin la etiqueta: las de GPS y las de carga. La que
+    todavia no tiene ventas llega igual, como Volvo."""
+    assert odoo_clientes.dominio(7) == [["is_company", "=", True],
+                                        ["category_id", "in", [7]]]
+    informe = leer(db, OdooFalso(partner(1), partner(2, category_id=[GPS]),
+                                 partner(3, customer_rank=0),
+                                 partner(4, is_company=False)), ensayo=True)
+    assert {a["odoo_id"] for a in informe["altas"]} == {ODOO0 + 1, ODOO0 + 3}
+
+
+def test_sin_la_etiqueta_en_odoo_no_se_toca_nada(db):
+    """Si alguien la borra o le cambia el nombre, no se sabe quien es
+    cliente: no se lee a nadie, y la pantalla lo dice."""
+    odoo = OdooFalso(partner(1))
+    odoo.etiquetas = [{"id": GPS, "name": "GPS"}]
+    informe = leer(db, odoo)
+    assert informe["sin_etiqueta"] == "Protección ejecutiva"
+    assert not informe["altas"] and not informe["bajas"]
+    assert db.query(m.SincronizacionOdoo).count() == 0
+
+
+def test_la_etiqueta_se_reconoce_sin_acentos_ni_mayusculas():
+    odoo = OdooFalso()
+    odoo.etiquetas = [{"id": 5, "name": "PROTECCION EJECUTIVA "}]
+    assert odoo_clientes.etiqueta(odoo) == 5
 
 
 def test_el_ensayo_no_guarda_nada(db):
@@ -118,7 +150,7 @@ def test_el_ensayo_no_guarda_nada(db):
 def test_llega_con_su_rfc_y_sin_tarifario(db):
     informe = leer(db, OdooFalso(partner(1),
                                  partner(2, is_company=False),
-                                 partner(3, customer_rank=0)))
+                                 partner(3, category_id=[GPS])))
     assert informe["leidos"] == 1
     c = el_cliente(db, 1)
     assert c.rfc == "COD000001AB1"
@@ -208,13 +240,26 @@ def test_lo_de_odoo_no_se_edita_en_centauro(db, cliente, sesion):
                       json={"nombre": "Otro nombre", "pais_id": c.pais_id},
                       headers=h)
     assert r.status_code == 409, r.text
-    # El tarifario si: ese es de Centauro.
+    # El tarifario si, mientras los tarifarios no se lean de Odoo
+    # (seccion 77: desde la primera lectura, lo pone su ficha de Odoo).
     tarifario = cliente.get("/catalogos/tarifarios", headers=h).json()[0]
     r = cliente.patch(f"/catalogos/clientes/{c.id}",
                       json={"nombre": c.nombre, "pais_id": c.pais_id,
                             "tarifario_id": tarifario["id"]}, headers=h)
     assert r.status_code == 200, r.text
     assert el_cliente(db, 1).tarifario_id == tarifario["id"]
+
+
+def test_el_que_pierde_la_etiqueta_no_se_da_de_baja(db):
+    """Quitarle la etiqueta puede ser un descuido: se dice, no se apaga."""
+    odoo = OdooFalso(partner(1))
+    leer(db, odoo)
+    odoo.cambiar(1, category_id=[GPS])
+    informe = leer(db, odoo)
+    assert not informe["bajas"]
+    assert informe["pendientes"][0]["falta"] == [
+        "ya no trae la etiqueta de Proteccion Ejecutiva en Odoo"]
+    assert el_cliente(db, 1).activo is True
 
 
 def test_la_de_cada_hora_espera_a_la_primera_a_mano(db):

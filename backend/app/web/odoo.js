@@ -1,4 +1,4 @@
-/* Odoo: lo que Centauro lee de ahi (secciones 51, 52, 64, 74 y 75).
+/* Odoo: lo que Centauro lee de ahi (secciones 51, 52, 64, 74, 75 y 77).
 
    El personal de seguridad y la flota llegan de Odoo. La primera lectura
    de cada una se hace a mano, despues de ver el ensayo, y de ahi en
@@ -65,7 +65,7 @@ const FALTAS = {
   /* Los clientes (seccion 75). */
   "sin pais": "odo_f_sin_pais",
   "se parece a mas de un cliente de Centauro": "odo_f_cliente_doble",
-  "ya no es cliente en Odoo": "odo_f_ya_no_cliente",
+  "ya no trae la etiqueta de Proteccion Ejecutiva en Odoo": "odo_f_sin_etiqueta",
   "sin placa": "odo_f_sin_placa",
   "placa repetida en Odoo": "odo_f_placa_repetida",
   "sin categoria": "odo_f_sin_categoria",
@@ -167,6 +167,16 @@ const LECTURAS = {
     pieAltas: "odo_altas_oficina_pie", pieBajas: "odo_bajas_oficina_pie",
     confirmar: "odo_confirmar_oficina",
   },
+  /* Los tarifarios (seccion 77) no se cuentan en altas y bajas sino en
+     listas, precios y clientes: traen su propio informe y sus cifras. */
+  tarifarios: {
+    ensayo: "/odoo/tarifarios/ensayo", aplicar: "/odoo/tarifarios/sincronizar",
+    confirmar: "odo_confirmar_tarifarios",
+    cifras: (d) => ({ l: d.leidas, p: d.precios, c: d.clientes,
+                      x: d.cambian.length }),
+    etiqueta: "odo_aplicar_listas",
+    informe: (d) => informeTarifas(d),
+  },
 };
 
 /* Leer Odoo entero y sus fotos lleva mas que una pantalla comun: con
@@ -180,12 +190,13 @@ export async function pantallaOdoo(main) {
   const flota = h("div");
   const oficina = h("div");
   const clientes = h("div");
+  const listas = h("div");
   const tarifas = h("div");
   const historial = h("div");
   main.append(
     h("h1", {}, t("nav_odoo")),
     h("p", { clase: "sub" }, t("odo_sub")),
-    cabeza, personal, flota, oficina, clientes, tarifas, historial);
+    cabeza, personal, flota, oficina, clientes, listas, tarifas, historial);
 
   let estado;
   try {
@@ -196,13 +207,13 @@ export async function pantallaOdoo(main) {
   /* Despues de aplicar se vuelve a pintar solo esa tarjeta --ya con su
      "ultima lectura" y con lo que se hizo a la vista-- y el historial.
      La otra se queda como estaba: si tenia un ensayo abierto, sigue ahi. */
-  const cajas = { personal, flota, oficina, clientes };
+  const cajas = { personal, flota, oficina, clientes, tarifarios: listas };
   const repintar = async (tipo, hecho) => {
     try {
       const nuevo = await api.get("/odoo/estado");
       tarjeta(cajas[tipo], tipo, nuevo, repintar, hecho);
       pintarHistorial(historial, nuevo);
-      if (tipo === "clientes") sinTarifario(tarifas);
+      if (tipo === "clientes" || tipo === "tarifarios") sinTarifario(tarifas, nuevo);
     } catch (err) {
       mensaje(err.message, "grave");
     }
@@ -217,7 +228,8 @@ export async function pantallaOdoo(main) {
   tarjeta(flota, "flota", estado, repintar);
   tarjeta(oficina, "oficina", estado, repintar);
   tarjeta(clientes, "clientes", estado, repintar);
-  sinTarifario(tarifas);
+  tarjeta(listas, "tarifarios", estado, repintar);
+  sinTarifario(tarifas, estado);
   pintarHistorial(historial, estado);
 }
 
@@ -261,8 +273,10 @@ function tarjeta(caja, tipo, estado, repintar, mostrar = null) {
     try {
       ultimo = await api.get(cfg.ensayo, { segundos: SEGUNDOS });
       resultado.replaceChildren(informe(tipo, ultimo));
-      aplicar.disabled = false;
-      aplicar.textContent = reemplazar(t("odo_aplicar_cifras"), cifras(ultimo));
+      /* Sin la etiqueta de los clientes no hay nada que aplicar. */
+      aplicar.disabled = !!ultimo.sin_etiqueta;
+      aplicar.textContent = reemplazar(t(cfg.etiqueta || "odo_aplicar_cifras"),
+                                       (cfg.cifras || cifras)(ultimo));
       nota.textContent = "";
     } catch (err) {
       ultimo = null;
@@ -298,7 +312,7 @@ function tarjeta(caja, tipo, estado, repintar, mostrar = null) {
     });
     confirmar.replaceChildren(h("div", { clase: "aviso alerta", style: "margin:12px 0 0" },
       h("p", { style: "margin:0 0 10px" },
-        reemplazar(t(cfg.confirmar), cifras(ultimo))),
+        reemplazar(t(cfg.confirmar), (cfg.cifras || cifras)(ultimo))),
       h("div", { clase: "acciones" }, si, no)));
   });
 
@@ -309,7 +323,9 @@ function tarjeta(caja, tipo, estado, repintar, mostrar = null) {
       ? conAyuda("h3", t("odo_oficina"), "ay_odo_oficina")
       : tipo === "clientes"
         ? conAyuda("h3", t("odo_clientes"), "ay_odo_clientes")
-        : conAyuda("h3", t("odo_flota"), "ay_odo_flota");
+        : tipo === "tarifarios"
+          ? conAyuda("h3", t("odo_tarifarios"), "ay_odo_tarifarios")
+          : conAyuda("h3", t("odo_flota"), "ay_odo_flota");
   caja.replaceChildren(h("div", { clase: "tarjeta" },
     titulo,
     ...comoVa(tipo, estado),
@@ -332,16 +348,26 @@ function cifras(d) {
 
 /* ------------------------------------------------------------ informe */
 
-function informe(tipo, d) {
-  const cfg = LECTURAS[tipo];
-  const pendientes = tipo === "flota"
-    ? d.pendientes.concat((d.taller || {}).pendientes || [])
-    : d.pendientes;
-  const celda = (titulo, numero, pie, color) => h("div", {},
+function celda(titulo, numero, pie, color) {
+  return h("div", {},
     h("div", { clase: "chico gris" }, titulo),
     h("div", { clase: "cifra", style: color ? `color:${color}` : "" },
       String(numero)),
     h("div", { clase: "chico gris" }, pie));
+}
+
+function informe(tipo, d) {
+  const cfg = LECTURAS[tipo];
+  if (cfg.informe) return cfg.informe(d);
+  /* Sin la etiqueta de los clientes en Odoo no se lee a nadie: se dice
+     que falta y donde se pone, y nada mas. */
+  if (d.sin_etiqueta) {
+    return h("div", { style: "margin:14px 0 0" },
+      aviso(reemplazar(t("odo_sin_etiqueta"), { e: d.sin_etiqueta }), "alerta"));
+  }
+  const pendientes = tipo === "flota"
+    ? d.pendientes.concat((d.taller || {}).pendientes || [])
+    : d.pendientes;
 
   const partes = [
     h("p", { clase: "gris chico", style: "margin:14px 0 0" },
@@ -421,7 +447,9 @@ function informe(tipo, d) {
     }
     if (d.sin_tarifario) {
       partes.push(h("p", { clase: "gris chico", style: "margin:10px 0 0" },
-        reemplazar(t("odo_sin_tarifario"), { n: d.sin_tarifario })));
+        reemplazar(t(d.tarifarios_de_odoo ? "odo_sin_tarifario_odoo"
+                                          : "odo_sin_tarifario"),
+                   { n: d.sin_tarifario })));
     }
     if ((d.pais_por_rfc || []).length) {
       partes.push(h("p", { clase: "gris chico", style: "margin:6px 0 0" },
@@ -482,6 +510,125 @@ function informe(tipo, d) {
       partes.push(aviso(reemplazar(t("odo_taller_error"), { e: tl.error }), "alerta"));
     }
   }
+  return h("div", {}, ...partes);
+}
+
+/* ------------------------------------------------------------ tarifarios */
+
+/* Lo pendiente de los tarifarios (seccion 77), en el orden en que se
+   atiende: primero lo que deja a un cliente sin su lista, al final lo que
+   solo sobra. Cada tipo dice que va en el renglon y que al lado. */
+const PENDIENTES_DE_TARIFAS = [
+  ["lista_sin_precios", "odo_tp_sin_precios",
+   (x) => [x.cliente, reemplazar(t("odo_tp_sin_precios_pie"), { l: x.lista || "—" })]],
+  ["lista_otra_moneda", "odo_tp_cliente_otra_moneda",
+   (x) => [x.cliente, reemplazar(t("odo_tp_cliente_otra_moneda_pie"),
+                                 { l: x.lista || "—", m: x.moneda })]],
+  ["producto_sin_confirmar", "odo_tp_producto",
+   (x) => [x.producto, t("odo_tp_producto_pie")]],
+  ["conflicto", "odo_tp_conflicto",
+   (x) => [x.productos.map(([n]) => n).join(" / "),
+           [x.productos.map(([, p]) => p).join(" / "),
+            reemplazar(t("odo_tp_en_listas"),
+                       { n: x.listas.length, l: x.listas.join(", ") })].join(" · ")]],
+  ["reglas_repetidas", "odo_tp_repetidas",
+   (x) => [x.lista, `${x.producto}: ${x.precios.join(" · ")}`]],
+  ["regla", "odo_tp_regla", (x) => [x.lista, `${x.producto}: ${x.problema}`]],
+  ["otra_moneda", "odo_tp_otra_moneda", (x) => [x.lista, `${x.moneda} · ${x.pais || "—"}`]],
+  ["moneda", "odo_tp_moneda", (x) => [x.lista, x.moneda]],
+  ["general_varios_paises", "odo_tp_varios_paises",
+   (x) => [x.lista, x.paises.join(", ")]],
+  ["sin_pais", "odo_tp_sin_pais", (x) => [x.lista, ""]],
+  ["sin_general", "odo_tp_sin_general", () => [t("odo_tp_sin_general_pie"), ""]],
+  ["modalidad", "odo_tp_modalidad", (x) => [x.lista, x.modalidad]],
+  ["lista_sin_cliente", "odo_tp_lista_sin_cliente", (x) => [x.lista, preciosDe(x)]],
+];
+
+const EN_MONEDA = { MXN: "odo_ta_en_MXN", USD: "odo_ta_en_USD",
+                    BRL: "odo_ta_en_BRL", VES: "odo_ta_en_VES" };
+
+/* "12 precios, 5 propios", o que no pacta nada. */
+function preciosDe(l) {
+  if (!l.precios) return t("odo_ta_sin_precios");
+  if (!l.propios) return reemplazar(t("odo_ta_sin_propios"), { n: l.precios });
+  return reemplazar(t("odo_ta_n_precios"), { n: l.precios, p: l.propios });
+}
+
+function informeTarifas(d) {
+  const generales = d.generales || [];
+  const porCliente = d.por_cliente || [];
+  const suyas = d.clientes - d.clientes_con_general;
+  const pactados = generales.concat(porCliente, d.sin_cliente || [])
+    .reduce((n, l) => n + (l.propios || 0), 0);
+  const partes = [
+    h("p", { clase: "gris chico", style: "margin:14px 0 0" },
+      reemplazar(t(d.ensayo ? "odo_ensayo_de" : "odo_aplicado_de"),
+                 { hora: hora(new Date().toISOString()) }),
+      " · ", reemplazar(t("odo_leidas_listas"), { n: d.leidas })),
+    h("div", { clase: "camino", style: "background:#fff;margin:8px 0 12px" },
+      celda(t("odo_ta_generales"), generales.length,
+            generales.length
+              ? generales.map(g => `${g.pais || "—"}, ${t(EN_MONEDA[g.moneda] || "odo_ta_en_MXN")}`)
+                  .join(" · ")
+              : t("odo_ta_sin_general"),
+            generales.length ? "" : "var(--alerta)"),
+      celda(t("odo_ta_por_cliente"), porCliente.length,
+            reemplazar(t("odo_ta_por_cliente_pie"), { n: suyas })),
+      celda(t("odo_ta_precios"), d.precios,
+            reemplazar(t("odo_ta_precios_pie"), { p: pactados })),
+      celda(t("odo_ta_clientes"), d.clientes,
+            reemplazar(t("odo_ta_clientes_pie"), { n: d.clientes_con_general })),
+      celda(t("odo_pendientes"), d.pendientes.length, t("odo_ta_pendientes_pie"),
+            d.pendientes.length ? "var(--alerta)" : "")),
+  ];
+
+  /* Lo pendiente no se pliega, igual que en las otras lecturas: es la
+     lista de lo que hay que acomodar en Odoo o en la tabla de productos. */
+  if (d.pendientes.length) {
+    const grupos = PENDIENTES_DE_TARIFAS
+      .map(([tipo, clave, renglon]) => [clave, renglon,
+                                        d.pendientes.filter(p => p.tipo === tipo)])
+      .filter(([, , lista]) => lista.length);
+    partes.push(h("div", { style: "margin:4px 0 10px" },
+      conAyuda("h4", `${t("odo_l_ta_pendientes")} (${d.pendientes.length})`,
+               "ay_odo_ta_pendientes"),
+      ...grupos.map(([clave, renglon, lista]) => h("div", { style: "margin:0 0 10px" },
+        h("div", { style: "font-weight:600;font-size:13px;margin:0 0 4px" },
+          `${t(clave)} (${lista.length})`),
+        renglones(lista, renglon)))));
+  }
+  if ((d.cambian || []).length) {
+    partes.push(plegable(`${t("odo_l_ta_cambian")} (${d.cambian.length})`,
+      renglones(d.cambian, (x) => [x.cliente,
+        x.antes ? reemplazar(t("odo_ta_de_a"), { a: x.antes, l: x.lista })
+                : reemplazar(t("odo_ta_nuevo"), { l: x.lista })]),
+      null, {}, false));
+  }
+  if (generales.length) {
+    partes.push(plegable(`${t("odo_ta_generales")} (${generales.length})`,
+      renglones(generales, (x) => [`${x.nombre} · ${x.pais || "—"}`,
+        [x.moneda, preciosDe(x),
+         reemplazar(t("odo_ta_n_clientes"), { n: x.clientes.length })].join(" · ")]),
+      null, {}, true));
+  }
+  if (porCliente.length) {
+    partes.push(plegable(`${t("odo_ta_por_cliente")} (${porCliente.length})`,
+      renglones(porCliente, (x) => [x.nombre, [
+        x.moneda, preciosDe(x),
+        x.clientes.join(", "),
+        x.implantados.length
+          ? reemplazar(t("odo_ta_implantados_de"), { c: x.implantados.join(", ") }) : "",
+        x.resto_de ? reemplazar(t("odo_ta_lo_demas"), { l: x.resto_de }) : "",
+      ].filter(Boolean).join(" · ")]),
+      null, {}, false));
+  }
+  const conImplantados = porCliente.concat(generales)
+    .reduce((n, l) => n + (l.implantados || []).length, 0);
+  partes.push(h("p", { clase: "gris chico", style: "margin:10px 0 0" },
+    d.campo_implantados
+      ? reemplazar(t("odo_ta_implantados"), { n: conImplantados })
+      : t("odo_ta_sin_campo")));
+  partes.push(h("p", { clase: "gris chico", style: "margin:6px 0 0" }, t("odo_ta_pie")));
   return h("div", {}, ...partes);
 }
 
@@ -614,8 +761,12 @@ function renglones(lista, partes) {
 /* Los clientes llegan de Odoo sin tarifario (seccion 75), y hasta que se
    les pone no se les puede cotizar. Se pone aqui mismo: uno por uno, o a
    todos los de un pais de una vez --muchos comparten el mismo--. Si no
-   falta ninguno, esto no se ve. */
-async function sinTarifario(caja) {
+   falta ninguno, esto no se ve.
+
+   Desde que los tarifarios se leen de Odoo (seccion 77) el de un cliente
+   de Odoo lo pone su lista de alla: aqui solo quedan los que no estan en
+   Odoo --los de Brasil, mientras no lleguen--. */
+async function sinTarifario(caja, estado) {
   let clientes, tarifarios, paises;
   try {
     [clientes, tarifarios, paises] = await Promise.all([
@@ -625,7 +776,9 @@ async function sinTarifario(caja) {
     return caja.replaceChildren();
   }
   const nombrePais = (id) => (paises.find(p => p.id === id) || {}).nombre || "—";
-  const faltan = clientes.filter(c => c.activo && !c.tarifario_id);
+  const deOdoo = !!((estado || {}).tarifarios || {}).primera_hecha;
+  const faltan = clientes.filter(c => c.activo && !c.tarifario_id
+                                      && !(deOdoo && c.odoo_id));
   if (!faltan.length) return caja.replaceChildren();
 
   const deSuPais = (paisId) => tarifarios.filter(x => x.activo && x.pais_id === paisId);
@@ -663,10 +816,10 @@ async function sinTarifario(caja) {
         try {
           for (const c of suyos) await poner(c, sel.value);
           mensaje(t("acc_hecho"));
-          await sinTarifario(caja);
+          await sinTarifario(caja, estado);
         } catch (err) {
           mensaje(err.message, "grave");
-          await sinTarifario(caja);
+          await sinTarifario(caja, estado);
         }
       });
       confirmar.replaceChildren(h("div", { clase: "aviso alerta", style: "margin:8px 0 0" },
@@ -689,7 +842,7 @@ async function sinTarifario(caja) {
       try {
         await poner(c, sel.value);
         mensaje(t("acc_hecho"));
-        await sinTarifario(caja);
+        await sinTarifario(caja, estado);
       } catch (err) {
         mensaje(err.message, "grave");
         boton.disabled = false;
@@ -705,7 +858,8 @@ async function sinTarifario(caja) {
   const lista = plegable(t("odo_uno_por_uno"), h("div", {}, ...uno), null, {}, false);
   const tarjetaDeTarifas = h("div", { clase: "tarjeta" },
     h("h3", {}, reemplazar(t("odo_sin_tarifario_titulo"), { n: faltan.length })),
-    h("p", { clase: "gris chico", style: "margin:0 0 12px" }, t("odo_sin_tarifario_pie")),
+    h("p", { clase: "gris chico", style: "margin:0 0 12px" },
+      t(deOdoo ? "odo_sin_tarifario_pie_fuera" : "odo_sin_tarifario_pie")),
     ...todos, lista);
   caja.replaceChildren(tarjetaDeTarifas);
 }
@@ -728,7 +882,8 @@ function pintarHistorial(caja, estado) {
       h("td", {}, cuando(f.hecha_en)),
       h("td", {}, t(f.tipo === "flota" ? "odo_t_flota"
                     : f.tipo === "oficina" ? "odo_t_oficina"
-                    : f.tipo === "clientes" ? "odo_t_clientes" : "odo_t_personal")),
+                    : f.tipo === "clientes" ? "odo_t_clientes"
+                    : f.tipo === "tarifarios" ? "odo_t_tarifarios" : "odo_t_personal")),
       h("td", { clase: "gris" }, t(f.automatica ? "odo_sola_h" : "odo_a_mano")),
       h("td", {}, f.hecha_por || "—"),
       h("td", { clase: "num" }, String(f.altas)),

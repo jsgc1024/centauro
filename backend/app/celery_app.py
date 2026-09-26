@@ -133,6 +133,13 @@ celery.conf.update(
             "task": "odoo.sincronizar_clientes",
             "schedule": crontab(minute=47),
         },
+        # Los tarifarios (seccion 77), a los :57, despues de los clientes:
+        # asi el cliente que llego a las :47 ya sale con su lista. Tambien
+        # espera a la primera lectura hecha a mano.
+        "odoo-tarifarios": {
+            "task": "odoo.sincronizar_tarifarios",
+            "schedule": crontab(minute=57),
+        },
         # El GPS de las unidades (seccion 60). Cada dos minutos: el
         # panico del vehiculo, el camino al punto, el inhibidor y la
         # corriente, y el segundo testigo de las marcas. Sin nadie en la
@@ -399,6 +406,19 @@ def sincronizar_clientes_de_odoo():
     db = SessionLocal()
     try:
         return odoo_clientes.sincronizar_si_toca(db)
+    finally:
+        db.close()
+
+
+@celery.task(name="odoo.sincronizar_tarifarios")
+def sincronizar_tarifarios_de_odoo():
+    """Los tarifarios, leidos de Odoo (seccion 77)."""
+    from app.db import SessionLocal
+    from app import odoo_tarifarios
+
+    db = SessionLocal()
+    try:
+        return odoo_tarifarios.sincronizar_si_toca(db)
     finally:
         db.close()
 

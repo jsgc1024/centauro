@@ -14,9 +14,14 @@
 
    La cuarta pestana es el historial (seccion 69): todo lo cerrado desde
    el primer servicio, con filtros, en Excel, y con lo que pasa con las
-   fotos de sus comprobantes. Vive en historial.js. */
+   fotos de sus comprobantes. Vive en historial.js.
+
+   La quinta, los tarifarios (seccion 77): que es cada producto de Odoo
+   --lo confirma finanzas-- y el tarifario de cada cliente, como quedo de
+   su lista de Odoo. Vive en tarifarios.js. */
 import { api, sesion } from "./api.js";
 import { pestanaHistorial } from "./historial.js";
+import { pestanaTarifarios } from "./tarifarios.js";
 import { aviso, conAyuda, dinero, etiqueta, h, hora, mensaje } from "./util.js";
 import { t } from "./idioma.js";
 import { CONSULTA, abre, tiene } from "./menu.js";
@@ -133,11 +138,14 @@ export async function pantallaFacturacion(main) {
       boton("facturar", reemplazar(t("fac_tab_facturar"), { n: b.por_facturar.length })),
       boton("cerrados", t("fac_tab_cerrados")),
       tiene(sesion.usuario, "cierre.historial")
-        ? boton("historial", t("fac_tab_historial")) : "");
+        ? boton("historial", t("fac_tab_historial")) : "",
+      tiene(sesion.usuario, "cierre.ver")
+        ? boton("tarifarios", t("fac_tab_tarifarios")) : "");
 
     const cuerpo = pestana === "aprobar" ? porAprobar(b.por_aprobar, moneda, pintar)
       : pestana === "facturar" ? porFacturar(b.por_facturar, moneda, pintar)
       : pestana === "historial" ? pestanaHistorial()
+      : pestana === "tarifarios" ? pestanaTarifarios()
       : cerrados(b.cerrados, moneda);
     zona.replaceChildren(corte, pestanas, cuerpo);
   };

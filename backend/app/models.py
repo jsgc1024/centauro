@@ -258,8 +258,16 @@ class Cliente(Base):
     rfc: Mapped[str | None] = mapped_column(String(30), nullable=True)
     odoo_sincronizado_en: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True)
+    # Seccion 77: el tarifario tambien viene de Odoo --la lista de precios
+    # de su ficha-- y, si tiene implantados, la de su campo «Lista de
+    # implantados». Sin ese campo, el implantado cobra con la de siempre.
+    tarifario_implantado_id: Mapped[int | None] = mapped_column(
+        ForeignKey("tarifario.id"), nullable=True)
 
-    tarifario: Mapped["Tarifario | None"] = relationship(back_populates="clientes")
+    tarifario: Mapped["Tarifario | None"] = relationship(
+        back_populates="clientes", foreign_keys=[tarifario_id])
+    tarifario_implantado: Mapped["Tarifario | None"] = relationship(
+        foreign_keys=[tarifario_implantado_id])
     solicitantes: Mapped[list["Solicitante"]] = relationship(back_populates="cliente")
 
 
@@ -293,7 +301,12 @@ class Solicitante(Base):
 # ---------------------------------------------------------------- tarifario
 
 class Tarifario(Base):
-    """Por cliente, aunque muchos comparten el mismo."""
+    """Por cliente, aunque muchos comparten el mismo.
+
+    Desde la seccion 77 los tarifarios son las listas de precios de Odoo:
+    se capturan alla y aqui se leen. Uno con `odoo_id` no se edita en
+    Centauro. Los que no lo tienen son los de antes, capturados a mano.
+    """
     __tablename__ = "tarifario"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -304,11 +317,28 @@ class Tarifario(Base):
     vigencia_hasta: Mapped[date | None] = mapped_column(Date, nullable=True)
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Lo que llega de Odoo (seccion 77). `general`: la de un pais, la que
+    # paga el cliente que no negocio --en Odoo, la que trae su pais--.
+    # `resto_de`: de donde sale lo que la lista no trae, dicho como se
+    # lee: el nombre de otra lista, o «Precio de venta».
+    odoo_id: Mapped[int | None] = mapped_column(Integer, nullable=True,
+                                                unique=True)
+    odoo_sincronizado_en: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True)
+    general: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"))
+    resto_de: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    # La hora extra de la lista: en Odoo es un solo producto para todos.
+    precio_hora_extra: Mapped[float | None] = mapped_column(Numeric(12, 2),
+                                                            nullable=True)
 
-    clientes: Mapped[list[Cliente]] = relationship(back_populates="tarifario")
+    clientes: Mapped[list[Cliente]] = relationship(
+        back_populates="tarifario", foreign_keys="Cliente.tarifario_id")
     tarifas_recurso: Mapped[list["TarifaRecurso"]] = relationship(
         back_populates="tarifario", cascade="all, delete-orphan")
     tarifas_vehiculo: Mapped[list["TarifaVehiculo"]] = relationship(
+        back_populates="tarifario", cascade="all, delete-orphan")
+    tarifas_paquete: Mapped[list["TarifaPaquete"]] = relationship(
         back_populates="tarifario", cascade="all, delete-orphan")
 
 
@@ -323,6 +353,11 @@ class TarifaRecurso(Base):
     modalidad_id: Mapped[int] = mapped_column(ForeignKey("modalidad.id"))
     precio: Mapped[float] = mapped_column(Numeric(12, 2))
     precio_hora_extra: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    # De donde salio el precio, cuando viene de Odoo (seccion 77): de la
+    # lista misma, de la general de su pais o del «Precio de venta».
+    origen: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    producto_odoo_id: Mapped[int | None] = mapped_column(
+        ForeignKey("producto_odoo.id"), nullable=True)
 
     tarifario: Mapped[Tarifario] = relationship(back_populates="tarifas_recurso")
     perfil: Mapped[PerfilPersonal] = relationship()
@@ -340,10 +375,95 @@ class TarifaVehiculo(Base):
     modalidad_id: Mapped[int] = mapped_column(ForeignKey("modalidad.id"))
     precio: Mapped[float] = mapped_column(Numeric(12, 2))
     precio_mensual: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    origen: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    producto_odoo_id: Mapped[int | None] = mapped_column(
+        ForeignKey("producto_odoo.id"), nullable=True)
 
     tarifario: Mapped[Tarifario] = relationship(back_populates="tarifas_vehiculo")
     categoria: Mapped[CategoriaVehiculo] = relationship()
     modalidad: Mapped[Modalidad] = relationship()
+
+
+class TarifaPaquete(Base):
+    """Conductor + unidad en un solo precio (seccion 77).
+
+    Asi cobran varios clientes --HASBRO, Amazon, Crisol, Repsol--: el
+    conductor con su camioneta, por dia y por modalidad, en un renglon.
+    Cuando el equipo de un dia lleva ese rol con esa unidad, se cobra el
+    paquete y no los dos por separado.
+    """
+    __tablename__ = "tarifa_paquete"
+    __table_args__ = (UniqueConstraint("tarifario_id", "perfil_id",
+                                       "categoria_id", "modalidad_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tarifario_id: Mapped[int] = mapped_column(
+        ForeignKey("tarifario.id", ondelete="CASCADE"), index=True)
+    perfil_id: Mapped[int] = mapped_column(ForeignKey("perfil_personal.id"))
+    categoria_id: Mapped[int] = mapped_column(ForeignKey("categoria_vehiculo.id"))
+    modalidad_id: Mapped[int] = mapped_column(ForeignKey("modalidad.id"))
+    precio: Mapped[float] = mapped_column(Numeric(12, 2))
+    origen: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    producto_odoo_id: Mapped[int | None] = mapped_column(
+        ForeignKey("producto_odoo.id"), nullable=True)
+
+    tarifario: Mapped[Tarifario] = relationship(back_populates="tarifas_paquete")
+    perfil: Mapped[PerfilPersonal] = relationship()
+    categoria: Mapped[CategoriaVehiculo] = relationship()
+    modalidad: Mapped[Modalidad] = relationship()
+
+
+class ProductoOdoo(Base):
+    """Que es en Centauro cada producto que Odoo vende (seccion 77).
+
+    Odoo cobra por producto --«Conductor de Seguridad Bilingue», «SUBURBAN
+    Blindada», «Conductor + CUV (Transfer)»-- y Centauro cotiza por rol,
+    por unidad y por modalidad. Esta tabla es el puente: con ella se leen
+    los precios de las listas y, en el paso 4, la factura sale con los
+    mismos productos que el cliente pacto.
+
+    Centauro la sugiere por el nombre del producto; finanzas la confirma.
+    Lo confirmado ya no lo vuelve a tocar ninguna lectura.
+
+    `clase` va como texto de codigo y no como ENUM de Postgres, como el
+    turno del implantado: agregar una clase no deberia tocar la base.
+    """
+    __tablename__ = "producto_odoo"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    odoo_id: Mapped[int] = mapped_column(Integer, unique=True)
+    nombre: Mapped[str] = mapped_column(String(200))
+    unidad: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    tipo_odoo: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    precio_venta: Mapped[float | None] = mapped_column(Numeric(12, 2),
+                                                       nullable=True)
+    vendible: Mapped[bool] = mapped_column(Boolean, default=True,
+                                           server_default=text("true"))
+    # rol | unidad | paquete | hora_extra | viaticos | no_ep; vacio: falta
+    # decir que es.
+    clase: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    perfil_id: Mapped[int | None] = mapped_column(
+        ForeignKey("perfil_personal.id"), nullable=True)
+    categoria_id: Mapped[int | None] = mapped_column(
+        ForeignKey("categoria_vehiculo.id"), nullable=True)
+    # full_day | medio_dia | transfer
+    modalidad: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    confirmado: Mapped[bool] = mapped_column(Boolean, default=False,
+                                             server_default=text("false"))
+    # Cuando dos productos dicen lo mismo --«Agente de Seguridad Bilingue»
+    # y «Bilingual Security Agent»-- y la lista no pacta ninguno, el que
+    # manda. Lo escoge finanzas; sin el, esos dos no ponen precio.
+    preferido: Mapped[bool] = mapped_column(Boolean, default=False,
+                                            server_default=text("false"))
+    confirmado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    confirmado_en: Mapped[datetime | None] = mapped_column(DateTime,
+                                                           nullable=True)
+    odoo_sincronizado_en: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True)
+
+    perfil: Mapped[PerfilPersonal | None] = relationship()
+    categoria: Mapped[CategoriaVehiculo | None] = relationship()
 
 
 # ---------------------------------------------------------------- viaticos

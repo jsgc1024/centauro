@@ -4841,10 +4841,132 @@ correos se vean como la consola, de una vez.
   Microsoft 365; mientras, esto se ve en la vista previa y en las
   pantallas que se mandaron.
 
+## 77. Los tarifarios, desde Odoo
+
+Salvador, 26 de septiembre: los tarifarios viven en Odoo —una lista
+general por país y, cuando el cliente negoció la suya, la del cliente— y
+Centauro los lee de ahí. Aprobó la propuesta
+(`Propuesta_tarifarios_desde_Odoo.pdf`) con sus cinco recomendaciones.
+Va en tres pasos; este es el primero: la lectura, la tabla de productos y
+la etiqueta de los clientes. Los paquetes en la cotización, el cierre y
+la factura son el paso B; los implantados con los precios de su lista,
+el C.
+
+### Lo que cambió
+
+- **Una quinta lectura en la pantalla de Odoo: *Los tarifarios*.** Con
+  su ensayo y su aplicar, como las otras; la primera a mano y de ahí sola
+  cada hora (a los :57, después de los clientes). Cuenta en listas,
+  precios y clientes, no en altas y bajas: cuántas generales por país,
+  cuántas de cliente, cuántos precios —y cuántos pactados en su propia
+  lista— y a cuántos clientes les toca la general. Lo pendiente se agrupa
+  por lo que hay que acomodar.
+- **El precio sale como lo calcula Odoo.** De las reglas de la lista gana
+  la más específica —variante, producto, categoría, todo— y, a igualdad,
+  la más nueva; precio fijo, descuento o fórmula, y «lo de otra lista»
+  con su tipo de cambio. Lo que la lista del cliente no trae sale de su
+  última regla —«todo lo demás, General México»— o, sin ella, del
+  «Precio de venta» del producto. Lo que Odoo hace y aquí no se sabe
+  leer —sobre el costo, con márgenes— no se adivina: se dice. Si
+  Centauro calculara distinto, el comparativo y la factura dirían dos
+  precios para el mismo servicio.
+- **La general de cada país es la que trae su país en Odoo** (el grupo
+  de países de la lista). Las de cliente toman el país de sus clientes.
+- **Cada cliente de Odoo toma la lista de su ficha**, y si tiene el campo
+  «Lista de implantados» —se agrega con Studio—, esa para sus
+  implantados. Desde la primera lectura el tarifario de un cliente de
+  Odoo ya no se pone en Centauro: la tarjeta *Clientes sin tarifario*
+  (sección 75) queda para los que no están en Odoo.
+- **A un cliente no se le cambia a una lista sin precios que Centauro
+  sepa leer**: se queda con el que tenía, y se dice. Así el primer día
+  nadie se queda sin poder cotizar.
+- **Una lista en otra moneda que la de su país no se lee** —la de Amazon,
+  en dólares—: se dice, y su cliente se queda con el que tenía. Los
+  costos van siempre en la moneda del país, y la utilidad y la comisión
+  del consultor restarían dólares menos pesos: es el defecto de *La
+  moneda* (sección 14), que Salvador decidió dejar para el final.
+  Cargar la lista de Amazon es justo lo que lo dispararía.
+- **Qué es cada producto de Odoo: la tabla de productos, en Facturación →
+  Tarifarios.** Un rol, una unidad, un paquete conductor + unidad, la
+  hora extra, los viáticos o algo que no es de Protección Ejecutiva, y en
+  qué modalidad. Centauro lo sugiere por el nombre —en español y en
+  inglés— y finanzas lo confirma: los sugeridos de un golpe, o uno por
+  uno. Solo pone precio lo confirmado, y lo confirmado ya no lo vuelve a
+  sugerir ninguna lectura. «Conductor de Seguridad Federal» no se
+  sugiere: es otro rol, y lo decide finanzas. Es la misma tabla con que
+  saldrá la factura del paso 4.
+- **Dos productos para lo mismo** —«Agente de Seguridad Bilingue» y
+  «Bilingual Security Agent»—: si la lista pacta uno, gana ese. Si no
+  pacta ninguno y dicen precios distintos, finanzas escoge en la tabla
+  cuál manda; sin eso, ese concepto se queda sin precio y la pantalla de
+  Odoo lo dice una sola vez, con las listas donde pasa. Con el Odoo de
+  hoy —la General sin precios propios— son nueve pares.
+- **Los paquetes conductor + unidad** se leen y se guardan con su precio
+  (tabla nueva, `tarifa_paquete`). Cotizarlos y cobrarlos es el paso B.
+- **El tarifario del cliente, a la vista**: en Facturación → Tarifarios
+  se escoge cualquier cliente, y dentro del servicio, plegado debajo del
+  encabezado, lo ve quien cotiza. Personal, unidades y paquetes, por
+  modalidad; en negro lo que pacta la lista y en gris lo que toma de la
+  general o del «Precio de venta»; «sin precio» donde no se puede
+  cotizar.
+- **Lo de Odoo no se edita en Centauro**: una lista de Odoo, sus precios
+  y —desde la primera lectura— el tarifario de un cliente de Odoo
+  contestan que se corrigen en Odoo. Los tarifarios de antes, capturados
+  a mano, se siguen editando.
+- **Los clientes son los que traen la etiqueta «Protección ejecutiva»**
+  (decisión 5): así llegan los que todavía no tienen ventas en Odoo
+  —Volvo— y no llegan los de GPS ni los de carga. Antes era toda empresa
+  con ventas (sección 75). Si en Odoo no está la etiqueta no se lee a
+  nadie, y se dice; al que le quitan la etiqueta no se le da de baja:
+  sale en pendientes.
+
+### Las pruebas
+
+- `tests/test_odoo_tarifarios.py`, contra un Odoo de mentiras: qué es
+  cada producto por su nombre; gana la regla más específica y la más
+  nueva; la variante; descuento, fórmula y redondeo; vigencia y cantidad
+  mínima; lo que no se sabe leer se dice; lo de otra lista en su moneda;
+  dos productos para lo mismo y el que manda; el país de cada lista; sin
+  productos confirmados nadie cambia de tarifario; el ensayo no guarda
+  nada; los precios de cada lista con su origen, la hora extra, la
+  general de Brasil, la de implantados y la de dólares que no se lee; la
+  de cada hora espera a la primera y trae lo nuevo; reglas repetidas, la
+  general de dos países y la falta de general; sin el campo de
+  implantados; la tabla no vuelve a sugerir lo confirmado; las puertas y
+  los candados.
+- `tests/test_odoo_clientes.py`: son clientes los de la etiqueta; sin la
+  etiqueta no se toca nada; el que la pierde no se da de baja.
+
+### Para subirlo
+
+- Lleva migración (`f4a8c2d6b913`): la tabla de productos, la de los
+  paquetes, y en los tarifarios lo que viene de Odoo.
+- El orden para encenderlo:
+  1. En Odoo: la etiqueta «Protección ejecutiva» en cada cliente; la
+     lista general con su país (grupo de países México) y, de
+     preferencia, con sus precios; en cada lista de cliente, la última
+     regla «todo lo demás, de la General»; y para los implantados el
+     campo «Lista de implantados» con Studio. La llave de Odoo tiene que
+     poder leer Ventas.
+  2. Facturación → Tarifarios → *Leer los productos de Odoo*, confirmar,
+     y escoger cuál manda donde dos dicen lo mismo.
+  3. Odoo → *Los clientes* → Ensayo y Aplicar, ya con la etiqueta.
+  4. Odoo → *Los tarifarios* → Ensayo; si cuadra, Aplicar.
+
 ## 14. Lo que falta
 
 ### Abierto
 
+- **Tarifarios desde Odoo: los pasos B y C** (sección 77). B: los
+  paquetes conductor + unidad en la cotización, el cierre y la factura.
+  C: el acuerdo del implantado toma sus precios de la lista de
+  implantados del cliente.
+- **La lista de Amazon, en dólares** (sección 77): no se lee hasta que
+  Centauro sepa cobrar en otra moneda que la del país —*La moneda*, más
+  abajo—. Mientras, Amazon se queda con el tarifario que tenga.
+- **El puesto de administración del sistema y calidad** (pedido el 26 de
+  septiembre, para después de los tarifarios): Aridiai Morales, que ya
+  está en Odoo. Primero se enseña con pantallas qué haría ese puesto.
 - **Puestos y Odoo: el paso 4** (secciones 73 a 75). La factura en
   borrador hacia Odoo, probada primero en una copia de Odoo: hace falta
   la copia y una llave que pueda escribir en ella.

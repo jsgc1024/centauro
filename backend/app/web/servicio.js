@@ -10,6 +10,7 @@ import { aviso, campo, conAyuda, dinero, entrada, estatus, etiqueta, fecha,
 import { IDIOMAS, idioma, t } from "./idioma.js";
 import { tarjetaCierre } from "./cierre.js";
 import { tiene } from "./menu.js";
+import { bloqueTarifario } from "./tarifarios.js";
 
 export async function pantallaServicio(main, servicioId) {
   const [servicio, cat] = await Promise.all([
@@ -18,6 +19,11 @@ export async function pantallaServicio(main, servicioId) {
   const plaza = cat.plazas.find(p => p.id === servicio.plaza_id);
 
   main.append(encabezado(servicio, cliente, plaza));
+  /* Con que precios se le cobra a este cliente (seccion 77): lo ve quien
+     cotiza y cierra, plegado debajo del encabezado. */
+  if (tiene(sesion.usuario, "cierre.ver")) {
+    main.append(await bloqueTarifario(servicio.cliente_id));
+  }
 
   /* Los cambios de recurso se piden una sola vez: los usan la tabla de
      dias —para marcar cuales se movieron— y el bloque del final. */

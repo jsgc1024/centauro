@@ -18,8 +18,8 @@ from app.db import engine, get_db
 from app.routers import (acceso, archivo, bonos, campo, catalogos, central,
                          cierre, contingencia, encuestas, gps, implantados,
                          mapas, nomina, odoo, operacion, panorama,
-                         profesionalismo, servicios, solicitantes, tasksheet,
-                         viaticos)
+                         profesionalismo, servicios, solicitantes, tarifarios,
+                         tasksheet, viaticos)
 from app.seed import (sembrar, sembrar_bonos, sembrar_festivos,
                       sembrar_lugares, sembrar_parametros, sembrar_recursos)
 
@@ -59,6 +59,7 @@ app.include_router(implantados.router)
 app.include_router(bonos.router)
 app.include_router(tasksheet.router)
 app.include_router(odoo.router)
+app.include_router(tarifarios.router)
 app.include_router(contingencia.router)
 app.include_router(nomina.router)
 app.include_router(encuestas.router)

@@ -672,11 +672,17 @@ AYUDA_POR_PANTALLA = {
     # corte general del mes del implantado y el de comisiones, ademas de
     # los tres de siempre --cortes, por rol y ajustes--.
     "nomina.js": 7,
-    # La lectura de Odoo (seccion 64): uno por lectura --el personal y la
-    # flota--, el de lo pendiente y el de las ultimas lecturas.
-    "odoo.js": 6,
+    # La lectura de Odoo (seccion 64): uno por lectura --el personal, la
+    # flota, la oficina, los clientes y los tarifarios--, el de lo
+    # pendiente, el de lo pendiente de los tarifarios (seccion 77) y el de
+    # las ultimas lecturas.
+    "odoo.js": 8,
     "panorama.js": 6,
     "servicio.js": 11,
+    # Los tarifarios de Odoo (seccion 77), en Facturacion: la tabla de
+    # productos y el tarifario del cliente. Dentro del servicio va el mismo
+    # tarifario, plegado y sin "?": ahi lo explica su propia leyenda.
+    "tarifarios.js": 2,
 
     # --- las que no, y por que
     "api.js": 0,        # habla con el servidor; no pinta nada

@@ -3,8 +3,9 @@
 
 Tercer paso de la propuesta Puestos y Odoo (Salvador, 26 sep): los
 clientes se dan de alta en Odoo y Centauro los lee de ahi, con su nombre,
-su RFC y su pais. El tarifario sigue siendo de Centauro: el cliente llega
-sin el, y hasta que se le ponga no se le puede cotizar.
+su RFC y su pais. El cliente llega sin tarifario: desde la seccion 77 lo
+toma de la lista de precios de su ficha de Odoo, en la lectura de los
+tarifarios; mientras esa no este en marcha, se le pone en Centauro.
 
 Funciona igual que las otras lecturas: ensayo que no guarda nada, la
 primera a mano y de ahi cada hora sola. Nunca escribe en Odoo.
@@ -17,20 +18,36 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app import accesos
+from app import accesos, odoo_tarifarios
 from app import models as m
 from app import odoo_clientes_reglas as reglas
+from app.config import settings
 from app.odoo_personal_reglas import normal
 
 registro = logging.getLogger("centauro.odoo")
 
 TIPO = "clientes"
 MODELO = "res.partner"
-# Las empresas marcadas como cliente. Los contactos de cada empresa --las
-# personas que piden los servicios-- no: esos son los solicitantes, y se
-# capturan en Centauro.
-DOMINIO = [["is_company", "=", True], ["customer_rank", ">", 0]]
+# Las empresas con la etiqueta «Protección ejecutiva» (seccion 77,
+# decision 5): asi llegan los clientes que todavia no tienen ventas en
+# Odoo --Volvo-- y no llegan los de GPS ni los de carga. Antes eran todas
+# las empresas con ventas. Los contactos de cada empresa --las personas
+# que piden los servicios-- no: esos son los solicitantes, y se capturan
+# en Centauro.
 CAMPOS = ["name", "vat", "country_id", "write_date"]
+
+
+def etiqueta(odoo) -> int | None:
+    """El id de la etiqueta de los clientes de Proteccion Ejecutiva."""
+    buscada = normal(settings.odoo_etiqueta_clientes)
+    for fila in odoo.leer("res.partner.category", [], ["name"]):
+        if normal(fila.get("name")) == buscada:
+            return fila["id"]
+    return None
+
+
+def dominio(etiqueta_id: int) -> list:
+    return [["is_company", "=", True], ["category_id", "in", [etiqueta_id]]]
 
 
 def _utc() -> datetime:
@@ -57,7 +74,17 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
                 automatica: bool = False) -> dict:
     """Lee los clientes de Odoo y, si no es ensayo, los guarda."""
     ahora = _utc()
-    partners = odoo.leer(MODELO, DOMINIO, CAMPOS)
+    etiqueta_id = etiqueta(odoo)
+    if etiqueta_id is None:
+        # Sin la etiqueta no se sabe quien es cliente: no se toca nada.
+        # Leer a todos seria traer a los de GPS y a los de carga.
+        return {"ensayo": ensayo, "sin_etiqueta": settings.odoo_etiqueta_clientes,
+                "leidos": 0, "altas": [], "vinculadas": [], "cambios": [],
+                "bajas": [], "pendientes": [], "sin_rfc": [],
+                "pais_por_rfc": [], "sin_ligar": [], "sin_tarifario": 0,
+                "sin_cambio": 0,
+                "tarifarios_de_odoo": odoo_tarifarios.en_marcha(db)}
+    partners = odoo.leer(MODELO, dominio(etiqueta_id), CAMPOS)
     paises, clientes = _fotos_fijas(db)
     plan = reglas.planear(partners, clientes, paises)
 
@@ -93,6 +120,9 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
         "sin_ligar": plan["sin_ligar"],
         "sin_tarifario": sin_tarifario,
         "sin_cambio": plan["sin_cambio"],
+        # Si su tarifario ya lo pone su lista de Odoo (seccion 77) o
+        # todavia se les pone a mano: la pantalla dice una cosa u otra.
+        "tarifarios_de_odoo": odoo_tarifarios.en_marcha(db),
     }
     if ensayo:
         return informe
