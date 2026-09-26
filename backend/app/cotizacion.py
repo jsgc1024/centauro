@@ -2,6 +2,7 @@
 from decimal import Decimal
 
 from fastapi import HTTPException
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app import models as m
@@ -44,12 +45,31 @@ def precio_vehiculo(db: Session, tarifario_id: int, categoria_id: int,
     return tarifa
 
 
+# Solo cuenta el paquete que la lista del cliente pacta: el que sale de su
+# propia regla en Odoo. La lectura le pone a toda lista todos los paquetes
+# que finanzas confirmo --si la lista no lo pacta, con el precio de la
+# general o el «Precio de venta» del producto--, y un cliente que compra
+# conductor y unidad por separado, como Control Risks, no compra el
+# paquete porque el producto exista. Sin origen es lo que se capturo en
+# Centauro, que es pactado por definicion.
+PACTADO = "propio"
+
+
+def es_pactado(tarifa: m.TarifaPaquete) -> bool:
+    return tarifa.origen in (PACTADO, None)
+
+
+def _pactados(db: Session):
+    return db.query(m.TarifaPaquete).filter(
+        or_(m.TarifaPaquete.origen == PACTADO, m.TarifaPaquete.origen.is_(None)))
+
+
 def paquetes_del_tarifario(db: Session, tarifario_id: int,
                            modalidad_id: int) -> list[m.TarifaPaquete]:
-    """Los paquetes conductor + unidad que el tarifario tiene en esa
-    modalidad (seccion 79). En el orden en que se leyeron: si un rol cabe
-    en dos paquetes el mismo dia, gana el primero, y asi siempre igual."""
-    return (db.query(m.TarifaPaquete)
+    """Los paquetes conductor + unidad que la lista pacta en esa modalidad
+    (seccion 79). En el orden en que se leyeron: si un rol cabe en dos
+    paquetes el mismo dia, gana el primero, y asi siempre igual."""
+    return (_pactados(db)
             .filter_by(tarifario_id=tarifario_id, modalidad_id=modalidad_id)
             .order_by(m.TarifaPaquete.id).all())
 
@@ -58,7 +78,7 @@ def precio_paquete(db: Session, tarifario_id: int, perfil_id: int | None,
                    categoria_id: int | None, modalidad_id: int) -> m.TarifaPaquete:
     if not perfil_id or not categoria_id:
         raise HTTPException(400, "Un paquete lleva el rol y la unidad.")
-    tarifa = (db.query(m.TarifaPaquete)
+    tarifa = (_pactados(db)
               .filter_by(tarifario_id=tarifario_id, perfil_id=perfil_id,
                          categoria_id=categoria_id, modalidad_id=modalidad_id)
               .first())
@@ -66,7 +86,7 @@ def precio_paquete(db: Session, tarifario_id: int, perfil_id: int | None,
         perfil = db.get(m.PerfilPersonal, perfil_id)
         categoria = db.get(m.CategoriaVehiculo, categoria_id)
         modalidad = db.get(m.Modalidad, modalidad_id)
-        raise HTTPException(400, f"El tarifario no tiene el paquete "
+        raise HTTPException(400, f"La lista del cliente no pacta el paquete "
                                  f"{perfil.nombre} + {categoria.nombre} en "
                                  f"{modalidad.codigo.value}")
     return tarifa
@@ -82,7 +102,7 @@ def emparejar(roles: dict, unidades: dict, paquetes: list) -> list[tuple]:
     descuenta, y lo que queda se cobra suelto.
 
     Asi se cobra lo que el cliente pacto (seccion 79): el dia en que el
-    equipo lleva ese rol con esa unidad, y la lista tiene el paquete, un
+    equipo lleva ese rol con esa unidad, y la lista pacta el paquete, un
     solo renglon con el precio del paquete, no los dos por separado.
     """
     salida = []

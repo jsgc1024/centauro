@@ -4988,11 +4988,19 @@ separado—, y que eso lo marque finanzas por lista.
 ### Lo que cambió
 
 - **El día en que el equipo lleva ese rol con esa unidad, y la lista del
-  cliente tiene el paquete en esa modalidad, se cobra el paquete**: un
+  cliente pacta el paquete en esa modalidad, se cobra el paquete**: un
   solo renglón con su precio, en vez de los dos por separado. Lo que no
   hace pareja —un agente sin unidad, una segunda camioneta— se cobra
   suelto, como siempre. Si un rol cabe en dos paquetes el mismo día, gana
   el primero que se leyó de Odoo, y así siempre igual.
+- **Pacta es que la lista tiene su propia regla para ese paquete.** La
+  lectura de Odoo le pone a toda lista todos los paquetes que finanzas
+  confirmó: si la lista no lo pacta, con el precio de la general o con el
+  «Precio de venta» del producto. Ese no cuenta —Control Risks compra
+  conductor y unidad por separado, y no compra el paquete porque el
+  producto exista— y tampoco se ve en su tarifario. Se vio al preparar el
+  paso C, antes de que cobrara nada: las cotizaciones todavía no se
+  capturan en Centauro.
 - **La cotización hace lo mismo**: el rol y la unidad del mismo día y el
   mismo equipo que la lista tiene en paquete se cotizan como paquete, y
   también se puede cotizar un paquete directo. Así lo cotizado y lo
@@ -5020,8 +5028,9 @@ separado—, y que eso lo marque finanzas por lista.
 - `tests/test_paquetes.py`: se empareja lo que va junto; el paquete se
   cotiza, se cierra y se factura, con sus horas extra; lo que no hace
   pareja se cobra suelto; sin paquete en la lista se cobra como siempre;
-  un paquete que la lista no tiene se dice; los viáticos van dentro del
-  paquete si la lista lo dice; y solo finanzas lo marca.
+  el paquete que la lista no pacta no cuenta; un paquete que la lista no
+  tiene se dice; los viáticos van dentro del paquete si la lista lo dice;
+  y solo finanzas lo marca.
 
 ### Para subirlo
 

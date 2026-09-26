@@ -23,6 +23,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app import accesos, auth, odoo_api, odoo_tarifarios
+from app import cotizacion as cot
 from app import models as m
 from app import odoo_tarifarios_reglas as reglas
 from app.db import get_db
@@ -250,10 +251,15 @@ def _tarifario(t: m.Tarifario | None) -> dict | None:
                      for x in sorted(t.tarifas_recurso, key=lambda x: x.perfil_id)],
         "unidades": [fila(x, categoria=x.categoria.nombre, categoria_id=x.categoria_id)
                      for x in sorted(t.tarifas_vehiculo, key=lambda x: x.categoria.nombre)],
+        # Solo los que la lista pacta, que son los que se cobran: la
+        # lectura le pone a toda lista todos los paquetes, y con el
+        # «Precio de venta» en gris pareceria que Control Risks tiene
+        # paquetes (seccion 79).
         "paquetes": [fila(x, perfil=x.perfil.nombre, categoria=x.categoria.nombre,
                           perfil_id=x.perfil_id, categoria_id=x.categoria_id)
                      for x in sorted(t.tarifas_paquete,
-                                     key=lambda x: (x.perfil_id, x.categoria.nombre))],
+                                     key=lambda x: (x.perfil_id, x.categoria.nombre))
+                     if cot.es_pactado(x)],
     }
 
 

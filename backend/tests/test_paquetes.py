@@ -2,7 +2,7 @@
 """Los paquetes conductor + unidad (seccion 79).
 
 El dia que el equipo lleva ese rol con esa unidad, y la lista del cliente
-tiene el paquete, se cobra el paquete: un solo renglon, en la cotizacion,
+pacta el paquete, se cobra el paquete: un solo renglon, en la cotizacion,
 en el cierre y en la factura. Lo que no hace pareja se cobra suelto. Y si
 la lista dice que sus paquetes traen los viaticos --HASBRO--, los de quien
 fue en el paquete no se facturan aparte.
@@ -31,25 +31,36 @@ def db():
     sesion.close()
 
 
-@pytest.fixture
-def paquete(db, datos):
-    """El tarifario del cliente de las pruebas, con el paquete conductor +
-    SUV blindada en dia completo. Se quita al terminar."""
+def _poner_paquete(db, datos, origen="propio"):
+    """El paquete conductor + SUV blindada en dia completo, en el tarifario
+    del cliente de las pruebas. `origen` es de donde lo saco la lectura de
+    Odoo: "propio" si la lista lo pacta."""
     tarifario_id = db.get(m.Cliente, datos["cliente_id"]).tarifario_id
-    fila = m.TarifaPaquete(
+    db.add(m.TarifaPaquete(
         tarifario_id=tarifario_id,
         perfil_id=datos["perfiles"]["conductor_seguridad"]["id"],
         categoria_id=datos["categorias"]["suv_blindada"]["id"],
         modalidad_id=datos["modalidades"]["full_day"]["id"],
-        precio=PAQUETE, origen="propio")
-    db.add(fila)
+        precio=PAQUETE, origen=origen))
     db.commit()
-    yield tarifario_id
+    return tarifario_id
+
+
+def _quitar_paquetes(db, tarifario_id):
     with db.bind.begin() as con:
         con.execute(text("DELETE FROM tarifa_paquete WHERE tarifario_id = :t"),
                     {"t": tarifario_id})
         con.execute(text("UPDATE tarifario SET paquetes_con_viaticos = false "
                          "WHERE id = :t"), {"t": tarifario_id})
+
+
+@pytest.fixture
+def paquete(db, datos):
+    """El tarifario del cliente de las pruebas, con el paquete pactado. Se
+    quita al terminar."""
+    tarifario_id = _poner_paquete(db, datos)
+    yield tarifario_id
+    _quitar_paquetes(db, tarifario_id)
 
 
 def _trabajado(cliente, sesion, datos, offset, dias=2, horas_extra=0,
@@ -170,6 +181,42 @@ def test_sin_paquete_en_la_lista_se_cobra_como_siempre(cliente, sesion, datos):
     cmp = comparativo(cliente, sesion, servicio)
     assert sorted(r["tipo"] for r in cmp["ejecutado"]["renglones"]) == [
         "recurso", "vehiculo"]
+
+
+def test_el_paquete_que_la_lista_no_pacta_no_cuenta(cliente, sesion, datos, db):
+    """La lectura de Odoo le pone a toda lista todos los paquetes: si la
+    lista no lo pacta, con el precio de la general o el «Precio de venta»
+    del producto. Ese no se cobra --Control Risks compra conductor y
+    unidad por separado-- ni se ve en el tarifario del cliente."""
+    tarifario_id = _poner_paquete(db, datos, origen="precio_venta")
+    try:
+        servicio = _trabajado(cliente, sesion, datos, offset=470, dias=1)
+        cotizaciones = cliente.get(f"/cotizaciones/servicio/{servicio['id']}",
+                                   headers=sesion("consultor")).json()
+        assert sorted(l["tipo"] for l in cotizaciones[-1]["lineas"]) == [
+            "recurso", "vehiculo"]
+        cmp = comparativo(cliente, sesion, servicio)
+        assert sorted(r["tipo"] for r in cmp["ejecutado"]["renglones"]) == [
+            "recurso", "vehiculo"]
+        visto = cliente.get(f"/tarifarios/cliente/{datos['cliente_id']}",
+                            headers=sesion("finanzas")).json()
+        assert visto["tarifario"]["paquetes"] == []
+        # Y cotizarlo directo tampoco: la lista no lo pacta.
+        h = sesion("consultor")
+        otro = crear_servicio(
+            cliente, h, datos,
+            [jornada(manana(471), datos["modalidades"]["full_day"]["id"])],
+            consultor_id=datos["personal"]["Ana Solis"]["id"])
+        r = cliente.post("/cotizaciones", headers=h, json={
+            "servicio_id": otro["id"],
+            "lineas": [{"fecha": otro["equipos"][0]["jornadas"][0]["fecha"],
+                        "tipo": "paquete",
+                        "perfil_id": datos["perfiles"]["conductor_seguridad"]["id"],
+                        "categoria_id": datos["categorias"]["suv_blindada"]["id"]}]})
+        assert r.status_code == 400
+        assert "no pacta" in r.text
+    finally:
+        _quitar_paquetes(db, tarifario_id)
 
 
 def test_un_paquete_que_la_lista_no_tiene_se_dice(cliente, sesion, datos, paquete):
