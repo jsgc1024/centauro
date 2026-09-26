@@ -4953,6 +4953,30 @@ el C.
   3. Odoo → *Los clientes* → Ensayo y Aplicar, ya con la etiqueta.
   4. Odoo → *Los tarifarios* → Ensayo; si cuadra, Aplicar.
 
+## 78. El cliente se elige buscando
+
+Salvador, 26 de septiembre, en el servicio nuevo: con los clientes que
+llegaron de Odoo son demasiados para un desplegable.
+
+### Lo que cambió
+
+- **En el servicio nuevo —eventual e implantado— el cliente se busca.**
+  Se escribe un pedazo del nombre, sin importar acentos ni mayúsculas, y
+  salen los que coinciden; se escoge con el ratón, o con las flechas y
+  Enter. Es una pieza (`util.listaBuscable`) que envuelve el desplegable
+  de siempre: el resto de la pantalla lo lee igual que antes. También en
+  Facturación → Tarifarios, para escoger el cliente.
+- **Al escoger el cliente se propone su país.** El servicio arrancaba en
+  Brasil —el primero de la lista— aunque el cliente fuera de México, y
+  con él las ciudades y las modalidades de Brasil. Se puede cambiar.
+- **El alta del implantado ya no deja un error al abrirse.** El mapa del
+  punto avisaba de un cambio antes de que existiera lo que se revisa; no
+  se veía en la pantalla, pero quedaba en la consola del navegador.
+
+### Para subirlo
+
+- Sin migración.
+
 ## 14. Lo que falta
 
 ### Abierto

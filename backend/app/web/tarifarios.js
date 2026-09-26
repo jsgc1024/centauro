@@ -15,8 +15,8 @@
        finanzas en su pestana y quien cotiza dentro del servicio. Aqui no
        se edita: se corrige en Odoo. */
 import { api } from "./api.js";
-import { aviso, conAyuda, dinero, etiqueta, fecha, h, hora, mensaje,
-         plegable } from "./util.js";
+import { aviso, conAyuda, dinero, etiqueta, fecha, h, hora, listaBuscable,
+         mensaje, plegable } from "./util.js";
 import { t } from "./idioma.js";
 
 const MODALIDADES = ["full_day", "medio_dia", "transfer"];
@@ -221,7 +221,8 @@ async function tarjetaCliente(caja) {
   caja.replaceChildren(h("div", { clase: "tarjeta" },
     conAyuda("h3", t("tar_titulo_cliente"), "ay_tar_cliente"),
     h("p", { clase: "gris chico", style: "margin:0 0 10px" }, t("tar_cliente_pie")),
-    escoger, vista));
+    h("div", { style: "max-width:460px" }, listaBuscable(escoger, t("buscar_cliente"))),
+    vista));
 }
 
 /* ------------------------------------------------------------ los productos */

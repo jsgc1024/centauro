@@ -8,7 +8,8 @@ import { api, sesion } from "./api.js";
 import { catalogos } from "./catalogos.js";
 import { aviso, buscador, campo, coincide, conAyuda, datosDeFormulario,
          dinero, entrada, estatus, etiqueta, fecha, h, hora, lista,
-         mensaje, plegable, telefono, textoDe, vaciar } from "./util.js";
+         listaBuscable, mensaje, plegable, telefono, textoDe,
+         vaciar } from "./util.js";
 import { IDIOMAS, t } from "./idioma.js";
 import { queda } from "./cierre.js";
 
@@ -211,7 +212,18 @@ export async function nuevoServicio(main) {
     [{ valor: "", texto: t("elige_cliente") },
      ...cat.clientes.map(c => ({ valor: c.id, texto: c.tarifario_id
        ? c.nombre : `${c.nombre} ${t("cli_sin_tarifario")}` }))],
-    { onchange: () => { cargarSolicitantes(); revisar(); } });
+    { onchange: () => { paisDelCliente(); cargarSolicitantes(); revisar(); } });
+
+  /* El pais del servicio casi siempre es el del cliente: al escogerlo se
+     propone el suyo, y se puede cambiar. Sin esto el servicio arrancaba en
+     el primero de la lista --Brasil-- aunque el cliente fuera de Mexico. */
+  function paisDelCliente() {
+    const c = cat.clientes.find(x => String(x.id) === String(clientes.value));
+    if (c && c.pais_id && String(paises.value) !== String(c.pais_id)) {
+      paises.value = c.pais_id;
+      paises.dispatchEvent(new Event("change"));
+    }
+  }
 
   const consultores = lista("consultor_id",
     cat.consultores.map(c => ({ valor: c.id, texto: c.nombre })));
@@ -1246,7 +1258,7 @@ export async function nuevoServicio(main) {
     h("div", { clase: "tarjeta" },
       plegable(t("cliente"), [
         h("div", { clase: "rejilla tres" },
-          campo(t("cliente"), clientes),
+          campo(t("cliente"), listaBuscable(clientes, t("buscar_cliente"))),
           campo(t("consultor_asignado"), consultores)),
         h("div", { clase: "rejilla tres" },
           campo(t("pais"), paises)),

@@ -106,6 +106,103 @@ export function buscador(ayuda, alEscribir) {
   return caja;
 }
 
+/* Un desplegable que se elige buscando.
+
+   Con los clientes que llegaron de Odoo el desplegable del servicio nuevo
+   paso de ocho a mas de cincuenta, y recorrerlo a ojo ya no se puede
+   (Salvador, 26 de septiembre). Se escribe un pedazo del nombre --sin
+   importar acentos ni mayusculas, como en los otros buscadores-- y salen
+   los que coinciden; se escoge con el raton, o con las flechas y Enter.
+
+   El <select> de siempre se queda adentro, escondido y al dia: el resto
+   de la pantalla lo lee igual que antes --su value, su change, su texto
+   en el resumen--, asi que ponerle buscador a un desplegable no le
+   cambia nada a quien lo usa. La primera opcion vacia ("Selecciona...")
+   no se ofrece: su lugar lo toma la caja vacia. */
+export function listaBuscable(select, ayuda) {
+  const opciones = [...select.options].filter(o => o.value !== "")
+    .map(o => ({ valor: o.value, texto: o.textContent }));
+  /* data-crudo: lo que se escribe aqui es para buscar, no un nombre que
+     haya que dejar en mayusculas y minusculas (vigilarCapturas). */
+  const caja = h("input", { type: "search", placeholder: ayuda, autocomplete: "off",
+                            role: "combobox", "aria-expanded": "false",
+                            "data-crudo": "" });
+  const menu = h("div", { clase: "buscable-menu", role: "listbox", hidden: "hidden" });
+  let visibles = [];
+  let activa = -1;
+
+  const elegida = () => opciones.find(o => o.valor === select.value);
+  const mostrarElegida = () => {
+    const o = elegida();
+    caja.value = o ? o.texto : "";
+  };
+  const cerrar = () => {
+    menu.hidden = true;
+    caja.setAttribute("aria-expanded", "false");
+  };
+  const escoger = (o) => {
+    select.value = o.valor;
+    caja.value = o.texto;
+    cerrar();
+    select.dispatchEvent(new Event("change"));
+  };
+  const marcar = () => {
+    [...menu.children].forEach((n, i) => n.classList.toggle("activa", i === activa));
+    if (menu.children[activa]) menu.children[activa].scrollIntoView({ block: "nearest" });
+  };
+  const pintar = () => {
+    /* Con el nombre del ya elegido en la caja se ofrecen todos: se abrio
+       para cambiarlo, no para volver a buscar el mismo. */
+    const o = elegida();
+    const buscado = o && caja.value === o.texto ? "" : caja.value;
+    visibles = opciones.filter(x => coincide(buscado, x.texto));
+    activa = visibles.length ? Math.max(0, visibles.indexOf(o)) : -1;
+    menu.replaceChildren(...(visibles.length
+      ? visibles.map(x => h("div", {
+          clase: x.valor === select.value ? "buscable-opcion elegida" : "buscable-opcion",
+          role: "option",
+          /* mousedown y no click: el click llega despues de que la caja
+             perdio el foco y el menu ya se cerro. */
+          onmousedown: (e) => { e.preventDefault(); escoger(x); } }, x.texto))
+      : [h("div", { clase: "buscable-nada" }, t("buscable_nada"))]));
+    menu.hidden = false;
+    caja.setAttribute("aria-expanded", "true");
+    marcar();
+  };
+
+  caja.addEventListener("focus", () => { caja.select(); pintar(); });
+  caja.addEventListener("input", pintar);
+  caja.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (menu.hidden) return pintar();
+      if (!visibles.length) return;
+      activa = (activa + (e.key === "ArrowDown" ? 1 : -1) + visibles.length) % visibles.length;
+      marcar();
+    } else if (e.key === "Enter" && !menu.hidden && visibles[activa]) {
+      e.preventDefault();
+      escoger(visibles[activa]);
+    } else if (e.key === "Escape") {
+      cerrar();
+      mostrarElegida();
+    }
+  });
+  /* Al salir: la caja borrada quita al elegido; lo que quedo a medias
+     vuelve a decir el que estaba. Nunca queda escrito uno que no es. */
+  caja.addEventListener("blur", () => {
+    cerrar();
+    if (!caja.value.trim() && select.value) {
+      select.value = "";
+      select.dispatchEvent(new Event("change"));
+    }
+    mostrarElegida();
+  });
+  select.addEventListener("change", mostrarElegida);
+  select.style.display = "none";
+  mostrarElegida();
+  return h("div", { clase: "buscable" }, caja, menu, select);
+}
+
 
 /* Lo que se lee en un desplegable, no su id: el resumen es para una
    persona. */

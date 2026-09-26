@@ -10,7 +10,7 @@
 import { api, sesion } from "./api.js";
 import { catalogos } from "./catalogos.js";
 import { aviso, buscador, campo, coincide, conAyuda, dinero, entrada,
-         estatus, etiqueta, h, lista, mensaje, telefono,
+         estatus, etiqueta, h, lista, listaBuscable, mensaje, telefono,
          vaciar } from "./util.js";
 import { buscadorDeLugar } from "./mapa.js";
 import { bloqueRevisionUnidad } from "./servicio.js";
@@ -781,7 +781,17 @@ export async function nuevoImplantado(main) {
     [{ valor: "", texto: t("elige_cliente") },
      ...cat.clientes.map(c => ({ valor: c.id, texto: c.tarifario_id
        ? c.nombre : `${c.nombre} ${t("cli_sin_tarifario")}` }))],
-    { onchange: () => { cargarSolicitantes(); revisar(); } });
+    { onchange: () => { paisDelCliente(); cargarSolicitantes(); revisar(); } });
+
+  /* El pais, el del cliente: al escogerlo se propone el suyo, y se puede
+     cambiar. Sin esto arrancaba en el primero de la lista --Brasil--. */
+  function paisDelCliente() {
+    const c = cat.clientes.find(x => String(x.id) === String(clientes.value));
+    if (c && c.pais_id && String(paises.value) !== String(c.pais_id)) {
+      paises.value = c.pais_id;
+      paises.dispatchEvent(new Event("change"));
+    }
+  }
 
   const consultores = lista("consultor_id",
     cat.consultores.map(c => ({ valor: c.id, texto: c.nombre })));
@@ -1027,10 +1037,14 @@ export async function nuevoImplantado(main) {
   /* ================================================ el trato */
 
   /* El implantado no lleva agenda: lleva un punto fijo al que el
-     conductor se presenta todos los dias, el mismo meet and greet. */
+     conductor se presenta todos los dias, el mismo meet and greet.
+     El mapa avisa de un cambio en cuanto nace, antes de que exista lo que
+     revisar() lee --el mismo punto, los botones--: ese primer aviso no se
+     atiende; la pantalla se revisa entera al terminar de armarse. */
+  let armada = false;
   const punto = buscadorDeLugar({
     paisId: () => paises.value,
-    alCambiar: () => revisar(),
+    alCambiar: () => { if (armada) revisar(); },
     filas: "3",
   });
 
@@ -1316,7 +1330,7 @@ export async function nuevoImplantado(main) {
     h("div", { clase: "tarjeta" },
       h("h4", {}, t("cliente")),
       h("div", { clase: "rejilla tres" },
-        campo(t("cliente"), clientes),
+        campo(t("cliente"), listaBuscable(clientes, t("buscar_cliente"))),
         campo(t("consultor_asignado"), consultores),
         campo(t("pais"), paises)),
       h("div", { clase: "rejilla tres" },
@@ -1401,6 +1415,7 @@ export async function nuevoImplantado(main) {
               h("p", { clase: "sub" }, t("imp_alta_sub")),
               formulario);
 
+  armada = true;
   repintarCiudades();
   repintarModalidades();
   clavesDeTelefono();

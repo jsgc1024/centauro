@@ -444,6 +444,19 @@ form textarea { resize: vertical; }
   height: 240px; display: grid; place-items: center; padding: 20px;
   text-align: center; color: var(--gris); font-size: 12.5px;
 }
+/* Un desplegable que se elige buscando (util.listaBuscable): la caja y,
+   debajo, los que coinciden. */
+.buscable { position: relative; }
+.buscable-menu {
+  position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 4px);
+  max-height: 300px; overflow-y: auto; background: #fff;
+  border: 1px solid var(--linea); border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(27, 21, 70, .14); padding: 4px 0;
+}
+.buscable-opcion { padding: 8px 12px; cursor: pointer; line-height: 1.3; }
+.buscable-opcion.activa { background: #eef0f6; }
+.buscable-opcion.elegida { font-weight: 650; }
+.buscable-nada { padding: 8px 12px; color: var(--gris); }
 /* Lo que Google encontro. Se elige uno y de ahi sale el pin. */
 .resultados { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
 button.resultado {
