@@ -22,6 +22,7 @@ import { aviso, campo, conAyuda, dinero, entrada, etiqueta, fecha, h, hora,
          lista, mensaje } from "./util.js";
 import { catalogos } from "./catalogos.js";
 import { t } from "./idioma.js";
+import { tiene } from "./menu.js";
 
 let paisActual = null;
 let pestanaActual = null;
@@ -50,21 +51,29 @@ function nombreMes(anio, mes) {
 }
 
 /* Quien puede que. El servidor lo decide de verdad --esto solo evita
-   pintar un boton que va a contestar 403--. Direccion general y
-   administracion pueden todo, como en el resto de la consola. */
+   pintar un boton que va a contestar 403--.
+
+   Desde la seccion 73 se pregunta por la actividad y no por el rol: un
+   puesto trae una parte de lo de su rol --Nomina arma el corte y no lo
+   marca pagado; el jefe de finanzas lo marca pagado y no lo arma--, y
+   el rol ya no alcanza para saberlo. Quien no tiene puesto sale igual
+   que antes: sus actividades son las de su rol. La pestana del corte
+   la ve quien lo arma, lo paga o fija el tabulador, no todo el que
+   puede leerlo: el consultor lee su renglon, y lo suyo es su
+   comision. */
+const ACTIVIDAD = {
+  personal: ["nomina.calcular", "nomina.pagar", "nomina.tabulador"],
+  calcular: ["nomina.calcular"],
+  pagar: ["nomina.pagar"],
+  tabulador: ["nomina.tabulador"],
+  visto_bueno: ["comisiones.visto_bueno"],
+  pagar_comision: ["comisiones.pagar"],
+  diferencia: ["comisiones.ajustar"],
+  decidir: ["comisiones.resolver"],
+};
+
 function puede(que) {
-  const rol = sesion.usuario && sesion.usuario.rol;
-  const TODO = ["director_general", "admin"];
-  const QUIENES = {
-    personal: ["finanzas", "director_operaciones"],
-    calcular: ["finanzas", "director_operaciones"],
-    pagar: ["finanzas", "director_operaciones"],
-    visto_bueno: ["director_operaciones"],
-    pagar_comision: ["finanzas"],
-    diferencia: ["finanzas"],
-    decidir: [],
-  };
-  return TODO.includes(rol) || (QUIENES[que] || []).includes(rol);
+  return (ACTIVIDAD[que] || []).some(a => tiene(sesion.usuario, a));
 }
 
 export async function pantallaNomina(main) {
@@ -1151,5 +1160,9 @@ function tablaComision(titulo, datos, tabla, tipo) {
             x.codigo,
             h("div", { clase: "gris chico" }, `${x.horas} h`))))),
         cuerpoTabla)),
-    h("div", { clase: "acciones", style: "margin-top:10px" }, guardar));
+    /* Lo lee quien arma o paga el corte; lo cambia quien fija lo que se
+       paga (seccion 73): para los demas es una tabla de consulta. */
+    puede("tabulador")
+      ? h("div", { clase: "acciones", style: "margin-top:10px" }, guardar)
+      : "");
 }

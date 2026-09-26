@@ -2052,6 +2052,24 @@ class CategoriaAcceso(Base):
     creado_en: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
 
+    # Lo que agrego la seccion 73, para que el puesto sea un puesto de
+    # verdad y no solo una lista de casillas:
+    #
+    # Con que rol entra quien lo trae. El rol sigue importando para lo
+    # que no es una actividad: a quien le llegan los avisos de la central,
+    # quien sale en la lista de consultores, quien entra por la app. Sin
+    # esto, darle "Monitorista" a alguien dejaba su rol en lo que fuera.
+    rol: Mapped[Rol | None] = mapped_column(Enum(Rol), nullable=True)
+    # El area del organigrama, solo para ordenar la lista.
+    area: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    # Que pantallas le salen en el menu: claves de `permisos.PANTALLAS`,
+    # separadas por coma. Vacio: el menu de su rol, como antes.
+    pantallas: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Los puestos de Odoo que se parecen a este, separados por coma. Con
+    # esto se sugiere el puesto al dar acceso al personal de oficina.
+    puestos_odoo: Mapped[str | None] = mapped_column(Text, nullable=True)
+    orden: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     actividades: Mapped[list["ActividadDeCategoria"]] = relationship(
         back_populates="categoria", cascade="all, delete-orphan")
 

@@ -124,8 +124,12 @@ def ver_tabulador(pais_id: int, db: Session = Depends(get_db),
 @router.put("/tabulador", summary="Guardar una de las dos tablas")
 def guardar_tabulador(datos: TabuladorComisionIn,
                       db: Session = Depends(get_db),
-                      usuario: m.Usuario = Depends(FINANZAS)):
+                      usuario: m.Usuario = Depends(TABULADOR)):
     """Reescribe los montos de esa tabla.
+
+    Pide su propia actividad desde la seccion 73. Pedia la de armar el
+    corte, que por rol la tienen los mismos; con puestos ya no: Nomina
+    arma el corte y no fija lo que se paga.
 
     Un monto en cero se guarda como cero y no se borra el renglon: cero
     es una decision ("este rol no cobra en esta modalidad") y vacio es

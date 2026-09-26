@@ -28,6 +28,10 @@ router = APIRouter(tags=["Cierre y cotizacion"])
 # Cotizar no es cerrar: lo primero le pone precio al servicio y lo
 # segundo lo manda a facturar. `DIRECCION` se fue porque no la usaba
 # ningun endpoint: era un alias muerto.
+#
+# `COTIZA` tambien estaba muerto hasta la seccion 73: las dos puertas de
+# la cotizacion pedian la de cerrar. Por rol daba lo mismo --las tienen
+# los mismos--; con puestos no: el consultor JR cotiza y no cierra.
 COTIZA = auth.puede("cierre.cotizar")
 CONSULTOR = auth.puede("cierre.cerrar")
 FINANZAS = auth.puede("cierre.facturar")
@@ -74,7 +78,7 @@ class DevolucionIn(BaseModel):
 
 @router.post("/cotizaciones", status_code=201, summary="Generar cotizacion")
 def cotizar(datos: CotizacionIn, db: Session = Depends(get_db),
-            usuario: m.Usuario = Depends(CONSULTOR)):
+            usuario: m.Usuario = Depends(COTIZA)):
     """Toma los precios del tarifario del cliente. Si ya habia cotizacion,
     esta queda como version nueva y la anterior como sustituida."""
     cotizacion = cotmotor.generar(
@@ -96,7 +100,7 @@ def cotizar(datos: CotizacionIn, db: Session = Depends(get_db),
 @router.post("/cotizaciones/{cotizacion_id}/autorizar",
              summary="El cliente autoriza la cotizacion")
 def autorizar(cotizacion_id: int, datos: AutorizarIn, db: Session = Depends(get_db),
-              usuario: m.Usuario = Depends(CONSULTOR)):
+              usuario: m.Usuario = Depends(COTIZA)):
     cotizacion = cotmotor.autorizar(db, cotizacion_id, datos.autorizada_por)
     auditoria.registrar(db, usuario, cotizacion.servicio, "autorizar cotizacion",
                         f"version {cotizacion.version} por {datos.autorizada_por}")

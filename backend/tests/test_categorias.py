@@ -304,13 +304,25 @@ def test_el_permiso_de_mas_va_encima_de_la_categoria(cliente, sesion,
 
 
 def test_no_se_da_dos_veces_el_mismo_permiso(cliente, sesion, beatriz):
+    # Una ajena que no choca con nada de consultor: desde la seccion 73,
+    # transferir si choca con decidir el deposito, que ella trae.
     h = sesion("admin")
     assert cliente.post(f"/auth/usuarios/{beatriz}/permisos",
-                        json={"actividad": AJENA},
+                        json={"actividad": "cierre.historial"},
                         headers=h).status_code == 200
     assert cliente.post(f"/auth/usuarios/{beatriz}/permisos",
-                        json={"actividad": AJENA},
+                        json={"actividad": "cierre.historial"},
                         headers=h).status_code == 409
+
+
+def test_a_quien_decide_el_deposito_no_se_le_da_hacerlo(cliente, sesion,
+                                                          beatriz):
+    """Seccion 73: el consultor decide cuanto se deposita; hacer la
+    transferencia es de finanzas. Juntas en una mano, nadie revisa."""
+    r = cliente.post(f"/auth/usuarios/{beatriz}/permisos",
+                     json={"actividad": AJENA}, headers=sesion("admin"))
+    assert r.status_code == 409, r.text
+    assert "viaticos.asignar" in str(r.json())
 
 
 def test_no_se_regala_un_permiso_inventado(cliente, sesion, beatriz):

@@ -29,6 +29,14 @@ INCOMPATIBLES: list[tuple[str, str]] = [
     # La comision del consultor, igual (seccion 66): quien le da el visto
     # bueno al corte del mes no es quien la transfiere.
     ("comisiones.visto_bueno", "comisiones.pagar"),
+    # Los de la seccion 73, que salieron de armar los puestos: quien pide
+    # el dinero no lo deposita, quien le da el visto bueno al servicio no
+    # lo factura, y quien arma el corte del lunes no lo marca pagado. Se
+    # revisan al armar un puesto y al repartirlo, como los dos de arriba;
+    # direccion general, que hereda todo, es la unica excepcion.
+    ("viaticos.asignar", "viaticos.transferir"),
+    ("cierre.cerrar", "cierre.facturar"),
+    ("nomina.calcular", "nomina.pagar"),
 ]
 
 
@@ -167,7 +175,10 @@ ACTIVIDADES: dict[str, dict] = {
     "nomina.pagar": {
         "descripcion": "Marcar el corte como pagado. Es el momento en que sale "
                        "el dinero",
-        "roles": {R.FINANZAS, R.DIRECTOR_OPERACIONES},
+        # Solo finanzas desde la seccion 73 (decision de Salvador, 26 sep):
+        # direccion de operaciones arma y recalcula el corte, y quien lo
+        # arma no es quien lo marca pagado.
+        "roles": {R.FINANZAS},
     },
 
     "bonos.ver": {
@@ -402,7 +413,42 @@ ACTIVIDADES: dict[str, dict] = {
         "roles": {R.CONSULTOR, R.CENTRAL, R.FINANZAS, R.DIRECTOR_OPERACIONES,
                   R.DIRECTOR_GENERAL},
     },
+
+    # ------------------------------------------ las que iban por rol
+    #
+    # Eran `auth.requiere(...)` con su lista de roles, y un puesto no las
+    # podia quitar: Capacitacion entra como recursos humanos y, por su
+    # rol, abria Accesos. Desde la seccion 73 el puesto manda tambien
+    # aqui. Los roles son los mismos que tenian, asi que a quien entra
+    # sin puesto no le cambia nada.
+    "accesos.dar": {
+        "descripcion": "Dar, cerrar y cambiar accesos, y armar los puestos",
+        "roles": {R.ADMIN, R.DIRECTOR_GENERAL, R.RECURSOS_HUMANOS},
+    },
+    "codigo.dictar": {
+        "descripcion": "Dictarle por telefono su codigo de acceso al "
+                       "personal de campo",
+        "roles": {R.CONSULTOR, R.CENTRAL},
+    },
 }
+
+
+# Las pantallas de la consola, con la clave con que las nombra el menu
+# (`web/menu.js`). Un puesto dice cuales de estas le salen en el menu a
+# quien lo trae (seccion 73); lo que puede hacer adentro sigue saliendo de
+# sus actividades. Sin puesto, el menu sale de su rol, como siempre.
+#
+# Estan aqui y no solo en el menu porque el servidor revisa lo que se
+# guarda: una clave que el menu no conoce seria una casilla que no hace
+# nada. Una prueba (test_puestos.py) cuida que las dos listas digan lo
+# mismo.
+#
+# Odoo no esta: su puerta pide administracion por rol, y ningun puesto
+# entra como administracion. Ofrecerla seria otra casilla que no hace
+# nada.
+PANTALLAS = ("panorama", "servicios", "implantados", "equipo", "unidades",
+             "bonos", "encuestas", "central", "codigo", "finanzas",
+             "facturacion", "nomina", "accesos")
 
 
 def roles_de(actividad: str) -> set:
@@ -425,3 +471,12 @@ def actividades_de_rol(rol) -> set[str]:
     falta para saber que puede ya alguien antes de darle algo mas."""
     return {nombre for nombre, datos in ACTIVIDADES.items()
             if rol in datos["roles"]}
+
+
+def actividades_por_rol(rol, hereda: dict) -> set[str]:
+    """Lo que trae un rol contando lo que hereda (direccion general hereda
+    todos). Es la misma cuenta que hace `auth.puede_el_usuario` para quien
+    no tiene puesto, hecha de una vez para toda la tabla."""
+    roles = {rol} | set(hereda.get(rol, set()))
+    return {nombre for nombre, datos in ACTIVIDADES.items()
+            if roles & set(datos["roles"])}

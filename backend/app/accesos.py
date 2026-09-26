@@ -119,6 +119,39 @@ def _lo_que_ya_puede(db: Session, usuario: m.Usuario) -> set[str]:
     return base | extras
 
 
+def actividades_de(db: Session, usuario: m.Usuario) -> set[str]:
+    """Todo lo que esta persona puede, contado igual que lo cuenta
+    `auth.puede_el_usuario` en cada puerta: administracion todo; si no,
+    sus permisos de mas y encima su puesto --o su rol con lo que hereda,
+    si no tiene puesto--.
+
+    Lo usa la consola para no pintar un boton que va a contestar 403 y
+    para armar el menu de quien no tiene puesto. Decide la pantalla, no
+    la puerta: la puerta la sigue cuidando el servidor en cada peticion.
+    """
+    from app import auth, permisos
+
+    if usuario.rol == m.Rol.ADMIN:
+        return set(permisos.ACTIVIDADES)
+    extras = {x.actividad for x in db.query(m.PermisoExtra)
+              .filter_by(usuario_id=usuario.id).all()}
+    if usuario.categoria_id:
+        base = {x.actividad for x in db.query(m.ActividadDeCategoria)
+                .filter_by(categoria_id=usuario.categoria_id).all()}
+    else:
+        base = permisos.actividades_por_rol(usuario.rol, auth.HEREDA)
+    return base | extras
+
+
+def pantallas_de(usuario: m.Usuario) -> list[str] | None:
+    """Las pantallas de su menu si su puesto las dice; si no, nada, y la
+    consola arma el menu de su rol como siempre."""
+    c = usuario.categoria
+    if c is None or not c.pantallas:
+        return None
+    return [x for x in c.pantallas.split(",") if x]
+
+
 def _no_juntar_incompatibles(db: Session, usuario: m.Usuario,
                              nuevas: set[str]) -> None:
     """Hay actividades que no pueden vivir en la misma mano.
@@ -337,6 +370,15 @@ def cambiar_rol(db: Session, usuario_id: int, rol: m.Rol, actor: m.Usuario,
 
     if usuario.rol == rol:
         raise HTTPException(409, f"Ya tiene el rol {rol.value}")
+    # Con un puesto que dice su rol, el rol es del puesto (seccion 73):
+    # cambiarlo a mano dejaria a un monitorista recibiendo los avisos de
+    # finanzas con los permisos de monitorista.
+    if usuario.categoria and usuario.categoria.rol:
+        raise HTTPException(409, {
+            "mensaje": (f"Su rol lo pone su puesto, "
+                        f"{usuario.categoria.nombre}."),
+            "que_hacer": "Cámbiale el puesto, o quítaselo primero.",
+        })
     if rol != m.Rol.ADMIN:
         _no_es_el_ultimo_admin(db, usuario, "quitarle administracion")
 
@@ -407,18 +449,79 @@ def _ficha_categoria(db: Session, c: m.CategoriaAcceso) -> dict:
         "activa": c.activa,
         "personas": gente,
         "actividades": sorted(a.actividad for a in c.actividades),
+        # Seccion 73: con que rol entra quien lo trae, que le sale en el
+        # menu y a que puestos de Odoo se parece.
+        "rol": c.rol.value if c.rol else None,
+        "area": c.area,
+        "pantallas": ([x for x in c.pantallas.split(",") if x]
+                      if c.pantallas else None),
+        "puestos_odoo": c.puestos_odoo,
+        "orden": c.orden,
     }
 
 
 def categorias(db: Session) -> list[dict]:
+    """Por su orden --el del organigrama-- y los que no tienen, al final
+    por nombre."""
     filas = (db.query(m.CategoriaAcceso)
-             .order_by(m.CategoriaAcceso.nombre).all())
+             .order_by(m.CategoriaAcceso.orden.is_(None),
+                       m.CategoriaAcceso.orden, m.CategoriaAcceso.nombre)
+             .all())
     return [_ficha_categoria(db, c) for c in filas]
+
+
+def _pantallas(pantallas: list[str] | None) -> str | None:
+    """La lista de pantallas como se guarda. Una clave que el menu no
+    conoce no se guarda: seria una casilla que no hace nada."""
+    from app import permisos
+    if pantallas is None:
+        return None
+    for clave in pantallas:
+        if clave not in permisos.PANTALLAS:
+            raise HTTPException(400, {
+                "mensaje": f"No existe la pantalla '{clave}'.",
+                "que_hacer": "Las pantallas son las del menu de la consola.",
+            })
+    # En el orden del menu, sin repetir: asi se lee igual en todos lados.
+    puestas = set(pantallas)
+    return ",".join(c for c in permisos.PANTALLAS if c in puestas) or None
+
+
+def _rol_de_puesto(rol) -> m.Rol | None:
+    """El de campo no entra por la consola: un puesto con ese rol dejaria
+    a alguien con menu de oficina y sin nada que abrir.
+
+    Y direccion general y administracion entran con su rol, sin puesto
+    (seccion 73): la primera puede todo --un puesto con todo juntaria lo
+    que no puede vivir en la misma mano-- y la segunda pasa cualquier
+    candado, asi que su lista no le quitaria nada. Un puesto con esos
+    roles seria, ademas, la forma de hacer administrador a alguien sin
+    que se viera como tal."""
+    if rol is None:
+        return None
+    rol = m.Rol(rol)
+    if rol == m.Rol.PERSONAL_SEGURIDAD:
+        raise HTTPException(400, {
+            "mensaje": "Un puesto no entra como personal de seguridad.",
+            "que_hacer": "El personal de seguridad entra por la app, "
+                         "con su rol; los puestos son de la consola.",
+        })
+    if rol in (m.Rol.ADMIN, m.Rol.DIRECTOR_GENERAL):
+        raise HTTPException(400, {
+            "mensaje": "Dirección general y administración entran con su "
+                       "rol, sin puesto.",
+            "que_hacer": "Escoge otro rol base para el puesto.",
+        })
+    return rol
 
 
 def crear_categoria(db: Session, actor: m.Usuario, nombre: str,
                     actividades: list[str], descripcion: str | None = None,
-                    horas_sesion: int | None = None) -> dict:
+                    horas_sesion: int | None = None, rol=None,
+                    area: str | None = None,
+                    pantallas: list[str] | None = None,
+                    puestos_odoo: str | None = None,
+                    orden: int | None = None) -> dict:
     nombre = (nombre or "").strip()
     if not nombre:
         raise HTTPException(400, "La categoria necesita un nombre")
@@ -429,7 +532,13 @@ def crear_categoria(db: Session, actor: m.Usuario, nombre: str,
     _no_juntarlas_en_un_puesto(set(actividades))
 
     categoria = m.CategoriaAcceso(nombre=nombre, descripcion=descripcion,
-                                  horas_sesion=horas_sesion)
+                                  horas_sesion=horas_sesion,
+                                  rol=_rol_de_puesto(rol),
+                                  area=(area or "").strip() or None,
+                                  pantallas=_pantallas(pantallas),
+                                  puestos_odoo=(puestos_odoo or "").strip()
+                                  or None,
+                                  orden=orden)
     db.add(categoria)
     db.flush()
     for a in sorted(set(actividades)):
@@ -448,9 +557,34 @@ def cambiar_categoria(db: Session, actor: m.Usuario, categoria_id: int,
         raise HTTPException(404, f"No existe la categoria {categoria_id}")
 
     antes = sorted(a.actividad for a in categoria.actividades)
-    for campo in ("nombre", "descripcion", "horas_sesion", "activa"):
+    # Cambiarle el nombre se puede, pero no al de otro puesto ni a nada:
+    # la pantalla ahora trae el nombre en el mismo formulario, y un
+    # duplicado reventaba en la base en vez de decirse.
+    if "nombre" in cambios:
+        nombre = (cambios["nombre"] or "").strip()
+        cambios["nombre"] = nombre or None
+        if nombre and nombre != categoria.nombre and (
+                db.query(m.CategoriaAcceso)
+                .filter(m.CategoriaAcceso.nombre == nombre,
+                        m.CategoriaAcceso.id != categoria.id).first()):
+            raise HTTPException(409, f"Ya existe un puesto '{nombre}'")
+    for campo in ("nombre", "descripcion", "horas_sesion", "activa", "orden"):
         if cambios.get(campo) is not None:
             setattr(categoria, campo, cambios[campo])
+    # Lo de la seccion 73. Aqui "vacio" si significa algo --quitarle las
+    # pantallas es volver al menu de su rol--, asi que se mira si vino, no
+    # si trae valor.
+    if "rol" in cambios and cambios["rol"] is not None:
+        nuevo_rol = _rol_de_puesto(cambios["rol"])
+        if nuevo_rol != categoria.rol:
+            _el_rol_de_su_gente(db, actor, categoria, nuevo_rol)
+        categoria.rol = nuevo_rol
+    if "area" in cambios:
+        categoria.area = (cambios["area"] or "").strip() or None
+    if "pantallas" in cambios:
+        categoria.pantallas = _pantallas(cambios["pantallas"])
+    if "puestos_odoo" in cambios:
+        categoria.puestos_odoo = (cambios["puestos_odoo"] or "").strip() or None
 
     actividades = cambios.get("actividades")
     if actividades is not None:
@@ -492,19 +626,62 @@ def poner_categoria(db: Session, actor: m.Usuario, usuario_id: int,
         categoria = db.get(m.CategoriaAcceso, categoria_id)
         if not categoria:
             raise HTTPException(404, f"No existe la categoria {categoria_id}")
-        _no_juntar_incompatibles(
-            db, usuario,
-            {x.actividad for x in db.query(m.ActividadDeCategoria)
-             .filter_by(categoria_id=categoria.id).all()})
+        # El puesto reemplaza a su rol y a su puesto de antes: lo que hay
+        # que revisar contra lo nuevo son solo sus permisos de mas. Contado
+        # contra todo lo que ya podia, a quien entraba como finanzas --que
+        # de fabrica arma y paga la nomina-- no se le podia poner el puesto
+        # de Nomina, que justo le quita pagar (seccion 73).
+        nuevas = {x.actividad for x in db.query(m.ActividadDeCategoria)
+                  .filter_by(categoria_id=categoria.id).all()}
+        extras = {x.actividad for x in db.query(m.PermisoExtra)
+                  .filter_by(usuario_id=usuario.id).all()}
+        from app import permisos
+        for suelto in sorted(extras):
+            choque = permisos.choca_con(suelto) & nuevas
+            if choque:
+                raise HTTPException(409, {
+                    "mensaje": (f"Su permiso de mas '{suelto}' no puede "
+                                f"convivir con '{sorted(choque)[0]}', que "
+                                f"trae el puesto {categoria.nombre}."),
+                    "que_hacer": "Quitale primero ese permiso de mas, o "
+                                 "dale otro puesto.",
+                })
 
     antes = usuario.categoria.nombre if usuario.categoria else None
     usuario.categoria_id = categoria.id if categoria else None
     anotar(db, actor, "categoria asignada", "usuario", usuario.id,
            antes=antes, despues=categoria.nombre if categoria else None,
            detalle=motivo)
+    # Y entra con el rol de su puesto: de ahi salen los avisos que le
+    # llegan y en que listas aparece (seccion 73).
+    if categoria is not None and categoria.rol and categoria.rol != usuario.rol:
+        _ponerle_su_rol(db, actor, usuario, categoria.rol, categoria.nombre)
     db.flush()
     return _ficha(usuario, "categoria asignada",
                   categoria=categoria.nombre if categoria else None)
+
+
+def _ponerle_su_rol(db: Session, actor: m.Usuario, usuario: m.Usuario,
+                    rol: m.Rol, puesto: str) -> None:
+    """El rol que le toca por su puesto, con los mismos candados que un
+    cambio de rol a mano: no sobre uno mismo --eso ya se reviso antes--
+    y no dejar al sistema sin administracion."""
+    if rol != m.Rol.ADMIN:
+        _no_es_el_ultimo_admin(db, usuario, "quitarle administracion")
+    antes = usuario.rol
+    usuario.rol = rol
+    anotar(db, actor, "rol cambiado", "usuario", usuario.id,
+           antes=antes.value, despues=rol.value,
+           detalle=f"por su puesto: {puesto}")
+
+
+def _el_rol_de_su_gente(db: Session, actor: m.Usuario,
+                        categoria: m.CategoriaAcceso, rol: m.Rol) -> None:
+    """Cambiarle el rol a un puesto se lo cambia a quien ya lo trae."""
+    for u in db.query(m.Usuario).filter_by(categoria_id=categoria.id).all():
+        if u.rol != rol:
+            _tambien_se_lo_daria_a_si_mismo(actor, u)
+            _ponerle_su_rol(db, actor, u, rol, categoria.nombre)
 
 
 def dar_permiso(db: Session, actor: m.Usuario, usuario_id: int,

@@ -16,6 +16,7 @@ import { aviso, campo, conAyuda, dinero, etiqueta, h, lista,
          mensaje } from "./util.js";
 import { catalogos } from "./catalogos.js";
 import { t } from "./idioma.js";
+import { tiene } from "./menu.js";
 
 
 let paisActual = null;
@@ -30,19 +31,21 @@ function mesVencido() {
   return { anio, mes };
 }
 
+/* Lo que esta persona puede hacer aqui, por actividad y no por rol
+   (seccion 73): un puesto puede traer una parte de lo de su rol.
+
+   Quien firma el bono y quien fija los montos no son la misma mano: la
+   direccion decide cuanto vale cada cosa, RRHH cierra el mes. Y quien
+   firma no deposita: en el servidor direccion general puede las dos
+   --hereda todo--, pero aqui el deposito no se le pinta a quien firma,
+   como siempre fue. Administracion si lo ve, para corregir. */
 function puede(actividad) {
-  const rol = sesion.usuario && sesion.usuario.rol;
-  const DE_TODOS = ["consultor", "director_operaciones", "director_general",
-                    "finanzas", "central", "recursos_humanos", "admin"];
-  /* Quien firma el bono y quien fija los montos no son la misma mano:
-     la direccion decide cuanto vale cada cosa, RRHH cierra el mes. */
-  const FIRMA = ["recursos_humanos", "director_general", "admin"];
-  const CONFIGURA = ["director_operaciones", "director_general", "admin"];
-  if (actividad === "ver") return DE_TODOS.includes(rol);
-  if (actividad === "autorizar") return FIRMA.includes(rol);
-  if (actividad === "configurar") return CONFIGURA.includes(rol);
-  if (actividad === "pagar") return ["finanzas", "admin"].includes(rol);
-  return false;
+  const u = sesion.usuario;
+  if (actividad === "pagar") {
+    return tiene(u, "bonos.pagar")
+      && (u.rol === "admin" || !tiene(u, "bonos.autorizar"));
+  }
+  return tiene(u, `bonos.${actividad}`);
 }
 
 export async function pantallaBonos(main) {

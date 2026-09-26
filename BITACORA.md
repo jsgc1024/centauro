@@ -4549,10 +4549,128 @@ noche pidió que la app instalada no diga «Centauro» sino **EP Connect**.
   de 38 px recortado a 96 × 64 con el vehículo completo—; queda para
   cuando se carguen las fotos.
 
+## 73. Los puestos: cada quien ve lo de su trabajo
+
+Salvador, 26 de septiembre: aprobó con «adelante» la propuesta *Puestos
+y Odoo* —el PDF con las pantallas—, en su orden: primero los puestos y
+el menú por puesto; después el personal de oficina desde Odoo, los
+clientes desde Odoo y la factura en borrador hacia Odoo. Esta sección es
+el primer paso.
+
+### Lo que cambió
+
+- **Un puesto ahora es un puesto.** Además de lo que puede hacer —sus
+  casillas—, dice con qué rol entra quien lo trae (de ahí salen los
+  avisos que le llegan y las listas donde aparece), en qué área vive,
+  qué pantallas le salen en el menú y a qué puestos de Odoo se parece.
+  Todo nace vacío: un puesto que ya existía hace exactamente lo mismo, y
+  quien no tiene puesto sigue con el menú y los permisos de su rol.
+- **Los once de la propuesta se crean con un botón**, en Accesos →
+  Puestos: Dirección de operaciones; Consultor de seguridad y Consultor
+  JR; Supervisor de central y Monitorista; Jefe de finanzas, Facturación
+  y cobranza, Tesorería y gastos y Nómina; Recursos Humanos y
+  Capacitación. Lo que se ajuste después no lo vuelve a pisar nadie.
+- **Dirección general y Administración del sistema entran con su rol**,
+  sin puesto: la primera puede todo —un puesto con todo juntaría lo que
+  no puede vivir en la misma mano— y la segunda pasa cualquier candado.
+  Salen en la lista con cuánta gente entra así. Un puesto no puede
+  entrar con esos dos roles, ni como personal de seguridad.
+- **El menú sale del puesto** si el puesto dice sus pantallas; si no,
+  del rol, como siempre. Escribir la dirección a mano tampoco abre lo que
+  el menú no ofrece. Al entrar, cada quien cae en lo suyo: el monitorista
+  en Monitoreo, facturación en Facturación, el consultor en su cartera.
+  El menú vive ahora en `web/menu.js`: lo leen la barra y la pantalla de
+  Puestos, que ofrece esas mismas pantallas como casillas.
+- **Los botones siguen al puesto, no al rol.** Al consultor JR no le
+  salen el monto de los viáticos ni el depósito, ni las compras, ni
+  validar tickets, ni el visto bueno: se le dice que eso lo da su
+  titular. Al monitorista no le salen las marcas a mano ni el cierre a
+  mano. En Facturación, aprobar y regresar solo le salen a quien factura
+  —Dirección de operaciones la mira sin botones—. En Nóminas, armar el
+  corte, pagarlo y guardar el tabulador le salen a quien puede cada
+  cosa. Antes salían y contestaban 403.
+- **Dar acceso:** primero el puesto y de ahí el rol, que queda puesto y
+  quieto. A quien trae un puesto con rol, el rol ya no se le cambia a
+  mano: se le cambia el puesto. Y poner o cambiar el puesto le pone su
+  rol.
+- **El 403 dice el puesto:** «Tu puesto, Consultor JR, no lo incluye. Lo
+  hace: Consultor de seguridad, Dirección de operaciones.» Decía el rol,
+  que con puestos ya no explica nada.
+- **Tres candados nuevos** —no se juntan en un puesto—: decidir el
+  depósito y hacerlo; dar el visto bueno y facturar; armar la nómina y
+  marcarla pagada.
+- **La nómina la marca pagada finanzas.** Dirección de operaciones la
+  arma y la recalcula, pero ya no la marca pagada (decisión del 26 sep).
+- **Dos puertas preguntaban por otra actividad:** la cotización pedía
+  la de cerrar el servicio, y guardar el tabulador de la nómina pedía la
+  de armar el corte. Por rol daba lo mismo —las tienen los mismos—; con
+  puestos no: el consultor JR cotiza y no cierra, y Nómina arma el corte
+  sin fijar lo que se paga por día.
+- **Recursos Humanos ya lee los catálogos.** Desempeño le abría con «Tu
+  rol no tiene permiso»: la lectura genérica de catálogos lo había
+  dejado fuera. Lo encontró la prueba de humo de esta sección.
+- **Operación ya no le sale a quien no la puede ver.** El menú la
+  ofrecía a todos, y Recursos Humanos, sin puesto, la abría para leer
+  «No tienes permiso». Ahora la ofrece a los mismos roles que el servidor
+  deja ver.
+
+### Lo que se decidió aquí, distinto de la propuesta
+
+- **Dirección de operaciones sigue sin Código**, como hoy: lo que
+  protege ese camino es que quien dicta el código reconozca la voz de
+  quien llama (sección 57). En la matriz de la propuesta salía con
+  Código; si se quiere, es una casilla en su puesto.
+- **El monitorista trae también EP implantado**: la central vigila los
+  implantados y desde Monitoreo se llega a ellos.
+- **Los puestos de finanzas no traen EP eventual**: esa pantalla pide
+  ver servicios, que finanzas nunca tuvo, y lo que necesita del
+  servicio —el comparativo— ya está en Facturación.
+- **Flota no se creó**: ningún rol base le queda sin mandarle avisos que
+  no son suyos. Se arma en un minuto desde «Nuevo puesto» cuando haga
+  falta.
+- **La marca a mano queda con el supervisor.** Asentar por teléfono la
+  llegada o el contacto con el principal es la misma puerta que corregir
+  un hito, y esa es del supervisor de central. Si en la madrugada no hay
+  supervisor, al Monitorista se le marca la casilla «Ajustar un hito,
+  cerrar a mano una jornada o reabrirla», y con ella viene lo demás de
+  esa casilla.
+- **El consultor JR tampoco fija el tabulador del acuerdo de un
+  implantado**: es cuánto viático se paga por día, y el dinero lo decide
+  su titular.
+
+### Las pruebas
+
+- `tests/test_puestos.py`: cada puesto de la propuesta sin candados
+  juntos y con qué llenar cada pantalla que ofrece; la lista de
+  pantallas del servidor igual a la del menú; los once se crean una sola
+  vez; el JR prepara y no decide el dinero, y su 403 dice su puesto; el
+  monitorista atiende y no corrige; Nómina arma y no paga; el jefe de
+  finanzas paga y no arma; Dirección de operaciones ya no marca pagada
+  la nómina; Capacitación no da accesos; el puesto le pone su rol y el
+  rol ya no se cambia a mano; ningún puesto entra como dirección
+  general, administración o personal de seguridad; las pantallas se
+  guardan en el orden del menú; los candados nuevos; quien no tiene
+  puesto sigue igual; Recursos Humanos lee los catálogos de sus
+  pantallas.
+- **Humo en la vista previa**: a una cuenta por puesto se le puso cada
+  uno de los once, entró y abrió cada pantalla de su menú: ninguna
+  contestó 403 ni pintó un aviso grave.
+
+### Para subirlo
+
+- Lleva migración (`e2b9c4d7a813`): cinco columnas nuevas en
+  `categoria_acceso`, todas vacías.
+- Ya en el servidor: Accesos → Puestos → «Crear los 11 puestos». Hasta
+  ese clic nadie nota nada, y después tampoco hasta que a alguien se le
+  pone un puesto.
+
 ## 14. Lo que falta
 
 ### Abierto
 
+- **Puestos y Odoo: los pasos 2, 3 y 4** (sección 73). El personal de
+  oficina desde Odoo con su puesto sugerido, los clientes desde Odoo y
+  la factura en borrador hacia Odoo —probada primero en una copia—.
 - **El servidor: lo que queda del proveedor** (secciones 68, 70 y 71).
   El dominio ya es de Centauro: `mycentauro.lat`, comprado en Akky a su
   nombre, con el DNS en Google Cloud DNS; la consola vive en

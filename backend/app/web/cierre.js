@@ -21,6 +21,20 @@ import { api, sesion } from "./api.js";
 import { aviso, conAyuda, dinero, entrada, etiqueta, fecha, h, hora,
          mensaje } from "./util.js";
 import { IDIOMAS, t } from "./idioma.js";
+import { tiene } from "./menu.js";
+
+/* Validar los tickets, cerrar lo que trae cada quien y dar el visto
+   bueno son de quien cierra el servicio: el consultor titular o
+   direccion de operaciones (seccion 73). El consultor JR lo ve todo y
+   lo prepara; los botones no le salen, y en su lugar se le dice quien
+   lo hace. */
+function cierraViaticos() {
+  return tiene(sesion.usuario, "viaticos.cerrar");
+}
+
+function daElVistoBueno() {
+  return tiene(sesion.usuario, "cierre.cerrar");
+}
 
 /* ------------------------------------------------------------ fechas */
 
@@ -528,7 +542,7 @@ function renglonComprobante(c, p, recargar) {
   } else if (c.validado) {
     estado = h("div", { clase: "estado verde chico", style: "font-weight:650" },
       "✓ " + t("cie_validado"));
-  } else if (p.estatus !== "abierto") {
+  } else if (p.estatus !== "abierto" || !cierraViaticos()) {
     estado = h("div", { clase: "estado gris chico" }, t("cie_sin_revisar"));
   } else {
     estado = h("div", { clase: "estado" });
@@ -658,6 +672,7 @@ function pieDePersona(p, recargar) {
         m: p.motivo_cierre || "" }));
   }
   if (p.estatus !== "abierto") return null;
+  if (!cierraViaticos()) return null;
 
   const plazo = (p.limite
     ? reemplazar(p.vencido ? t("cie_su_plazo_vencio") : t("cie_su_plazo_vence"),
@@ -907,7 +922,11 @@ async function cuerpo(c, op, recargar) {
         e.target.disabled = false;
       }
     } }, t("cie_dar_visto_bueno"));
-    nodos.push(h("div", { clase: "acciones", style: "margin-top:16px" }, boton), zona);
+    nodos.push(daElVistoBueno()
+      ? h("div", { clase: "acciones", style: "margin-top:16px" }, boton)
+      : h("p", { clase: "gris chico", style: "margin:16px 0 0" },
+          t("cie_vb_titular")),
+      zona);
     return nodos;
   }
 

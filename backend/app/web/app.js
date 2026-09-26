@@ -22,139 +22,15 @@ import { aviso, campo, entrada, h, lista, mensaje, vaciar,
 import { IDIOMAS, idioma, ponerIdioma, t } from "./idioma.js";
 import { abrirRecorrido } from "./recorrido.js";
 import { firma } from "./firma.js";
+import { ADMINISTRA, CODIGO, CONSULTA, DESEMPENO, DINERO, LEE_ODOO,
+         MONITOREO, NOMINAS, PANORAMA, VOZ_CLIENTE, abre, destinoDe,
+         menuDe } from "./menu.js";
 
 /* La regla de captura vale para toda la consola, no para una
    pantalla: se engancha una sola vez al documento. */
 vigilarCapturas();
 
-const CONSULTA = ["consultor", "director_operaciones", "director_general", "admin"];
-/* El consultor tambien entra: la central de inteligencia le dice que le
-   falta a SUS servicios de manana, y es el que lo tiene que resolver
-   antes del corte. Dejarlo fuera era mandarle el recado por telefono. */
-const MONITOREO = ["central", "consultor", "director_operaciones",
-                   "director_general", "admin"];
-/* La bandeja de finanzas la abre finanzas; direccion la mira sin tocar. */
-const DINERO = ["finanzas", "director_operaciones", "director_general", "admin"];
-/* Nominas (seccion 66): lo de DINERO, y el consultor para ver su propia
-   comision --lo que se le va a pagar, lo que no y por que--. La pantalla
-   solo le ensena esa pestana, y el servidor solo le manda lo suyo. */
-const NOMINAS = [...DINERO, "consultor"];
-/* Quien le dicta el codigo al personal de campo. La central porque
-   esta despierta a las 5:40, que es cuando de verdad pasa; el
-   consultor porque conoce a su gente por la voz, que es lo unico que
-   protege este camino. Direccion de operaciones no entra. */
-const CODIGO = ["consultor", "central", "director_general", "admin"];
-/* Quien reparte permisos. Direccion general quedo como super
-   administrador por decision de la direccion (ver PROPUESTA_ACCESOS.md):
-   quien puede abrir esta pantalla puede darle a alguien un permiso que
-   cuesta dinero. */
-const ADMINISTRA = ["admin", "director_general", "recursos_humanos"];
-/* El desempeno lo mira casi todo el mundo y lo toca casi nadie: la
-   central y el consultor ven el mes de su gente, operaciones firma,
-   finanzas deposita. Quien autoriza y quien paga se separan en el
-   servidor, no aqui. */
-const DESEMPENO = ["consultor", "central", "finanzas", "recursos_humanos",
-                   "director_operaciones", "director_general", "admin"];
-/* Lo que dijo el cliente. Lo abre quien puede hacer algo con eso: el
-   consultor revisa lo suyo, operaciones lo de todos, la central porque
-   es quien contesta el telefono cuando el cliente vuelve a llamar. */
-const VOZ_CLIENTE = ["consultor", "central", "finanzas",
-                     "director_operaciones", "director_general", "admin"];
-/* Lo que Centauro lee de Odoo (seccion 64). Lo abre quien puede leerlo y
-   guardarlo: el servidor pide administracion, y direccion general la
-   hereda. Aplicar da de alta gente con acceso a la app. */
-const LEE_ODOO = ["admin", "director_general"];
 
-/* El menu de arriba, en una sola lista.
-
-   De aqui sale la barra Y sale el recorrido de la primera vez. Son la
-   misma cosa dicha dos veces, y dos listas se separan: el dia que se
-   agregue una pantalla, el recorrido la trae sola o `revisar.py` se
-   queja de que le falta el texto. Un tutorial que vive aparte se
-   despega el dia que la pantalla cambia, y nadie se entera hasta que
-   alguien sigue un paso que ya no existe.
-
-   `quienes` en nulo quiere decir que la ve todo el mundo. */
-const MENU = [
-  /* Las tres de operacion van juntas bajo un solo boton.
-     Sueltas eran tres de once entradas, y once no caben en la barra
-     sin apretarla. Y el grupo lleva la linea en el nombre --EP, por
-     Proteccion Ejecutiva-- porque vienen mas lineas de operacion: el
-     dia que llegue la siguiente, este menu ya sabe como crecer. */
-  { ruta: "/panorama", texto: "nav_operacion", grupo: "nav_operaciones_ep",
-    cuenta: "rec_operacion", quienes: null },
-  /* Eventual e implantado son dos operaciones distintas y se capturan
-     distinto; cada una tiene su boton para no tener que escoger el tipo
-     dentro de una pantalla que sirve para las dos. */
-  { ruta: "/servicios", texto: "nav_eventuales", grupo: "nav_operaciones_ep",
-    /* Estando dentro de un servicio, el boton del grupo sigue
-       encendido: `#/servicio/12` no empieza con `#/servicios`. */
-    tambien: ["/servicio/"],
-    cuenta: "rec_eventuales", quienes: CONSULTA },
-  { ruta: "/implantados", texto: "nav_implantados", grupo: "nav_operaciones_ep",
-    tambien: ["/implantado/"],
-    cuenta: "rec_implantados", quienes: CONSULTA },
-  /* Central de Inteligencia: el tablero de lo que esta corriendo y el
-     codigo que se le dicta al personal de campo. Los dos son la misma
-     mesa a las 5:40 de la manana. */
-  { ruta: "/central", texto: "nav_central", grupo: "nav_operaciones_ci",
-    cuenta: "rec_central", quienes: MONITOREO },
-  /* Gestion Administrativa: lo que se paga y quien puede que cosa.
-     Dos bolsas distintas y dos pantallas: los gastos del servicio
-     —viaticos y compras— y las nominas: la del personal de seguridad y
-     la comision de los consultores. */
-  { ruta: "/finanzas", texto: "nav_finanzas", grupo: "nav_administrativa",
-    cuenta: "rec_finanzas", quienes: DINERO },
-  /* Lo que ya tiene el visto bueno del consultor y espera a finanzas:
-     aprobarlo, regresarlo o reintentar su factura (seccion 59). Existian
-     los endpoints y no la pantalla. */
-  { ruta: "/facturacion", texto: "nav_facturacion", grupo: "nav_administrativa",
-    cuenta: "rec_facturacion", quienes: DINERO },
-  { ruta: "/nomina", texto: "nav_nomina", grupo: "nav_administrativa",
-    cuenta: "rec_nomina", quienes: NOMINAS },
-  /* El personal va en Operaciones EP: a quien se manda es una decision
-     de operacion, y se toma mirando la misma cartera. */
-  { ruta: "/equipo", texto: "nav_personal", grupo: "nav_operaciones_ep",
-    cuenta: "rec_personal", quienes: CONSULTA },
-  /* La flota con su GPS (seccion 60), junto a Personal: a quien se
-     manda y en que se manda se deciden mirando lo mismo. La abre quien
-     monitorea --consultor, central y direccion--; no dice donde esta
-     ninguna unidad. */
-  { ruta: "/unidades", texto: "nav_unidades", grupo: "nav_operaciones_ep",
-    cuenta: "rec_unidades", quienes: MONITOREO },
-  /* El desempeno del personal y su bono del mes vencido, que se
-     calcula el dia 3 y se deposita el 5. Va en Operaciones EP
-     --decision de Salvador, 23 sep--, junto a Personal: lo que mide
-     es como trabajo la gente en la calle, y lo consulta quien decide
-     a quien se manda. Estaba junto a la nomina porque el bono es
-     dinero. */
-  { ruta: "/bonos", texto: "nav_bonos", grupo: "nav_operaciones_ep",
-    cuenta: "rec_bonos", quienes: DESEMPENO },
-  /* La voz del cliente. Una calificacion baja abre revision y hasta
-     hoy nadie podia verla: el motor llevaba meses escrito sin pantalla.
-
-     Va en Operaciones EP --decision de Salvador-- y no suelta en la
-     barra: lo que el cliente califica es el servicio, y quien lee una
-     calificacion baja acaba abriendo la cartera en el mismo minuto. */
-  { ruta: "/encuestas", texto: "nav_encuestas", grupo: "nav_operaciones_ep",
-    cuenta: "rec_encuestas", quienes: VOZ_CLIENTE },
-  /* A un toque, porque la llamada llega a las 5:40 y casi siempre al
-     telefono. Escondida dentro de un servicio serian cuatro toques con
-     una mano. */
-  { ruta: "/codigo", texto: "nav_codigo", grupo: "nav_operaciones_ci",
-    cuenta: "rec_codigo", quienes: CODIGO },
-  { ruta: "/accesos", texto: "nav_accesos", grupo: "nav_administrativa",
-    cuenta: "rec_accesos", quienes: ADMINISTRA },
-  /* La primera lectura del personal y de la flota, y lo que falta
-     corregir en Odoo. Vivia en la terminal del servidor, que en
-     produccion ya no se abre (seccion 64). */
-  { ruta: "/odoo", texto: "nav_odoo", grupo: "nav_administrativa",
-    cuenta: "rec_odoo", quienes: LEE_ODOO },
-];
-
-export function menuDe(rol) {
-  return MENU.filter(x => !x.quienes || x.quienes.includes(rol));
-}
 
 let logo = null;
 
@@ -239,7 +115,7 @@ async function pantallaEntrada() {
     try {
       await api.entrar(d.correo, d.contrasena);
       await api.quienSoy();
-      location.hash = destinoDe(sesion.usuario.rol);
+      location.hash = destinoDe(sesion.usuario);
       pintar();
     } catch (err) {
       f.querySelector(".error").replaceChildren(aviso(err.message, "grave"));
@@ -292,16 +168,6 @@ function deAfuera() {
   return op;
 }
 
-function destinoDe(rol) {
-  if (rol === "central") return "#/central";
-  if (rol === "consultor") return "#/servicios";
-  if (rol === "finanzas") return "#/finanzas";
-  /* RRHH abre en el bono: es lo que hace todos los dias 3 y 5 del mes,
-     y la pantalla de accesos se usa cuando entra o sale alguien. */
-  if (rol === "recursos_humanos") return "#/bonos";
-  return "#/panorama";
-}
-
 /* ------------------------------------------------------------ armazon */
 
 function aqui(x) {
@@ -322,7 +188,7 @@ function armazon() {
      <details> y no un menu propio porque el navegador ya sabe abrirlo,
      cerrarlo con Escape y llegar a el con el teclado. */
   const grupos = new Map();
-  for (const x of menuDe(rol)) {
+  for (const x of menuDe(sesion.usuario)) {
     if (!x.grupo) { nav.append(enlace(x)); continue; }
     if (!grupos.has(x.grupo)) {
       const caja = h("details", { clase: "grupo_menu" });
@@ -394,7 +260,10 @@ function armazon() {
    cambia una vez y se queda puesto la sesion entera. */
 function quienSoy(rol) {
   const menu = h("div", { clase: "menu-yo", hidden: true },
-    h("span", { clase: "rol" }, rol.replace("_", " ")),
+    /* Su puesto si lo tiene --"Monitorista" dice mas que "central"--;
+       si no, su rol, como siempre. */
+    h("span", { clase: "rol" },
+      sesion.usuario.puesto || rol.replaceAll("_", " ")),
     h("div", { clase: "nombre" }, sesion.usuario.nombre),
     h("span", { clase: "correo" }, sesion.usuario.correo),
     h("hr"),
@@ -402,7 +271,7 @@ function quienSoy(rol) {
        nunca: es donde alguien lo va a buscar sin que nadie se lo diga. */
     h("button", { clase: "otra-vez", type: "button", onclick: () => {
       menu.hidden = true;
-      abrirRecorrido(menuDe(rol));
+      abrirRecorrido(menuDe(sesion.usuario));
     } }, t("rec_ver")),
     h("div", { clase: "idiomas" }, ...IDIOMAS.map(i =>
       h("button", {
@@ -456,28 +325,28 @@ function iniciales(nombre) {
    no hay nadie lo dice con todas sus letras. */
 /* ------------------------------------------------------------ ruteo */
 
-const TODOS = ["consultor", "central", "finanzas", "recursos_humanos",
-               "director_operaciones", "director_general", "admin"];
-
+/* Cada ruta dice de que pantalla del menu es: quien no la tiene en su
+   menu no la abre escribiendo la direccion a mano. El servidor sigue
+   cuidando cada peticion; esto evita la pantalla a medio pintar. */
 const RUTAS = [
-  [/^#\/panorama$/, pantallaPanorama, TODOS],
-  [/^#\/servicios$/, cartera, CONSULTA],
-  [/^#\/servicio\/nuevo$/, nuevoServicio, CONSULTA],
-  [/^#\/servicio\/(\d+)$/, pantallaServicio, CONSULTA],
-  [/^#\/implantados$/, carteraImplantados, CONSULTA],
-  [/^#\/implantado\/nuevo$/, nuevoImplantado, CONSULTA],
-  [/^#\/implantado\/(\d+)$/, pantallaImplantado, CONSULTA],
-  [/^#\/central$/, tableroCentral, MONITOREO],
-  [/^#\/equipo$/, pantallaPersonal, CONSULTA],
-  [/^#\/unidades$/, pantallaUnidades, MONITOREO],
-  [/^#\/finanzas$/, bandejaFinanzas, DINERO],
-  [/^#\/facturacion$/, pantallaFacturacion, DINERO],
-  [/^#\/nomina$/, pantallaNomina, NOMINAS],
-  [/^#\/bonos$/, pantallaBonos, DESEMPENO],
-  [/^#\/encuestas$/, pantallaEncuestas, VOZ_CLIENTE],
-  [/^#\/codigo$/, pantallaCodigo, CODIGO],
-  [/^#\/accesos$/, pantallaAccesos, ADMINISTRA],
-  [/^#\/odoo$/, pantallaOdoo, LEE_ODOO],
+  [/^#\/panorama$/, pantallaPanorama, "panorama", PANORAMA],
+  [/^#\/servicios$/, cartera, "servicios", CONSULTA],
+  [/^#\/servicio\/nuevo$/, nuevoServicio, "servicios", CONSULTA],
+  [/^#\/servicio\/(\d+)$/, pantallaServicio, "servicios", CONSULTA],
+  [/^#\/implantados$/, carteraImplantados, "implantados", CONSULTA],
+  [/^#\/implantado\/nuevo$/, nuevoImplantado, "implantados", CONSULTA],
+  [/^#\/implantado\/(\d+)$/, pantallaImplantado, "implantados", CONSULTA],
+  [/^#\/central$/, tableroCentral, "central", MONITOREO],
+  [/^#\/equipo$/, pantallaPersonal, "equipo", CONSULTA],
+  [/^#\/unidades$/, pantallaUnidades, "unidades", MONITOREO],
+  [/^#\/finanzas$/, bandejaFinanzas, "finanzas", DINERO],
+  [/^#\/facturacion$/, pantallaFacturacion, "facturacion", DINERO],
+  [/^#\/nomina$/, pantallaNomina, "nomina", NOMINAS],
+  [/^#\/bonos$/, pantallaBonos, "bonos", DESEMPENO],
+  [/^#\/encuestas$/, pantallaEncuestas, "encuestas", VOZ_CLIENTE],
+  [/^#\/codigo$/, pantallaCodigo, "codigo", CODIGO],
+  [/^#\/accesos$/, pantallaAccesos, "accesos", ADMINISTRA],
+  [/^#\/odoo$/, pantallaOdoo, "odoo", LEE_ODOO],
 ];
 
 async function pintar() {
@@ -497,7 +366,7 @@ async function pintar() {
   await traerLogo();
 
   if (!location.hash || location.hash === "#/entrar") {
-    location.hash = destinoDe(sesion.usuario.rol);
+    location.hash = destinoDe(sesion.usuario);
     return;
   }
 
@@ -512,13 +381,13 @@ async function pintar() {
      no vuelve a salir. */
   if (sesion.usuario.recorrido_pendiente) {
     sesion.usuario.recorrido_pendiente = false;
-    abrirRecorrido(menuDe(sesion.usuario.rol));
+    abrirRecorrido(menuDe(sesion.usuario));
   }
 
-  for (const [patron, vista, roles] of RUTAS) {
+  for (const [patron, vista, clave, roles] of RUTAS) {
     const coincide = location.hash.match(patron);
     if (!coincide) continue;
-    if (!roles.includes(sesion.usuario.rol)) {
+    if (!abre(sesion.usuario, clave, roles)) {
       main.append(aviso(t("sin_acceso"), "grave"));
       return;
     }

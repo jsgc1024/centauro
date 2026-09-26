@@ -19,11 +19,21 @@ import { api, sesion } from "./api.js";
 import { pestanaHistorial } from "./historial.js";
 import { aviso, conAyuda, dinero, etiqueta, h, hora, mensaje } from "./util.js";
 import { t } from "./idioma.js";
+import { CONSULTA, abre, tiene } from "./menu.js";
 
-/* Quien puede abrir la pantalla del servicio. Finanzas no: la suya es
-   esta. */
-const ABREN_SERVICIO = ["consultor", "director_operaciones",
-                        "director_general", "admin"];
+/* Quien puede abrir la pantalla del servicio: quien la tiene en su
+   menu. Finanzas no: la suya es esta. */
+function abreElServicio(f) {
+  return f.contrato_id ? abre(sesion.usuario, "implantados", CONSULTA)
+                       : abre(sesion.usuario, "servicios", CONSULTA);
+}
+
+/* Aprobar, regresar y volver a mandar la factura son de quien factura
+   (seccion 73): direccion de operaciones mira esta pantalla sin tocar,
+   y ya no ve botones que le contestan que no. */
+function puedeFacturar() {
+  return tiene(sesion.usuario, "cierre.facturar");
+}
 
 function dia(iso) {
   if (!iso) return "—";
@@ -122,7 +132,8 @@ export async function pantallaFacturacion(main) {
       boton("aprobar", reemplazar(t("fac_tab_aprobar"), { n: b.por_aprobar.length })),
       boton("facturar", reemplazar(t("fac_tab_facturar"), { n: b.por_facturar.length })),
       boton("cerrados", t("fac_tab_cerrados")),
-      boton("historial", t("fac_tab_historial")));
+      tiene(sesion.usuario, "cierre.historial")
+        ? boton("historial", t("fac_tab_historial")) : "");
 
     const cuerpo = pestana === "aprobar" ? porAprobar(b.por_aprobar, moneda, pintar)
       : pestana === "facturar" ? porFacturar(b.por_facturar, moneda, pintar)
@@ -196,7 +207,7 @@ async function detalle(f, moneda, repintar) {
 
   const regreso = h("div");
   const acciones = h("div", { clase: "acciones" },
-    h("button", { clase: "chico", type: "button", onclick: async (e) => {
+    !puedeFacturar() ? "" : h("button", { clase: "chico", type: "button", onclick: async (e) => {
       if (!confirm(t("fac_confirmar_aprobar"))) return;
       e.target.disabled = true;
       try {
@@ -205,10 +216,10 @@ async function detalle(f, moneda, repintar) {
         await repintar();
       } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
     } }, t("fac_aprobar")),
-    h("button", { clase: "chico claro", type: "button",
+    !puedeFacturar() ? "" : h("button", { clase: "chico claro", type: "button",
       onclick: () => regreso.replaceChildren(formularioRegreso(f, repintar)) },
       t("fac_regresar")),
-    sesion.usuario && ABREN_SERVICIO.includes(sesion.usuario.rol)
+    abreElServicio(f)
       ? h("button", { clase: "chico claro", type: "button", onclick: () => {
           location.hash = f.contrato_id ? `#/implantado/${f.servicio_id}`
                                         : `#/servicio/${f.servicio_id}`;
@@ -292,7 +303,7 @@ function porFacturar(filas, moneda, repintar) {
         reemplazar(t("fac_intentos"), { n: f.intentos,
                                         f: f.ultimo_intento ? dia(f.ultimo_intento) : "—" }),
       ].filter(Boolean).join(" · "))),
-    h("td", { clase: "der" }, h("button", { clase: "chico", type: "button",
+    h("td", { clase: "der" }, !puedeFacturar() ? "" : h("button", { clase: "chico", type: "button",
       onclick: async (e) => {
         e.target.disabled = true;
         try {

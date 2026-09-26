@@ -8,9 +8,10 @@
    Esta pantalla existe porque el motor llevaba meses escrito y nadie
    podia verlo: la mala calificacion llegaba, abria revision, y se
    quedaba esperando a alguien que no sabia que existia. */
-import { api } from "./api.js";
+import { api, sesion } from "./api.js";
 import { aviso, conAyuda, entrada, fecha, h, mensaje } from "./util.js";
 import { t } from "./idioma.js";
+import { CONSULTA, abre, tiene } from "./menu.js";
 
 export async function pantallaEncuestas(main) {
   main.append(
@@ -130,12 +131,20 @@ function renglon(e, recargar) {
           + (e.respondida_en ? ` · ${fecha(e.respondida_en)}` : ""))),
       nota(e)),
     loQueDijo(e),
+    /* Clasificar es decidir si la queja le cuesta a alguien: lo hace el
+       consultor titular o direccion, no el JR (seccion 73). Y al
+       servicio solo se le ofrece ir a quien tiene la cartera en su
+       menu. */
     h("div", { clase: "acciones" },
-      h("button", { clase: "chico", type: "button",
-        onclick: () => { formulario.hidden = !formulario.hidden; } },
-        t("enc_clasificar")),
-      h("a", { clase: "enlace", href: `#/servicio/${e.servicio_id}` },
-        t("enc_ver_servicio"))),
+      tiene(sesion.usuario, "encuestas.clasificar")
+        ? h("button", { clase: "chico", type: "button",
+            onclick: () => { formulario.hidden = !formulario.hidden; } },
+            t("enc_clasificar"))
+        : "",
+      abre(sesion.usuario, "servicios", CONSULTA)
+        ? h("a", { clase: "enlace", href: `#/servicio/${e.servicio_id}` },
+            t("enc_ver_servicio"))
+        : ""),
     formulario);
 }
 

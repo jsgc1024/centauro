@@ -692,6 +692,7 @@ AYUDA_POR_PANTALLA = {
     "contrasena.js": 0,
     "idioma.js": 0,     # la tabla de textos
     "mapa.js": 0,       # el buscador de direcciones, que vive dentro de otra pantalla
+    "menu.js": 0,       # la lista del menu y quien abre que (seccion 73); no pinta nada
     "firma.js": 0,      # CONNECT y su lema; no es una pantalla
     "util.js": 0,       # aqui vive `conAyuda`, entre otras cosas
     # La flota con su GPS (seccion 60). Cada renglon dice que le falta y

@@ -13,10 +13,11 @@
      3. el pulso    los que estan en curso y cuanto llevan callados
      4. la semana   para ver venir el lunes de seis servicios
 */
-import { api } from "./api.js";
+import { api, sesion } from "./api.js";
 import { aviso, campo, conAyuda, entrada, estatus, etiqueta, fecha, h,
          hora, lista, mensaje, testigo } from "./util.js";
 import { t } from "./idioma.js";
+import { tiene } from "./menu.js";
 
 const REFRESCO_SEGUNDOS = 45;
 let temporizador = null;
@@ -378,7 +379,16 @@ const MARCAS_A_MANO = {
   contacto_ejecutivo: "cen_marca_principal",
 };
 
+/* Asentar una marca a mano, cerrar un dia o reabrirlo es corregir lo
+   que paso, y eso lo hace el supervisor de la central con su motivo; el
+   monitorista atiende la alerta y dicta el codigo (seccion 73). A quien
+   no puede, el boton ni le sale: antes salia y contestaba 403. */
+function corrige() {
+  return tiene(sesion.usuario, "operacion.corregir");
+}
+
 function botonDeMarca(q, tipo, donde) {
+  if (!corrige()) return null;
   const boton = h("button", { clase: "claro chico", type: "button" },
     t(MARCAS_A_MANO[tipo]));
   boton.onclick = () => {
@@ -522,7 +532,7 @@ function quePuedoHacer(f) {
      en "arribado" y alguien tiene que ir a buscar la pantalla del
      servicio con el renglon en rojo enfrente. */
   const gente = (f.contactos || []).filter(c => c.persona_id);
-  if (f.jornada_id && f.fecha && gente.length) {
+  if (f.jornada_id && f.fecha && gente.length && corrige()) {
     const q = { jornada_id: f.jornada_id, fecha: f.fecha, gente };
     partes.push(h("div", { clase: "acciones chico", style: "margin-top:8px" },
       botonDeMarca(q, "llegada_origen", ".tarjeta"),
@@ -1117,7 +1127,8 @@ function renglonSinCerrar(f, zona) {
   } }, t("sc_cerrar"));
 
   return h("div", { clase: "renglon-sin-cerrar" },
-    h("div", { clase: "encabeza-revision" }, cuerpo, boton), zonaForm);
+    h("div", { clase: "encabeza-revision" }, cuerpo, corrige() ? boton : null),
+    zonaForm);
 }
 
 function formCerrar(f, zona) {

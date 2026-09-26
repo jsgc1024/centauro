@@ -16,6 +16,14 @@ import { buscadorDeLugar } from "./mapa.js";
 import { bloqueRevisionUnidad } from "./servicio.js";
 import { IDIOMAS, idioma, t } from "./idioma.js";
 import { queda, tarjetaCierre } from "./cierre.js";
+import { tiene } from "./menu.js";
+
+/* El dinero del mes --cuanto a cada quien y pedirselo a finanzas-- lo
+   decide el consultor titular o direccion de operaciones (seccion 73).
+   El consultor JR lo ve sin moverlo. */
+function decideElDinero() {
+  return tiene(sesion.usuario, "implantado.viaticos");
+}
 
 const TONO_ESTATUS = {
   /* El semaforo del servicio, de izquierda a derecha en el tiempo.
@@ -2385,11 +2393,13 @@ async function pintarViaticos(caja, servicioId, anio, mes) {
 
   const porSolicitar = datos.personal.filter(
     p => p.estatus === "asignado").length;
-  const pedir = h("button", { clase: "chico", type: "button",
+  const pedir = !decideElDinero()
+    ? h("span", { clase: "gris chico" }, t("srv_dinero_titular"))
+    : h("button", { clase: "chico", type: "button",
     onclick: (e) => solicitar(e) },
     porSolicitar ? `${t("imp_vi_solicitar")} (${porSolicitar})`
                  : t("imp_vi_solicitar"));
-  pedir.disabled = !porSolicitar;
+  if (decideElDinero()) pedir.disabled = !porSolicitar;
 
   async function solicitar(e) {
     e.target.disabled = true;
@@ -2445,15 +2455,17 @@ function renglonViatico(p, servicioId, anio, mes, moneda, repintar) {
   const yaSalio = Number(p.depositado) > 0 || Number(p.en_camino) > 0;
   const destino = yaSalio ? "persona/agregar" : "persona";
 
+  const decide = decideElDinero();
   const monto = entrada("monto", {
     type: "number", step: "1", min: "0", clase: "num",
+    disabled: decide ? null : "disabled",
     style: "text-align:right; max-width:130px",
     value: !yaSalio && Number(p.asignado)
              ? String(Math.round(Number(p.asignado))) : "",
     placeholder: yaSalio ? t("imp_vi_mas") : "",
   });
 
-  const guardar = h("button", { clase: "claro chico", type: "button",
+  const guardar = !decide ? "" : h("button", { clase: "claro chico", type: "button",
     onclick: (e) => fijar(e) }, t("imp_vi_guardar"));
 
   async function fijar(e) {
@@ -2473,7 +2485,7 @@ function renglonViatico(p, servicioId, anio, mes, moneda, repintar) {
 
   /* Mientras el dinero no salga, el consultor puede echarse para atras:
      se pide el deposito y despues cambia la gente o el monto. */
-  const cancelar = Number(p.en_camino) > 0
+  const cancelar = Number(p.en_camino) > 0 && decide
     ? h("button", { clase: "claro chico", type: "button",
         onclick: async (e) => {
           e.target.disabled = true;

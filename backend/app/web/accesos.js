@@ -124,9 +124,25 @@ function formularioDarAcceso(caja, datos, puestos, alTerminar, hecho = "") {
   const rol = lista("rol", DE_CONSOLA.map(r => ({ valor: r, texto: nombreDelRol(r) })));
   rol.value = "consultor";
   /* Los puestos apagados no se ofrecen: para eso se apagaron. */
+  const activos = puestos.filter(p => p.activa);
   const puesto = lista("puesto", [{ valor: "", texto: t("acc_sin_puesto") },
-    ...puestos.filter(p => p.activa)
-      .map(p => ({ valor: String(p.categoria_id), texto: p.nombre }))]);
+    ...activos.map(p => ({ valor: String(p.categoria_id), texto: p.nombre }))]);
+  /* Primero el puesto y de ahi el rol (seccion 73): si el puesto dice
+     con que rol se entra, el rol queda puesto y quieto. Escoger los dos
+     a mano era la forma de dar un monitorista que recibe los avisos de
+     finanzas. */
+  const notaRol = h("div", { clase: "gris chico" });
+  puesto.addEventListener("change", () => {
+    const p = activos.find(x => String(x.categoria_id) === puesto.value);
+    if (p && p.rol) {
+      rol.value = p.rol;
+      rol.disabled = true;
+      notaRol.textContent = t("acc_rol_lo_pone");
+    } else {
+      rol.disabled = false;
+      notaRol.textContent = "";
+    }
+  });
   const salida = h("div");
 
   const mandar = h("button", { type: "button", clase: "chico" }, t("acc_mandar_inv"));
@@ -170,8 +186,8 @@ function formularioDarAcceso(caja, datos, puestos, alTerminar, hecho = "") {
     datos.personas.length ? "" : aviso(t("acc_nadie_sin_acceso"), "alerta"),
     h("div", { clase: "rejilla tres" },
       campo(t("acc_persona"), persona),
-      campo(t("acc_entra_como"), rol),
-      campo(t("acc_puesto_opcional"), puesto)),
+      campo(t("acc_puesto_opcional"), puesto),
+      h("div", {}, campo(t("acc_entra_como"), rol), notaRol)),
     h("div", { clase: "acciones" }, mandar,
       h("button", { type: "button", clase: "chico claro",
                     onclick: () => caja.replaceChildren() }, t("acc_cancelar"))),
@@ -278,9 +294,14 @@ function abrir(zona, u, recargar) {
   const motivo = entrada("motivo", { placeholder: t("acc_motivo") });
   const rol = lista("rol", ROLES.map(r => ({ valor: r, texto: nombreDelRol(r) })));
   rol.value = u.rol;
+  /* Con un puesto que dice su rol, el rol es del puesto (seccion 73): se
+     cambia cambiandole el puesto, abajo. */
+  if (u.rol_por_puesto) rol.disabled = true;
 
   const acciones = h("div", { clase: "acciones", style: "margin-top:10px" },
-    h("button", { clase: "chico claro", type: "button",
+    u.rol_por_puesto
+      ? h("span", { clase: "gris chico" }, t("acc_rol_por_puesto"))
+      : h("button", { clase: "chico claro", type: "button",
       onclick: (e) => mandar(e, `/auth/usuarios/${u.usuario_id}/rol`,
                              { rol: rol.value, motivo: motivo.value.trim() || null },
                              recargar) }, t("acc_cambiar_rol")),
@@ -313,7 +334,9 @@ function abrir(zona, u, recargar) {
   /* Al personal de seguridad no se le reparten permisos: entra desde la
      app y lo único que hace ahí son sus propias jornadas. Ofrecerle 29
      casillas sería ruido en la pantalla y una forma de equivocarse. */
-  if (u.rol !== "personal_seguridad") seccionDePermisos(permisos, u.usuario_id);
+  if (u.rol !== "personal_seguridad") {
+    seccionDePermisos(permisos, u.usuario_id, recargar);
+  }
 
   api.get(`/auth/usuarios/${u.usuario_id}/historial`).then(filas => {
     rastro.replaceChildren(

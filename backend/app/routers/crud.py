@@ -84,9 +84,15 @@ def crud_router(
     # lo que se le paga a cada rol: con la sesion de un elemento de
     # campo se sacaba todo de corrido. La app de campo no toca
     # /catalogos —lo suyo va por /campo—, asi que esto no le quita nada.
+    #
+    # Recursos Humanos tambien: abre Desempeno y Personal, y las dos
+    # pantallas leen de aqui los paises, los perfiles y la plantilla. Se
+    # habia quedado fuera --las cuatro rutas de catalogos.py si la
+    # tenian-- y Desempeno le abria con "Tu rol no tiene permiso"; lo
+    # encontro la prueba de humo de los puestos (seccion 73).
     leer = auth.requiere(m.Rol.ADMIN, m.Rol.CONSULTOR, m.Rol.CENTRAL,
                          m.Rol.FINANZAS, m.Rol.DIRECTOR_OPERACIONES,
-                         m.Rol.DIRECTOR_GENERAL)
+                         m.Rol.DIRECTOR_GENERAL, m.Rol.RECURSOS_HUMANOS)
 
     @router.get("", response_model=list[esquema_out], summary=f"Listar {etiqueta}")
     def listar(db: Session = Depends(get_db), limite: int = 5000,

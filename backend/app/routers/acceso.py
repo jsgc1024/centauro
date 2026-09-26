@@ -19,15 +19,18 @@ router = APIRouter(prefix="/auth", tags=["Acceso"])
 # quien salio. Lo que lo detiene no es no poder abrir esta pantalla,
 # sino que aqui dentro nadie se toca a si mismo y que hay actividades
 # que no pueden juntarse (ver INCOMPATIBLES en permisos.py).
-ADMINISTRA = auth.requiere(m.Rol.ADMIN, m.Rol.DIRECTOR_GENERAL,
-                           m.Rol.RECURSOS_HUMANOS)
+#
+# Desde la seccion 73 es una actividad y no una lista de roles: los roles
+# que la traen de fabrica son los mismos, pero ahora un puesto la puede
+# quitar. Capacitacion entra como recursos humanos y no reparte accesos.
+ADMINISTRA = auth.puede("accesos.dar")
 
 # Quien puede dictarle un codigo al personal de campo. La central
 # siempre; el consultor cuando esa persona trabaje en sus servicios --eso
 # se revisa adentro, porque depende de quien sea el agente--. No entra
 # direccion de operaciones: lo unico que protege este camino es que quien
 # entrega el codigo reconozca la voz de quien llama.
-DICTA_CODIGO = auth.requiere(m.Rol.CONSULTOR, m.Rol.CENTRAL)
+DICTA_CODIGO = auth.puede("codigo.dictar")      # seccion 73, como ADMINISTRA
 
 # Quien puede ver un enlace de contrasena: administracion, y direccion
 # general porque hereda todo lo de administracion. Decision de Salvador
@@ -91,6 +94,13 @@ class CategoriaIn(BaseModel):
     actividades: list[str]
     descripcion: str | None = None
     horas_sesion: int | None = None
+    # Seccion 73: con que rol entra quien lo trae, su area, las pantallas
+    # de su menu, a que puestos de Odoo se parece y su lugar en la lista.
+    rol: m.Rol | None = None
+    area: str | None = None
+    pantallas: list[str] | None = None
+    puestos_odoo: str | None = None
+    orden: int | None = None
 
 
 class CambioCategoriaIn(BaseModel):
@@ -103,6 +113,11 @@ class CambioCategoriaIn(BaseModel):
     horas_sesion: int | None = None
     activa: bool | None = None
     actividades: list[str] | None = None
+    rol: m.Rol | None = None
+    area: str | None = None
+    pantallas: list[str] | None = None
+    puestos_odoo: str | None = None
+    orden: int | None = None
 
 
 class PonerCategoriaIn(BaseModel):
@@ -163,7 +178,15 @@ def alta_usuario(datos: AltaUsuarioIn, tareas: BackgroundTasks,
             "que_hacer": "Corrige el correo de esta persona en el padron.",
         })
 
-    usuario = m.Usuario(persona_id=persona.id, correo=persona.correo, rol=datos.rol)
+    # Con puesto, entra con el rol de su puesto (seccion 73): la pantalla
+    # ya lo pone asi, pero quien llame a la API directo no puede dejar a
+    # un monitorista entrando como consultor.
+    rol = datos.rol
+    if datos.categoria_id is not None:
+        puesto = db.get(m.CategoriaAcceso, datos.categoria_id)
+        if puesto is not None and puesto.rol is not None:
+            rol = puesto.rol
+    usuario = m.Usuario(persona_id=persona.id, correo=persona.correo, rol=rol)
     db.add(usuario)
     db.flush()
     accesos.anotar(db, actor, "acceso creado", "usuario", usuario.id,
@@ -283,6 +306,9 @@ def listar_usuarios(db: Session = Depends(get_db), incluir_inactivos: bool = Tru
         # siguiera diciendo solo "Consultor", la lista mentiria por
         # omision justo en la pantalla donde se reparte el acceso.
         "categoria": u.categoria.nombre if u.categoria else None,
+        # Si su puesto dice con que rol entra, el rol no se cambia a mano
+        # (seccion 73): la pantalla no lo ofrece.
+        "rol_por_puesto": bool(u.categoria and u.categoria.rol),
         "activo": u.activo,
         # Sin contrasena: se le dio el acceso y nunca lo estreno.
         "estrenado": u.hash_contrasena is not None,
@@ -380,7 +406,33 @@ def crear_categoria(datos: CategoriaIn, db: Session = Depends(get_db),
     """
     resultado = accesos.crear_categoria(
         db, actor, datos.nombre, datos.actividades,
-        descripcion=datos.descripcion, horas_sesion=datos.horas_sesion)
+        descripcion=datos.descripcion, horas_sesion=datos.horas_sesion,
+        rol=datos.rol, area=datos.area, pantallas=datos.pantallas,
+        puestos_odoo=datos.puestos_odoo, orden=datos.orden)
+    db.commit()
+    return resultado
+
+
+@router.get("/categorias/base",
+            summary="Los puestos de la propuesta que todavia no existen")
+def puestos_base_que_faltan(db: Session = Depends(get_db),
+                            _: m.Usuario = Depends(ADMINISTRA)):
+    """Para el boton de la pantalla: si falta alguno, se ofrece crearlos.
+    Y los dos que entran con su rol, para que la lista de puestos este
+    completa."""
+    from app import puestos_base
+    return {"faltan": puestos_base.faltan(db),
+            "por_rol": puestos_base.por_rol(db)}
+
+
+@router.post("/categorias/base",
+             summary="Crear los puestos de la propuesta (seccion 73)")
+def crear_puestos_base(db: Session = Depends(get_db),
+                       actor: m.Usuario = Depends(ADMINISTRA)):
+    """Crea los que falten y no toca los que ya estan: si alguien ya los
+    ajusto, sus ajustes mandan."""
+    from app import puestos_base
+    resultado = puestos_base.crear_puestos(db, actor)
     db.commit()
     return resultado
 
@@ -623,7 +675,8 @@ def iniciar_sesion(peticion: Request,
 
 
 @router.get("/yo", summary="Quien soy")
-def yo(usuario: m.Usuario = Depends(auth.usuario_actual)):
+def yo(usuario: m.Usuario = Depends(auth.usuario_actual),
+       db: Session = Depends(get_db)):
     # El idioma viaja aqui porque aqui es donde la app pregunta quien es
     # antes de pintar nada. Sale del pais de su plaza: el de campo no
     # elige idioma, y pedirselo seria un boton mas en una pantalla que se
@@ -640,7 +693,14 @@ def yo(usuario: m.Usuario = Depends(auth.usuario_actual)):
             "pais_id": plaza.pais_id if plaza else None,
             "plaza_id": usuario.persona.plaza_id if usuario.persona else None,
             # Si todavia no ha visto el recorrido de la primera vez.
-            "recorrido_pendiente": usuario.recorrido_en is None}
+            "recorrido_pendiente": usuario.recorrido_en is None,
+            # Seccion 73. Lo que puede hacer --para no pintar un boton que
+            # va a contestar 403--, las pantallas de su menu si su puesto
+            # las dice, y el nombre de su puesto. Deciden lo que se pinta;
+            # cada puerta la sigue cuidando el servidor.
+            "actividades": sorted(accesos.actividades_de(db, usuario)),
+            "pantallas": accesos.pantallas_de(usuario),
+            "puesto": usuario.categoria.nombre if usuario.categoria else None}
 
 
 @router.post("/recorrido-visto", summary="Ya vio el recorrido")

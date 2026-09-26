@@ -215,6 +215,20 @@ def puede_el_usuario(db: Session, usuario: m.Usuario, actividad: str) -> bool:
     return bool(HEREDA.get(usuario.rol, set()) & permitidos)
 
 
+def _puestos_que_traen(db: Session, actividad: str) -> list[str]:
+    """Los puestos activos que traen esta actividad, en el orden de la
+    pantalla de accesos."""
+    filas = (db.query(m.CategoriaAcceso.nombre)
+             .join(m.ActividadDeCategoria,
+                   m.ActividadDeCategoria.categoria_id == m.CategoriaAcceso.id)
+             .filter(m.ActividadDeCategoria.actividad == actividad,
+                     m.CategoriaAcceso.activa.is_(True))
+             .order_by(m.CategoriaAcceso.orden.asc().nulls_last(),
+                       m.CategoriaAcceso.nombre)
+             .all())
+    return [n for (n,) in filas]
+
+
 def puede(actividad: str):
     """Dependencia que restringe un endpoint a una actividad con nombre.
 
@@ -231,13 +245,26 @@ def puede(actividad: str):
         # Quien si puede, dicho en el mensaje y no solo en el detalle.
         # "No tienes permiso" a secas deja a alguien mirando un boton sin
         # saber a quien hablarle, y la pantalla no lo puede adivinar.
+        if usuario.categoria:
+            # Con puesto, el rol no explica nada: un consultor JR es
+            # consultor y aun asi no asigna viaticos. Se dice su puesto y
+            # que puestos si lo traen (seccion 73).
+            puestos = _puestos_que_traen(db, actividad)
+            que_hacer = (f"Tu puesto, {usuario.categoria.nombre}, no lo "
+                         f"incluye. " + (f"Lo hace: {', '.join(puestos)}."
+                                         if puestos else
+                                         "Se da desde la pantalla de "
+                                         "accesos."))
+        elif quienes:
+            que_hacer = (f"Esto lo hace: {', '.join(quienes)}. "
+                         f"Tu entraste como "
+                         f"{usuario.rol.value.replace('_', ' ')}.")
+        else:
+            que_hacer = ("Nadie tiene esta actividad asignada todavia; "
+                         "se da desde la pantalla de accesos.")
         raise HTTPException(403, {
             "mensaje": "No tienes permiso para esta accion",
-            "que_hacer": (f"Esto lo hace: {', '.join(quienes)}. "
-                          f"Tu entraste como {usuario.rol.value.replace('_', ' ')}."
-                          if quienes else
-                          "Nadie tiene esta actividad asignada todavia; "
-                          "se da desde la pantalla de accesos."),
+            "que_hacer": que_hacer,
             "actividad": actividad,
             "tu_rol": usuario.rol.value,
             "tu_categoria": (usuario.categoria.nombre

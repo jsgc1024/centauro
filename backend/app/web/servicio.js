@@ -1,7 +1,7 @@
 /* Pantalla de un servicio. Sigue el mismo orden del task sheet:
    encabezado, meet and greet, equipo y unidad por dia, y al final el
    hospedaje. Quien lo arma ve lo mismo que quien lo va a recibir. */
-import { api } from "./api.js";
+import { api, sesion } from "./api.js";
 import { catalogos } from "./catalogos.js";
 import { buscadorDeLugar } from "./mapa.js";
 import { aviso, campo, conAyuda, dinero, entrada, estatus, etiqueta, fecha,
@@ -9,6 +9,7 @@ import { aviso, campo, conAyuda, dinero, entrada, estatus, etiqueta, fecha,
          telefono } from "./util.js";
 import { IDIOMAS, idioma, t } from "./idioma.js";
 import { tarjetaCierre } from "./cierre.js";
+import { tiene } from "./menu.js";
 
 export async function pantallaServicio(main, servicioId) {
   const [servicio, cat] = await Promise.all([
@@ -2790,6 +2791,14 @@ async function bloqueViaticos(equipo) {
   return caja;
 }
 
+/* Cuanto se le deposita a cada quien, pedirselo a finanzas y pedir una
+   compra lo decide el consultor titular o direccion de operaciones
+   (seccion 73). El consultor JR prepara el servicio y aqui ve el dinero
+   de su equipo sin moverlo: los campos salen quietos y lo dice. */
+function decideElDinero() {
+  return tiene(sesion.usuario, "viaticos.asignar");
+}
+
 async function pintarViaticos(caja, equipo) {
   caja.replaceChildren(h("div", { clase: "gris chico" }, t("srv_viaticos_cargando")));
   let datos;
@@ -2811,7 +2820,9 @@ async function pintarViaticos(caja, equipo) {
   const porSolicitar = datos.personal.filter(
     p => p.estatus === "asignado").length;
 
-  const pedirTodo = h("button", { clase: "chico", type: "button",
+  const pedirTodo = !decideElDinero()
+    ? h("span", { clase: "gris chico" }, t("srv_dinero_titular"))
+    : h("button", { clase: "chico", type: "button",
     disabled: porSolicitar ? null : "disabled",
     onclick: async (e) => {
       e.target.disabled = true;
@@ -2875,8 +2886,10 @@ function renglonViatico(p, equipo, moneda, repintar) {
   /* En enteros: el viatico se entrega en efectivo o por transferencia y
      nadie anda partiendo pesos. Lo que se capture se sube al entero de
      arriba, del lado del servidor. */
+  const decide = decideElDinero();
   const monto = entrada("monto", {
     type: "number", step: "1", min: "0", clase: "num",
+    disabled: decide ? null : "disabled",
     style: "text-align:right; max-width:130px",
     value: !yaSalio && Number(p.asignado)
              ? String(Math.round(Number(p.asignado))) : "",
@@ -2901,7 +2914,7 @@ function renglonViatico(p, equipo, moneda, repintar) {
      teclear el numero a mano invita a equivocarse. El boton lleva el
      monto encima: "Usar" a secas no dice usar que. */
   const propuesto = Math.ceil(Number(p.propuesto));
-  const usar = (yaSalio || !propuesto) ? "" : h("button", {
+  const usar = (yaSalio || !propuesto || !decide) ? "" : h("button", {
     clase: "claro chico", type: "button",
     title: t("srv_usar_propuesto"),
     onclick: () => { monto.value = String(propuesto); guardar(); } },
@@ -2930,7 +2943,7 @@ function renglonViatico(p, equipo, moneda, repintar) {
      salida la unica forma de corregir era depositar de mas y andar
      persiguiendo la devolucion. Ya depositado ya no aparece: eso se
      devuelve, no se cancela. */
-  const cancelar = p.estatus !== "solicitado" ? "" :
+  const cancelar = (p.estatus !== "solicitado" || !decide) ? "" :
     h("button", { clase: "claro chico", type: "button",
       onclick: async (e) => {
         e.target.disabled = true;
@@ -2993,12 +3006,14 @@ function bloqueCompras(datos, equipo, moneda, repintar) {
     h("p", { clase: "gris chico", style: "margin:0 0 12px" },
       t("srv_compras_pie")),
     lista_,
-    h("div", { clase: "acciones", style: "margin-top:10px" },
-      alternador(h("button", { clase: "claro chico", type: "button" },
-                   t("srv_pedir_compra")),
-                 zona,
-                 () => zona.replaceChildren(
-                   formularioCompra(equipo, zona, repintar)))),
+    decideElDinero()
+      ? h("div", { clase: "acciones", style: "margin-top:10px" },
+          alternador(h("button", { clase: "claro chico", type: "button" },
+                       t("srv_pedir_compra")),
+                     zona,
+                     () => zona.replaceChildren(
+                       formularioCompra(equipo, zona, repintar))))
+      : "",
     zona);
 }
 
@@ -3022,8 +3037,8 @@ function tarjetaCompra(c, moneda, repintar) {
                            "grave"));
   }
 
-  const puedeCancelar = c.estatus === "solicitada"
-                        || c.estatus === "en_gestion";
+  const puedeCancelar = (c.estatus === "solicitada"
+                         || c.estatus === "en_gestion") && decideElDinero();
 
   return h("div", { clase: "tarjeta lisa", style: "margin:0 0 10px" },
     h("div", { clase: "acciones", style: "justify-content:space-between" },
