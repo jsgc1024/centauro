@@ -5106,6 +5106,36 @@ el visto bueno del mes no pasaba.
   puestos a mano: se pasan a la lista con *Usar los de la lista*, mes por
   mes, cuando se quiera.
 
+## 81. El ícono de EP Connect: el escudo con la C
+
+Salvador, 26 de septiembre: mandó el ícono nuevo de la app —el escudo
+blanco con la C, sobre azul marino, con un marco dorado—, en un PNG de
+1024 × 1024, para que se vea así en el teléfono y en la computadora, y
+que debajo siga diciendo EP Connect.
+
+### Lo que cambió
+
+- **Los íconos de la app** (`/app/`) salen de esa imagen: 512 y 192 para
+  Android y la computadora, 180 para iPhone —sin transparencia, como
+  pide iOS— y 32 para la pestaña.
+- **El de Android que el teléfono recorta** (*maskable*) va sin el marco
+  dorado: azul hasta la orilla y el escudo al centro. Cada teléfono lo
+  recorta a su forma —círculo o esquinas redondas— y el marco quedaría
+  cortado a medias. El escudo cabe completo en la zona que ningún
+  teléfono recorta.
+- **El nombre no cambia**: EP Connect, debajo del ícono (sección 72).
+- **La consola conserva el escudo del centauro**: Salvador pidió el
+  ícono de la app.
+- El armazón guardado en el teléfono sube a `centauro-campo-v12`, para
+  que el aviso y la cabecera sin señal tomen el ícono nuevo.
+
+### Lo que hay que saber
+
+- Como en la sección 72: en el iPhone donde la app ya estaba instalada,
+  el ícono no cambia solo. Se borra el acceso directo y se vuelve a
+  agregar desde `appep.mycentauro.lat`. Android lo cambia por su cuenta,
+  pero puede tardar unos días.
+
 ## 14. Lo que falta
 
 ### Abierto

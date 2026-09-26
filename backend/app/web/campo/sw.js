@@ -17,7 +17,8 @@
    activarse, el trabajador nuevo borra los caches con otro nombre. Sin
    subirla, el telefono que ya tenia la app instalada seguiria sirviendo
    el armazon viejo del cache. */
-const CACHE = "centauro-campo-v11";
+// v12: el icono nuevo de EP Connect, el escudo con la C (seccion 81).
+const CACHE = "centauro-campo-v12";
 const ARMAZON = [
   "/app/",
   "/app/index.html",
