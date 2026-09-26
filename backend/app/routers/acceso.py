@@ -244,6 +244,44 @@ def personas_sin_acceso(db: Session = Depends(get_db),
     }
 
 
+@router.get("/oficina",
+            summary="La oficina que llego de Odoo, con su puesto sugerido")
+def oficina_de_odoo(db: Session = Depends(get_db),
+                    _: m.Usuario = Depends(ADMINISTRA)):
+    """Lo que Recursos Humanos necesita para dar los accesos de la oficina
+    (seccion 74).
+
+    `sin_acceso`: quien llego de Odoo como personal de oficina y todavia
+    no tiene acceso, con el puesto de Centauro que sugiere su puesto de
+    Odoo --o nada, y entonces se escoge a mano--. `sin_correo`: quien en
+    Odoo no tiene correo de trabajo, de la ultima lectura: no puede
+    llegar hasta que RH se lo ponga alla, y entonces llega solo.
+    """
+    from app import odoo_oficina
+
+    con_acceso = {persona_id for (persona_id,)
+                  in db.query(m.Usuario.persona_id).all()}
+    llaves = {(c or "").strip().lower()
+              for (c,) in db.query(m.Usuario.correo).all()}
+    puestos = odoo_oficina.sugeribles(db)
+    filas = (db.query(m.Persona)
+             .filter(m.Persona.oficina.is_(True), m.Persona.activo.is_(True))
+             .order_by(m.Persona.nombre).all())
+    leido_en, informe = odoo_oficina.ultimo_informe(db)
+    return {
+        "sin_acceso": [{
+            "persona_id": p.id, "nombre": p.nombre, "correo": p.correo,
+            "puesto_odoo": p.puesto_odoo, "area_odoo": p.area_odoo,
+            "sugerido": odoo_oficina.sugerencia(p.puesto_odoo, puestos),
+        } for p in filas
+            if p.id not in con_acceso
+            and (p.correo or "").strip().lower() not in llaves],
+        "sin_correo": sorted((informe or {}).get("sin_correo", []),
+                             key=lambda x: x.get("nombre") or ""),
+        "leido_en": leido_en.isoformat() if leido_en else None,
+    }
+
+
 @router.get("/usuarios/{usuario_id}/invitacion",
             summary="Como va la invitacion de alguien")
 def estado_de_invitacion(usuario_id: int, db: Session = Depends(get_db),

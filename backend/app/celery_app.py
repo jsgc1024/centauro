@@ -121,6 +121,12 @@ celery.conf.update(
             "task": "odoo.sincronizar_flota",
             "schedule": crontab(minute=27),
         },
+        # El personal de oficina (seccion 74), otros diez minutos despues.
+        # Igual: espera a la primera lectura hecha a mano.
+        "odoo-oficina": {
+            "task": "odoo.sincronizar_oficina",
+            "schedule": crontab(minute=37),
+        },
         # El GPS de las unidades (seccion 60). Cada dos minutos: el
         # panico del vehiculo, el camino al punto, el inhibidor y la
         # corriente, y el segundo testigo de las marcas. Sin nadie en la
@@ -360,6 +366,20 @@ def sincronizar_flota_de_odoo():
     db = SessionLocal()
     try:
         return odoo_flota.sincronizar_si_toca(db)
+    finally:
+        db.close()
+
+
+@celery.task(name="odoo.sincronizar_oficina")
+def sincronizar_oficina_de_odoo():
+    """El personal de oficina, leido de Odoo (seccion 74). Deja a cada
+    quien listo para su acceso; el acceso lo da Recursos Humanos."""
+    from app.db import SessionLocal
+    from app import odoo_oficina
+
+    db = SessionLocal()
+    try:
+        return odoo_oficina.sincronizar_si_toca(db)
     finally:
         db.close()
 

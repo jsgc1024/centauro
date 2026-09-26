@@ -451,6 +451,18 @@ class Persona(Base):
     clabe: Mapped[str | None] = mapped_column(String(40), nullable=True)
     titular_cuenta: Mapped[str | None] = mapped_column(String(160),
                                                         nullable=True)
+    # Personal de oficina, leido de Odoo (seccion 74): monitoristas,
+    # finanzas, recursos humanos, consultores... Se guarda aqui para darle
+    # su acceso a la consola con el puesto que sugiere su puesto de Odoo,
+    # y para cerrarselo cuando Odoo lo archive. No va a la calle: no sale
+    # en las listas de a quien se manda ni en el tablero del personal de
+    # seguridad.
+    oficina: Mapped[bool] = mapped_column(Boolean, default=False,
+                                          server_default="false")
+    # Como lo dice Odoo: su puesto y su departamento. De ahi sale el
+    # puesto que se le sugiere al darle acceso.
+    puesto_odoo: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    area_odoo: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
     plaza: Mapped[Plaza] = relationship()
 

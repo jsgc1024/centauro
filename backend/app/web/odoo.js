@@ -1,4 +1,4 @@
-/* Odoo: lo que Centauro lee de ahi (secciones 51, 52 y 64).
+/* Odoo: lo que Centauro lee de ahi (secciones 51, 52, 64 y 74).
 
    El personal de seguridad y la flota llegan de Odoo. La primera lectura
    de cada una se hace a mano, despues de ver el ensayo, y de ahi en
@@ -54,6 +54,14 @@ const FALTAS = {
   "activo en Odoo pero dado de baja en Centauro: reactivar a mano":
     "odo_f_reactivar_persona",
   "ya no tiene puesto de seguridad en Odoo": "odo_f_sin_puesto",
+  // La oficina (seccion 74).
+  "correo de trabajo mal escrito": "odo_f_trabajo_mal",
+  "correo de trabajo con error de dedo": "odo_f_trabajo_dedo",
+  "correo de trabajo repetido en Odoo": "odo_f_trabajo_repetido",
+  "en Centauro es personal de seguridad; en Odoo ya no": "odo_f_era_seguridad",
+  "su correo es de alguien del personal de seguridad en Centauro":
+    "odo_f_correo_de_seguridad",
+  "ahora es personal de seguridad en Odoo": "odo_f_ahora_seguridad",
   "sin placa": "odo_f_sin_placa",
   "placa repetida en Odoo": "odo_f_placa_repetida",
   "sin categoria": "odo_f_sin_categoria",
@@ -93,6 +101,7 @@ const QUE = {
   referencia: "odo_q_referencia", "fecha de ingreso": "odo_q_ingreso",
   correo: "odo_q_correo", placa: "odo_q_placa", categoria: "odo_q_categoria",
   "marca y modelo": "odo_q_modelo", color: "odo_q_color", ano: "odo_q_anio",
+  puesto: "odo_q_puesto", area: "odo_q_area",
 };
 
 function que(lista) {
@@ -106,6 +115,7 @@ const MOTIVOS = {
   "ya no esta en Odoo": "odo_b_ya_no_esta",
   "se cierra": "odo_b_se_cierra",
   "sigue abierto hasta que compruebe sus viaticos": "odo_b_viaticos",
+  "no tenia": "odo_b_no_tenia",
 };
 
 function motivo(texto) {
@@ -131,6 +141,16 @@ const LECTURAS = {
     pieAltas: "odo_altas_flota_pie", pieBajas: "odo_bajas_flota_pie",
     confirmar: "odo_confirmar_flota",
   },
+  /* La oficina (seccion 74): llega la persona, no su acceso. El acceso
+     lo da Recursos Humanos en Accesos, con el puesto sugerido. */
+  oficina: {
+    ensayo: "/odoo/oficina/ensayo", aplicar: "/odoo/oficina/sincronizar",
+    leidos: (d) => reemplazar(t("odo_leidos_oficina"),
+                              { n: d.leidos, s: d.sin_cambio }),
+    quien: (x) => x.nombre || "—",
+    pieAltas: "odo_altas_oficina_pie", pieBajas: "odo_bajas_oficina_pie",
+    confirmar: "odo_confirmar_oficina",
+  },
 };
 
 /* Leer Odoo entero y sus fotos lleva mas que una pantalla comun: con
@@ -142,11 +162,12 @@ export async function pantallaOdoo(main) {
   const cabeza = h("div");
   const personal = h("div");
   const flota = h("div");
+  const oficina = h("div");
   const historial = h("div");
   main.append(
     h("h1", {}, t("nav_odoo")),
     h("p", { clase: "sub" }, t("odo_sub")),
-    cabeza, personal, flota, historial);
+    cabeza, personal, flota, oficina, historial);
 
   let estado;
   try {
@@ -157,7 +178,7 @@ export async function pantallaOdoo(main) {
   /* Despues de aplicar se vuelve a pintar solo esa tarjeta --ya con su
      "ultima lectura" y con lo que se hizo a la vista-- y el historial.
      La otra se queda como estaba: si tenia un ensayo abierto, sigue ahi. */
-  const cajas = { personal, flota };
+  const cajas = { personal, flota, oficina };
   const repintar = async (tipo, hecho) => {
     try {
       const nuevo = await api.get("/odoo/estado");
@@ -175,6 +196,7 @@ export async function pantallaOdoo(main) {
         aviso(t("odo_sin_conexion"), "alerta")));
   tarjeta(personal, "personal", estado, repintar);
   tarjeta(flota, "flota", estado, repintar);
+  tarjeta(oficina, "oficina", estado, repintar);
   pintarHistorial(historial, estado);
 }
 
@@ -262,7 +284,9 @@ function tarjeta(caja, tipo, estado, repintar, mostrar = null) {
   if (mostrar) resultado.replaceChildren(informe(tipo, mostrar));
   const titulo = tipo === "personal"
     ? conAyuda("h3", t("odo_personal"), "ay_odo_personal")
-    : conAyuda("h3", t("odo_flota"), "ay_odo_flota");
+    : tipo === "oficina"
+      ? conAyuda("h3", t("odo_oficina"), "ay_odo_oficina")
+      : conAyuda("h3", t("odo_flota"), "ay_odo_flota");
   caja.replaceChildren(h("div", { clase: "tarjeta" },
     titulo,
     ...comoVa(tipo, estado),
@@ -308,7 +332,14 @@ function informe(tipo, d) {
       celda(t("odo_bajas"), d.bajas.length, t(cfg.pieBajas),
             d.bajas.length ? "var(--grave)" : ""),
       celda(t("odo_pendientes"), pendientes.length, t("odo_pendientes_pie"),
-            pendientes.length ? "var(--alerta)" : "")),
+            pendientes.length ? "var(--alerta)" : ""),
+      /* La oficina que no tiene correo de trabajo no puede llegar: es
+         la lista que RH corrige en Odoo, y se cuenta aparte. */
+      tipo === "oficina"
+        ? celda(t("odo_sin_correo_trabajo"), (d.sin_correo || []).length,
+                t("odo_sin_correo_trabajo_pie"),
+                (d.sin_correo || []).length ? "var(--alerta)" : "")
+        : ""),
   ];
 
   /* Lo pendiente no se pliega: es la lista de trabajo de RH, y un bloque
@@ -340,7 +371,28 @@ function informe(tipo, d) {
       renglones(d.bajas, (x) => [cfg.quien(x), detalleBaja(x)]),
       null, {}, true));
   }
-  if (tipo === "personal") {
+  if (tipo === "oficina") {
+    const sinCorreo = d.sin_correo || [];
+    if (sinCorreo.length) {
+      partes.push(plegable(`${t("odo_l_sin_correo")} (${sinCorreo.length})`,
+        renglones(sinCorreo, (x) => [x.nombre || "—",
+          [x.puesto, x.area, noOdoo(x.odoo_id)].filter(Boolean).join(" · ")]),
+        null, {}, false));
+    }
+    const sinSugerencia = d.sin_sugerencia || [];
+    if (sinSugerencia.length) {
+      partes.push(plegable(`${t("odo_l_sin_sugerencia")} (${sinSugerencia.length})`,
+        h("div", {},
+          h("p", { clase: "gris chico", style: "margin:0 0 6px" },
+            t("odo_sin_sugerencia_pie")),
+          renglones(sinSugerencia, (x) => [x.nombre || "—", x.puesto_odoo || "—"])),
+        null, {}, false));
+    }
+    if ((d.sin_lugar || []).length) {
+      partes.push(h("p", { clase: "gris chico", style: "margin:10px 0 0" },
+        reemplazar(t("odo_sin_lugar"), { n: d.sin_lugar.length })));
+    }
+  } else if (tipo === "personal") {
     const celulares = d.celular_no_valido || [];
     if (celulares.length) {
       partes.push(plegable(`${t("odo_l_celular")} (${celulares.length})`,
@@ -384,6 +436,9 @@ function noOdoo(n) {
 function detalleAlta(tipo, x) {
   if (tipo === "personal") {
     return [x.plaza, x.correo].filter(Boolean).join(" · ");
+  }
+  if (tipo === "oficina") {
+    return [x.puesto_odoo, x.area_odoo, x.correo].filter(Boolean).join(" · ");
   }
   return [x.categoria, x.plaza].filter(Boolean).join(" · ");
 }
@@ -445,7 +500,8 @@ function pintarHistorial(caja, estado) {
       col("odo_altas"), col("odo_cambios"), col("odo_bajas"), col("odo_pendientes"))),
     h("tbody", {}, ...filas.map((f) => h("tr", {},
       h("td", {}, cuando(f.hecha_en)),
-      h("td", {}, t(f.tipo === "flota" ? "odo_t_flota" : "odo_t_personal")),
+      h("td", {}, t(f.tipo === "flota" ? "odo_t_flota"
+                    : f.tipo === "oficina" ? "odo_t_oficina" : "odo_t_personal")),
       h("td", { clase: "gris" }, t(f.automatica ? "odo_sola_h" : "odo_a_mano")),
       h("td", {}, f.hecha_por || "—"),
       h("td", { clase: "num" }, String(f.altas)),

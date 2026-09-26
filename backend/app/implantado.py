@@ -659,7 +659,9 @@ def dia_del_servicio(db: Session, servicio: m.Servicio, fecha: date) -> dict:
     libres = []
     for persona in (db.query(m.Persona)
                     .filter(m.Persona.plaza_id == servicio.plaza_id,
-                            m.Persona.activo.is_(True)).all()):
+                            m.Persona.activo.is_(True),
+                            # La oficina no cubre dias (seccion 74).
+                            m.Persona.oficina.is_(False)).all()):
         # Sin filtrar por puesto: el personal de seguridad es general y
         # el rol lo decide el consultor al cubrir el dia.
         hallazgos = disponibilidad.revisar_persona(

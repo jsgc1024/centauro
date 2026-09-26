@@ -246,6 +246,11 @@ class PersonaOut(PersonaIn):
     # esta en la empresa.
     referencia: str | None = None
     fecha_ingreso: date | None = None
+    # Personal de oficina, leido de Odoo (seccion 74): no va a la calle, y
+    # las listas donde se escoge a quien se manda lo dejan fuera.
+    oficina: bool = False
+    puesto_odoo: str | None = None
+    area_odoo: str | None = None
 
 
 class TarifaFreelanceIn(Base):

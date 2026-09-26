@@ -308,12 +308,14 @@ def planear(empleados: list, personas: list, plazas: dict,
 
     # Las que Centauro ya lleva desde Odoo y hoy no salieron en la lista:
     # o las archivaron, o dejaron de ser de seguridad. Se pregunta a Odoo
-    # por cada una antes de decidir.
+    # por cada una antes de decidir. Las de oficina no: esas las lleva su
+    # propia lectura (seccion 74), y aqui saldrian cada hora como
+    # pendientes de algo que no son.
     ids = {e["id"] for e in elegidos}
     plan["revisar_salida"] = [
         p for p in personas
         if p.get("odoo_id") and p.get("activo") and p.get("sincronizado_en")
-        and p["odoo_id"] not in ids]
+        and not p.get("oficina") and p["odoo_id"] not in ids]
     return plan
 
 

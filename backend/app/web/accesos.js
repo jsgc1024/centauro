@@ -11,7 +11,7 @@
    que quizá ya no está. Ese dato se guardaba desde hace meses y nadie lo
    miraba. */
 import { api } from "./api.js";
-import { aviso, campo, conAyuda, entrada, fecha, h, hora, lista,
+import { aviso, campo, conAyuda, entrada, etiqueta, fecha, h, hora, lista,
          mensaje } from "./util.js";
 import { t } from "./idioma.js";
 import { ROLES, nombreDelRol, pestanaPuestos,
@@ -101,6 +101,17 @@ export async function pantallaAccesos(main) {
   await pintarVista();
 }
 
+/* Con el correo apagado, quien puede copiar el enlace lo lee aquí
+   dicho; quien no, sabe a quién pedírselo. */
+function textoDeInvitacion(r) {
+  const inv = r.invitacion;
+  return inv.correo_encendido
+    ? t("acc_inv_va").replace("{correo}", r.correo)
+        .replace("{cuando}", cuando(inv.expira_en))
+    : t(inv.enlace ? "acc_inv_apagado_copia" : "acc_inv_apagado_pide")
+        .replace("{correo}", r.correo);
+}
+
 /* Dar acceso: a quién, con qué entra y, si se quiere, su puesto. Le
    llega un correo para que ella misma cree su contraseña; nadie más la
    conoce nunca. */
@@ -158,13 +169,7 @@ function formularioDarAcceso(caja, datos, puestos, alTerminar, hecho = "") {
         persona_id: Number(persona.value), rol: rol.value,
         categoria_id: puesto.value ? Number(puesto.value) : null });
       const inv = r.invitacion;
-      /* Con el correo apagado, quien puede copiar el enlace lo lee aquí
-         dicho; quien no, sabe a quién pedírselo. */
-      const texto = inv.correo_encendido
-        ? t("acc_inv_va").replace("{correo}", r.correo)
-            .replace("{cuando}", cuando(inv.expira_en))
-        : t(inv.enlace ? "acc_inv_apagado_copia" : "acc_inv_apagado_pide")
-            .replace("{correo}", r.correo);
+      const texto = textoDeInvitacion(r);
       await alTerminar();
       /* El formulario vuelve limpio --esa persona ya no está en la
          lista-- y con el aviso de lo que pasó. */
@@ -195,15 +200,33 @@ function formularioDarAcceso(caja, datos, puestos, alTerminar, hecho = "") {
     hecho));
 }
 
+/* Las personas, en tres pestañas (sección 74): quien ya tiene acceso;
+   la oficina que llegó de Odoo y todavía no lo tiene, con el puesto que
+   sugiere su puesto de Odoo; y quien en Odoo no tiene correo de trabajo,
+   que no puede entrar hasta que Recursos Humanos se lo ponga allá. */
 async function pantallaPersonas(main) {
+  const pestanas = h("div", { clase: "pestanas", style: "margin:12px 0 10px" });
+  const zona = h("div");
   const cuerpo = h("div");
   const buscar = entrada("buscar", { placeholder: t("acc_buscar"),
                                      autocomplete: "off" });
   const cerrados = h("input", { type: "checkbox" });
-
+  let sub = "con";
   let todos = [];
+  let oficina = { sin_acceso: [], sin_correo: [], leido_en: null };
+  let puestos = [];
 
-  function pintar() {
+  function pintarPestanas() {
+    const boton = (clave, texto) => h("button", {
+      type: "button", clase: `pestana ${sub === clave ? "activa" : ""}`.trim(),
+      onclick: () => { sub = clave; pintarPestanas(); pintarSub(); } }, texto);
+    pestanas.replaceChildren(
+      boton("con", t("ofi_tab_con").replace("{n}", todos.filter(u => u.activo).length)),
+      boton("oficina", t("ofi_tab_oficina").replace("{n}", oficina.sin_acceso.length)),
+      boton("sin_correo", t("ofi_tab_sin_correo").replace("{n}", oficina.sin_correo.length)));
+  }
+
+  function pintarLista() {
     const texto = buscar.value.trim().toLowerCase();
     const filas = todos
       .filter(u => cerrados.checked || u.activo)
@@ -216,29 +239,142 @@ async function pantallaPersonas(main) {
           t("acc_nadie")));
   }
 
+  function pintarSub() {
+    if (sub === "oficina") {
+      zona.replaceChildren(
+        h("p", { clase: "gris chico", style: "margin:0 0 10px" }, t("ofi_pie")),
+        oficina.leido_en ? "" : aviso(t("ofi_sin_lectura"), "alerta"),
+        oficina.sin_acceso.length
+          ? h("div", {}, ...oficina.sin_acceso.map(
+              p => renglonOficina(p, puestos, recargar)))
+          : h("div", { clase: "gris chico" },
+              oficina.leido_en ? t("ofi_nadie") : ""));
+      return;
+    }
+    if (sub === "sin_correo") {
+      zona.replaceChildren(
+        h("p", { clase: "gris chico", style: "margin:0 0 10px" },
+          t("ofi_sin_correo_pie")),
+        oficina.leido_en
+          ? h("div", { clase: "gris chico", style: "margin:0 0 8px" },
+              t("ofi_segun_lectura").replace("{cuando}", cuando(oficina.leido_en)))
+          : aviso(t("ofi_sin_lectura"), "alerta"),
+        oficina.sin_correo.length
+          ? h("div", {}, ...oficina.sin_correo.map(x =>
+              h("div", { clase: "renglon-acceso de-oficina" },
+                h("div", { clase: "quien-acceso" }, h("b", {}, x.nombre || "—")),
+                h("div", { clase: "chico" }, x.puesto || "—",
+                  h("div", { clase: "gris" }, x.area || "")),
+                h("div"), h("div"))))
+          : h("div", { clase: "gris chico" },
+              oficina.leido_en ? t("ofi_todos_con_correo") : ""));
+      return;
+    }
+    zona.replaceChildren(
+      buscar,
+      /* La casilla junto a su texto. Con la etiqueta de bloque, la casilla
+         tomaba el ancho entero y salía sola en un renglón, encima y
+         desfasada del texto que la explica. */
+      h("label", { clase: "casilla", style: "margin-top:8px" },
+        cerrados, t("acc_ver_cerrados")),
+      cuerpo);
+    pintarLista();
+  }
+
   async function recargar() {
     try {
-      todos = await api.get("/auth/usuarios");
-      pintar();
+      [todos, oficina, puestos] = await Promise.all([
+        api.get("/auth/usuarios"), api.get("/auth/oficina"),
+        api.get("/auth/categorias")]);
+      pintarPestanas();
+      pintarSub();
     } catch (err) {
-      cuerpo.replaceChildren(aviso(err.message, "grave"));
+      zona.replaceChildren(aviso(err.message, "grave"));
     }
   }
 
-  buscar.addEventListener("input", pintar);
-  cerrados.addEventListener("change", pintar);
+  buscar.addEventListener("input", pintarLista);
+  cerrados.addEventListener("change", pintarLista);
 
-  main.replaceChildren(
-    h("div", { style: "margin-top:12px" }, buscar),
-    /* La casilla junto a su texto. Con la etiqueta de bloque, la casilla
-       tomaba el ancho entero y salía sola en un renglón, encima y
-       desfasada del texto que la explica. */
-    h("label", { clase: "casilla", style: "margin-top:8px" },
-      cerrados, t("acc_ver_cerrados")),
-    cuerpo);
-
+  main.replaceChildren(pestanas, zona);
   await recargar();
   return recargar;
+}
+
+/* Alguien de oficina que llegó de Odoo y todavía no entra: su puesto de
+   Odoo y el de Centauro que eso sugiere. Dar el acceso es un clic, y el
+   puesto sugerido se puede cambiar antes (sección 74). */
+function renglonOficina(p, puestos, recargar) {
+  const zona = h("div");
+  const s = p.sugerido;
+  const fila = h("div", { clase: "renglon-acceso de-oficina" },
+    h("div", { clase: "quien-acceso" },
+      h("div", {}, h("b", {}, p.nombre)),
+      h("div", { clase: "chico gris" }, p.correo)),
+    h("div", { clase: "chico" }, p.puesto_odoo || "—",
+      h("div", { clase: "gris" }, p.area_odoo || "")),
+    h("div", { clase: "chico" }, s
+      ? h("span", { clase: "sugerido" }, s.nombre)
+      : etiqueta(t("ofi_sin_sugerido"), "alerta")),
+    h("button", { clase: "chico", type: "button", onclick: () => {
+      if (zona.childElementCount) return zona.replaceChildren();
+      zona.replaceChildren(formularioOficina(p, puestos, zona, recargar));
+    } }, t("ofi_dar")));
+  return h("div", {}, fila,
+    s ? "" : h("div", { clase: "chico gris", style: "margin:2px 0 6px" },
+               t("ofi_sin_sugerido_pie")),
+    zona);
+}
+
+function formularioOficina(p, puestos, zona, recargar) {
+  const activos = puestos.filter(x => x.activa);
+  const s = p.sugerido;
+  const puesto = lista("puesto", [{ valor: "", texto: t("acc_sin_puesto") },
+    ...activos.map(x => ({ valor: String(x.categoria_id), texto: x.nombre }))]);
+  const rol = lista("rol", DE_CONSOLA.map(r => ({ valor: r, texto: nombreDelRol(r) })));
+  rol.value = "consultor";
+  const notaRol = h("div", { clase: "gris chico" });
+  function alPuesto() {
+    const x = activos.find(y => String(y.categoria_id) === puesto.value);
+    if (x && x.rol) {
+      rol.value = x.rol;
+      rol.disabled = true;
+      notaRol.textContent = t("acc_rol_lo_pone");
+    } else {
+      rol.disabled = false;
+      notaRol.textContent = "";
+    }
+  }
+  puesto.addEventListener("change", alPuesto);
+  /* Lo sugerido, ya puesto: un puesto de Centauro, o el rol con que
+     entran dirección general y administración, que no llevan puesto. */
+  if (s && s.tipo === "puesto" && s.categoria_id) puesto.value = String(s.categoria_id);
+  else if (s && s.rol) rol.value = s.rol;
+  alPuesto();
+
+  const salida = h("div");
+  const mandar = h("button", { type: "button", clase: "chico" }, t("acc_mandar_inv"));
+  mandar.addEventListener("click", async () => {
+    mandar.disabled = true;
+    try {
+      const r = await api.post("/auth/usuarios", {
+        persona_id: p.persona_id, rol: rol.value,
+        categoria_id: puesto.value ? Number(puesto.value) : null });
+      mensaje(textoDeInvitacion(r), r.invitacion.correo_encendido ? "ok" : "alerta");
+      await recargar();
+    } catch (err) {
+      salida.replaceChildren(aviso(err.message, "grave"));
+      mandar.disabled = false;
+    }
+  });
+  return h("div", { clase: "tarjeta lisa", style: "margin:6px 0 10px" },
+    h("div", { clase: "rejilla dos" },
+      campo(t("acc_puesto_opcional"), puesto),
+      h("div", {}, campo(t("acc_entra_como"), rol), notaRol)),
+    h("div", { clase: "acciones" }, mandar,
+      h("button", { type: "button", clase: "chico claro",
+                    onclick: () => zona.replaceChildren() }, t("acc_cancelar"))),
+    salida);
 }
 
 /* Los avisos son lo que esta pantalla aporta de verdad. El resto son

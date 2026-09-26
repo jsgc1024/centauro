@@ -4664,13 +4664,81 @@ el primer paso.
   ese clic nadie nota nada, y después tampoco hasta que a alguien se le
   pone un puesto.
 
+## 74. El personal de oficina, desde Odoo
+
+Segundo paso de la propuesta *Puestos y Odoo* (sección 73). La gente de
+oficina —monitoristas, finanzas, recursos humanos, consultores,
+dirección— llega de Odoo con su puesto y su departamento, y Recursos
+Humanos le da su acceso a la consola con el puesto que eso sugiere.
+Cuando Odoo la archiva, su acceso se cierra.
+
+### Lo que cambió
+
+- **Una tercera lectura en la pantalla de Odoo**: *El personal de
+  oficina*, con su ensayo y su aplicar, como las otras dos. Es de
+  oficina todo empleado activo que no es personal de seguridad. La
+  primera vez se aplica a mano; de ahí en adelante se lee sola cada hora
+  (a los :37).
+- **Llega la persona, no su acceso.** El acceso a la consola es una
+  decisión de Recursos Humanos, no de una lectura: la lectura deja a
+  cada quien listo, con su correo de trabajo, su puesto y su
+  departamento de Odoo.
+- **Entra con su correo de trabajo.** Sin correo de trabajo en Odoo no
+  llega: se lista aparte para que RH se lo ponga allá, y llega solo en la
+  siguiente lectura. A quien ya estaba en Centauro —las cuentas que se
+  dieron a mano— se le reconoce por ese mismo correo y se le liga a su
+  ficha de Odoo sin tocarle el acceso.
+- **Accesos → Personas tiene tres pestañas**: *Con acceso*; *Oficina, sin
+  acceso*, con el puesto de Centauro que sugiere su puesto de Odoo y un
+  botón para darlo —el puesto se puede cambiar antes—; y *Sin correo en
+  Odoo*. El puesto se sugiere por los *puestos de Odoo* de cada puesto de
+  Centauro (Accesos → Puestos): gana el parecido más largo, palabra por
+  palabra, así que a «CONSULTOR JR "B" PE» le toca Consultor JR y no
+  Consultor de seguridad. A dirección general y a administración se les
+  sugiere su rol.
+- **La baja en Odoo cierra el acceso**, salvo a quien se va debiendo
+  viáticos: primero los comprueba, como en el panel de accesos.
+- **La oficina no se revuelve con la calle.** No sale en las listas de a
+  quién se manda a un servicio, ni en las plantillas de los implantados,
+  ni en el tablero del personal de seguridad, ni entre a quién se le hace
+  un ajuste de nómina. Y la lectura del personal
+  de seguridad ya no la toma en cuenta: sin eso, cada hora diría de toda
+  la oficina que «ya no tiene puesto de seguridad en Odoo».
+- **Lo dudoso no se adivina**, con una excepción: a quien Odoo no le dice
+  dónde trabaja —o le dice un lugar que Centauro no tiene— se le pone la
+  oficina central, Ciudad de México, y el informe lo cuenta. En oficina la plaza solo decide con qué país abren
+  sus pantallas.
+- **Un cambio de puesto no se adivina**: si alguien de seguridad pasa a
+  oficina en Odoo, o al revés, queda pendiente con su No. Odoo.
+
+### Las pruebas
+
+- `tests/test_odoo_oficina.py`, contra un Odoo de mentiras: el ensayo no
+  guarda nada; llega la persona y no su acceso; sin correo de trabajo no
+  llega y se lista; sin lugar queda en la oficina central; a quien ya
+  estaba se le reconoce por su correo; lo que cambia en Odoo se pone al
+  día; la baja le cierra el acceso; quien era de seguridad queda
+  pendiente; la lectura de seguridad no toca a la oficina; la oficina no
+  se manda a la calle; el puesto que se sugiere con los puestos de Odoo
+  de verdad —monitoristas, consultor JR, RH, facturación, tesorería,
+  nómina, supervisor, dirección—; RH ve la oficina con su puesto sugerido
+  y da el acceso con él; la de cada hora espera a la primera a mano; y
+  las puertas.
+
+### Para subirlo
+
+- Lleva migración (`c7d1e5f3a912`): tres columnas nuevas en `persona`.
+- Ya en el servidor: Odoo → *El personal de oficina* → Ensayo, y si lo
+  que dice cuadra, Aplicar. Después, RH da los accesos en Accesos →
+  Personas → *Oficina, sin acceso*.
+
 ## 14. Lo que falta
 
 ### Abierto
 
-- **Puestos y Odoo: los pasos 2, 3 y 4** (sección 73). El personal de
-  oficina desde Odoo con su puesto sugerido, los clientes desde Odoo y
-  la factura en borrador hacia Odoo —probada primero en una copia—.
+- **Puestos y Odoo: los pasos 3 y 4** (secciones 73 y 74). Los clientes
+  desde Odoo y la factura en borrador hacia Odoo —probada primero en una
+  copia—.
 - **El servidor: lo que queda del proveedor** (secciones 68, 70 y 71).
   El dominio ya es de Centauro: `mycentauro.lat`, comprado en Akky a su
   nombre, con el DNS en Google Cloud DNS; la consola vive en

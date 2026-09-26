@@ -673,7 +673,9 @@ function formularioAjuste(alGuardar) {
 
   (async () => {
     const cat = await catalogos();
-    quien.replaceChildren(...cat.personal.map(
+    /* El ajuste es de la nomina del personal de seguridad: la oficina
+       que llega de Odoo (seccion 74) no se ofrece. */
+    quien.replaceChildren(...cat.personal.filter(p => !p.oficina).map(
       p => h("option", { value: p.id }, p.nombre)));
   })();
 

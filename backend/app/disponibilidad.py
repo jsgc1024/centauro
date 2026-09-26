@@ -247,7 +247,9 @@ def recomendar_personal(
     alta freelance."""
     todos = (
         db.query(m.Persona)
-        .filter(m.Persona.activo.is_(True))
+        # La gente de oficina que llega de Odoo (seccion 74) no va a la
+        # calle: no se le ofrece a ningun equipo.
+        .filter(m.Persona.activo.is_(True), m.Persona.oficina.is_(False))
         .all()
     )
     candidatos = [p for p in todos if p.plaza_id == plaza_id]

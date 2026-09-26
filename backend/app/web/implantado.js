@@ -21,6 +21,12 @@ import { tiene } from "./menu.js";
 /* El dinero del mes --cuanto a cada quien y pedirselo a finanzas-- lo
    decide el consultor titular o direccion de operaciones (seccion 73).
    El consultor JR lo ve sin moverlo. */
+/* La oficina que llega de Odoo (seccion 74) esta en el catalogo del
+   personal, pero no va a la calle: no se ofrece para un implantado. */
+function deCampo(personal) {
+  return (personal || []).filter(p => !p.oficina);
+}
+
 function decideElDinero() {
   return tiene(sesion.usuario, "implantado.viaticos");
 }
@@ -220,7 +226,8 @@ function widgetPlantilla(cat, ciudadId, alCambiar = () => {},
     /* Sin fecha todavia no hay mes contra que medir: se ofrece el
        catalogo de la ciudad, sin disponibilidad. */
     return [{ valor: "", texto: t("imp_elige_persona") },
-      ...deLaCiudad(cat.personal).map(p => ({ valor: p.id, texto: p.nombre }))];
+      ...deLaCiudad(deCampo(cat.personal))
+        .map(p => ({ valor: p.id, texto: p.nombre }))];
   }
 
   /* ---------------------------------------------------------- unidades */
@@ -429,7 +436,7 @@ function widgetPlantilla(cat, ciudadId, alCambiar = () => {},
   function revisarCatalogo() {
     const d = disponibilidad();
     const sinGente = (d ? d.personal.length
-                        : deLaCiudad(cat.personal).length) === 0;
+                        : deLaCiudad(deCampo(cat.personal)).length) === 0;
     const sinFlota = opcionesCategoria().length <= 1;
     avisoVacio.hidden = !sinGente && !sinFlota;
     if (avisoVacio.hidden) return;

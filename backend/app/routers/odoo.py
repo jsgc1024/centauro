@@ -10,7 +10,8 @@ y `/personal/sincronizar` lo guarda; despues lo sigue leyendo solo, cada
 hora. `POST /personal` se queda para quien todavia lo mande.
 
 La flota y el taller, igual (seccion 52): `/flota/ensayo` y
-`/flota/sincronizar`.
+`/flota/sincronizar`. Y el personal de oficina (seccion 74):
+`/oficina/ensayo` y `/oficina/sincronizar`.
 
 La pantalla de Odoo de la consola (seccion 64) usa estas mismas rutas y
 `/estado`, que dice si hay llave y como van las lecturas: en produccion
@@ -22,7 +23,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models as m
-from app import odoo, odoo_api, odoo_flota, odoo_personal, schemas as s
+from app import (odoo, odoo_api, odoo_flota, odoo_oficina, odoo_personal,
+                 schemas as s)
 from app.auth import requiere
 from app.config import settings
 from app.db import get_db
@@ -130,7 +132,7 @@ def estado(db: Session = Depends(get_db),
     reciente = (L.hecha_en.desc(), L.id.desc())
     ultimas = db.query(L).order_by(*reciente).limit(LECTURAS_EN_PANTALLA).all()
     por_tipo = {}
-    for tipo in (odoo_personal.TIPO, odoo_flota.TIPO):
+    for tipo in (odoo_personal.TIPO, odoo_flota.TIPO, odoo_oficina.TIPO):
         a_mano = (db.query(L).filter_by(tipo=tipo, automatica=False)
                   .order_by(*reciente).first())
         sola = (db.query(L).filter_by(tipo=tipo, automatica=True)
@@ -190,3 +192,26 @@ def flota_sincronizar(db: Session = Depends(get_db),
     """Lo mismo que el ensayo, guardado. La primera vez se hace a mano;
     de ahi en adelante se lee sola cada hora."""
     return _leer(odoo_flota, db, False, usuario)
+
+
+# ------------------------------------------ el personal de oficina (seccion 74)
+
+@router.get("/oficina/ensayo",
+            summary="Que cambiaria al leer el personal de oficina, sin guardar")
+def oficina_ensayo(db: Session = Depends(get_db),
+                   usuario: m.Usuario = Depends(requiere(m.Rol.ADMIN))):
+    """Lee Odoo y dice que haria con la gente de oficina: quien llega,
+    quien ya estaba, quien no tiene correo de trabajo y quien se fue. No
+    guarda nada, ni aqui ni en Odoo, y no da ningun acceso."""
+    return _leer(odoo_oficina, db, True, usuario)
+
+
+@router.post("/oficina/sincronizar",
+             summary="Leer el personal de oficina de Odoo y guardarlo")
+def oficina_sincronizar(db: Session = Depends(get_db),
+                        usuario: m.Usuario = Depends(requiere(m.Rol.ADMIN))):
+    """Lo mismo que el ensayo, guardado. Deja a cada quien listo para que
+    Recursos Humanos le de su acceso en Accesos; el acceso no lo da la
+    lectura. La primera vez se hace a mano; despues se lee sola cada
+    hora."""
+    return _leer(odoo_oficina, db, False, usuario)

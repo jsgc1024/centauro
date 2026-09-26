@@ -720,7 +720,9 @@ def disponibilidad(plaza_id: int, desde: date, dias_servicio: m.DiasServicio,
 
     gente = (db.query(m.Persona)
              .filter(m.Persona.plaza_id == plaza_id,
-                     m.Persona.activo.is_(True)).all())
+                     m.Persona.activo.is_(True),
+                     # La oficina no entra a una plantilla (seccion 74).
+                     m.Persona.oficina.is_(False)).all())
     personal = []
     for persona in gente:
         # Todo el personal de seguridad es candidato: el rol lo decide el

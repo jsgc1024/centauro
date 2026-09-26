@@ -70,7 +70,7 @@ def _fotos_fijas(db: Session) -> tuple:
         "activo": p.activo, "telefono": p.telefono,
         "referencia": p.referencia, "fecha_ingreso": p.fecha_ingreso,
         "foto": bool(p.foto_url), "sincronizado_en": p.odoo_sincronizado_en,
-        "baja_odoo_en": p.baja_odoo_en,
+        "baja_odoo_en": p.baja_odoo_en, "oficina": p.oficina,
     } for p in db.query(m.Persona).all()]
     correos = {u.correo.strip().lower(): u.persona_id
                for u in db.query(m.Usuario).all() if u.correo}
@@ -258,6 +258,9 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
         persona = db.get(m.Persona, persona_id)
         persona.odoo_sincronizado_en = ahora
         persona.baja_odoo_en = None
+        # Si venia de la oficina y en Odoo ahora es de seguridad, desde
+        # aqui la lleva esta lectura (seccion 74).
+        persona.oficina = False
         # Quien ya estaba en Centauro sin acceso a la app lo recibe, igual
         # que un alta: sin contrasena, con el codigo que le dictan.
         correo = (persona.correo or "").strip().lower()

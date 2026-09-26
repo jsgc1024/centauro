@@ -292,7 +292,10 @@ def tabla(db: Session, pais_id: int, plaza_id: int | None = None,
     consulta = (db.query(m.Persona)
                 .join(m.Plaza, m.Persona.plaza_id == m.Plaza.id)
                 .filter(m.Plaza.pais_id == pais_id,
-                        m.Persona.activo.is_(True)))
+                        m.Persona.activo.is_(True),
+                        # La oficina que llega de Odoo (seccion 74) no es
+                        # personal de seguridad.
+                        m.Persona.oficina.is_(False)))
     if plaza_id:
         consulta = consulta.filter(m.Persona.plaza_id == plaza_id)
     # El filtro por puesto se fue con el puesto: una persona ya no es de

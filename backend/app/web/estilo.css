@@ -853,6 +853,14 @@ button.bandera.activa {
 .renglon-acceso > :nth-child(3) { flex: 0 0 110px; }
 .quien-acceso { min-width: 0; }
 .quien-acceso .chico { overflow-wrap: anywhere; }
+/* La oficina que llega de Odoo (seccion 74): su puesto de Odoo y el de
+   Centauro que se le sugiere necesitan mas ancho que un rol. */
+.renglon-acceso.de-oficina > :nth-child(2) { flex: 0 0 210px; }
+.renglon-acceso.de-oficina > :nth-child(3) { flex: 0 0 190px; }
+.sugerido {
+  display: inline-block; background: #fdf6e3; color: #7a5c07;
+  border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 700;
+}
 
 /* El acceso cerrado se ve apagado, no escondido: sigue siendo una
    cuenta que existe y a la que alguien le puede volver a abrir. */
