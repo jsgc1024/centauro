@@ -265,6 +265,10 @@ def _comprobante(v: m.AsignacionViatico, c: m.Comprobante) -> dict:
         "observacion": c.observacion,
         "subido_en": c.subido_en.isoformat() if c.subido_en else None,
         "tiene_imagen": bool(c.imagen),
+        # Sin foto porque ya se fue al archivo (seccion 69), que no es lo
+        # mismo que un ticket que nunca la trajo.
+        "archivada_en": (c.archivado_en.isoformat()
+                         if c.archivado_en else None),
     }
 
 

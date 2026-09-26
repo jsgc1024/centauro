@@ -2,7 +2,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -11,6 +11,7 @@ from app import auditoria, auth
 from app import bolson
 from app import desglose
 from app import facturacion
+from app import historial
 from app import encuestas as motor_encuestas
 from app import nomina
 from app import cierre as motor
@@ -34,6 +35,9 @@ LECTURA = auth.puede("cierre.ver")
 # Quien trae dinero encima y cuanto no lo ve cualquiera: la misma puerta
 # que el panel de viaticos del equipo.
 DINERO = auth.puede("viaticos.ver")
+# El historial de lo facturado (seccion 69): los mismos que abren
+# Facturacion.
+HISTORIAL = auth.puede("cierre.historial")
 
 
 class LineaIn(BaseModel):
@@ -266,6 +270,58 @@ def bandeja_de_facturacion(db: Session = Depends(get_db),
                            usuario: m.Usuario = Depends(LECTURA)):
     """Por aprobar, por facturar y lo cerrado este mes (seccion 59)."""
     return motor_comisiones.solo_la_suya(facturacion.bandeja(db), usuario)
+
+
+# ---------------------------------------------------------------- historial
+
+@router.get("/cierre/historial",
+            summary="Lo que ya se facturo, desde el primer servicio")
+def historial_de_lo_facturado(desde: str | None = None,
+                              hasta: str | None = None,
+                              cliente_id: int | None = None,
+                              consultor_id: int | None = None,
+                              tipo: str | None = None,
+                              folio: str | None = None,
+                              pagina: int = 1, por_pagina: int = 50,
+                              db: Session = Depends(get_db),
+                              _=Depends(HISTORIAL)):
+    """Un renglon por cierre --el implantado, por mes--, con lo que suma
+    todo lo filtrado y como van sus fotos: cuantas siguen en Centauro y
+    cuando se archivan (seccion 69). `desde` y `hasta` son meses,
+    "2026-10", y cuentan por la fecha de la factura, o de la aprobacion
+    si no la hubo."""
+    return historial.consultar(
+        db, historial.filtros(desde, hasta, cliente_id, consultor_id, tipo,
+                              folio), pagina, por_pagina)
+
+
+@router.get("/cierre/historial.xlsx",
+            summary="El historial de lo facturado, en Excel")
+def historial_en_excel(desde: str | None = None, hasta: str | None = None,
+                       cliente_id: int | None = None,
+                       consultor_id: int | None = None,
+                       tipo: str | None = None, folio: str | None = None,
+                       idioma: str = "es",
+                       db: Session = Depends(get_db), _=Depends(HISTORIAL)):
+    """Lo mismo que se filtro en la pantalla, completo, en dos hojas:
+    los servicios y sus comprobantes. Las fotos no van."""
+    contenido, nombre = historial.excel_del_historial(
+        db, historial.filtros(desde, hasta, cliente_id, consultor_id, tipo,
+                              folio), idioma)
+    return Response(
+        content=contenido,
+        media_type=("application/vnd.openxmlformats-officedocument."
+                    "spreadsheetml.sheet"),
+        headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
+
+
+@router.get("/cierre/historial/{cierre_id}",
+            summary="Un servicio del historial, con sus comprobantes")
+def historial_de_un_servicio(cierre_id: int, db: Session = Depends(get_db),
+                             usuario: m.Usuario = Depends(HISTORIAL)):
+    """Sus numeros y, por persona, cada comprobante y cada devolucion con
+    el estado de su foto: en Centauro, o archivada y desde cuando."""
+    return historial.detalle(db, cierre_id, usuario)
 
 
 @router.post("/cierre/{cierre_id}/desviaciones/respaldar",

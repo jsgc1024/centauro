@@ -100,6 +100,12 @@ services:
       TZ: America/Mexico_City
     command: celery -A app.celery_app.celery worker --loglevel=warning --concurrency=2
     env_file: .env
+    # El archivo de los comprobantes (seccion 69) dice como le fue cada
+    # noche en el syslog de la maquina, igual que el respaldo: de ahi lo
+    # lee el agente de Google y, si dice ERROR, llega el correo. Es el
+    # enchufe del syslog, no una carpeta: no le pasa por encima a la imagen.
+    volumes:
+      - /dev/log:/dev/log
     depends_on:
       db: {condition: service_healthy}
       redis: {condition: service_healthy}

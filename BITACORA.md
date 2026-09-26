@@ -4284,16 +4284,95 @@ Cuatro cosas de la guía que en la máquina de desarrollo no se notaban:
 - Cuando todo corra aquí: apagar el servidor de OVH, quitar la llave del
   proveedor en GitHub y dejar de usar su llave de Google Maps.
 
+## 69. El archivo de los comprobantes y el historial de lo facturado
+
+Decisión de Salvador, 25 de septiembre: tres meses después de que un
+servicio se factura, las fotos que subió el personal —el ticket del
+gasto y la transferencia de la devolución— salen de Centauro. No se
+tiran: se van a un archivo de Google, seis años, y desde ahí las traen
+dirección general y finanzas. Y lo facturado tiene dónde verse. La
+propuesta, con sus pantallas, es `PROPUESTA_ARCHIVO_COMPROBANTES.md`.
+
+Las decisiones: el reloj arranca con la factura y, mientras Odoo no esté
+conectado, con la aprobación de finanzas; las fotos de las devoluciones
+van con las de los tickets; el historial lleva filtros y Excel. Las que
+agregó la propuesta y Salvador aprobó: **seis años y no cinco** —el
+Código Fiscal (art. 30) cuenta los cinco desde la declaración anual, no
+desde el ticket—, que el archivo **nazca apagado**, un tope de 3,000
+fotos por noche, que una devolución sin confirmar no se archive y que el
+Excel traiga dos hojas.
+
+### Lo que cambió
+
+- **`app/archivo.py`**, la mudanza. Cada noche a la 1:30 —antes del
+  respaldo de las 2:30— busca los cierres que ya cumplieron sus tres
+  meses: el eventual por servicio, el implantado por mes. Lo que finanzas
+  no ha cerrado no tiene reloj, aunque ya lleve factura: todavía la puede
+  regresar. Cada foto sube a Google sin escribir encima de nada, se le
+  pregunta qué recibió —tamaño y md5— y solo si cuadra se quita de la
+  base, en la misma transacción en que se anota dónde quedó. Si algo
+  falla, la foto se queda y se reintenta la noche siguiente; con tres
+  fallas seguidas se deja para mañana. El nombre de cada foto lleva su
+  huella: volver a subirla es encontrarla ya ahí, y una mudanza a medias
+  se termina sola. Lo más viejo primero. Habla con Google sin sus
+  librerías y sin llaves, como el respaldo.
+- **Cuatro columnas** en `comprobante` y en `devolucion_viatico`:
+  `archivado_en`, `archivo_objeto`, `archivo_md5`, `archivo_bytes`. La
+  migración no mueve ninguna foto.
+- **Facturación → Historial**: todo lo cerrado desde el primer servicio,
+  con filtros por mes, cliente, consultor, tipo y folio; lo que suma el
+  filtro, completo y por moneda; y de cada servicio, qué pasa con sus
+  fotos. El detalle enseña cada comprobante y cada devolución con su
+  foto, o archivada y desde cuándo. *Cerrados* pasa a llamarse *Cerrados
+  del mes*. Lo ven finanzas, dirección de operaciones y dirección general
+  (actividad `cierre.historial`).
+- **El Excel**, en dos hojas —servicios y comprobantes—, con fechas y
+  montos de verdad, en el idioma de quien lo baja y con los mismos
+  filtros. Se arma sin librerías nuevas (`app/excel.py`).
+- **Ver del archivo**: la foto de vuelta, con quién la trajo y cuándo en
+  la bitácora del servicio, y la comparación de su md5 con el que se
+  guardó; si no coincide, se dice en rojo. Actividad `archivo.ver`:
+  finanzas y dirección general.
+- **La foto de la devolución tiene por dónde verse**
+  (`/viaticos/devoluciones/{id}/comprobante`): existía y no había ruta.
+  La del ticket ya archivada contesta 410 con dónde está, en vez de «no
+  trae foto».
+- **La alerta**: el worker escribe una línea cada noche en el syslog de
+  la máquina —`/dev/log`, montado en `docker-compose.prod.yml`— con la
+  etiqueta `centauro-archivo`; si dice ERROR, llega el correo, como con
+  el respaldo.
+- **`despliegue/gcp/crear_archivo.sh`**, para Cloud Shell: el depósito
+  —clase Archive, en EE. UU., sin acceso público—, el candado de seis
+  años sin sellar, el borrado a los seis años, el permiso de la máquina
+  (guardar y leer, no borrar) y la alerta.
+
+Lo que no cambió: nada del servicio se borra. Los primeros tres meses
+todo se ve como antes. Las fotos de la revisión de unidad, las firmas,
+las señales y los comprobantes que sube finanzas se quedan en la base.
+El desglose de gastos que se vuelva a sacar después de archivar sale
+sin las fotos.
+
+### Lo que falta, de tu lado
+
+- Aplicarlo en el servidor: `git pull`, `build`, la migración y `up -d`.
+- Cuando se decida prenderlo: `crear_archivo.sh` en Cloud Shell y
+  `ARCHIVO_DESTINO` en el `.env` (guía, *El archivo de los comprobantes*).
+- Que el contador confirme el plazo; con eso se sella el candado.
+
 ## 14. Lo que falta
 
 ### Abierto
 
 - **El servidor: el dominio y el proveedor** (sección 68). Producción ya
-  vive en Google Cloud. Falta que el proveedor transfiera `centauro.cc`
-  —y de preferencia el DNS de `centauro.lat`— para apuntarlo a
-  `34.51.121.227` y abrir la puerta (paso 6b de `despliegue/LEEME.md`).
-  Después: apagar el servidor de OVH, quitar la llave del proveedor en
-  GitHub y dejar de usar su llave de Google Maps.
+  vive en Google Cloud. Decisión de Salvador (25 sep, noche): en vez de
+  esperar la transferencia de `centauro.cc`, Centauro contrata su propio
+  dominio, a su nombre, en Akky, y el DNS se maneja en Google (Cloud
+  DNS, en el mismo proyecto). Con eso se apunta a `34.51.121.227`, se
+  cambian `DOMINIO` y `URL_PUBLICA` en el `.env` y se abre la puerta
+  (paso 6b de `despliegue/LEEME.md`). Después: apagar el servidor de OVH
+  y dejar de usar la llave de Google Maps del proveedor.
+- **El plazo del archivo de comprobantes** (sección 69): que el contador
+  confirme los seis años; con eso se sella el candado del depósito.
 
 *Al 18 de septiembre. Lo que se cerró —el panel de accesos, las
 contraseñas, los puestos configurables, las 43 puertas mudadas a

@@ -1114,6 +1114,17 @@ class Comprobante(Base):
     motivo_rechazo: Mapped[str | None] = mapped_column(String(300), nullable=True)
     observacion: Mapped[str | None] = mapped_column(String(300), nullable=True)
     subido_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # El archivo (seccion 69). Tres meses despues de la factura la foto
+    # se muda a un deposito de Google y `imagen` queda vacia; aqui se
+    # queda donde esta, su huella --el md5 de lo que se subio-- y cuando
+    # se fue. La huella es la que dice, al traerla de vuelta, que es la
+    # misma foto y no otra.
+    archivado_en: Mapped[datetime | None] = mapped_column(DateTime,
+                                                          nullable=True)
+    archivo_objeto: Mapped[str | None] = mapped_column(String(300),
+                                                       nullable=True)
+    archivo_md5: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    archivo_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     asignacion: Mapped[AsignacionViatico] = relationship(back_populates="comprobantes")
 
@@ -1175,6 +1186,15 @@ class DevolucionViatico(Base):
                                                            nullable=True)
     motivo_rechazo: Mapped[str | None] = mapped_column(String(300),
                                                        nullable=True)
+    # El archivo, igual que el comprobante del gasto (seccion 69). La
+    # que sigue declarada no se archiva: su foto es justo lo que finanzas
+    # esta revisando.
+    archivado_en: Mapped[datetime | None] = mapped_column(DateTime,
+                                                          nullable=True)
+    archivo_objeto: Mapped[str | None] = mapped_column(String(300),
+                                                       nullable=True)
+    archivo_md5: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    archivo_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     asignacion: Mapped["AsignacionViatico"] = relationship(
         back_populates="devoluciones")

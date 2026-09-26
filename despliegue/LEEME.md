@@ -11,6 +11,7 @@ así vive en `ARQUITECTURA.md`, en la raíz.
 | `crear_env.py` | El `.env` de la primera vez, con sus contraseñas generadas en el servidor |
 | `gcp/crear_servidor.sh` | El servidor en Google Cloud: red, IP fija, máquina, depósito de respaldos y foto diaria del disco |
 | `gcp/preparar_maquina.sh` | La máquina lista: parches solos, Docker, hora de México, swap y el agente de Google |
+| `gcp/crear_archivo.sh` | El archivo de los comprobantes: el depósito de seis años, sus permisos y su alerta |
 | `../backend/primer_arranque.py` | Los catálogos sin nada de ejemplo y la primera cuenta |
 | `../backend/subir_a_google.py` | La copia del respaldo al depósito de Google, sin llaves |
 
@@ -40,6 +41,10 @@ montó Salvador directamente, sin intermediario.
   borrado automático a los 90.
 - **Foto diaria del disco completo**, a las 3:00, guardada 14 días.
   Además del respaldo de la base, no en su lugar.
+- **El depósito del archivo**, `gs://centauro-archivo-project-8fda7c0c-0799-4989-9c2`
+  (sección 69): las fotos de los comprobantes tres meses después de la
+  factura, seis años. Lo arma `gcp/crear_archivo.sh`; ver *El archivo de
+  los comprobantes*, abajo.
 - **La organización** nace con políticas seguras por defecto; una de
   ellas prohíbe IP pública en las máquinas. Se abrió la excepción solo
   para esta máquina (`compute.vmExternalIpAccess`). Para verla, en Cloud
@@ -168,6 +173,10 @@ PEGASUS_SECRETO_AVISO=
 
 # A donde va la copia del respaldo (paso 8).
 RESPALDO_GCS_DESTINO=gs://centauro-respaldos-project-8fda7c0c-0799-4989-9c2/postgres
+
+# El archivo de los comprobantes (seccion 69). Vacio = no sale ninguna
+# foto de Centauro; el historial de Facturacion dice cuando se irian.
+ARCHIVO_DESTINO=
 ```
 
 `VAPID_PUBLIC` y `VAPID_PRIVATE` **no van**, ni siquiera vacías: las
@@ -476,6 +485,72 @@ Localmente se guardan 14 días; allá, lo que diga la regla del bucket.
 
 ---
 
+## El archivo de los comprobantes
+
+Sección 69 de la bitácora; la propuesta, con sus pantallas, es
+`PROPUESTA_ARCHIVO_COMPROBANTES.md`. Tres meses después de la factura
+—o de la aprobación de finanzas, mientras Odoo no esté conectado—, la
+foto del ticket y la de la devolución salen de la base y se van a un
+depósito de Google, donde se guardan seis años. **La foto se muda; el
+registro se queda.**
+
+Lo hace el worker cada noche a la **1:30**, antes del respaldo de las
+2:30: lo que se muda esa noche ya no viaja en ese respaldo. Cada foto
+sube sin escribir encima de nada, se le pregunta a Google qué recibió
+—tamaño y md5— y solo si cuadra se quita de la base. Si algo falla, la
+foto se queda y se reintenta la noche siguiente. Como mucho 3,000 fotos
+por noche.
+
+**Nace apagado.** Para prenderlo:
+
+1. En Cloud Shell, el contenido de `gcp/crear_archivo.sh`. Arma el
+   depósito —clase Archive, en EE. UU., sin acceso público—, el candado
+   de seis años **sin sellar**, el borrado a los seis años, el permiso
+   de la máquina (guardar y leer, no borrar) y la alerta *Centauro:
+   falló el archivo*. Al final dice el renglón del `.env`.
+2. En el servidor, `nano .env` y el renglón `ARCHIVO_DESTINO=...`.
+3. `docker compose -f docker-compose.prod.yml up -d api worker beat`.
+
+El worker lleva montado el syslog de la máquina (`/dev/log`, en
+`docker-compose.prod.yml`): ahí escribe una línea cada noche, con la
+etiqueta `centauro-archivo`, y si dice ERROR llega el correo, igual que
+con el respaldo.
+
+**El candado se sella** cuando el contador confirme el plazo. El Código
+Fiscal (art. 30) pide cinco años contados desde la declaración anual;
+seis desde que se archiva los cubren siempre. **Sellado ya no se puede
+acortar ni quitar, ni por nosotros**, así que se hace una vez y a
+propósito, en Cloud Shell:
+
+```bash
+gcloud storage buckets update gs://centauro-archivo-project-8fda7c0c-0799-4989-9c2 --lock-retention-period
+```
+
+**Ver qué hay**, en Cloud Shell:
+
+```bash
+gcloud storage ls -l "gs://centauro-archivo-project-8fda7c0c-0799-4989-9c2/comprobantes/**" | tail -20
+```
+
+Cada foto lleva su folio, persona, monto y fecha pegados como datos:
+el archivo se entiende solo aunque Centauro no estuviera.
+
+**Desde la consola**, en *Facturación → Historial*: cada servicio dice
+cuántas fotos siguen en Centauro y cuándo se van, o cuándo se fueron.
+Una foto archivada la traen de vuelta dirección general y finanzas con
+*Ver del archivo*; cada vez queda en la bitácora del servicio y se
+compara su md5 con el que se guardó.
+
+**Las copias de respaldo** de las noches anteriores todavía traen cada
+foto hasta 90 días después de archivada (el depósito de respaldos borra
+a los 90). Después, solo existe en el archivo.
+
+**El desglose de gastos** que se le manda al cliente con la factura lleva
+las fotos mientras están en Centauro. Uno que se vuelva a sacar después
+de archivarlas sale sin ellas: se traen del archivo.
+
+---
+
 ## Qué mirar cuando algo falle
 
 ```bash
@@ -492,6 +567,9 @@ docker compose -f docker-compose.prod.yml exec -T api \
 # Como salio el respaldo de las ultimas noches
 sudo tail -40 /var/log/centauro-respaldo.log
 journalctl -t centauro-respaldo --since "7 days ago"
+
+# Como salio el archivo de los comprobantes
+journalctl -t centauro-archivo --since "7 days ago"
 ```
 
 **Si la app de campo deja de funcionar en los teléfonos**, lo primero

@@ -94,6 +94,14 @@ de un enlace—, pero tiene consecuencias de capacidad:
 - **Regla gruesa: 100 servicios al mes con revisión de unidad ≈ 3–4 GB al
   año.** Hay que dimensionar disco y, sobre todo, el respaldo: un `pg_dump`
   completo crece al mismo ritmo.
+- **Los tickets de viáticos no se quedan para siempre** (sección 69). Tres
+  meses después de la factura —o de la aprobación de finanzas, sin
+  Odoo— la foto del ticket y la de la devolución se mudan a un depósito
+  de Google (`app/archivo.py`) y la columna queda vacía; se quedan el
+  objeto, su md5 y la fecha (`archivado_en`, `archivo_objeto`,
+  `archivo_md5`, `archivo_bytes`). Las fotos de la revisión de unidad,
+  las firmas, las señales y los comprobantes que sube finanzas siguen
+  aquí.
 
 **2. Las fechas son hora de pared del país del servicio.** Las columnas
 `DateTime` son *naive* y guardan la hora local de donde ocurre el servicio.
@@ -119,6 +127,7 @@ Calendario actual (`app/celery_app.py`, en hora de México):
 
 | Hora | Tarea | Qué hace |
 |---|---|---|
+| 01:30 | `archivo.archivar` | Muda al archivo de Google las fotos de comprobantes que ya cumplieron tres meses de la factura (sección 69). Con `ARCHIVO_DESTINO` vacío no hace nada |
 | 06:30 | `implantados.abrir_mes_siguiente` | Abre el mes siguiente de los implantados antes de que se acabe el actual |
 | Cada hora en punto | `campo.recordar_la_vispera` | Le avisa al equipo que mañana trabaja, a las 17:00 de cada país |
 
@@ -309,6 +318,9 @@ RESPALDO_S3_DESTINO=s3://centauro-respaldos/postgres
 RESPALDO_S3_REGION=us-west-1
 AWS_ACCESS_KEY_ID=...
 AWS_SECRET_ACCESS_KEY=...
+
+# El archivo de los comprobantes (seccion 69). Vacio = apagado.
+ARCHIVO_DESTINO=gs://centauro-archivo-<proyecto>
 ```
 
 Cómo se generan las que faltan:

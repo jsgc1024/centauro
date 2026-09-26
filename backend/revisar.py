@@ -663,6 +663,10 @@ AYUDA_POR_PANTALLA = {
     "consultor.js": 4,
     "facturacion.js": 1,
     "finanzas.js": 5,
+    # El historial de lo facturado (seccion 69): el renglon de lo que
+    # suma lleva el suyo, que dice de donde sale cada numero y cuando se
+    # archivan las fotos.
+    "historial.js": 1,
     "implantado.js": 9,
     # Nominas (seccion 66): lo que entra al corte, lo que todavia no, el
     # corte general del mes del implantado y el de comisiones, ademas de

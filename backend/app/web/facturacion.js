@@ -10,8 +10,13 @@
 
    Aprobar no espera a la factura: el servicio se cierra y la factura se
    reintenta desde "Por facturar". Nunca sale dos veces: la que ya tiene
-   folio de Odoo no se vuelve a mandar. */
+   folio de Odoo no se vuelve a mandar.
+
+   La cuarta pestana es el historial (seccion 69): todo lo cerrado desde
+   el primer servicio, con filtros, en Excel, y con lo que pasa con las
+   fotos de sus comprobantes. Vive en historial.js. */
 import { api, sesion } from "./api.js";
+import { pestanaHistorial } from "./historial.js";
 import { aviso, conAyuda, dinero, etiqueta, h, hora, mensaje } from "./util.js";
 import { t } from "./idioma.js";
 
@@ -116,10 +121,12 @@ export async function pantallaFacturacion(main) {
     const pestanas = h("div", { clase: "pestanas", style: "margin:0 0 12px" },
       boton("aprobar", reemplazar(t("fac_tab_aprobar"), { n: b.por_aprobar.length })),
       boton("facturar", reemplazar(t("fac_tab_facturar"), { n: b.por_facturar.length })),
-      boton("cerrados", t("fac_tab_cerrados")));
+      boton("cerrados", t("fac_tab_cerrados")),
+      boton("historial", t("fac_tab_historial")));
 
     const cuerpo = pestana === "aprobar" ? porAprobar(b.por_aprobar, moneda, pintar)
       : pestana === "facturar" ? porFacturar(b.por_facturar, moneda, pintar)
+      : pestana === "historial" ? pestanaHistorial()
       : cerrados(b.cerrados, moneda);
     zona.replaceChildren(corte, pestanas, cuerpo);
   };

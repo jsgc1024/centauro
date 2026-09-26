@@ -18,7 +18,7 @@
    servidor, los dos en hora del pais del servicio: el reloj de esta
    maquina solo mide cuanto ha pasado desde que llego la respuesta. */
 import { api, sesion } from "./api.js";
-import { aviso, conAyuda, dinero, entrada, etiqueta, h, hora,
+import { aviso, conAyuda, dinero, entrada, etiqueta, fecha, h, hora,
          mensaje } from "./util.js";
 import { IDIOMAS, t } from "./idioma.js";
 
@@ -497,6 +497,13 @@ async function verFoto(c) {
    servidor. Si no carga, se queda el cuadro rayado: el boton sigue
    abriendo la foto. */
 function miniatura(c) {
+  /* Ya se fue al archivo (seccion 69): el cuadro gris, sin pedirla. Se
+     trae desde el historial de Facturacion. */
+  if (c.archivada_en) {
+    return h("button", { clase: "miniatura archivada", type: "button",
+      disabled: "disabled",
+      title: reemplazar(t("fac_his_archivada"), { f: fecha(c.archivada_en) }) });
+  }
   const boton = h("button", { clase: "miniatura", type: "button",
     title: t("cie_ver_foto"), onclick: () => verFoto(c) });
   if (c.tiene_imagen) {
@@ -556,6 +563,10 @@ function renglonComprobante(c, p, recargar) {
         motivo.focus();
       } }, t("cie_rechazar"));
     estado.append(validar, " ", rechazar);
+  }
+  if (c.archivada_en) {
+    estado.append(h("div", { clase: "gris chico" },
+      reemplazar(t("fac_his_archivada"), { f: fecha(c.archivada_en) })));
   }
   return h("div", { clase: "comprobante" },
     h("div", {}, miniatura(c), "  ", nombreConcepto(c), " ",

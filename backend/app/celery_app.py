@@ -136,6 +136,14 @@ celery.conf.update(
             "task": "gps.cerrar_dias",
             "schedule": crontab(minute=41),
         },
+        # El archivo de los comprobantes (seccion 69). A la 1:30, antes
+        # del respaldo de las 2:30: lo que se muda esta noche ya no viaja
+        # en el respaldo de esta noche. Con ARCHIVO_DESTINO vacio no hace
+        # nada.
+        "archivo-de-comprobantes": {
+            "task": "archivo.archivar",
+            "schedule": crontab(hour=1, minute=30),
+        },
     },
 )
 
@@ -378,5 +386,18 @@ def cerrar_los_dias_del_gps():
     db = SessionLocal()
     try:
         return gps.cerrar_dias(db)
+    finally:
+        db.close()
+
+
+@celery.task(name="archivo.archivar")
+def archivar_comprobantes():
+    """Las fotos que ya cumplieron sus tres meses, al archivo de Google."""
+    from app.db import SessionLocal
+    from app import archivo
+
+    db = SessionLocal()
+    try:
+        return archivo.archivar(db)
     finally:
         db.close()

@@ -96,6 +96,27 @@ class Settings(BaseSettings):
     # = la ruta no existe y el panico se revisa cada dos minutos.
     pegasus_secreto_aviso: str = ""
 
+    # El archivo de los comprobantes (seccion 69). Decision de Salvador,
+    # 25 de septiembre: tres meses despues de la factura --o de la
+    # aprobacion de finanzas, mientras Odoo no este conectado--, la foto
+    # del ticket y la de la devolucion salen de la base y se van a un
+    # deposito de Google. La foto se muda; el registro se queda.
+    #
+    # Nace apagado: con `archivo_destino` vacio no sale ninguna foto, y
+    # el historial de Facturacion solo dice cuando se irian. Se prende
+    # con el nombre del deposito que arma despliegue/gcp/crear_archivo.sh.
+    archivo_destino: str = ""      # "gs://centauro-archivo-<proyecto>"
+    archivo_meses: int = 3
+    # Cuantas fotos se mudan por noche, como mucho. La primera vez puede
+    # haber meses acumulados: asi se reparten en varias noches y ninguna
+    # se come la madrugada.
+    archivo_por_noche: int = 3000
+    # Cuanto las guarda Google. Aqui solo se dice en pantalla; quien lo
+    # cumple es el candado del deposito (crear_archivo.sh). El Codigo
+    # Fiscal pide cinco anos contados desde la declaracion anual: seis
+    # desde que se archiva los cubren siempre. Lo confirma el contador.
+    archivo_anios: int = 6
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

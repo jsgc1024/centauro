@@ -136,6 +136,20 @@ ACTIVIDADES: dict[str, dict] = {
         "descripcion": "Ver la utilidad y el margen de un servicio",
         "roles": {R.CONSULTOR, R.FINANZAS, R.DIRECTOR_OPERACIONES},
     },
+    # El historial y el archivo de los comprobantes (seccion 69).
+    "cierre.historial": {
+        "descripcion": "Ver el historial de lo facturado, con sus filtros, y "
+                       "bajarlo en Excel",
+        "roles": {R.FINANZAS, R.DIRECTOR_OPERACIONES},
+    },
+    # Decision de Salvador (25 sep): la foto que ya se fue al archivo la
+    # traen de vuelta direccion general y finanzas, y cada vez queda en la
+    # bitacora del servicio.
+    "archivo.ver": {
+        "descripcion": "Traer del archivo la foto de un comprobante ya "
+                       "archivado. Queda en la bitacora del servicio",
+        "roles": {R.FINANZAS, R.DIRECTOR_GENERAL},
+    },
 
     "nomina.ver": {
         "descripcion": "Ver los cortes de nomina y lo que entrara al proximo",

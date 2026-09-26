@@ -558,9 +558,43 @@ def ver_imagen_comprobante(viatico_id: int, comprobante_id: int,
                        None)
     if not comprobante:
         raise HTTPException(404, "Ese comprobante no pertenece a esta asignacion")
+    if not comprobante.imagen and comprobante.archivado_en:
+        raise _archivada(comprobante.archivado_en)
     if not comprobante.imagen:
         raise HTTPException(404, "Ese comprobante no trae foto")
     return _imagen(comprobante.imagen)
+
+
+def _archivada(cuando: datetime) -> HTTPException:
+    """La foto ya se fue al archivo (seccion 69): no falta, esta en otro
+    lado, y el mensaje dice donde."""
+    return HTTPException(410, {
+        "mensaje": f"La foto se archivo el {cuando:%d/%m/%Y}",
+        "que_hacer": ("Se trae desde Facturacion, en el Historial, con "
+                      "Ver del archivo (direccion general y finanzas).")})
+
+
+@router.get("/devoluciones/{devolucion_id}/comprobante",
+            summary="La foto de la transferencia de una devolucion")
+def ver_comprobante_devolucion(devolucion_id: int,
+                               db: Session = Depends(get_db),
+                               usuario: m.Usuario = Depends(auth.usuario_actual)):
+    """La ve quien revisa el dinero, y la persona la suya. Existia la foto
+    y no habia por donde verla: finanzas confirmaba la devolucion con la
+    referencia y nada mas (seccion 69)."""
+    fila = db.get(m.DevolucionViatico, devolucion_id)
+    if not fila:
+        raise HTTPException(404, f"No existe la devolucion {devolucion_id}")
+    if usuario.rol == m.Rol.PERSONAL_SEGURIDAD:
+        if fila.asignacion.persona_id != usuario.persona_id:
+            raise HTTPException(403, "Solo puedes ver tus propias devoluciones")
+    elif not auth.puede_el_usuario(db, usuario, "viaticos.ver"):
+        raise HTTPException(403, "Tu rol no puede ver comprobantes")
+    if not fila.comprobante and fila.archivado_en:
+        raise _archivada(fila.archivado_en)
+    if not fila.comprobante:
+        raise HTTPException(404, "Esa devolucion no trae foto")
+    return _imagen(fila.comprobante)
 
 
 @router.post("/{viatico_id}/devolver",

@@ -1192,6 +1192,31 @@ h4.seccion { margin: 18px 0 6px; font-size: 13px; color: var(--centauro); }
                                                    #e3e7eb 4px, #e3e7eb 8px);
              cursor: zoom-in; padding: 0; }
 
+/* El historial de lo facturado (seccion 69). La miniatura de una foto que
+   ya se fue al archivo se queda gris y no se pide. */
+.miniatura.archivada { cursor: default; opacity: .9; }
+.filtros { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;
+           padding: 12px 14px; background: #fff; border: 1px solid var(--linea);
+           border-radius: 8px; margin-bottom: 12px; }
+.filtros .campo { margin: 0; }
+.filtros select { width: auto; min-width: 120px; }
+.filtros input { width: 140px; }
+.filtros .empuja { flex: 1 1 auto; }
+.resumen-filtro { font-size: 13px; color: #3b4450; margin: 2px 2px 10px; }
+.resumen-filtro b { color: #1c1f22; }
+b.folio { white-space: nowrap; }
+.volver { display: inline-block; margin-bottom: 8px; color: var(--centauro);
+          font-weight: 600; font-size: 13px; text-decoration: none; }
+/* El visor: la foto encima de la pantalla, sin abrir otra ventana. */
+.visor-fondo { position: fixed; inset: 0; z-index: 50; display: flex;
+               align-items: center; justify-content: center; padding: 16px;
+               background: rgba(28, 31, 34, .45); }
+.visor { width: min(440px, 100%); max-height: calc(100vh - 32px); overflow: auto;
+         background: #fff; border-radius: 10px; padding: 16px;
+         box-shadow: 0 10px 30px rgba(20, 30, 40, .18); }
+.visor img { display: block; max-width: 100%; margin: 10px auto 12px;
+             border-radius: 6px; border: 1px solid var(--linea); }
+
 /* La cartera del implantado: cada mes con su fase, en renglones. */
 .mes-fase { display: flex; gap: 6px; align-items: baseline; margin: 0 0 5px;
             font-size: 12px; white-space: nowrap; }

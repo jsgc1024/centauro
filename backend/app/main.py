@@ -15,10 +15,11 @@ from app.config import (es_desarrollo, puertas_de_la_api, revisar_secretos,
                         settings)
 from app.marca import logo_incrustado
 from app.db import engine, get_db
-from app.routers import (acceso, bonos, campo, catalogos, central, cierre,
-                         contingencia, encuestas, gps, implantados, mapas,
-                         nomina, odoo, operacion, panorama, profesionalismo,
-                         servicios, solicitantes, tasksheet, viaticos)
+from app.routers import (acceso, archivo, bonos, campo, catalogos, central,
+                         cierre, contingencia, encuestas, gps, implantados,
+                         mapas, nomina, odoo, operacion, panorama,
+                         profesionalismo, servicios, solicitantes, tasksheet,
+                         viaticos)
 from app.seed import (sembrar, sembrar_bonos, sembrar_festivos,
                       sembrar_lugares, sembrar_parametros, sembrar_recursos)
 
@@ -52,6 +53,8 @@ app.include_router(servicios.router)
 app.include_router(viaticos.router)
 app.include_router(operacion.router)
 app.include_router(cierre.router)
+# Las fotos que ya se fueron al archivo (seccion 69).
+app.include_router(archivo.router)
 app.include_router(implantados.router)
 app.include_router(bonos.router)
 app.include_router(tasksheet.router)
