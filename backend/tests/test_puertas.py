@@ -126,3 +126,56 @@ def test_la_consola_se_abre_tambien_en_consola_con_diagonal():
     # Lo demas de la carpeta se sigue sirviendo igual.
     assert cliente.get("/consola/app.js").status_code == 200
     assert cliente.get("/consola/no-existe.js").status_code == 404
+
+
+def test_la_consola_y_la_app_traen_el_escudo_de_centauro():
+    """Seccion 72: el icono sale del escudo que mando Salvador. El de antes
+    salio de una imagen chica y en el telefono se veia borroso; la consola
+    no tenia ninguno y la pestana ensenaba el globo del navegador.
+
+    Cada tamano se revisa contra lo que dice ser: un icono que dice 512 y
+    mide 180 el telefono lo estira, que es justo como se veia borroso. El
+    de iPhone va sin transparencia: iOS pinta de negro lo transparente.
+    El tamano y el tipo se leen de la cabecera del PNG (IHDR), sin
+    librerias de imagen: el servidor no las trae."""
+    import json
+    import struct
+
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    cliente = TestClient(app)
+
+    def png(ruta):
+        """(ancho, alto, tipo de color) de la cabecera: 2 es RGB, 6 RGBA."""
+        r = cliente.get(ruta)
+        assert r.status_code == 200, ruta
+        assert r.content[:8] == b"\x89PNG\r\n\x1a\n", ruta
+        assert r.content[12:16] == b"IHDR", ruta
+        ancho, alto = struct.unpack(">II", r.content[16:24])
+        return ancho, alto, r.content[25]
+
+    consola = cliente.get("/").text
+    for ruta, lado in (("/consola/icono-32.png", 32), ("/consola/icono-192.png", 192),
+                       ("/consola/icono-apple-180.png", 180)):
+        assert f'href="{ruta}"' in consola, ruta
+        assert png(ruta)[:2] == (lado, lado), ruta
+
+    app_campo = cliente.get("/app/").text
+    for ruta, lado in (("/app/icono-32.png", 32), ("/app/icono-192.png", 192),
+                       ("/app/icono-apple-180.png", 180)):
+        assert f'href="{ruta}"' in app_campo, ruta
+        assert png(ruta)[:2] == (lado, lado), ruta
+
+    # Y el nombre debajo del icono: EP Connect, no Centauro (decision de
+    # Salvador, 26 sep). iOS lo lee de la pagina; Android, del manifiesto.
+    assert '<meta name="apple-mobile-web-app-title" content="EP Connect">' in app_campo
+    manifiesto = json.loads(cliente.get("/app/manifiesto.json").text)
+    assert manifiesto["short_name"] == manifiesto["name"] == "EP Connect"
+    for icono in manifiesto["icons"]:
+        lado = int(icono["sizes"].split("x")[0])
+        assert png(icono["src"])[:2] == (lado, lado), icono["src"]
+
+    for ruta in ("/consola/icono-apple-180.png", "/app/icono-apple-180.png"):
+        assert png(ruta)[2] == 2, ruta

@@ -4484,6 +4484,54 @@ quitar «My Centauro» —repetía lo que ya dice el logo— y dejar solo
   `DOMINIO_CAMPO=appep.mycentauro.lat` y
   `URL_PUBLICA=https://mycentauro.lat`; quitar `DOMINIO_RAIZ`.
 
+## 72. El ícono: el escudo de Centauro, y la app se llama EP Connect
+
+Salvador, 26 de septiembre: «vi el logo de la app, el pequeño, y tiene
+mala calidad», y mandó el escudo —el centauro con el arco, sin
+letras— en un JPG de 1599 × 899. Antes de subir nada vio la propuesta
+con el ícono en el teléfono (iPhone y Android), la pestaña de la consola
+y las fotos de las categorías de vehículo; de todo eso eligió **solo el
+ícono** por ahora. Las fotos quedan listas para cuando diga. Esa misma
+noche pidió que la app instalada no diga «Centauro» sino **EP Connect**.
+
+### Lo que cambió
+
+- **El ícono de la app** sale del escudo nuevo. El de antes salió de
+  una imagen chica y en el teléfono se veía borroso. Al escudo se le
+  quitó el blanco de afuera por inundación desde las orillas —solo el de
+  afuera: el cuerpo del centauro también es blanco— y se puso sobre
+  blanco: 512 y 192 para Android, el de 512 *maskable* con el escudo
+  dentro del círculo que Android no recorta, 180 sin transparencia para
+  iPhone —iOS pinta de negro lo transparente— y uno de 32 para la
+  pestaña.
+- **La consola estrena ícono**: la pestaña enseñaba el globo del
+  navegador y el acceso directo salía sin imagen. Son los mismos
+  archivos, servidos desde `/consola/`.
+- **La app se llama EP Connect** debajo del ícono: `name` y
+  `short_name` del manifiesto para Android, `apple-mobile-web-app-title`
+  para iPhone, y la pestaña.
+- El armazón guardado en el teléfono sube a `centauro-campo-v10`: trae
+  el ícono de los avisos.
+- Una prueba nueva revisa que cada ícono mida lo que dice medir —uno que
+  dice 512 y mide 180 el teléfono lo estira, que es como se veía
+  borroso— y que el de iPhone no traiga transparencia. Lee la cabecera
+  del PNG sin librerías de imagen: el servidor no las trae.
+
+### Lo que hay que saber
+
+- En los teléfonos donde la app **ya estaba instalada**, el ícono y el
+  nombre no cambian solos: iPhone los guarda al instalar. Se borra el
+  acceso directo y se vuelve a agregar desde `appep.mycentauro.lat`.
+  Android los actualiza por su cuenta, pero puede tardar.
+- **Las fotos de las categorías** (sección 52) están listas: las siete
+  que mandó Salvador —CUV, Minivan, Minivan Blindada, SUV, SUV Blindada,
+  Van 10 pax y Sedán— a 600 × 400, de 22 a 33 KB. Cada una queda como la
+  base de su categoría; la unidad de otro color enseña la base hasta que
+  llegue la suya (la Suburban negra se vería plateada). Se propuso
+  también agrandar la foto de la unidad en el servicio —de un cuadrito
+  de 38 px recortado a 96 × 64 con el vehículo completo—; queda para
+  cuando se carguen las fotos.
+
 ## 14. Lo que falta
 
 ### Abierto

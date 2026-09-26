@@ -1,7 +1,7 @@
 {
   "id": "/app/",
-  "name": "Centauro",
-  "short_name": "Centauro",
+  "name": "EP Connect",
+  "short_name": "EP Connect",
   "start_url": "/app/",
   "scope": "/app/",
   "display": "standalone",
