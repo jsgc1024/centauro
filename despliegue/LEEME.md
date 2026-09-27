@@ -395,8 +395,8 @@ región y de ninguna otra.
    Se puede pasar al cobro por uso, a 0.10.
 2. **El dominio**: arriba a la derecha, la región *Ohio*. En SES, el
    asistente de la primera vez —o *Identities → Create identity →
-   Domain*—, `mycentauro.lat`, con *Easy DKIM* (RSA 2048) y sin *custom
-   MAIL FROM*: DMARC pasa con el DKIM. En el plan de precios, Essentials;
+   Domain*—, `mycentauro.lat`, con *Easy DKIM* (RSA 2048); el MAIL FROM
+   propio se pone al final de este paso. En el plan de precios, Essentials;
    los pasos opcionales se saltan, y el seguimiento de aperturas y clics
    y la validación automática se quedan apagados: el primero reescribe
    las ligas de los correos y la segunda deja de mandar, sin avisar, a
@@ -418,10 +418,11 @@ región y de ninguna otra.
    gcloud dns record-sets delete mta.mycentauro.lat. --zone=$Z --project=$P --type=CNAME
    ```
 
-   El SPF de la raíz, el de MailerSend, ya no sirve: Amazon manda con su
-   propio Return-Path (`amazonses.com`). Se cambia por uno que diga que
-   nadie más manda como `mycentauro.lat`, solo si ese TXT no trae nada
-   más:
+   El SPF de la raíz, el de MailerSend, ya no sirve: Amazon no usa la
+   raíz como remitente del sobre (Return-Path), sino el suyo
+   (`amazonses.com`) o el subdominio de abajo. Se cambia por uno que diga
+   que nadie más manda como `mycentauro.lat`, solo si ese TXT no trae
+   nada más:
 
    ```bash
    gcloud dns record-sets update mycentauro.lat. --zone=$Z --project=$P --type=TXT --ttl=3600 --rrdatas='"v=spf1 -all"'
@@ -429,6 +430,29 @@ región y de ninguna otra.
 
    DMARC se queda como está. SES marca el dominio como *Verified* cuando
    lee los tres registros: minutos, y hasta 72 horas.
+
+   **El remitente del sobre (MAIL FROM propio).** Sin él, SES lo marca
+   como recomendación de impacto alto, «El registro MAIL FROM no está
+   alineado»: el Return-Path es de `amazonses.com`, así que el SPF no
+   cuenta para DMARC y DMARC pasa solo por el DKIM. Con él pasan los dos.
+   En la identidad `mycentauro.lat` → *Autenticación* → *Dominio MAIL FROM
+   personalizado* → *Editar*: `envio`, y en *Comportamiento ante error de
+   MX*, *Utilizar dominio MAIL FROM predeterminado*: si el registro
+   faltara, el correo sigue saliendo como antes. Amazon enseña dos
+   registros, que se ponen desde Cloud Shell (el `MX` es de la región):
+
+   ```bash
+   P=project-8fda7c0c-0799-4989-9c2; Z=mycentauro-lat
+   gcloud dns record-sets create envio.mycentauro.lat. --zone=$Z --project=$P --type=MX --ttl=3600 --rrdatas="10 feedback-smtp.us-east-2.amazonses.com."
+   gcloud dns record-sets create envio.mycentauro.lat. --zone=$Z --project=$P --type=TXT --ttl=3600 --rrdatas='"v=spf1 include:amazonses.com ~all"'
+   ```
+
+   `envio` no recibe correo: su `MX` solo lleva los rebotes a Amazon.
+   Cuando SES ve el registro, el aviso azul de la identidad se quita; la
+   tabla de recomendaciones no se pone al día sola: se pica *Comprobar si
+   hay recomendaciones*. La de BIMI (impacto bajo) se deja: es el logo
+   junto al correo en Gmail, y pide DMARC estricto y un certificado del
+   logo que se paga cada año.
 3. **La cuenta a prueba (sandbox).** Una cuenta nueva solo manda a
    correos verificados, hasta 200 al día, y al buzón de pruebas de
    Amazon, `success@simulator.amazonses.com`, que recibe y tira. Para

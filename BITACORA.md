@@ -6149,9 +6149,14 @@ Microsoft 365.
 - **Rebotes y quejas**: la lista de supresión de la cuenta viene
   encendida para las dos cosas en las cuentas nuevas. Amazon no le vuelve
   a mandar a quien rebotó o se quejó.
-- **Sin custom MAIL FROM**: Amazon manda con su Return-Path y DMARC pasa
-  con el DKIM del dominio. El SPF de la raíz, el de MailerSend, se cambia
-  por `v=spf1 -all` si ese TXT no trae nada más.
+- **El remitente del sobre (MAIL FROM propio)**: al principio no se puso,
+  porque DMARC pasa con el DKIM del dominio. SES lo marcó como
+  recomendación de impacto alto («El registro MAIL FROM no está
+  alineado»): con el Return-Path de Amazon (`amazonses.com`) el SPF no
+  cuenta para DMARC. Desde el 27 de septiembre sale con
+  `envio.mycentauro.lat` y pasan los dos, el DKIM y el SPF. El SPF de la
+  raíz, el de MailerSend, se cambió por `v=spf1 -all` —nadie manda con la
+  raíz como remitente del sobre—, porque ese TXT no traía nada más.
 
 ### Lo que se le escribe a Amazon para el acceso a producción
 
@@ -6211,6 +6216,15 @@ en el servidor y probar; el acceso a producción; encender.
   Amazon aceptó el correo al buzón de pruebas y el de
   `salvador.garcia@grupocentauro.mx` llegó. El correo del sistema sigue
   apagado.
+- **El MAIL FROM propio**, después de la prueba, porque SES lo marcó de
+  impacto alto: `envio.mycentauro.lat`, y si falla el `MX`, el
+  predeterminado de Amazon. En Cloud DNS, el `MX`
+  `10 feedback-smtp.us-east-2.amazonses.com.` y el `TXT`
+  `v=spf1 include:amazonses.com ~all`. Google y Cloudflare los vieron en
+  minutos; SES quitó el aviso, y la recomendación se fue al picar
+  *Comprobar si hay recomendaciones*: quedó en verde. La de BIMI (impacto
+  bajo) se deja: pide DMARC estricto y un certificado del logo que se
+  paga cada año.
 
 ### Las pruebas
 
@@ -6301,8 +6315,9 @@ busca, está en las secciones 15 y 16.*
   `cecc.notification@centauro.lat`. MailerSend rechazó la cuenta dos
   veces y Postmark no aceptó el dominio; el 27 de septiembre se pasó a
   Amazon SES, en Ohio. Ya están la cuenta de AWS (plan de pago, con
-  MFA), el dominio en SES y sus tres DKIM en Cloud DNS, sin los de
-  MailerSend; el dominio y el correo de las pruebas, verificados; la
+  MFA), el dominio en SES con sus tres DKIM y su MAIL FROM propio
+  (`envio.mycentauro.lat`) en Cloud DNS, sin los de MailerSend; el
+  dominio y el correo de las pruebas, verificados; la
   llave SMTP puesta en el servidor y probada. Falta, en ese orden (guía,
   paso 7c): el acceso a producción y `--encender`.
   Plan B: Microsoft 365, ya programado (sección 67). Con el correo, la invitación y la
