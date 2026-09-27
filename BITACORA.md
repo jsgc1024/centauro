@@ -5244,13 +5244,95 @@ cierre en dólares y la comisión en pesos— y decidió cuatro cosas:
   General.
 - Lo que ya existe no cambia: todo está en pesos.
 
+## 83. Los candados de Accesos
+
+Salvador, 27 de septiembre, con un «adelante» a la propuesta
+*Administración del sistema y calidad* —el puesto de Aridiai Morales,
+con sus pantallas—. Las seis decisiones van como se recomendaron:
+Aridiai entra con su puesto y no con la llave maestra; los candados de
+Accesos van primero; reparte accesos junto con RR. HH.; Calidad mide y
+no juzga; lo que decide dinero en Catálogos lo fija Dirección de
+operaciones; y Calidad la ven también Dirección general y Dirección de
+operaciones. En este orden: los candados (esta sección), el puesto,
+Catálogos y Calidad.
+
+### Los dos huecos que había
+
+Al revisar el puesto aparecieron dos que ya existían, y las dos pruebas
+que los dicen fallan con el código de antes:
+
+- **«Nadie se da permisos a sí mismo» se brincaba cambiando el puesto.**
+  Quien reparte accesos no podía darse un permiso, pero sí podía cambiar
+  el puesto que trae: RR. HH. le agregaba a su puesto pagar la nómina o
+  facturar, y le quedaba.
+- **Quien reparte accesos hacía a otra persona Dirección general o
+  administración**, con cambiarle el rol o darle el acceso así. Y el
+  sistema sugería la llave maestra, desde Odoo, a quien era
+  «Desarrollador» o «Jefa de Desarrollo web».
+
+### Los candados
+
+- **Nadie cambia el puesto que trae.** Ni sus casillas ni su nombre: lo
+  cambia otra persona.
+- **Dirección general y administración solo las da, las quita o las
+  toca Dirección general**: darles o quitarles el rol, darles el acceso,
+  cerrárselo, ponerles puesto. La llave maestra pasa todo candado; la da
+  solo Dirección general.
+- **El poder de repartir accesos, también.** Un puesto que lo trae —hoy
+  Recursos Humanos— lo arma, lo cambia y lo da solo Dirección general;
+  igual el permiso suelto de repartir, y el acceso de quien ya reparte
+  —su rol, su puesto, sus permisos de más—. Cerrarle la puerta cuando se
+  va, sí se puede. Sin esto, «lo cambia Dirección general» no sería
+  cierto: quien reparte le ampliaría el acceso a quien también reparte,
+  y ese le devolvería el favor.
+- **Dirección general y la llave maestra ya no se sugieren** a nadie de
+  Odoo: se dan a mano. En la lista de puestos la segunda se llama
+  «Administración (llave maestra)».
+- Lo de todos los días sigue igual: RR. HH. arma y ajusta los puestos
+  que no reparten accesos, da accesos con ellos y da permisos de más.
+
+### En pantalla
+
+- En *Accesos → Puestos*, el puesto propio dice «Es tu puesto» y por qué
+  no trae botón; el que reparte accesos dice «Lo cambia Dirección
+  general»; y la casilla de repartir accesos se ve, apagada, para quien
+  no es Dirección general.
+- Al dar un acceso no se ofrecen los roles ni los puestos que solo da
+  Dirección general: los puestos salen apagados, diciendo por qué.
+- El renglón de Dirección general, el de quien reparte y el propio dicen
+  por qué no traen los botones que no van.
+- `/auth/yo` dice si quien entra es Dirección general y cuál es su
+  puesto; la lista de accesos, quién es de arriba y quién reparte; cada
+  puesto, si reparte.
+
+### Las pruebas
+
+- `tests/test_candados_accesos.py`, doce: los dos huecos; RR. HH. no da
+  ni toca a Dirección general ni a la llave maestra, y Dirección general
+  sí; el puesto que reparte lo arma y lo cambia Dirección general, y los
+  demás los sigue ajustando RR. HH.; el acceso que reparte lo da
+  Dirección general, y Capacitación —que entra como Recursos Humanos sin
+  repartir— lo da cualquiera de Accesos; el permiso de repartir y el
+  acceso de quien reparte; lo que se sigue pudiendo; lo que la pantalla
+  necesita saber; y que ya no se sugieren desde Odoo.
+- `tests/test_odoo_oficina.py`: «Director General» y «Jefa de
+  Desarrollo web» ya no traen sugerencia.
+
+### Para subirlo
+
+- Sin migración.
+- Después de subirlo nadie nota nada, salvo que las dos cosas de arriba
+  ya no se pueden. El acceso de Aridiai llega con el puesto nuevo, en el
+  paso que sigue.
+
 ## 14. Lo que falta
 
 ### Abierto
 
-- **El puesto de administración del sistema y calidad** (pedido el 26 de
-  septiembre, para después de los tarifarios): Aridiai Morales, que ya
-  está en Odoo. Primero se enseña con pantallas qué haría ese puesto.
+- **El puesto de administración del sistema y calidad**: Aridiai
+  Morales. Aprobado el 27 de septiembre con sus pantallas. Hechos los
+  candados de Accesos (sección 83); siguen el puesto con sus puertas,
+  Catálogos y Calidad.
 - **Puestos y Odoo: el paso 4** (secciones 73 a 75). La factura en
   borrador hacia Odoo, probada primero en una copia de Odoo: hace falta
   la copia y una llave que pueda escribir en ella.

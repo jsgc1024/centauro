@@ -238,20 +238,17 @@ def sincronizar_si_toca(db: Session, odoo=None) -> dict:
 
 def sugeribles(db: Session) -> list:
     """Lo que se puede sugerir: los puestos encendidos que dicen a que
-    puestos de Odoo se parecen, y los dos que entran con su rol."""
-    from app import puestos_base
+    puestos de Odoo se parecen.
 
-    salida = [{"tipo": "puesto", "categoria_id": c.id, "nombre": c.nombre,
-               "rol": c.rol.value if c.rol else None,
-               "patrones": reglas.patrones(c.puestos_odoo)}
-              for c in db.query(m.CategoriaAcceso)
-              .filter(m.CategoriaAcceso.activa.is_(True)).all()
-              if c.puestos_odoo]
-    salida += [{"tipo": "rol", "categoria_id": None, "nombre": p["nombre"],
-                "rol": p["rol"].value,
-                "patrones": reglas.patrones(p["puestos_odoo"])}
-               for p in puestos_base.POR_ROL]
-    return salida
+    Direccion general y la llave maestra ya no (seccion 83): las da solo
+    direccion general, a mano. Sugerirlas era dejarlas a un clic de quien
+    reparte los accesos."""
+    return [{"tipo": "puesto", "categoria_id": c.id, "nombre": c.nombre,
+             "rol": c.rol.value if c.rol else None,
+             "patrones": reglas.patrones(c.puestos_odoo)}
+            for c in db.query(m.CategoriaAcceso)
+            .filter(m.CategoriaAcceso.activa.is_(True)).all()
+            if c.puestos_odoo]
 
 
 def sugerencia(puesto_odoo: str | None, puestos: list) -> dict | None:

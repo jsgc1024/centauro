@@ -207,6 +207,72 @@ def _tambien_se_lo_daria_a_si_mismo(actor: m.Usuario,
         })
 
 
+# ------------------------------------------- los de arriba (seccion 83)
+#
+# Decision de Salvador, 27 de septiembre, al aprobar el puesto de
+# administracion del sistema y calidad. Al revisarlo aparecieron dos
+# huecos que ya existian: quien reparte accesos podia ampliar el puesto
+# que el mismo trae --"nadie se da permisos a si mismo" se brincaba
+# cambiando el puesto en vez de la persona-- y podia hacer a otra persona
+# direccion general o administracion. Desde aqui:
+#
+#   * nadie cambia el puesto que trae puesto;
+#   * direccion general y administracion --la llave maestra-- solo las
+#     da, las quita o las toca direccion general;
+#   * el poder de repartir accesos tambien: los puestos que lo traen, el
+#     permiso suelto y el acceso de quien ya lo tiene solo los cambia
+#     direccion general. Cerrarle la puerta a quien se va, si se puede.
+#
+# Sin lo tercero, "lo cambia direccion general" no seria cierto: quien
+# reparte le podria ampliar el acceso a quien tambien reparte, y ese le
+# devolveria el favor.
+
+# Direccion general y la llave maestra.
+ALTOS = (m.Rol.DIRECTOR_GENERAL, m.Rol.ADMIN)
+# La actividad que reparte a las demas.
+REPARTE = "accesos.dar"
+
+
+def es_direccion(usuario: m.Usuario) -> bool:
+    """Direccion general, o la llave maestra: pasa todo candado, y solo
+    la da direccion general."""
+    return usuario.rol in ALTOS
+
+
+def solo_direccion(actor: m.Usuario, que: str) -> None:
+    if not es_direccion(actor):
+        raise HTTPException(403, {
+            "mensaje": f"{que} solo lo hace Dirección general.",
+            "que_hacer": "Pídeselo a Dirección general.",
+        })
+
+
+def reparte_de_fabrica(rol) -> bool:
+    """Si ese rol, sin puesto, reparte accesos."""
+    from app import auth, permisos
+    return REPARTE in permisos.actividades_por_rol(m.Rol(rol), auth.HEREDA)
+
+
+def reparte(db: Session, usuario: m.Usuario) -> bool:
+    """Si esta persona hoy reparte accesos, le venga de donde le venga."""
+    return REPARTE in actividades_de(db, usuario)
+
+
+def trae_reparte(categoria: m.CategoriaAcceso) -> bool:
+    return any(a.actividad == REPARTE for a in categoria.actividades)
+
+
+def _no_es_su_puesto(actor: m.Usuario, categoria: m.CategoriaAcceso) -> None:
+    """El puesto que uno trae lo cambia otra persona. Sin esto, quien
+    reparte accesos se agregaba a su propio puesto lo que le faltara."""
+    if actor.categoria_id is not None and actor.categoria_id == categoria.id:
+        raise HTTPException(409, {
+            "mensaje": "Es tu puesto: no lo cambias tú.",
+            "que_hacer": "Lo cambia Dirección general, y queda en la "
+                         "bitácora.",
+        })
+
+
 # --------------------------------------------------- lo que deja atras
 
 def viaticos_sin_cerrar(db: Session, persona_id: int) -> list[dict]:
@@ -298,6 +364,9 @@ def desactivar(db: Session, usuario_id: int, actor: m.Usuario,
     siguiente clic."""
     usuario = _obtener(db, usuario_id)
     _no_sobre_si_mismo(actor, usuario, "desactivar")
+    if usuario.rol in ALTOS:
+        solo_direccion(actor, "Cerrar el acceso de Dirección general o de "
+                               "administración")
     _no_es_el_ultimo_admin(db, usuario, "desactivar este acceso")
 
     if not usuario.activo:
@@ -343,6 +412,9 @@ def reactivar(db: Session, usuario_id: int, actor: m.Usuario,
     usuario = _obtener(db, usuario_id)
     if usuario.activo:
         raise HTTPException(409, "Ese acceso ya estaba activo")
+    if usuario.rol in ALTOS:
+        solo_direccion(actor, "Abrir de nuevo el acceso de Dirección general "
+                               "o de administración")
 
     # Si la persona esta dada de baja, reactivar su acceso seria abrirle
     # la puerta a alguien que ya no trabaja aqui. Primero se corrige la
@@ -379,6 +451,15 @@ def cambiar_rol(db: Session, usuario_id: int, rol: m.Rol, actor: m.Usuario,
                         f"{usuario.categoria.nombre}."),
             "que_hacer": "Cámbiale el puesto, o quítaselo primero.",
         })
+    # Seccion 83: direccion general y administracion, y el poder de
+    # repartir accesos que trae un rol sin puesto.
+    if rol in ALTOS or usuario.rol in ALTOS:
+        solo_direccion(actor, "Hacer a alguien Dirección general o "
+                               "administración, o quitárselo,")
+    if usuario.categoria_id is None and (reparte_de_fabrica(rol)
+                                         or reparte_de_fabrica(usuario.rol)):
+        solo_direccion(actor, "Darle o quitarle a alguien el poder de "
+                               "repartir accesos")
     if rol != m.Rol.ADMIN:
         _no_es_el_ultimo_admin(db, usuario, "quitarle administracion")
 
@@ -457,6 +538,9 @@ def _ficha_categoria(db: Session, c: m.CategoriaAcceso) -> dict:
                       if c.pantallas else None),
         "puestos_odoo": c.puestos_odoo,
         "orden": c.orden,
+        # Seccion 83: si reparte accesos. Ese puesto solo lo cambia y lo
+        # da direccion general, y la pantalla no ofrece lo que no se puede.
+        "reparte": trae_reparte(c),
     }
 
 
@@ -530,6 +614,8 @@ def crear_categoria(db: Session, actor: m.Usuario, nombre: str,
     for a in actividades:
         _existe(a)
     _no_juntarlas_en_un_puesto(set(actividades))
+    if REPARTE in actividades:
+        solo_direccion(actor, "Armar un puesto que reparte accesos")
 
     categoria = m.CategoriaAcceso(nombre=nombre, descripcion=descripcion,
                                   horas_sesion=horas_sesion,
@@ -555,6 +641,12 @@ def cambiar_categoria(db: Session, actor: m.Usuario, categoria_id: int,
     categoria = db.get(m.CategoriaAcceso, categoria_id)
     if not categoria:
         raise HTTPException(404, f"No existe la categoria {categoria_id}")
+    # Seccion 83: el puesto propio no, y el que reparte accesos --o el
+    # que quedaria repartiendolos-- solo direccion general.
+    _no_es_su_puesto(actor, categoria)
+    nuevas = cambios.get("actividades")
+    if trae_reparte(categoria) or (nuevas is not None and REPARTE in nuevas):
+        solo_direccion(actor, "Cambiar un puesto que reparte accesos")
 
     antes = sorted(a.actividad for a in categoria.actividades)
     # Cambiarle el nombre se puede, pero no al de otro puesto ni a nada:
@@ -614,18 +706,35 @@ def cambiar_categoria(db: Session, actor: m.Usuario, categoria_id: int,
 
 
 def poner_categoria(db: Session, actor: m.Usuario, usuario_id: int,
-                    categoria_id: int | None, motivo: str | None = None) -> dict:
+                    categoria_id: int | None, motivo: str | None = None,
+                    recien_dado: bool = False) -> dict:
     """Le pone o le quita la categoria a una persona.
 
     Sin categoria vuelve a los permisos de su rol, que es de donde salio.
+
+    `recien_dado`: el acceso se acaba de dar con este puesto, y el alta ya
+    reviso que quien lo da pueda darlo. En ese instante la persona trae el
+    rol del puesto sin el puesto, y ese rol puede repartir accesos de
+    fabrica --Capacitacion entra como recursos humanos--: no es alguien
+    que ya reparta.
     """
     usuario = _obtener(db, usuario_id)
     _tambien_se_lo_daria_a_si_mismo(actor, usuario)
+    if usuario.rol in ALTOS:
+        solo_direccion(actor, "Ponerle o quitarle un puesto a Dirección "
+                               "general o a administración")
     categoria = None
     if categoria_id is not None:
         categoria = db.get(m.CategoriaAcceso, categoria_id)
         if not categoria:
             raise HTTPException(404, f"No existe la categoria {categoria_id}")
+    # Seccion 83: dar el puesto que reparte accesos, o cambiarle el suyo a
+    # quien ya los reparte.
+    if ((categoria is not None and trae_reparte(categoria))
+            or (not recien_dado and reparte(db, usuario))):
+        solo_direccion(actor, "Darle o quitarle a alguien el poder de "
+                               "repartir accesos")
+    if categoria is not None:
         # El puesto reemplaza a su rol y a su puesto de antes: lo que hay
         # que revisar contra lo nuevo son solo sus permisos de mas. Contado
         # contra todo lo que ya podia, a quien entraba como finanzas --que
@@ -696,6 +805,11 @@ def dar_permiso(db: Session, actor: m.Usuario, usuario_id: int,
     usuario = _obtener(db, usuario_id)
     _tambien_se_lo_daria_a_si_mismo(actor, usuario)
     _existe(actividad)
+    # Seccion 83: el permiso de repartir accesos, y cualquier permiso de
+    # mas a quien ya los reparte, solo los da direccion general.
+    if actividad == REPARTE or reparte(db, usuario):
+        solo_direccion(actor, "Darle un permiso de más a quien reparte "
+                               "accesos, o el de repartirlos,")
     if db.query(m.PermisoExtra).filter_by(usuario_id=usuario.id,
                                           actividad=actividad).first():
         raise HTTPException(409, "Ya tiene ese permiso de mas")
@@ -712,6 +826,9 @@ def dar_permiso(db: Session, actor: m.Usuario, usuario_id: int,
 def quitar_permiso(db: Session, actor: m.Usuario, usuario_id: int,
                    actividad: str) -> dict:
     usuario = _obtener(db, usuario_id)
+    if actividad == REPARTE or reparte(db, usuario):
+        solo_direccion(actor, "Quitarle un permiso de más a quien reparte "
+                               "accesos")
     fila = (db.query(m.PermisoExtra)
             .filter_by(usuario_id=usuario.id, actividad=actividad).first())
     if not fila:

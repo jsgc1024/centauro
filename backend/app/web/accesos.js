@@ -10,12 +10,12 @@
    una que lleva meses dormida es una puerta abierta a nombre de alguien
    que quizá ya no está. Ese dato se guardaba desde hace meses y nadie lo
    miraba. */
-import { api } from "./api.js";
+import { api, sesion } from "./api.js";
 import { aviso, campo, conAyuda, entrada, etiqueta, fecha, h, hora, lista,
          mensaje } from "./util.js";
 import { t } from "./idioma.js";
-import { ROLES, nombreDelRol, pestanaPuestos,
-         seccionDePermisos } from "./categorias.js";
+import { REPARTE, ROLES, apagarLosQueReparten, nombreDelRol, pestanaPuestos,
+         seccionDePermisos, traerCatalogo } from "./categorias.js";
 
 /* Meses sin entrar a partir de los cuales conviene mirar la cuenta. No
    es un candado, es una ceja levantada. */
@@ -26,6 +26,28 @@ const MESES_DORMIDO = 3;
    la pone con el código de cuatro dígitos. Es la misma lista que
    `contrasenas.POR_CORREO` en el servidor. */
 const DE_CONSOLA = ROLES.filter(r => r !== "personal_seguridad");
+
+/* Los roles que quien mira puede dar (sección 83). Dirección general y
+   administración sólo las da Dirección general, y también los roles que
+   de fábrica reparten accesos: el poder de repartirlos lo da ella. El
+   servidor lo vuelve a revisar; esto decide qué se ofrece. */
+async function rolesQuePuedeDar() {
+  if ((sesion.usuario || {}).es_direccion) return DE_CONSOLA;
+  const cat = await traerCatalogo();
+  const reparten = new Set((cat.find(a => a.actividad === REPARTE) || {}).roles || []);
+  return DE_CONSOLA.filter(r => r !== "admin" && r !== "director_general"
+                                && !reparten.has(r));
+}
+
+/* El rol que pone un puesto, aunque no esté entre los que quien mira
+   puede escoger a mano: el puesto de Capacitación entra como Recursos
+   Humanos y no reparte accesos, y lo da cualquiera de Accesos. */
+function ponerRol(select, rol) {
+  if (![...select.options].some(o => o.value === rol)) {
+    select.append(h("option", { value: rol }, nombreDelRol(rol)));
+  }
+  select.value = rol;
+}
 
 /* "sáb 26 sep 2026 a las 13:10". */
 function cuando(iso) {
@@ -119,25 +141,27 @@ async function abrirDarAcceso(caja, alTerminar) {
   if (caja.childElementCount) return caja.replaceChildren();
   caja.replaceChildren(h("div", { clase: "gris chico" }, "…"));
   try {
-    const [datos, puestos] = await Promise.all([
-      api.get("/auth/personas-sin-acceso"), api.get("/auth/categorias")]);
-    formularioDarAcceso(caja, datos, puestos, alTerminar);
+    const [datos, puestos, roles] = await Promise.all([
+      api.get("/auth/personas-sin-acceso"), api.get("/auth/categorias"),
+      rolesQuePuedeDar()]);
+    formularioDarAcceso(caja, datos, puestos, roles, alTerminar);
   } catch (err) {
     caja.replaceChildren(aviso(err.message, "grave"));
   }
 }
 
-function formularioDarAcceso(caja, datos, puestos, alTerminar, hecho = "") {
+function formularioDarAcceso(caja, datos, puestos, roles, alTerminar, hecho = "") {
   const persona = lista("persona", [
     { valor: "", texto: t("acc_elige_persona") },
     ...datos.personas.map(p => ({ valor: String(p.persona_id),
                                   texto: `${p.nombre} · ${p.correo}` }))]);
-  const rol = lista("rol", DE_CONSOLA.map(r => ({ valor: r, texto: nombreDelRol(r) })));
+  const rol = lista("rol", roles.map(r => ({ valor: r, texto: nombreDelRol(r) })));
   rol.value = "consultor";
   /* Los puestos apagados no se ofrecen: para eso se apagaron. */
   const activos = puestos.filter(p => p.activa);
   const puesto = lista("puesto", [{ valor: "", texto: t("acc_sin_puesto") },
     ...activos.map(p => ({ valor: String(p.categoria_id), texto: p.nombre }))]);
+  apagarLosQueReparten(puesto, activos);
   /* Primero el puesto y de ahi el rol (seccion 73): si el puesto dice
      con que rol se entra, el rol queda puesto y quieto. Escoger los dos
      a mano era la forma de dar un monitorista que recibe los avisos de
@@ -146,7 +170,7 @@ function formularioDarAcceso(caja, datos, puestos, alTerminar, hecho = "") {
   puesto.addEventListener("change", () => {
     const p = activos.find(x => String(x.categoria_id) === puesto.value);
     if (p && p.rol) {
-      rol.value = p.rol;
+      ponerRol(rol, p.rol);
       rol.disabled = true;
       notaRol.textContent = t("acc_rol_lo_pone");
     } else {
@@ -174,7 +198,7 @@ function formularioDarAcceso(caja, datos, puestos, alTerminar, hecho = "") {
       /* El formulario vuelve limpio --esa persona ya no está en la
          lista-- y con el aviso de lo que pasó. */
       formularioDarAcceso(caja, await api.get("/auth/personas-sin-acceso"),
-                          puestos, alTerminar,
+                          puestos, roles, alTerminar,
                           aviso(texto, inv.correo_encendido ? "ok" : "alerta"));
     } catch (err) {
       salida.replaceChildren(aviso(err.message, "grave"));
@@ -215,6 +239,7 @@ async function pantallaPersonas(main) {
   let todos = [];
   let oficina = { sin_acceso: [], sin_correo: [], leido_en: null };
   let puestos = [];
+  let roles = [];
 
   function pintarPestanas() {
     const boton = (clave, texto) => h("button", {
@@ -234,7 +259,7 @@ async function pantallaPersonas(main) {
         || (u.nombre || "").toLowerCase().includes(texto)
         || (u.correo || "").toLowerCase().includes(texto));
     cuerpo.replaceChildren(filas.length
-      ? h("div", {}, ...filas.map(u => renglon(u, recargar)))
+      ? h("div", {}, ...filas.map(u => renglon(u, recargar, roles)))
       : h("div", { clase: "gris chico", style: "margin-top:12px" },
           t("acc_nadie")));
   }
@@ -246,7 +271,7 @@ async function pantallaPersonas(main) {
         oficina.leido_en ? "" : aviso(t("ofi_sin_lectura"), "alerta"),
         oficina.sin_acceso.length
           ? h("div", {}, ...oficina.sin_acceso.map(
-              p => renglonOficina(p, puestos, recargar)))
+              p => renglonOficina(p, puestos, roles, recargar)))
           : h("div", { clase: "gris chico" },
               oficina.leido_en ? t("ofi_nadie") : ""));
       return;
@@ -283,9 +308,9 @@ async function pantallaPersonas(main) {
 
   async function recargar() {
     try {
-      [todos, oficina, puestos] = await Promise.all([
+      [todos, oficina, puestos, roles] = await Promise.all([
         api.get("/auth/usuarios"), api.get("/auth/oficina"),
-        api.get("/auth/categorias")]);
+        api.get("/auth/categorias"), rolesQuePuedeDar()]);
       pintarPestanas();
       pintarSub();
     } catch (err) {
@@ -304,9 +329,18 @@ async function pantallaPersonas(main) {
 /* Alguien de oficina que llegó de Odoo y todavía no entra: su puesto de
    Odoo y el de Centauro que eso sugiere. Dar el acceso es un clic, y el
    puesto sugerido se puede cambiar antes (sección 74). */
-function renglonOficina(p, puestos, recargar) {
+/* Si ese puesto sólo lo da Dirección general y quien mira no es ella
+   (sección 83). */
+function loDaDireccion(puestos, categoriaId) {
+  if ((sesion.usuario || {}).es_direccion || !categoriaId) return false;
+  const x = puestos.find(y => y.categoria_id === categoriaId);
+  return !!(x && x.reparte);
+}
+
+function renglonOficina(p, puestos, roles, recargar) {
   const zona = h("div");
   const s = p.sugerido;
+  const deDireccion = !!(s && loDaDireccion(puestos, s.categoria_id));
   const fila = h("div", { clase: "renglon-acceso de-oficina" },
     h("div", { clase: "quien-acceso" },
       h("div", {}, h("b", {}, p.nombre)),
@@ -318,26 +352,29 @@ function renglonOficina(p, puestos, recargar) {
       : etiqueta(t("ofi_sin_sugerido"), "alerta")),
     h("button", { clase: "chico", type: "button", onclick: () => {
       if (zona.childElementCount) return zona.replaceChildren();
-      zona.replaceChildren(formularioOficina(p, puestos, zona, recargar));
+      zona.replaceChildren(formularioOficina(p, puestos, roles, zona, recargar));
     } }, t("ofi_dar")));
   return h("div", {}, fila,
     s ? "" : h("div", { clase: "chico gris", style: "margin:2px 0 6px" },
                t("ofi_sin_sugerido_pie")),
+    deDireccion ? h("div", { clase: "chico gris", style: "margin:2px 0 6px" },
+                    t("ofi_sugerido_direccion")) : "",
     zona);
 }
 
-function formularioOficina(p, puestos, zona, recargar) {
+function formularioOficina(p, puestos, roles, zona, recargar) {
   const activos = puestos.filter(x => x.activa);
   const s = p.sugerido;
   const puesto = lista("puesto", [{ valor: "", texto: t("acc_sin_puesto") },
     ...activos.map(x => ({ valor: String(x.categoria_id), texto: x.nombre }))]);
-  const rol = lista("rol", DE_CONSOLA.map(r => ({ valor: r, texto: nombreDelRol(r) })));
+  apagarLosQueReparten(puesto, activos);
+  const rol = lista("rol", roles.map(r => ({ valor: r, texto: nombreDelRol(r) })));
   rol.value = "consultor";
   const notaRol = h("div", { clase: "gris chico" });
   function alPuesto() {
     const x = activos.find(y => String(y.categoria_id) === puesto.value);
     if (x && x.rol) {
-      rol.value = x.rol;
+      ponerRol(rol, x.rol);
       rol.disabled = true;
       notaRol.textContent = t("acc_rol_lo_pone");
     } else {
@@ -346,10 +383,13 @@ function formularioOficina(p, puestos, zona, recargar) {
     }
   }
   puesto.addEventListener("change", alPuesto);
-  /* Lo sugerido, ya puesto: un puesto de Centauro, o el rol con que
-     entran dirección general y administración, que no llevan puesto. */
-  if (s && s.tipo === "puesto" && s.categoria_id) puesto.value = String(s.categoria_id);
-  else if (s && s.rol) rol.value = s.rol;
+  /* Lo sugerido, ya puesto. Dirección general y administración ya no se
+     sugieren (sección 83), y el puesto que reparte accesos sólo se deja
+     puesto si quien mira puede darlo. */
+  if (s && s.tipo === "puesto" && s.categoria_id
+      && !loDaDireccion(puestos, s.categoria_id)) {
+    puesto.value = String(s.categoria_id);
+  }
   alPuesto();
 
   const salida = h("div");
@@ -392,7 +432,7 @@ function avisosDe(u) {
   return salida;
 }
 
-function renglon(u, recargar) {
+function renglon(u, recargar, roles) {
   const zona = h("div");
   const fila = h("div", { clase: "renglon-acceso" },
     h("div", { clase: "quien-acceso" },
@@ -409,7 +449,7 @@ function renglon(u, recargar) {
     h("div", { clase: "chico gris" },
       u.ultimo_acceso ? desdeHace(u.ultimo_acceso) : t("acc_nunca")),
     h("button", { clase: "claro chico", type: "button",
-      onclick: () => abrir(zona, u, recargar) }, "···"));
+      onclick: () => abrir(zona, u, recargar, roles) }, "···"));
 
   const caja = h("div", { clase: u.activo ? "" : "cerrado" }, fila);
   for (const [texto, tono] of avisosDe(u)) caja.append(aviso(texto, tono));
@@ -424,40 +464,55 @@ function renglon(u, recargar) {
 /* Las tres acciones y el rastro, en el mismo lugar. El motivo no es
    obligatorio, pero es lo que se lee un año después cuando alguien
    pregunta por qué se cerró esa cuenta. */
-function abrir(zona, u, recargar) {
+function abrir(zona, u, recargar, roles) {
   if (zona.childElementCount) return zona.replaceChildren();
 
+  /* Sección 83. Su propio acceso nadie lo cambia; el de Dirección
+     general y administración, y el de quien reparte accesos, sólo
+     Dirección general. A quien reparte sí se le puede cerrar la puerta
+     cuando se va. */
+  const quien = sesion.usuario || {};
+  const esYo = u.usuario_id === quien.usuario_id;
+  const alto = u.alto && !quien.es_direccion;
+  const reparte = u.reparte && !quien.es_direccion;
+  const bloqueo = esYo ? t("acc_es_tu_acceso")
+    : alto ? t("acc_solo_direccion_alto")
+    : reparte ? t("acc_reparte_direccion") : "";
+
   const motivo = entrada("motivo", { placeholder: t("acc_motivo") });
-  const rol = lista("rol", ROLES.map(r => ({ valor: r, texto: nombreDelRol(r) })));
+  const deRol = roles.includes(u.rol) ? roles : [...roles, u.rol];
+  const rol = lista("rol", deRol.map(r => ({ valor: r, texto: nombreDelRol(r) })));
   rol.value = u.rol;
   /* Con un puesto que dice su rol, el rol es del puesto (seccion 73): se
      cambia cambiandole el puesto, abajo. */
-  if (u.rol_por_puesto) rol.disabled = true;
+  if (u.rol_por_puesto || bloqueo) rol.disabled = true;
 
+  const cerrarOAbrir = (esYo || alto) ? "" : u.activo
+    ? h("button", { clase: "chico", type: "button",
+        onclick: (e) => mandar(e, `/auth/usuarios/${u.usuario_id}/desactivar`,
+                               { motivo: motivo.value.trim() || null },
+                               recargar) }, t("acc_desactivar"))
+    : h("button", { clase: "chico", type: "button",
+        onclick: (e) => mandar(e, `/auth/usuarios/${u.usuario_id}/reactivar`,
+                               { motivo: motivo.value.trim() || null },
+                               recargar) }, t("acc_reactivar"));
+  const cambiarRol = bloqueo ? "" : u.rol_por_puesto
+    ? h("span", { clase: "gris chico" }, t("acc_rol_por_puesto"))
+    : h("button", { clase: "chico claro", type: "button",
+        onclick: (e) => mandar(e, `/auth/usuarios/${u.usuario_id}/rol`,
+                               { rol: rol.value, motivo: motivo.value.trim() || null },
+                               recargar) }, t("acc_cambiar_rol"));
   const acciones = h("div", { clase: "acciones", style: "margin-top:10px" },
-    u.rol_por_puesto
-      ? h("span", { clase: "gris chico" }, t("acc_rol_por_puesto"))
-      : h("button", { clase: "chico claro", type: "button",
-      onclick: (e) => mandar(e, `/auth/usuarios/${u.usuario_id}/rol`,
-                             { rol: rol.value, motivo: motivo.value.trim() || null },
-                             recargar) }, t("acc_cambiar_rol")),
-    u.activo
-      ? h("button", { clase: "chico", type: "button",
-          onclick: (e) => mandar(e, `/auth/usuarios/${u.usuario_id}/desactivar`,
-                                 { motivo: motivo.value.trim() || null },
-                                 recargar) }, t("acc_desactivar"))
-      : h("button", { clase: "chico", type: "button",
-          onclick: (e) => mandar(e, `/auth/usuarios/${u.usuario_id}/reactivar`,
-                                 { motivo: motivo.value.trim() || null },
-                                 recargar) }, t("acc_reactivar")));
+    cambiarRol, cerrarOAbrir);
 
   const rastro = h("div", { clase: "gris chico", style: "margin-top:12px" });
   const permisos = h("div");
   const invitacion = h("div");
   zona.replaceChildren(h("div", { clase: "tarjeta lisa", style: "margin-top:8px" },
     invitacion,
+    bloqueo ? aviso(bloqueo, "alerta") : "",
     h("div", { clase: "rejilla dos" },
-      h("div", {}, rol), h("div", {}, motivo)),
+      h("div", {}, rol), (cambiarRol || cerrarOAbrir) ? h("div", {}, motivo) : h("div")),
     acciones, permisos, rastro));
 
   /* Quien todavía no estrena su acceso y entra a la consola: cómo va su
@@ -470,8 +525,9 @@ function abrir(zona, u, recargar) {
   /* Al personal de seguridad no se le reparten permisos: entra desde la
      app y lo único que hace ahí son sus propias jornadas. Ofrecerle 29
      casillas sería ruido en la pantalla y una forma de equivocarse. */
-  if (u.rol !== "personal_seguridad") {
-    seccionDePermisos(permisos, u.usuario_id, recargar);
+  if (u.rol !== "personal_seguridad" && !alto) {
+    seccionDePermisos(permisos, u.usuario_id, recargar,
+                      (esYo || reparte) ? bloqueo : "");
   }
 
   api.get(`/auth/usuarios/${u.usuario_id}/historial`).then(filas => {

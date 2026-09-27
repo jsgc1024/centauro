@@ -265,8 +265,10 @@ def test_la_oficina_no_se_manda_a_la_calle(db):
     ("Supervisor Analisis inteligencia", "Supervisor de central"),
     ("Especialista Monitoreo de Seguridad", "Supervisor de central"),
     ("Director de Operaciones", "Dirección de operaciones"),
-    ("Director General", "Dirección general"),
-    ("Jefa de Desarrollo web", "Administración del sistema"),
+    # Direccion general y la llave maestra ya no se sugieren (seccion 83):
+    # las da, a mano, solo direccion general.
+    ("Director General", None),
+    ("Jefa de Desarrollo web", None),
     ('Asistente "A"', None),
 ])
 def test_el_puesto_que_se_sugiere(puesto, sugerido):
@@ -300,8 +302,8 @@ def test_recursos_humanos_ve_la_oficina_con_su_puesto_sugerido(db, cliente,
     assert mon["nombre"] == "Monitorista" and mon["tipo"] == "puesto"
     assert mon["rol"] == "central" and mon["categoria_id"]
     assert por_odoo[f"oficina2@{DOMINIO}"]["sugerido"] is None
-    dg = por_odoo[f"oficina4@{DOMINIO}"]["sugerido"]
-    assert dg["tipo"] == "rol" and dg["rol"] == "director_general"
+    # Direccion general ya no se sugiere (seccion 83).
+    assert por_odoo[f"oficina4@{DOMINIO}"]["sugerido"] is None
 
     # Dar el acceso con lo sugerido: entra con el rol del puesto y deja
     # la lista.

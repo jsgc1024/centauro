@@ -14,8 +14,8 @@
    un permiso que quitara dejaría su renglón diciendo "Consultor" cuando
    no lo es, y para saber qué puede de verdad habría que abrir su ficha y
    acordarse de que existe una excepción escondida. */
-import { api } from "./api.js";
-import { aviso, campo, conAyuda, entrada, h, lista, mensaje } from "./util.js";
+import { api, sesion } from "./api.js";
+import { aviso, campo, conAyuda, entrada, etiqueta, h, lista, mensaje } from "./util.js";
 import { t } from "./idioma.js";
 import { MENU, PARA_PUESTOS, leFaltaPara, menuDe } from "./menu.js";
 
@@ -71,16 +71,28 @@ function porFamilia(catalogo) {
    que sólo cambian cuando cambia el código. */
 let catalogo = null;
 
-async function traerCatalogo() {
+export async function traerCatalogo() {
   if (!catalogo) catalogo = await api.get("/auth/actividades");
   return catalogo;
+}
+
+/* Quien mira la pantalla (sección 83): su puesto --que no cambia él
+   mismo-- y si es Dirección general, que es quien da el poder de
+   repartir accesos. El servidor lo vuelve a revisar en cada puerta; esto
+   sólo decide qué se ofrece. */
+const yo = () => sesion.usuario || {};
+export const REPARTE = "accesos.dar";
+
+/* Lo que sólo pone Dirección general: el poder de repartir accesos. */
+function bloqueadasPara() {
+  return yo().es_direccion ? new Set() : new Set([REPARTE]);
 }
 
 /* ================================================== casillas reutilizables
 
    La misma tabla sirve para armar un puesto y para leer el de alguien.
    Devuelve el nodo, y encima la forma de preguntarle qué quedó marcado. */
-function tablaDeCasillas(catalogo, marcadas, alCambiar) {
+function tablaDeCasillas(catalogo, marcadas, alCambiar, bloqueadas = new Set()) {
   const casillas = new Map();
   const caja = h("div");
 
@@ -89,12 +101,17 @@ function tablaDeCasillas(catalogo, marcadas, alCambiar) {
     for (const a of grupo.filas) {
       const c = h("input", { type: "checkbox" });
       c.checked = marcadas.has(a.actividad);
+      /* La que sólo pone Dirección general se ve, pero no se mueve. */
+      c.disabled = bloqueadas.has(a.actividad);
       if (alCambiar) c.addEventListener("change", alCambiar);
       casillas.set(a.actividad, c);
       cuerpo.append(h("label", { clase: "casilla" }, c,
         h("span", {},
           h("span", { clase: "chico" }, a.descripcion),
-          h("span", { clase: "gris chico mono" }, ` ${a.actividad}`))));
+          h("span", { clase: "gris chico mono" }, ` ${a.actividad}`),
+          c.disabled
+            ? h("span", { clase: "gris chico" }, ` · ${t("cat_la_pone_direccion")}`)
+            : "")));
     }
     caja.append(h("div", { clase: "familia" },
       h("div", { clase: "familia-titulo" },
@@ -108,7 +125,10 @@ function tablaDeCasillas(catalogo, marcadas, alCambiar) {
   }
 
   function marcarFamilia(grupo, valor) {
-    for (const a of grupo.filas) casillas.get(a.actividad).checked = valor;
+    for (const a of grupo.filas) {
+      const c = casillas.get(a.actividad);
+      if (!c.disabled) c.checked = valor;
+    }
     if (alCambiar) alCambiar();
   }
 
@@ -116,7 +136,9 @@ function tablaDeCasillas(catalogo, marcadas, alCambiar) {
     .filter(([, c]) => c.checked).map(([nombre]) => nombre);
   caja.poner = (nombres) => {
     const puestas = new Set(nombres);
-    for (const [nombre, c] of casillas) c.checked = puestas.has(nombre);
+    for (const [nombre, c] of casillas) {
+      if (!c.disabled) c.checked = puestas.has(nombre);
+    }
     if (alCambiar) alCambiar();
   };
   return caja;
@@ -245,13 +267,31 @@ function renglonPuesto(p, cat, puestos, recargar) {
       h("div", { clase: "gris chico" },
         pantallas.length ? pantallas.join(" · ") : t("cat_menu_de_su_rol"))),
     h("td", { clase: "chico" }, quienesLoTraen(p.personas)),
-    h("td", {}, h("button", { clase: "claro chico", type: "button",
-      onclick: () => {
-        if (!abajo.hidden) { abajo.hidden = true; zona.replaceChildren(); return; }
-        abajo.hidden = false;
-        editar(zona, p, cat, puestos, recargar);
-      } }, "···")));
+    h("td", {}, finDelRenglon(p, () => {
+      if (!abajo.hidden) { abajo.hidden = true; zona.replaceChildren(); return; }
+      abajo.hidden = false;
+      editar(zona, p, cat, puestos, recargar);
+    })));
+  /* El puesto propio no se cambia (sección 83), y se dice en su renglón:
+     si no, parece que falta el botón. */
+  if (esSuyo(p)) {
+    return [fila, h("tr", {}, h("td", { colspan: "5", style: "padding-top:0" },
+      aviso(t("cat_es_tu_puesto_pie"), "alerta")))];
+  }
   return [fila, abajo];
+}
+
+const esSuyo = (p) => yo().categoria_id != null && yo().categoria_id === p.categoria_id;
+
+/* El botón para cambiarlo, o por qué no hay (sección 83): el puesto
+   propio lo cambia otra persona, y el que reparte accesos sólo
+   Dirección general. */
+function finDelRenglon(p, alAbrir) {
+  if (esSuyo(p)) return etiqueta(t("cat_es_tu_puesto"), "ok");
+  if (p.reparte && !yo().es_direccion) {
+    return h("span", { clase: "gris chico" }, t("cat_lo_cambia_direccion"));
+  }
+  return h("button", { clase: "claro chico", type: "button", onclick: alAbrir }, "···");
 }
 
 /* Dirección general y administración: no son puestos, entran con su rol.
@@ -263,7 +303,9 @@ function renglonPorRol(p) {
       h("div", { clase: "chico gris" }, [
         p.area, t("cat_entra_con_su_rol").replace("{rol}", nombreDelRol(p.rol)),
       ].filter(Boolean).join(" · "))),
-    h("td", { clase: "chico" }, p.puestos_odoo || "—"),
+    /* Ya no se le sugieren a nadie de Odoo (sección 83): los da, a mano,
+       sólo Dirección general. */
+    h("td", { clase: "chico gris" }, t("cat_la_da_direccion")),
     h("td", { clase: "chico" }, p.descripcion || "—"),
     h("td", { clase: "chico" }, quienesEntranAsi(p.personas)),
     h("td", {}, h("span", { clase: "etiqueta" }, t("cat_por_rol"))));
@@ -339,7 +381,8 @@ function camposDelPuesto(p, cat, alCambiar) {
                                    placeholder: t("cat_horas"),
                                    value: p.horas_sesion ? String(p.horas_sesion) : null });
   const pantallas = casillasDePantallas(new Set(p.pantallas || []), alCambiar);
-  const actividades = tablaDeCasillas(cat, new Set(p.actividades || []), alCambiar);
+  const actividades = tablaDeCasillas(cat, new Set(p.actividades || []), alCambiar,
+                                      bloqueadasPara());
 
   const nodo = h("div", {},
     h("div", { clase: "rejilla dos" },
@@ -524,8 +567,13 @@ const DE_DONDE = {
 
 /* `alCambiarPuesto`: lo que hay que repintar arriba cuando cambia su
    puesto. Desde la seccion 73 el puesto tambien le cambia el rol, y el
-   renglon de la persona no puede seguir diciendo el de antes. */
-export async function seccionDePermisos(zona, usuarioId, alCambiarPuesto = null) {
+   renglon de la persona no puede seguir diciendo el de antes.
+
+   `soloLectura` (sección 83): aquí no se cambia nada --es su propio
+   acceso, o reparte accesos y eso lo cambia Dirección general--. Se
+   enseña lo que puede, sin botones; el porqué lo dice quien la llama. */
+export async function seccionDePermisos(zona, usuarioId, alCambiarPuesto = null,
+                                        soloLectura = "") {
   zona.replaceChildren(h("div", { clase: "gris chico" }, "…"));
   try {
     const [cat, puestos, ficha] = await Promise.all([
@@ -533,14 +581,29 @@ export async function seccionDePermisos(zona, usuarioId, alCambiarPuesto = null)
       api.get("/auth/categorias"),
       api.get(`/auth/usuarios/${usuarioId}/permisos`),
     ]);
-    pintar(zona, usuarioId, cat, puestos, ficha, alCambiarPuesto);
+    pintar(zona, usuarioId, cat, puestos, ficha, alCambiarPuesto, soloLectura);
   } catch (err) {
     zona.replaceChildren(aviso(err.message, "grave"));
   }
 }
 
-function pintar(zona, usuarioId, cat, puestos, ficha, alCambiarPuesto) {
-  const recargar = () => seccionDePermisos(zona, usuarioId, alCambiarPuesto);
+/* Los puestos que reparten accesos los da sólo Dirección general
+   (sección 83): a los demás se les enseñan, apagados y diciendo por qué. */
+export function apagarLosQueReparten(select, puestos) {
+  if (yo().es_direccion) return;
+  const reparten = new Set(puestos.filter(p => p.reparte)
+    .map(p => String(p.categoria_id)));
+  for (const o of select.options) {
+    if (reparten.has(o.value)) {
+      o.disabled = true;
+      o.textContent = `${o.textContent} · ${t("acc_lo_da_direccion")}`;
+    }
+  }
+}
+
+function pintar(zona, usuarioId, cat, puestos, ficha, alCambiarPuesto, soloLectura) {
+  const recargar = () => seccionDePermisos(zona, usuarioId, alCambiarPuesto,
+                                           soloLectura);
 
   /* Los apagados no se ofrecen —para eso se apagaron— salvo que sea
      justo el que esta persona trae puesto: esconderlo de su propia lista
@@ -550,7 +613,9 @@ function pintar(zona, usuarioId, cat, puestos, ficha, alCambiarPuesto) {
     ...puestos.filter(p => p.activa || p === suyo)
       .map(p => ({ valor: String(p.categoria_id), texto: p.nombre }))];
   const elegir = lista("puesto", opciones);
+  if (!soloLectura) apagarLosQueReparten(elegir, puestos);
   elegir.value = suyo ? String(suyo.categoria_id) : "";
+  elegir.disabled = !!soloLectura;
 
   const poner = h("button", { clase: "chico claro", type: "button" },
                   t("cat_poner"));
@@ -573,13 +638,14 @@ function pintar(zona, usuarioId, cat, puestos, ficha, alCambiarPuesto) {
     tabla.append(h("div", { clase: "familia" },
       h("div", { clase: "familia-titulo" }, h("b", {}, grupo.titulo)),
       h("div", {}, ...grupo.filas.map(a =>
-        renglonPermiso(usuarioId, a, de.get(a.actividad), recargar)))));
+        renglonPermiso(usuarioId, a, de.get(a.actividad), recargar,
+                       !!soloLectura)))));
   }
 
   zona.replaceChildren(
     conAyuda("h4", t("cat_su_puesto"), "ay_cat_puesto",
              { style: "margin:10px 0 4px" }),
-    h("div", { clase: "acciones" }, elegir, poner),
+    h("div", { clase: "acciones" }, elegir, soloLectura ? "" : poner),
     ficha.categoria
       ? h("div", { clase: "gris chico", style: "margin-top:4px" },
           t("cat_manda_sobre_rol").replace("{rol}", nombreDelRol(ficha.rol)))
@@ -591,9 +657,14 @@ function pintar(zona, usuarioId, cat, puestos, ficha, alCambiarPuesto) {
     tabla);
 }
 
-function renglonPermiso(usuarioId, actividad, estado, recargar) {
+function renglonPermiso(usuarioId, actividad, estado, recargar, soloLectura) {
   const puede = estado && estado.puede;
   const suelto = estado && estado.de_donde === "permiso de mas";
+  /* Sin botón donde el servidor diría que no (sección 83): en modo de
+     sólo lectura, y el permiso de repartir accesos, que sólo da o quita
+     Dirección general. */
+  const sinBoton = soloLectura
+    || (actividad.actividad === REPARTE && !yo().es_direccion);
 
   async function mover(dar, boton) {
     boton.disabled = true;
@@ -617,7 +688,7 @@ function renglonPermiso(usuarioId, actividad, estado, recargar) {
     }
   }
 
-  const boton = suelto
+  const boton = sinBoton ? "" : suelto
     ? h("button", { clase: "enlace chico", type: "button" }, t("cat_quitar"))
     : (puede ? "" : h("button", { clase: "enlace chico", type: "button" },
                       t("cat_dar")));

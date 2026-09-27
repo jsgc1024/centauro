@@ -13,8 +13,10 @@ quito a proposito--.
 Dos quedan fuera a proposito, y entran con su rol:
   * Direccion general, que puede todo: un puesto con todo juntaria las
     actividades que no pueden vivir en la misma mano.
-  * Administracion del sistema, que pasa cualquier candado: un puesto
-    no le quitaria nada.
+  * Administracion, la llave maestra, que pasa cualquier candado: un
+    puesto no le quitaria nada. Desde la seccion 83 se guarda para una
+    emergencia tecnica; quien administra el sistema a diario trae su
+    puesto.
 
 Estos puestos se crean una sola vez, con el boton de la pantalla de
 Accesos o con `crear_puestos` de aqui abajo. Despues se ajustan en la
@@ -186,8 +188,12 @@ PUESTOS: list[dict] = [
 
 
 # Los dos que entran con su rol y sin puesto. No se crean: se ensenan en
-# la lista de puestos para que este completa, con cuantos entran asi, y
-# sus puestos de Odoo sirven para sugerirlos al dar un acceso.
+# la lista de puestos para que este completa, con cuantos entran asi.
+#
+# Desde la seccion 83 ya no se le sugieren a nadie de Odoo: los da, a
+# mano, solo direccion general. Antes la llave maestra se le sugeria a
+# quien en Odoo era desarrollador, y recursos humanos la daba con un
+# clic.
 POR_ROL: list[dict] = [
     {
         "nombre": "Dirección general",
@@ -195,17 +201,16 @@ POR_ROL: list[dict] = [
         "rol": R.DIRECTOR_GENERAL,
         "orden": 5,
         "descripcion": "Todo. Entra con su rol, sin puesto.",
-        "puestos_odoo": "Director General, Directora General",
+        "puestos_odoo": None,
     },
     {
-        "nombre": "Administración del sistema",
+        "nombre": "Administración (llave maestra)",
         "area": "Sistema",
         "rol": R.ADMIN,
         "orden": 90,
-        "descripcion": "Técnicamente puede todo; se reserva para quien "
-                       "mantiene el sistema. Entra con su rol.",
-        "puestos_odoo": "Jefa de Desarrollo web, Jefe de Desarrollo web, "
-                        "Desarrollador",
+        "descripcion": "Pasa todos los candados. Solo para una emergencia "
+                       "técnica: nadie entra así a diario.",
+        "puestos_odoo": None,
     },
 ]
 

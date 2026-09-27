@@ -182,17 +182,27 @@ def alta_usuario(datos: AltaUsuarioIn, tareas: BackgroundTasks,
     # ya lo pone asi, pero quien llame a la API directo no puede dejar a
     # un monitorista entrando como consultor.
     rol = datos.rol
+    puesto = None
     if datos.categoria_id is not None:
         puesto = db.get(m.CategoriaAcceso, datos.categoria_id)
         if puesto is not None and puesto.rol is not None:
             rol = puesto.rol
+    # Seccion 83: direccion general, administracion y el poder de
+    # repartir accesos solo los da direccion general.
+    if rol in accesos.ALTOS:
+        accesos.solo_direccion(actor, "Dar un acceso de Dirección general "
+                                       "o de administración")
+    if ((puesto is not None and accesos.trae_reparte(puesto))
+            or (puesto is None and accesos.reparte_de_fabrica(rol))):
+        accesos.solo_direccion(actor, "Dar un acceso que reparte accesos")
     usuario = m.Usuario(persona_id=persona.id, correo=persona.correo, rol=rol)
     db.add(usuario)
     db.flush()
     accesos.anotar(db, actor, "acceso creado", "usuario", usuario.id,
                    despues=usuario.rol.value, detalle=usuario.correo)
     if datos.categoria_id is not None:
-        accesos.poner_categoria(db, actor, usuario.id, datos.categoria_id)
+        accesos.poner_categoria(db, actor, usuario.id, datos.categoria_id,
+                                recien_dado=True)
 
     enlace, aviso = contrasenas.invitar(db, usuario)
     db.commit()
@@ -356,6 +366,13 @@ def listar_usuarios(db: Session = Depends(get_db), incluir_inactivos: bool = Tru
         # deberia pasar; el dia que Odoo mande las bajas, esta es la
         # senal de que algo quedo a medias.
         "persona_de_baja": bool(u.persona and not u.persona.activo),
+        # Seccion 83: lo que la pantalla necesita para no ofrecer lo que
+        # el servidor va a negar. `alto`: direccion general o
+        # administracion; `reparte`: hoy reparte accesos. A los dos solo
+        # direccion general les cambia el acceso.
+        "categoria_id": u.categoria_id,
+        "alto": u.rol in accesos.ALTOS,
+        "reparte": accesos.reparte(db, u),
     } for u in filas]
 
 
@@ -738,7 +755,11 @@ def yo(usuario: m.Usuario = Depends(auth.usuario_actual),
             # cada puerta la sigue cuidando el servidor.
             "actividades": sorted(accesos.actividades_de(db, usuario)),
             "pantallas": accesos.pantallas_de(usuario),
-            "puesto": usuario.categoria.nombre if usuario.categoria else None}
+            "puesto": usuario.categoria.nombre if usuario.categoria else None,
+            # Seccion 83: su puesto --no lo cambia el mismo-- y si es
+            # direccion general, que es quien da lo de arriba.
+            "categoria_id": usuario.categoria_id,
+            "es_direccion": accesos.es_direccion(usuario)}
 
 
 @router.post("/recorrido-visto", summary="Ya vio el recorrido")
