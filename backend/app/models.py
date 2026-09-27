@@ -2016,6 +2016,12 @@ class Rol(str, enum.Enum):
     # control es la buena fe.
     RECURSOS_HUMANOS = "recursos_humanos"
     ADMIN = "admin"
+    # Administra el sistema --accesos, Odoo y catalogos-- y mide la calidad
+    # del servicio (seccion 85). No mueve dinero ni opera. Decision de
+    # Salvador, 27 sep: es el puesto de quien administra a diario, en vez
+    # de la llave maestra. Rol propio para que no le lleguen los avisos de
+    # recursos humanos ni los de la operacion.
+    SISTEMA_CALIDAD = "sistema_calidad"
 
 
 class Usuario(Base):

@@ -20,8 +20,8 @@ import { t } from "./idioma.js";
 import { MENU, PARA_PUESTOS, leFaltaPara, menuDe } from "./menu.js";
 
 export const ROLES = ["consultor", "central", "finanzas", "director_operaciones",
-                      "director_general", "recursos_humanos", "admin",
-                      "personal_seguridad"];
+                      "director_general", "recursos_humanos", "sistema_calidad",
+                      "admin", "personal_seguridad"];
 
 /* El nombre del puesto en el idioma del que lee. Mapa explícito y no la
    cadena cruda: el día que un rol se llame de otra forma, aquí se ve el
@@ -33,6 +33,7 @@ export function nombreDelRol(codigo) {
     director_operaciones: "rol_director_operaciones",
     director_general: "rol_director_general",
     recursos_humanos: "rol_recursos_humanos",
+    sistema_calidad: "rol_sistema_calidad",
   }[codigo];
   return clave ? t(clave) : codigo;
 }
@@ -156,7 +157,8 @@ function tablaDeCasillas(catalogo, marcadas, alCambiar, bloqueadas = new Set()) 
    seguridad —entra por la app—, ni dirección general ni administración:
    esas dos entran con su rol, sin puesto (sección 73). */
 const ROLES_DE_PUESTO = ["consultor", "central", "finanzas",
-                         "director_operaciones", "recursos_humanos"];
+                         "director_operaciones", "recursos_humanos",
+                         "sistema_calidad"];
 
 export async function pestanaPuestos(zona) {
   const base = h("div");
@@ -170,7 +172,7 @@ export async function pestanaPuestos(zona) {
     const [cat, puestos, deBase] = await Promise.all([
       traerCatalogo(), api.get("/auth/categorias"),
       api.get("/auth/categorias/base")]);
-    tarjetaBase(base, deBase.faltan, recargar);
+    tarjetaBase(base, deBase.faltan, deBase.de_direccion || [], recargar);
     formularioNuevo(nuevo, cat, puestos, recargar);
     cuerpo.replaceChildren(
       tablaDePuestos(puestos, deBase.por_rol || [], cat, recargar));
@@ -186,10 +188,14 @@ export async function pestanaPuestos(zona) {
 /* Los puestos de la propuesta que todavía no existen, con el botón que
    los crea. Los que ya están no se tocan: si alguien los ajustó, sus
    ajustes mandan. */
-function tarjetaBase(zona, faltan, recargar) {
+function tarjetaBase(zona, faltan, deDireccion, recargar) {
   if (!faltan.length) return zona.replaceChildren();
+  /* El que reparte accesos lo crea sólo Dirección general (sección 83):
+     a los demás no se les ofrece, y se dice quién lo crea. */
+  const esDireccion = !!yo().es_direccion;
+  const puede = esDireccion ? faltan : faltan.filter(n => !deDireccion.includes(n));
   const crear = h("button", { clase: "chico", type: "button" },
-                  t("cat_base_crear").replace("{n}", faltan.length));
+                  t("cat_base_crear").replace("{n}", puede.length));
   crear.addEventListener("click", async () => {
     crear.disabled = true;
     try {
@@ -201,11 +207,16 @@ function tarjetaBase(zona, faltan, recargar) {
       crear.disabled = false;
     }
   });
+  const soloDireccion = esDireccion ? [] : deDireccion.filter(n => faltan.includes(n));
   zona.replaceChildren(h("div", { clase: "tarjeta lisa", style: "margin:0 0 12px" },
     h("b", {}, t("cat_base_titulo")),
     h("p", { clase: "chico", style: "margin:4px 0 6px" }, faltan.join(" · ")),
     h("p", { clase: "gris chico", style: "margin:0 0 10px" }, t("cat_base_pie")),
-    crear));
+    soloDireccion.length
+      ? h("p", { clase: "gris chico", style: "margin:0 0 10px" },
+          t("cat_base_de_direccion").replace("{p}", soloDireccion.join(" · ")))
+      : "",
+    puede.length ? crear : ""));
 }
 
 function tablaDePuestos(puestos, porRol, cat, recargar) {
@@ -312,7 +323,8 @@ function renglonPorRol(p) {
 }
 
 /* Las pantallas del menú como casillas, agrupadas como en la barra. Odoo
-   no sale: su puerta pide administración, y ningún puesto entra así. */
+   sale desde la sección 85: su puerta ya no pide administración por rol
+   sino leer Odoo, que un puesto puede traer. */
 function casillasDePantallas(marcadas, alCambiar) {
   const casillas = new Map();
   const caja = h("div");

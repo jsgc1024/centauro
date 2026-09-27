@@ -476,7 +476,11 @@ def puestos_base_que_faltan(db: Session = Depends(get_db),
     Y los dos que entran con su rol, para que la lista de puestos este
     completa."""
     from app import puestos_base
-    return {"faltan": puestos_base.faltan(db),
+    faltan = puestos_base.faltan(db)
+    return {"faltan": faltan,
+            # Seccion 83: los que reparten accesos los crea solo direccion
+            # general; la pantalla no le ofrece crearlos a nadie mas.
+            "de_direccion": puestos_base.de_direccion(faltan),
             "por_rol": puestos_base.por_rol(db)}
 
 

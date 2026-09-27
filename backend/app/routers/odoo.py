@@ -27,11 +27,20 @@ from sqlalchemy.orm import Session
 from app import models as m
 from app import (odoo, odoo_api, odoo_clientes, odoo_flota, odoo_oficina,
                  odoo_personal, odoo_tarifarios, schemas as s)
-from app.auth import requiere
+from app.auth import puede, requiere
 from app.config import settings
 from app.db import get_db
 
 router = APIRouter(prefix="/odoo", tags=["Odoo"])
+
+# La pantalla de Odoo --el estado, el ensayo y aplicar cada lectura-- pide
+# `odoo.administrar` desde la seccion 85: la traen administracion y el
+# puesto de sistema y calidad, y direccion general la hereda. Antes pedia
+# administracion por rol, y solo la llave maestra y direccion general la
+# abrian. Las rutas por las que Odoo manda --personal, flota,
+# capacitaciones, taller-- se quedan con administracion: no son de la
+# pantalla.
+ADMINISTRA_ODOO = puede("odoo.administrar")
 
 
 @router.post("/personal", summary="Recibir empleados desde Odoo")
@@ -125,7 +134,7 @@ def _renglon(fila, nombres: dict) -> dict | None:
 @router.get("/estado",
             summary="Si Odoo esta conectado y como van sus lecturas")
 def estado(db: Session = Depends(get_db),
-           _=Depends(requiere(m.Rol.ADMIN))):
+           _=Depends(ADMINISTRA_ODOO)):
     """Lo que la pantalla de Odoo dice antes de leer nada: si este
     servidor tiene la llave, si ya se hizo la primera lectura a mano de
     cada cosa --sin ella la de cada hora no arranca-- y las ultimas
@@ -162,7 +171,7 @@ def estado(db: Session = Depends(get_db),
 @router.get("/personal/ensayo",
             summary="Que cambiaria al leer el personal de Odoo, sin guardar")
 def personal_ensayo(db: Session = Depends(get_db),
-                    usuario: m.Usuario = Depends(requiere(m.Rol.ADMIN))):
+                    usuario: m.Usuario = Depends(ADMINISTRA_ODOO)):
     """Lee Odoo y dice que haria: altas, cambios, bajas y pendientes.
     No guarda nada, ni aqui ni en Odoo."""
     return _leer(odoo_personal, db, True, usuario)
@@ -171,7 +180,7 @@ def personal_ensayo(db: Session = Depends(get_db),
 @router.post("/personal/sincronizar",
              summary="Leer el personal de Odoo y guardarlo")
 def personal_sincronizar(db: Session = Depends(get_db),
-                         usuario: m.Usuario = Depends(requiere(m.Rol.ADMIN))):
+                         usuario: m.Usuario = Depends(ADMINISTRA_ODOO)):
     """Lo mismo que el ensayo, guardado. La primera vez se hace a mano,
     despues de ver el ensayo; de ahi en adelante se lee solo cada hora."""
     return _leer(odoo_personal, db, False, usuario)
@@ -182,7 +191,7 @@ def personal_sincronizar(db: Session = Depends(get_db),
 @router.get("/flota/ensayo",
             summary="Que cambiaria al leer la flota y el taller, sin guardar")
 def flota_ensayo(db: Session = Depends(get_db),
-                 usuario: m.Usuario = Depends(requiere(m.Rol.ADMIN))):
+                 usuario: m.Usuario = Depends(ADMINISTRA_ODOO)):
     """Lee Odoo y dice que haria con las unidades de Proteccion
     Ejecutiva y con el taller. No guarda nada, ni aqui ni en Odoo."""
     return _leer(odoo_flota, db, True, usuario)
@@ -191,7 +200,7 @@ def flota_ensayo(db: Session = Depends(get_db),
 @router.post("/flota/sincronizar",
              summary="Leer la flota y el taller de Odoo y guardarlos")
 def flota_sincronizar(db: Session = Depends(get_db),
-                      usuario: m.Usuario = Depends(requiere(m.Rol.ADMIN))):
+                      usuario: m.Usuario = Depends(ADMINISTRA_ODOO)):
     """Lo mismo que el ensayo, guardado. La primera vez se hace a mano;
     de ahi en adelante se lee sola cada hora."""
     return _leer(odoo_flota, db, False, usuario)
@@ -202,7 +211,7 @@ def flota_sincronizar(db: Session = Depends(get_db),
 @router.get("/oficina/ensayo",
             summary="Que cambiaria al leer el personal de oficina, sin guardar")
 def oficina_ensayo(db: Session = Depends(get_db),
-                   usuario: m.Usuario = Depends(requiere(m.Rol.ADMIN))):
+                   usuario: m.Usuario = Depends(ADMINISTRA_ODOO)):
     """Lee Odoo y dice que haria con la gente de oficina: quien llega,
     quien ya estaba, quien no tiene correo de trabajo y quien se fue. No
     guarda nada, ni aqui ni en Odoo, y no da ningun acceso."""
@@ -212,7 +221,7 @@ def oficina_ensayo(db: Session = Depends(get_db),
 @router.post("/oficina/sincronizar",
              summary="Leer el personal de oficina de Odoo y guardarlo")
 def oficina_sincronizar(db: Session = Depends(get_db),
-                        usuario: m.Usuario = Depends(requiere(m.Rol.ADMIN))):
+                        usuario: m.Usuario = Depends(ADMINISTRA_ODOO)):
     """Lo mismo que el ensayo, guardado. Deja a cada quien listo para que
     Recursos Humanos le de su acceso en Accesos; el acceso no lo da la
     lectura. La primera vez se hace a mano; despues se lee sola cada
@@ -225,7 +234,7 @@ def oficina_sincronizar(db: Session = Depends(get_db),
 @router.get("/clientes/ensayo",
             summary="Que cambiaria al leer los clientes de Odoo, sin guardar")
 def clientes_ensayo(db: Session = Depends(get_db),
-                    usuario: m.Usuario = Depends(requiere(m.Rol.ADMIN))):
+                    usuario: m.Usuario = Depends(ADMINISTRA_ODOO)):
     """Lee Odoo y dice que haria con los clientes: cuales llegan, cuales
     ya estaban, a cuales les falta el RFC y cuales se fueron. No guarda
     nada, ni aqui ni en Odoo."""
@@ -235,7 +244,7 @@ def clientes_ensayo(db: Session = Depends(get_db),
 @router.post("/clientes/sincronizar",
              summary="Leer los clientes de Odoo y guardarlos")
 def clientes_sincronizar(db: Session = Depends(get_db),
-                         usuario: m.Usuario = Depends(requiere(m.Rol.ADMIN))):
+                         usuario: m.Usuario = Depends(ADMINISTRA_ODOO)):
     """Lo mismo que el ensayo, guardado. Los que llegan, llegan sin
     tarifario: se les pone en Centauro. La primera vez se hace a mano;
     despues se lee sola cada hora."""
@@ -247,7 +256,7 @@ def clientes_sincronizar(db: Session = Depends(get_db),
 @router.get("/tarifarios/ensayo",
             summary="Que cambiaria al leer los tarifarios de Odoo, sin guardar")
 def tarifarios_ensayo(db: Session = Depends(get_db),
-                      usuario: m.Usuario = Depends(requiere(m.Rol.ADMIN))):
+                      usuario: m.Usuario = Depends(ADMINISTRA_ODOO)):
     """Lee las listas de precios de Odoo y dice que haria: que tarifario
     sale de cada lista, a que clientes les cambia y lo que falta aclarar.
     No guarda nada, ni aqui ni en Odoo."""
@@ -257,7 +266,7 @@ def tarifarios_ensayo(db: Session = Depends(get_db),
 @router.post("/tarifarios/sincronizar",
              summary="Leer los tarifarios de Odoo y guardarlos")
 def tarifarios_sincronizar(db: Session = Depends(get_db),
-                           usuario: m.Usuario = Depends(requiere(m.Rol.ADMIN))):
+                           usuario: m.Usuario = Depends(ADMINISTRA_ODOO)):
     """Lo mismo que el ensayo, guardado. Solo ponen precio los productos
     que finanzas ya confirmo. La primera vez se hace a mano; despues se
     lee sola cada hora."""

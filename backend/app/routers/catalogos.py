@@ -26,7 +26,8 @@ DIAS_SIN_USAR = 30
 # sus placas adentro.
 LEER = auth.requiere(m.Rol.ADMIN, m.Rol.CONSULTOR, m.Rol.CENTRAL,
                      m.Rol.FINANZAS, m.Rol.DIRECTOR_OPERACIONES,
-                     m.Rol.DIRECTOR_GENERAL, m.Rol.RECURSOS_HUMANOS)
+                     m.Rol.DIRECTOR_GENERAL, m.Rol.RECURSOS_HUMANOS,
+                     m.Rol.SISTEMA_CALIDAD)
 
 
 @router.get("/plazas", response_model=list[s.PlazaOut], tags=["Ciudades"],
@@ -168,7 +169,9 @@ def consultores(db: Session = Depends(get_db),
 
 # ------------------------------------------------ la foto de la categoria
 
-ADMINISTRA = auth.requiere(m.Rol.ADMIN)
+# Las fotos de las categorias de vehiculo son de los catalogos que lleva
+# sistema y calidad (seccion 85).
+ADMINISTRA = auth.puede("catalogos.editar")
 
 
 @router.put("/categorias-vehiculo/{categoria_id}/foto",
@@ -219,34 +222,45 @@ def quitar_foto_de_categoria(categoria_id: int, color: str = "",
     db.commit()
 
 
+# Quien escribe en cada uno (seccion 85, decision de Salvador del 27 sep):
+# lo que no decide dinero lo lleva sistema y calidad (`catalogos.editar`);
+# lo que decide dinero --el tabulador de viaticos, las horas de cada
+# modalidad, las tarifas de freelance-- lo fija direccion de operaciones
+# (`catalogos.dinero`); los clientes se ligan desde la pantalla de Odoo
+# (`odoo.administrar`). Los que llegan de Odoo o tienen su pantalla
+# --tarifarios, comisiones, personal, flota-- siguen con administracion.
 _CATALOGOS = [
-    (m.Pais, s.PaisIn, s.PaisOut, "/paises", "Paises"),
+    (m.Pais, s.PaisIn, s.PaisOut, "/paises", "Paises", "catalogos.editar"),
     # Las ciudades crecen con la operacion: no son una lista cerrada.
     (m.Plaza, s.PlazaIn, s.PlazaOut, "/plazas", "Ciudades", "ciudades.alta"),
-    (m.PerfilPersonal, s.PerfilIn, s.PerfilOut, "/perfiles", "Perfiles de personal"),
+    (m.PerfilPersonal, s.PerfilIn, s.PerfilOut, "/perfiles", "Perfiles de personal",
+     "catalogos.editar"),
     (m.CategoriaVehiculo, s.CategoriaVehiculoIn, s.CategoriaVehiculoOut,
-     "/categorias-vehiculo", "Categorias de vehiculo"),
-    (m.Modalidad, s.ModalidadIn, s.ModalidadOut, "/modalidades", "Modalidades"),
-    (m.Cliente, s.ClienteIn, s.ClienteOut, "/clientes", "Clientes"),
+     "/categorias-vehiculo", "Categorias de vehiculo", "catalogos.editar"),
+    (m.Modalidad, s.ModalidadIn, s.ModalidadOut, "/modalidades", "Modalidades",
+     "catalogos.dinero"),
+    (m.Cliente, s.ClienteIn, s.ClienteOut, "/clientes", "Clientes",
+     "odoo.administrar"),
     (m.Tarifario, s.TarifarioIn, s.TarifarioOut, "/tarifarios", "Tarifarios"),
     (m.TarifaRecurso, s.TarifaRecursoIn, s.TarifaRecursoOut,
      "/tarifas-recurso", "Tarifas de recurso"),
     (m.TarifaVehiculo, s.TarifaVehiculoIn, s.TarifaVehiculoOut,
      "/tarifas-vehiculo", "Tarifas de vehiculo"),
     (m.TabuladorViatico, s.TabuladorIn, s.TabuladorOut,
-     "/tabulador-viaticos", "Tabulador de viaticos"),
+     "/tabulador-viaticos", "Tabulador de viaticos", "catalogos.dinero"),
     (m.ComisionPersonal, s.ComisionIn, s.ComisionOut,
      "/comisiones", "Comisiones al personal"),
     (m.Persona, s.PersonaIn, s.PersonaOut, "/personal", "Personal"),
     (m.TarifaFreelance, s.TarifaFreelanceIn, s.TarifaFreelanceOut,
-     "/tarifas-freelance", "Tarifas de freelance"),
+     "/tarifas-freelance", "Tarifas de freelance", "catalogos.dinero"),
     (m.Vehiculo, s.VehiculoIn, s.VehiculoOut, "/vehiculos", "Flota"),
     (m.ParametroCombustible, s.ParametroCombustibleIn, s.ParametroCombustibleOut,
-     "/parametros-combustible", "Parametros de combustible"),
+     "/parametros-combustible", "Parametros de combustible", "catalogos.editar"),
     (m.DiaFestivo, s.DiaFestivoIn, s.DiaFestivoOut,
-     "/dias-festivos", "Dias festivos"),
-    (m.Hospital, s.HospitalIn, s.HospitalOut, "/hospitales", "Hospitales"),
-    (m.Hotel, s.HotelIn, s.HotelOut, "/hoteles", "Hoteles"),
+     "/dias-festivos", "Dias festivos", "catalogos.editar"),
+    (m.Hospital, s.HospitalIn, s.HospitalOut, "/hospitales", "Hospitales",
+     "catalogos.editar"),
+    (m.Hotel, s.HotelIn, s.HotelOut, "/hoteles", "Hoteles", "catalogos.editar"),
 ]
 
 for entrada in _CATALOGOS:

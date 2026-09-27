@@ -184,6 +184,26 @@ PUESTOS: list[dict] = [
         "actividades": {"profesionalismo.ver", "bonos.ver"},
         "puestos_odoo": "Capacitación, Capacitacion",
     },
+    # Seccion 85. Decision de Salvador, 27 sep: la administracion del
+    # sistema va junto con calidad, y es el puesto de Aridiai Morales.
+    # Administra --accesos junto con recursos humanos, las lecturas de
+    # Odoo y los catalogos-- y mide la calidad del servicio; consulta la
+    # operacion y no la opera, no mueve dinero y no clasifica nada. Reparte
+    # accesos, asi que solo lo arma y lo da direccion general (seccion 83),
+    # y no se le sugiere a nadie desde Odoo: se da a mano.
+    {
+        "nombre": "Administración del sistema y calidad",
+        "area": "Sistema y calidad",
+        "rol": R.SISTEMA_CALIDAD,
+        "orden": 85,
+        "descripcion": "Administra el sistema —accesos, Odoo y catálogos— "
+                       "y mide la calidad del servicio. No mueve dinero ni "
+                       "opera.",
+        "pantallas": ["panorama", "servicios", "implantados", "equipo",
+                      "unidades", "bonos", "encuestas", "accesos", "odoo"],
+        "actividades": _de(R.SISTEMA_CALIDAD),
+        "puestos_odoo": None,
+    },
 ]
 
 
@@ -228,6 +248,15 @@ def por_rol(db) -> list[dict]:
     return salida
 
 
+def de_direccion(nombres) -> list[str]:
+    """De esos, los que reparten accesos: esos los crea solo direccion
+    general (seccion 83)."""
+    from app import accesos
+
+    return [p["nombre"] for p in PUESTOS
+            if p["nombre"] in set(nombres) and accesos.REPARTE in p["actividades"]]
+
+
 def faltan(db) -> list[str]:
     """Los de la propuesta que todavia no existen, por nombre."""
     hay = {n for (n,) in db.query(m.CategoriaAcceso.nombre).all()}
@@ -236,13 +265,20 @@ def faltan(db) -> list[str]:
 
 def crear_puestos(db, actor) -> dict:
     """Crea los que falten; los que ya estan no se tocan, aunque alguien
-    los haya cambiado --para eso se cambiaron--."""
+    los haya cambiado --para eso se cambiaron--.
+
+    El que reparte accesos lo crea solo direccion general (seccion 83):
+    si quien aprieta el boton no lo es, se crean los demas y ese se dice
+    en `de_direccion`, en vez de que el boton falle entero."""
     from app import accesos
 
-    creados = []
+    creados, de_direccion = [], []
     por_crear = set(faltan(db))
     for p in PUESTOS:
         if p["nombre"] not in por_crear:
+            continue
+        if accesos.REPARTE in p["actividades"] and not accesos.es_direccion(actor):
+            de_direccion.append(p["nombre"])
             continue
         accesos.crear_categoria(
             db, actor, p["nombre"], sorted(p["actividades"]),
@@ -250,6 +286,7 @@ def crear_puestos(db, actor) -> dict:
             pantallas=p["pantallas"], puestos_odoo=p["puestos_odoo"],
             orden=p["orden"])
         creados.append(p["nombre"])
-    return {"creados": creados,
+    return {"creados": creados, "de_direccion": de_direccion,
             "ya_estaban": [p["nombre"] for p in PUESTOS
-                           if p["nombre"] not in creados]}
+                           if p["nombre"] not in creados
+                           and p["nombre"] not in de_direccion]}

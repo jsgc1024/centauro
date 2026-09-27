@@ -9,7 +9,7 @@ import { aviso, campo, conAyuda, dinero, entrada, estatus, etiqueta, fecha,
          telefono } from "./util.js";
 import { IDIOMAS, idioma, t } from "./idioma.js";
 import { tarjetaCierre } from "./cierre.js";
-import { tiene } from "./menu.js";
+import { soloConsulta, tiene } from "./menu.js";
 import { bloqueTarifario } from "./tarifarios.js";
 
 export async function pantallaServicio(main, servicioId) {
@@ -18,6 +18,12 @@ export async function pantallaServicio(main, servicioId) {
   const cliente = cat.clientes.find(c => c.id === servicio.cliente_id);
   const plaza = cat.plazas.find(p => p.id === servicio.plaza_id);
 
+  /* Quien no opera el servicio lo ve en modo consulta (seccion 85): todo
+     a la vista y sin los botones que le contestarian que no. */
+  if (soloConsulta(sesion.usuario)) {
+    main.classList.add("solo-consulta");
+    main.append(aviso(t("srv_consulta"), "alerta"));
+  }
   main.append(encabezado(servicio, cliente, plaza));
   /* Con que precios se le cobra a este cliente (seccion 77): lo ve quien
      cotiza y cierra, plegado debajo del encabezado. */
@@ -94,7 +100,7 @@ function encabezado(servicio, cliente, plaza) {
              plantilla, los viaticos y el taller. Solo en implantado,
              porque un eventual no tiene contrato mensual. */
           servicio.tipo === "implantado"
-            ? h("button", { clase: "claro chico", type: "button",
+            ? h("button", { clase: "claro chico consulta-si", type: "button",
                 onclick: () => (location.hash = `#/implantado/${servicio.id}`) },
                 t("srv_ver_contrato"))
             : "",
@@ -2253,6 +2259,14 @@ function pintarFaltantes(zona, faltantes) {
 async function bloqueTaskSheet(servicio) {
   const caja = h("div", { clase: "tarjeta" },
     conAyuda("h3", t("srv_task_sheet"), "ay_srv_hoja"));
+  /* Quien consulta no arma la hoja (seccion 85): ve la que ya salio. */
+  if (soloConsulta(sesion.usuario)) {
+    const salio = !!servicio.asignacion_confirmada_en;
+    caja.append(h("p", { clase: "gris chico", style: "margin:0 0 10px" },
+                  t(salio ? "ts_consulta" : "ts_consulta_sin")),
+                ...botonesDeLaHoja(servicio, salio));
+    return caja;
+  }
   let vista;
   try {
     vista = await api.get(`/task-sheets/servicio/${servicio.id}/vista-previa`);
@@ -2320,16 +2334,24 @@ async function bloqueTaskSheet(servicio) {
        el idioma es el que el prefiera, no el de quien opera la consola.
        Ver es otra cosa: eso lo lee el consultor, y sale en el idioma en
        que tenga puesta su consola. */
+    ...botonesDeLaHoja(servicio, liberado));
+
+  return caja;
+}
+
+/* Ver la hoja y bajarla en PDF: lo mismo para quien la arma y para quien
+   la consulta (seccion 85), por eso lleva `consulta-si`. */
+function botonesDeLaHoja(servicio, liberado) {
+  return [
     h("div", { clase: "acciones" },
-      ...IDIOMAS.map(i => h("button", { disabled: !liberado || undefined,
+      ...IDIOMAS.map(i => h("button", { clase: "consulta-si",
+        disabled: !liberado || undefined,
         title: `${t("ts_pdf")} · ${i.nombre}`,
         onclick: () => abrirHoja(servicio, i.codigo, true) },
         `${i.bandera} ${t("ts_pdf")} · ${i.nombre}`))),
     h("div", { clase: "acciones", style: "margin-top:8px" },
-      h("button", { clase: "claro chico", disabled: !liberado || undefined,
-        onclick: () => abrirHoja(servicio, idioma()) }, t("ts_ver"))));
-
-  return caja;
+      h("button", { clase: "claro chico consulta-si", disabled: !liberado || undefined,
+        onclick: () => abrirHoja(servicio, idioma()) }, t("ts_ver")))];
 }
 /* Abre la hoja en otra pestaña y, si se pide, la manda a imprimir: ahi
    se elige "Guardar como PDF". Se hace asi y no con un PDF armado en el
@@ -2827,7 +2849,8 @@ async function pintarViaticos(caja, equipo) {
     p => p.estatus === "asignado").length;
 
   const pedirTodo = !decideElDinero()
-    ? h("span", { clase: "gris chico" }, t("srv_dinero_titular"))
+    ? h("span", { clase: "gris chico" },
+        t(soloConsulta(sesion.usuario) ? "srv_dinero_consulta" : "srv_dinero_titular"))
     : h("button", { clase: "chico", type: "button",
     disabled: porSolicitar ? null : "disabled",
     onclick: async (e) => {
@@ -3231,7 +3254,7 @@ function tarjetaRevision(u, servicio) {
      hacerlo esperar por algo que casi nunca mira. Se piden cuando de
      verdad las va a ver, y se piden una sola vez. */
   const zona = h("div", {});
-  const abrir = h("button", { clase: "claro chico", style: "margin-top:10px" },
+  const abrir = h("button", { clase: "claro chico consulta-si", style: "margin-top:10px" },
     t("srv_ver_fotos"));
 
   abrir.addEventListener("click", async () => {

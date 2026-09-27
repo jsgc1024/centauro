@@ -11,17 +11,21 @@
    como siempre. El servidor sigue cuidando cada puerta: esto decide que
    se pinta, no que se puede. */
 
-export const CONSULTA = ["consultor", "director_operaciones", "director_general", "admin"];
+/* Sistema y calidad (sección 85) consulta la operación sin operarla: entra
+   en las listas de lo que se ve. Con su puesto, manda su puesto; esto es
+   para quien trajera el rol sin puesto. */
+export const CONSULTA = ["consultor", "director_operaciones", "director_general",
+                         "sistema_calidad", "admin"];
 /* La operacion en vivo: los mismos roles que el servidor deja ver
    (panorama.ver). Estaba abierta a todos y Recursos Humanos, sin puesto,
    la abria para leer "No tienes permiso" (seccion 73). */
 export const PANORAMA = ["consultor", "central", "finanzas", "director_operaciones",
-                  "director_general", "admin"];
+                  "director_general", "sistema_calidad", "admin"];
 /* El consultor tambien entra: la central de inteligencia le dice que le
    falta a SUS servicios de manana, y es el que lo tiene que resolver
    antes del corte. Dejarlo fuera era mandarle el recado por telefono. */
 export const MONITOREO = ["central", "consultor", "director_operaciones",
-                   "director_general", "admin"];
+                   "director_general", "sistema_calidad", "admin"];
 /* La bandeja de finanzas la abre finanzas; direccion la mira sin tocar. */
 export const DINERO = ["finanzas", "director_operaciones", "director_general", "admin"];
 /* Nominas (seccion 66): lo de DINERO, y el consultor para ver su propia
@@ -37,22 +41,26 @@ export const CODIGO = ["consultor", "central", "director_general", "admin"];
    administrador por decision de la direccion (ver PROPUESTA_ACCESOS.md):
    quien puede abrir esta pantalla puede darle a alguien un permiso que
    cuesta dinero. */
-export const ADMINISTRA = ["admin", "director_general", "recursos_humanos"];
+export const ADMINISTRA = ["admin", "director_general", "recursos_humanos",
+                           "sistema_calidad"];
 /* El desempeno lo mira casi todo el mundo y lo toca casi nadie: la
    central y el consultor ven el mes de su gente, operaciones firma,
    finanzas deposita. Quien autoriza y quien paga se separan en el
    servidor, no aqui. */
 export const DESEMPENO = ["consultor", "central", "finanzas", "recursos_humanos",
-                   "director_operaciones", "director_general", "admin"];
+                   "director_operaciones", "director_general", "sistema_calidad",
+                   "admin"];
 /* Lo que dijo el cliente. Lo abre quien puede hacer algo con eso: el
    consultor revisa lo suyo, operaciones lo de todos, la central porque
    es quien contesta el telefono cuando el cliente vuelve a llamar. */
 export const VOZ_CLIENTE = ["consultor", "central", "finanzas",
-                     "director_operaciones", "director_general", "admin"];
+                     "director_operaciones", "director_general", "sistema_calidad",
+                     "admin"];
 /* Lo que Centauro lee de Odoo (seccion 64). Lo abre quien puede leerlo y
-   guardarlo: el servidor pide administracion, y direccion general la
-   hereda. Aplicar da de alta gente con acceso a la app. */
-export const LEE_ODOO = ["admin", "director_general"];
+   guardarlo: desde la seccion 85 el servidor pide `odoo.administrar`, que
+   traen administracion y sistema y calidad, y direccion general hereda.
+   Aplicar da de alta gente con acceso a la app. */
+export const LEE_ODOO = ["admin", "director_general", "sistema_calidad"];
 
 /* El menu de arriba, en una sola lista.
 
@@ -68,8 +76,7 @@ export const LEE_ODOO = ["admin", "director_general"];
    `necesita` es la actividad sin la cual la pantalla abre vacia --lo
    primero que pide al servidor--. La usa la pantalla de Puestos para
    avisar cuando alguien marca una pantalla sin lo que la llena, y para
-   no ofrecer la que ningun puesto puede abrir: Odoo pide administracion
-   por rol (seccion 73). */
+   no ofrecer la que ningun puesto puede abrir. */
 export const MENU = [
   /* Las tres de operacion van juntas bajo un solo boton.
      Sueltas eran tres de once entradas, y once no caben en la barra
@@ -143,7 +150,7 @@ export const MENU = [
   /* La primera lectura del personal y de la flota, y lo que falta
      corregir en Odoo. Vivia en la terminal del servidor, que en
      produccion ya no se abre (seccion 64). */
-  { ruta: "/odoo", clave: "odoo", necesita: null, texto: "nav_odoo", grupo: "nav_administrativa",
+  { ruta: "/odoo", clave: "odoo", necesita: "odoo.administrar", texto: "nav_odoo", grupo: "nav_administrativa",
     cuenta: "rec_odoo", quienes: LEE_ODOO },
 ];
 
@@ -168,7 +175,8 @@ export function menuDe(usuario) {
 const PRIMERO = ["central", "servicios", "finanzas", "facturacion", "nomina",
                  "bonos", "equipo", "accesos", "panorama"];
 const POR_ROL = { central: "central", consultor: "servicios",
-                  finanzas: "finanzas", recursos_humanos: "bonos" };
+                  finanzas: "finanzas", recursos_humanos: "bonos",
+                  sistema_calidad: "calidad" };
 
 export function destinoDe(usuario) {
   const suyas = new Set(menuDe(usuario).map(x => x.clave));
@@ -198,4 +206,20 @@ export function leFaltaPara(x, actividades) {
    boton que va a contestar 403. Sale de /auth/yo. */
 export function tiene(usuario, actividad) {
   return !!(usuario && (usuario.actividades || []).includes(actividad));
+}
+
+/* Lo que opera un servicio: armarlo, moverle gente, planearlo, su hoja,
+   su dinero y su cierre. Quien no trae nada de esto y abre un servicio
+   --el puesto de sistema y calidad, seccion 85-- lo ve en modo consulta:
+   completo y sin los botones que le contestarian que no. */
+const OPERA = ["servicios.alta", "asignaciones.mover", "asignaciones.confirmar_a_mano",
+               "operacion.planear", "operacion.corregir", "operacion.atender",
+               "tasksheet.armar", "tasksheet.publicar", "cierre.cotizar",
+               "cierre.cerrar", "relevos.mover", "implantado.armar",
+               "implantado.viaticos", "implantado.tabulador", "viaticos.asignar",
+               "viaticos.cerrar", "unidades.subarrendar", "encuestas.enviar",
+               "contingencia.atender"];
+
+export function soloConsulta(usuario) {
+  return !OPERA.some(a => tiene(usuario, a));
 }

@@ -5364,14 +5364,85 @@ dejar andando sin ayuda y hecho para correos automáticos.
 - Nada sale hasta poner la llave en el `.env`, después de verificar el
   dominio en Postmark.
 
+## 85. El puesto de administración del sistema y calidad
+
+Segundo paso de lo aprobado el 27 de septiembre (sección 83): el puesto
+de Aridiai Morales, con su rol y sus puertas. Catálogos y Calidad son
+los pasos que siguen.
+
+### Lo que cambió
+
+- **Un rol nuevo, «Sistema y calidad»** (`sistema_calidad`). De él salen
+  los avisos que le llegan —ninguno de recursos humanos ni de la
+  operación—; recupera su contraseña por correo, lee los catálogos y
+  su invitación por correo nombra el rol en los tres idiomas.
+- **El puesto «Administración del sistema y calidad»**, con los de la
+  propuesta. Entra con ese rol; su menú: Operación, EP eventual, EP
+  implantado, Personal de Seguridad, Unidades, Desempeño, Clientes,
+  Accesos y Odoo. Da accesos junto con RR. HH., lee y aplica Odoo,
+  mantiene los catálogos que no deciden dinero y consulta la operación.
+  No mueve dinero, no opera y no clasifica. Reparte accesos, así que lo
+  crea y lo da solo Dirección general (sección 83), y no se le sugiere a
+  nadie desde Odoo.
+- **Cinco actividades nuevas**: `odoo.administrar`, `catalogos.editar`,
+  `catalogos.dinero`, `bitacora.ver` y `calidad.ver`. Las dos últimas son
+  de Catálogos y Calidad, que llegan en los pasos que siguen; van desde
+  ahora en el puesto para no tener que volver a tocarlo.
+- **Las puertas que pedían la llave maestra.** La pantalla de Odoo —el
+  estado, el ensayo y aplicar— pide `odoo.administrar`. Los catálogos
+  que no deciden dinero —países, perfiles, categorías de vehículo y sus
+  fotos, combustible, festivos, hospitales, hoteles— piden
+  `catalogos.editar`; los que sí —tabulador de viáticos, modalidades,
+  tarifas de freelance—, `catalogos.dinero`; los clientes, que se ligan
+  desde la pantalla de Odoo, `odoo.administrar`. Tarifarios, comisiones,
+  personal y flota siguen con administración: llegan de Odoo o tienen su
+  pantalla. Dirección general y la llave maestra siguen pudiéndolo todo.
+- **Dirección de operaciones** trae `calidad.ver` y `catalogos.dinero`:
+  de fábrica, y la migración se las agrega al puesto que entra como
+  Dirección de operaciones, si ya existe. Solo agrega.
+- **El modo consulta.** Quien abre un servicio o un implantado sin
+  operarlo —hoy, este puesto— lo ve completo y sin los botones que le
+  contestarían que no; de la hoja del servicio ve la que ya salió.
+- Odoo sale en las casillas de pantallas al armar un puesto.
+- El botón que crea los puestos de la propuesta ya no falla entero
+  cuando falta uno que reparte accesos: crea los demás y dice que ese lo
+  crea Dirección general.
+- En el implantado, «Agregar al catálogo» un hospital de Google solo le
+  sale a quien lleva el catálogo; a los demás se les dice quién lo
+  agrega. Antes le salía al consultor y le contestaba que no.
+
+### Las pruebas
+
+- `tests/test_puesto_sistema_calidad.py`: el puesto y lo que no trae;
+  lo crea y lo da solo Dirección general; su rol y su menú; abre lo de
+  su menú; Odoo ya no es solo de la llave maestra; no mueve dinero ni
+  juzga, en nueve puertas; los festivos son suyos y no de RR. HH.; lo
+  que decide dinero lo fija Dirección de operaciones; la llave maestra y
+  Dirección general siguen pudiéndolo todo.
+- `tests/test_puestos.py`: Odoo ya es pantalla de puesto.
+- **Humo en la vista previa**: una cuenta con el puesto abrió cada
+  pantalla de su menú, cuatro servicios y un implantado. Nada contestó
+  403.
+
+### Para subirlo
+
+- Lleva migración (`f4c1a9d27e63`): el rol nuevo y las dos actividades
+  de Dirección de operaciones.
+- Ya en el servidor, Dirección general: *Accesos → Puestos*, el botón de
+  los puestos que faltan crea el de Aridiai; en *Personas*, se le da el
+  acceso con el puesto «Administración del sistema y calidad». La
+  invitación le llega por correo cuando el correo esté encendido
+  (sección 84); mientras, el enlace lo copia Dirección general desde su
+  renglón.
+
 ## 14. Lo que falta
 
 ### Abierto
 
 - **El puesto de administración del sistema y calidad**: Aridiai
   Morales. Aprobado el 27 de septiembre con sus pantallas. Hechos los
-  candados de Accesos (sección 83); siguen el puesto con sus puertas,
-  Catálogos y Calidad.
+  candados de Accesos (sección 83) y el puesto con sus puertas (sección
+  85); siguen Catálogos y Calidad.
 - **Puestos y Odoo: el paso 4** (secciones 73 a 75). La factura en
   borrador hacia Odoo, probada primero en una copia de Odoo: hace falta
   la copia y una llave que pueda escribir en ella.

@@ -421,7 +421,7 @@ function tablaComparativo(cmp, esMes, moneda, desglose) {
    una pestana nueva perderia el token. Sale en el idioma del cliente;
    el selector sirve para el dia que el cliente lo pide en otro. */
 function botonDesglose(ruta) {
-  const lengua = h("select", { clase: "chico", style: "width:auto" },
+  const lengua = h("select", { clase: "chico consulta-si", style: "width:auto" },
     h("option", { value: "" }, t("cie_idioma_cliente")),
     ...IDIOMAS.map(i => h("option", { value: i.codigo }, i.nombre)));
   const abrir = async () => {
@@ -436,7 +436,7 @@ function botonDesglose(ruta) {
     } catch (err) { w.close(); mensaje(err.message, "grave"); }
   };
   return h("div", { clase: "acciones", style: "margin-top:8px" },
-    h("button", { clase: "claro chico", type: "button", onclick: abrir },
+    h("button", { clase: "claro chico consulta-si", type: "button", onclick: abrir },
       t("cie_ver_desglose")), lengua);
 }
 
@@ -698,7 +698,7 @@ function miniatura(c) {
       disabled: "disabled",
       title: reemplazar(t("fac_his_archivada"), { f: fecha(c.archivada_en) }) });
   }
-  const boton = h("button", { clase: "miniatura", type: "button",
+  const boton = h("button", { clase: "miniatura consulta-si", type: "button",
     title: t("cie_ver_foto"), onclick: () => verFoto(c) });
   if (c.tiene_imagen) {
     api.imagen(`/viaticos/${c.viatico_id}/comprobantes/${c.id}/imagen`)
@@ -1049,7 +1049,7 @@ async function cuerpo(c, op, recargar) {
       const texto = () => (op.verDinero ? t("cie_ocultar_comprobantes")
                                         : t("cie_revisar_comprobantes"));
       nodos.push(h("div", { clase: "acciones", style: "margin-top:10px" },
-        h("button", { clase: "claro chico", type: "button", onclick: (e) => {
+        h("button", { clase: "claro chico consulta-si", type: "button", onclick: (e) => {
           op.verDinero = !op.verDinero;
           detalle.hidden = !op.verDinero;
           e.target.textContent = texto();

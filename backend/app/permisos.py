@@ -62,11 +62,12 @@ ACTIVIDADES: dict[str, dict] = {
     },
     "ciudades.alta": {
         "descripcion": "Agregar una ciudad donde se dan servicios",
-        "roles": {R.CONSULTOR, R.DIRECTOR_OPERACIONES},
+        "roles": {R.CONSULTOR, R.DIRECTOR_OPERACIONES, R.SISTEMA_CALIDAD},
     },
     "solicitantes.ver": {
         "descripcion": "Ver quien puede solicitar servicios de un cliente",
-        "roles": {R.CONSULTOR, R.CENTRAL, R.DIRECTOR_OPERACIONES},
+        "roles": {R.CONSULTOR, R.CENTRAL, R.DIRECTOR_OPERACIONES,
+                  R.SISTEMA_CALIDAD},
     },
     "solicitantes.alta": {
         "descripcion": "Dar de alta a quien solicita servicios",
@@ -78,7 +79,8 @@ ACTIVIDADES: dict[str, dict] = {
     },
     "servicios.ver": {
         "descripcion": "Ver los servicios y su avance",
-        "roles": {R.CONSULTOR, R.CENTRAL, R.DIRECTOR_OPERACIONES},
+        "roles": {R.CONSULTOR, R.CENTRAL, R.DIRECTOR_OPERACIONES,
+                  R.SISTEMA_CALIDAD},
     },
 
     # ------------------------------------------------------- el dinero
@@ -94,7 +96,8 @@ ACTIVIDADES: dict[str, dict] = {
 
     "viaticos.ver": {
         "descripcion": "Ver los viaticos de un servicio y quien trae dinero",
-        "roles": {R.CONSULTOR, R.DIRECTOR_OPERACIONES, R.FINANZAS, R.CENTRAL},
+        "roles": {R.CONSULTOR, R.DIRECTOR_OPERACIONES, R.FINANZAS, R.CENTRAL,
+                  R.SISTEMA_CALIDAD},
     },
     "viaticos.asignar": {
         "descripcion": "Decidir cuanto se le deposita a cada quien y pedirlo "
@@ -124,7 +127,8 @@ ACTIVIDADES: dict[str, dict] = {
 
     "cierre.ver": {
         "descripcion": "Ver cotizaciones, el comparativo y la revision previa",
-        "roles": {R.CONSULTOR, R.DIRECTOR_OPERACIONES, R.FINANZAS, R.CENTRAL},
+        "roles": {R.CONSULTOR, R.DIRECTOR_OPERACIONES, R.FINANZAS, R.CENTRAL,
+                  R.SISTEMA_CALIDAD},
     },
     "cierre.cotizar": {
         "descripcion": "Generar la cotizacion y registrar que el cliente la "
@@ -184,7 +188,8 @@ ACTIVIDADES: dict[str, dict] = {
     "bonos.ver": {
         "descripcion": "Ver incidencias, evaluaciones y el corte del consultor",
         "roles": {R.CONSULTOR, R.DIRECTOR_OPERACIONES, R.FINANZAS, R.CENTRAL,
-                  R.RECURSOS_HUMANOS},
+                  R.RECURSOS_HUMANOS,
+                  R.SISTEMA_CALIDAD},
     },
     "bonos.incidencia": {
         "descripcion": "Clasificar una incidencia y calcular las estrellas del "
@@ -275,7 +280,8 @@ ACTIVIDADES: dict[str, dict] = {
     "operacion.ver": {
         "descripcion": "El tablero de la central: el pulso, los proximos, "
                        "los dias sin cerrar y las alertas del sistema",
-        "roles": {R.CENTRAL, R.CONSULTOR, R.DIRECTOR_OPERACIONES},
+        "roles": {R.CENTRAL, R.CONSULTOR, R.DIRECTOR_OPERACIONES,
+                  R.SISTEMA_CALIDAD},
     },
     "operacion.atender": {
         "descripcion": "Marcar atendida una alerta que levanto el sistema, "
@@ -293,7 +299,8 @@ ACTIVIDADES: dict[str, dict] = {
     "contingencia.ver": {
         "descripcion": "Las alertas que levanta el campo y los relevos de un "
                        "servicio",
-        "roles": {R.CONSULTOR, R.CENTRAL, R.FINANZAS, R.DIRECTOR_OPERACIONES},
+        "roles": {R.CONSULTOR, R.CENTRAL, R.FINANZAS, R.DIRECTOR_OPERACIONES,
+                  R.SISTEMA_CALIDAD},
     },
     "contingencia.atender": {
         "descripcion": "Tomar y cerrar una alerta que levanto el campo",
@@ -305,7 +312,8 @@ ACTIVIDADES: dict[str, dict] = {
         "descripcion": "Ver la flota con su GPS: que unidad reporta, cual "
                        "no liga y que trae cada una hoy",
         "roles": {R.CONSULTOR, R.CENTRAL, R.DIRECTOR_OPERACIONES,
-                  R.DIRECTOR_GENERAL},
+                  R.DIRECTOR_GENERAL,
+                  R.SISTEMA_CALIDAD},
     },
     "relevos.mover": {
         "descripcion": "Relevar personal o unidad, registrar el regreso y "
@@ -320,7 +328,8 @@ ACTIVIDADES: dict[str, dict] = {
 
     "tasksheet.ver": {
         "descripcion": "La hoja publicada, sus versiones y el hospedaje",
-        "roles": {R.CONSULTOR, R.CENTRAL, R.FINANZAS, R.DIRECTOR_OPERACIONES},
+        "roles": {R.CONSULTOR, R.CENTRAL, R.FINANZAS, R.DIRECTOR_OPERACIONES,
+                  R.SISTEMA_CALIDAD},
     },
     "tasksheet.armar": {
         "descripcion": "La agenda del dia, las paradas, el hotel y la senal "
@@ -340,7 +349,8 @@ ACTIVIDADES: dict[str, dict] = {
     "asignaciones.ver": {
         "descripcion": "Quien y que trae el equipo, las recomendaciones y la "
                        "auditoria del servicio",
-        "roles": {R.CENTRAL, R.CONSULTOR, R.DIRECTOR_OPERACIONES},
+        "roles": {R.CENTRAL, R.CONSULTOR, R.DIRECTOR_OPERACIONES,
+                  R.SISTEMA_CALIDAD},
     },
     "asignaciones.confirmar_a_mano": {
         "descripcion": "Registrar que alguien confirmo por telefono, cuando "
@@ -365,7 +375,8 @@ ACTIVIDADES: dict[str, dict] = {
     "implantado.ver": {
         "descripcion": "La cartera de implantados, el calendario, el mes y "
                        "el acuerdo",
-        "roles": {R.CONSULTOR, R.CENTRAL, R.FINANZAS, R.DIRECTOR_OPERACIONES},
+        "roles": {R.CONSULTOR, R.CENTRAL, R.FINANZAS, R.DIRECTOR_OPERACIONES,
+                  R.SISTEMA_CALIDAD},
     },
     "implantado.armar": {
         "descripcion": "Dar de alta, abrir meses, cubrir dias, cambiar gente "
@@ -389,7 +400,8 @@ ACTIVIDADES: dict[str, dict] = {
 
     "encuestas.ver": {
         "descripcion": "Las encuestas del servicio y los resumenes por persona",
-        "roles": {R.CONSULTOR, R.CENTRAL, R.FINANZAS, R.DIRECTOR_OPERACIONES},
+        "roles": {R.CONSULTOR, R.CENTRAL, R.FINANZAS, R.DIRECTOR_OPERACIONES,
+                  R.SISTEMA_CALIDAD},
     },
     "encuestas.enviar": {
         "descripcion": "Mandar las encuestas y recuperar el enlace",
@@ -401,7 +413,8 @@ ACTIVIDADES: dict[str, dict] = {
     },
     "profesionalismo.ver": {
         "descripcion": "El tablero del personal y la ficha de una persona",
-        "roles": {R.CONSULTOR, R.CENTRAL, R.DIRECTOR_OPERACIONES},
+        "roles": {R.CONSULTOR, R.CENTRAL, R.DIRECTOR_OPERACIONES,
+                  R.SISTEMA_CALIDAD},
     },
     "profesionalismo.pesos": {
         "descripcion": "Cuanto pesa cada dimension de la calificacion",
@@ -411,7 +424,52 @@ ACTIVIDADES: dict[str, dict] = {
         "descripcion": "Todo lo que esta pasando ahora, y las marcas que no "
                        "cuadran",
         "roles": {R.CONSULTOR, R.CENTRAL, R.FINANZAS, R.DIRECTOR_OPERACIONES,
-                  R.DIRECTOR_GENERAL},
+                  R.DIRECTOR_GENERAL,
+                  R.SISTEMA_CALIDAD},
+    },
+
+    # --------------------------------- sistema y calidad (seccion 85)
+    #
+    # Decision de Salvador, 27 sep: quien administra el sistema a diario
+    # trae su puesto --Administracion del sistema y calidad-- y no la
+    # llave maestra. Lo que antes pedia administracion por rol se volvio
+    # actividad, con los mismos roles de antes mas el suyo; direccion
+    # general lo sigue alcanzando por lo que hereda.
+    "odoo.administrar": {
+        "descripcion": "Leer Odoo: el ensayo y aplicar el personal, la "
+                       "flota, la oficina, los clientes y los tarifarios, "
+                       "y ligar clientes",
+        "roles": {R.ADMIN, R.SISTEMA_CALIDAD},
+    },
+    "catalogos.editar": {
+        "descripcion": "Mantener los catalogos que no deciden dinero: "
+                       "festivos, hospitales, hoteles, combustible, las "
+                       "unidades por categoria, perfiles y paises",
+        "roles": {R.ADMIN, R.SISTEMA_CALIDAD},
+    },
+    # Lo que en los catalogos decide dinero lo fija direccion de
+    # operaciones, que ya fija lo que se paga por dia (decision del 27
+    # sep). Sistema y calidad lo ve, no lo cambia.
+    "catalogos.dinero": {
+        "descripcion": "Fijar lo que en los catalogos decide dinero: el "
+                       "tabulador de viaticos, las horas de cada modalidad "
+                       "y las tarifas de freelance",
+        "roles": {R.ADMIN, R.DIRECTOR_OPERACIONES},
+    },
+    "bitacora.ver": {
+        "descripcion": "Leer la bitacora de administracion: accesos, "
+                       "puestos, catalogos y tipo de cambio",
+        "roles": {R.ADMIN, R.SISTEMA_CALIDAD},
+    },
+    # Calidad mide, no juzga: ver el mes en cifras no trae clasificar
+    # nada. La ven tambien direccion de operaciones y, por lo que hereda,
+    # direccion general; los consultores no, porque compara a unos con
+    # otros.
+    "calidad.ver": {
+        "descripcion": "El mes en cifras: lo que dijo el cliente, la "
+                       "calle, el cierre, la gente y los datos, y su "
+                       "reporte",
+        "roles": {R.SISTEMA_CALIDAD, R.DIRECTOR_OPERACIONES},
     },
 
     # ------------------------------------------ las que iban por rol
@@ -423,7 +481,8 @@ ACTIVIDADES: dict[str, dict] = {
     # sin puesto no le cambia nada.
     "accesos.dar": {
         "descripcion": "Dar, cerrar y cambiar accesos, y armar los puestos",
-        "roles": {R.ADMIN, R.DIRECTOR_GENERAL, R.RECURSOS_HUMANOS},
+        "roles": {R.ADMIN, R.DIRECTOR_GENERAL, R.RECURSOS_HUMANOS,
+                  R.SISTEMA_CALIDAD},
     },
     "codigo.dictar": {
         "descripcion": "Dictarle por telefono su codigo de acceso al "
@@ -443,12 +502,11 @@ ACTIVIDADES: dict[str, dict] = {
 # nada. Una prueba (test_puestos.py) cuida que las dos listas digan lo
 # mismo.
 #
-# Odoo no esta: su puerta pide administracion por rol, y ningun puesto
-# entra como administracion. Ofrecerla seria otra casilla que no hace
-# nada.
+# Odoo entro en la seccion 85: su puerta ya no pide administracion por
+# rol sino `odoo.administrar`, y un puesto la puede traer.
 PANTALLAS = ("panorama", "servicios", "implantados", "equipo", "unidades",
              "bonos", "encuestas", "central", "codigo", "finanzas",
-             "facturacion", "nomina", "accesos")
+             "facturacion", "nomina", "accesos", "odoo")
 
 
 def roles_de(actividad: str) -> set:

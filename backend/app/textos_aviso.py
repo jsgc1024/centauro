@@ -167,6 +167,7 @@ TEXTOS = {
         "rol_director_general": "Managing director",
         "rol_finanzas": "Finance",
         "rol_recursos_humanos": "Human Resources",
+        "rol_sistema_calidad": "Systems and quality",
         "rol_admin": "Administration",
     },
     "es": {
@@ -283,6 +284,7 @@ TEXTOS = {
         "rol_director_general": "Dirección general",
         "rol_finanzas": "Finanzas",
         "rol_recursos_humanos": "Recursos Humanos",
+        "rol_sistema_calidad": "Sistema y calidad",
         "rol_admin": "Administración",
     },
     "pt": {
@@ -397,6 +399,7 @@ TEXTOS = {
         "rol_director_general": "Direção geral",
         "rol_finanzas": "Finanças",
         "rol_recursos_humanos": "Recursos Humanos",
+        "rol_sistema_calidad": "Sistema e qualidade",
         "rol_admin": "Administração",
     },
 }

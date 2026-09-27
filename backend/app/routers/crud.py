@@ -112,7 +112,8 @@ def crud_router(
     # encontro la prueba de humo de los puestos (seccion 73).
     leer = auth.requiere(m.Rol.ADMIN, m.Rol.CONSULTOR, m.Rol.CENTRAL,
                          m.Rol.FINANZAS, m.Rol.DIRECTOR_OPERACIONES,
-                         m.Rol.DIRECTOR_GENERAL, m.Rol.RECURSOS_HUMANOS)
+                         m.Rol.DIRECTOR_GENERAL, m.Rol.RECURSOS_HUMANOS,
+                         m.Rol.SISTEMA_CALIDAD)
 
     @router.get("", response_model=list[esquema_out], summary=f"Listar {etiqueta}")
     def listar(db: Session = Depends(get_db), limite: int = 5000,

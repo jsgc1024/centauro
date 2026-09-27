@@ -101,10 +101,10 @@ def ponerle(cliente, sesion):
 def test_las_pantallas_del_servidor_son_las_del_menu():
     """El servidor revisa las pantallas que se guardan contra su lista, y
     la consola pinta el menu con la suya. Si se separan, una casilla del
-    formulario no guardaria nada. Odoo no esta en ninguna de las dos para
-    puestos: su puerta pide administracion por rol."""
+    formulario no guardaria nada. Odoo entro en la seccion 85: su puerta
+    ya no pide administracion por rol sino `odoo.administrar`."""
     menu = _necesita_del_menu()
-    assert "odoo" in menu and menu["odoo"] is None
+    assert menu["odoo"] == ["odoo.administrar"]
     para_puestos = {c for c, n in menu.items() if n}
     assert para_puestos == set(permisos.PANTALLAS)
 
@@ -279,11 +279,12 @@ def test_las_pantallas_se_guardan_en_el_orden_del_menu(cliente, sesion):
     assert r.json()["pantallas"] == ["panorama", "nomina"]
 
 
-@pytest.mark.parametrize("pantalla", ["odoo", "inventada"])
+@pytest.mark.parametrize("pantalla", ["inventada"])
 def test_una_pantalla_que_ningun_puesto_abre_no_se_guarda(cliente, sesion,
                                                           pantalla):
-    """Seria una casilla que no hace nada: la que el menu no conoce, y
-    Odoo, cuya puerta pide administracion por rol. Se dice cual."""
+    """Seria una casilla que no hace nada: la que el menu no conoce. Se
+    dice cual. (Odoo estaba aqui hasta la seccion 85, cuando su puerta
+    pedia administracion por rol.)"""
     r = cliente.post("/auth/categorias",
                      json={"nombre": f"Prueba {uuid.uuid4().hex[:8]}",
                            "actividades": ["panorama.ver"],

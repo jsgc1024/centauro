@@ -1337,3 +1337,14 @@ b.folio { white-space: nowrap; }
 .gasolina table.tabla-cierre { background: #fff; margin: 8px 0 6px; }
 .gasolina td.fuerte { font-weight: 700; color: #7a5c07; }
 
+/* Modo consulta (seccion 85): quien abre un servicio sin operarlo --el
+   puesto de sistema y calidad-- lo ve completo y sin los botones que le
+   contestarian que no. Se quedan las pestanas, la ayuda y lo que es para
+   ver, marcado `consulta-si`; lo que se captura se ve y no se mueve. */
+.solo-consulta button:not(.consulta-si):not(.boton-ayuda):not(.pestana) {
+  display: none;
+}
+.solo-consulta input:not(.consulta-si), .solo-consulta select:not(.consulta-si),
+.solo-consulta textarea:not(.consulta-si) {
+  pointer-events: none; background: #f7f8fa;
+}

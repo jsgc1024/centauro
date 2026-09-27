@@ -16,7 +16,7 @@ import { buscadorDeLugar } from "./mapa.js";
 import { bloqueRevisionUnidad } from "./servicio.js";
 import { IDIOMAS, idioma, t } from "./idioma.js";
 import { diferenciaConLaLista, queda, tarjetaCierre } from "./cierre.js";
-import { tiene } from "./menu.js";
+import { soloConsulta, tiene } from "./menu.js";
 
 /* El dinero del mes --cuanto a cada quien y pedirselo a finanzas-- lo
    decide el consultor titular o direccion de operaciones (seccion 73).
@@ -1469,6 +1469,12 @@ export async function pantallaImplantado(main, servicioId) {
     return;
   }
 
+  /* Quien no opera el implantado lo ve en modo consulta (seccion 85). */
+  if (soloConsulta(sesion.usuario)) {
+    main.classList.add("solo-consulta");
+    main.append(aviso(t("imp_consulta"), "alerta"));
+  }
+
   /* ------------------------------------------------------ encabezado */
 
   main.append(
@@ -1479,13 +1485,13 @@ export async function pantallaImplantado(main, servicioId) {
           [ficha.cliente, ficha.ciudad].filter(Boolean).join(" · "))),
       etiqueta(ficha.estatus, TONO_ESTATUS[ficha.estatus] || "")),
     h("div", { clase: "acciones", style: "margin:0 0 16px" },
-      h("button", { clase: "claro chico", type: "button",
+      h("button", { clase: "claro chico consulta-si", type: "button",
         onclick: () => (location.hash = "#/implantados") },
         t("imp_volver")),
       /* El otro lado del mismo servicio: el calendario, quien va cada
          dia y los cambios de recurso. Sin esto hay que salirse a la
          cartera para pasar de una pantalla a la otra. */
-      h("button", { clase: "claro chico", type: "button",
+      h("button", { clase: "claro chico consulta-si", type: "button",
         onclick: () => (location.hash = `#/servicio/${servicioId}`) },
         t("imp_ver_operacion"))));
 
@@ -1810,7 +1816,7 @@ async function pintarMesDelServicio(main, servicioId, ficha) {
         t("imp_mes_visto")),
       ...periodos.map(p => h("button", {
         type: "button",
-        clase: p === actual ? "chico" : "claro chico",
+        clase: `${p === actual ? "chico" : "claro chico"} consulta-si`,
         onclick: () => { actual = p; pintarPestanas(); pintar(); },
       }, p.periodo)));
   }
@@ -2265,12 +2271,12 @@ function bloqueHoja(servicioId, estatus) {
     traba,
     h("div", { clase: "acciones", style: "margin-bottom:10px" }, liberar),
     h("div", { clase: "acciones" },
-      ...IDIOMAS.map(i => h("button", {
+      ...IDIOMAS.map(i => h("button", { clase: "consulta-si",
         title: `${t("ts_pdf")} · ${i.nombre}`,
         onclick: () => abrirHoja(servicioId, i.codigo, true) },
         `${i.bandera} ${t("ts_pdf")} · ${i.nombre}`))),
     h("div", { clase: "acciones", style: "margin-top:8px" },
-      h("button", { clase: "claro chico",
+      h("button", { clase: "claro chico consulta-si",
         onclick: () => abrirHoja(servicioId, idioma()) }, t("ts_ver"))));
 }
 
@@ -2565,7 +2571,8 @@ async function pintarViaticos(caja, servicioId, anio, mes) {
   const porSolicitar = datos.personal.filter(
     p => p.estatus === "asignado").length;
   const pedir = !decideElDinero()
-    ? h("span", { clase: "gris chico" }, t("srv_dinero_titular"))
+    ? h("span", { clase: "gris chico" },
+        t(soloConsulta(sesion.usuario) ? "srv_dinero_consulta" : "srv_dinero_titular"))
     : h("button", { clase: "chico", type: "button",
     onclick: (e) => solicitar(e) },
     porSolicitar ? `${t("imp_vi_solicitar")} (${porSolicitar})`
@@ -2986,8 +2993,14 @@ function bloqueHospitales(servicioId) {
       h("div", {}, h("b", {}, x.nombre)),
       h("div", { clase: "gris chico" },
         `${x.direccion || ""}${x.telefono ? " · " + x.telefono : ""}`),
-      h("div", { clase: "acciones", style: "margin-top:8px" },
-        campo(t("imp_hosp_nivel"), nivel), boton));
+      /* El catalogo de hospitales lo lleva sistema y calidad (seccion 85):
+         a quien no, se le dice quien lo agrega en vez de un boton que le
+         contestaria que no. */
+      tiene(sesion.usuario, "catalogos.editar")
+        ? h("div", { clase: "acciones", style: "margin-top:8px" },
+            campo(t("imp_hosp_nivel"), nivel), boton)
+        : h("div", { clase: "gris chico", style: "margin-top:6px" },
+            t("imp_hosp_lo_agrega")));
   }
 
   cargar();
