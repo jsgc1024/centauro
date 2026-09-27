@@ -10,12 +10,12 @@
 import { api, sesion } from "./api.js";
 import { catalogos } from "./catalogos.js";
 import { aviso, buscador, campo, coincide, conAyuda, dinero, entrada,
-         estatus, etiqueta, h, lista, listaBuscable, mensaje, telefono,
+         estatus, etiqueta, h, lista, listaBuscable, mensaje, tasa, telefono,
          vaciar } from "./util.js";
 import { buscadorDeLugar } from "./mapa.js";
 import { bloqueRevisionUnidad } from "./servicio.js";
 import { IDIOMAS, idioma, t } from "./idioma.js";
-import { CAMPO_DE_TERMINOS, queda, tarjetaCierre } from "./cierre.js";
+import { diferenciaConLaLista, queda, tarjetaCierre } from "./cierre.js";
 import { tiene } from "./menu.js";
 
 /* El dinero del mes --cuanto a cada quien y pedirselo a finanzas-- lo
@@ -1928,9 +1928,12 @@ function bloqueDeLaLista(x) {
     return h("p", { clase: "gris chico", style: "margin:14px 0 0" },
       t("imp_lista_sin_lista"));
   }
-  const m = x.moneda || d.lista.moneda || "MXN";
-  const monto = (v) => (v === null || v === undefined ? t("imp_lista_sin_precio")
-                                                        : dinero(v, m));
+  /* Los precios de la lista, en la moneda de la lista; los del mes, en la
+     del mes (seccion 82). Casi siempre es la misma. */
+  const m = d.lista.moneda || x.moneda || "MXN";
+  const en = (moneda) => (v) => (v === null || v === undefined
+    ? t("imp_lista_sin_precio") : dinero(v, moneda));
+  const monto = en(m);
   const titulo = h("h4", { clase: "grupo", style: "margin:16px 0 6px" },
     `${t(d.lista.de_implantados ? "imp_lista_titulo" : "imp_lista_titulo_siempre")}`
       + ` · ${d.lista.nombre}`,
@@ -2002,8 +2005,7 @@ function bloqueDeLaLista(x) {
   } else if (x.diferencias.length) {
     pie.push(h("div", { clase: "aviso alerta", style: "margin:10px 0 0" },
         h("b", {}, t("imp_lista_difiere")), " ",
-        x.diferencias.map(c => reemplazar(t("imp_lista_dif"), {
-          c: t(CAMPO_DE_TERMINOS[c.campo]), m: monto(c.mes), l: monto(c.lista) }))
+        x.diferencias.map(diferenciaConLaLista(en(x.moneda || m), monto))
           .join(". ") + "."),
       h("p", { clase: "gris chico", style: "margin:6px 0 0" },
         t("imp_lista_nota_acuerdo")));
@@ -2019,6 +2021,17 @@ function bloqueDeLaLista(x) {
     h("p", { clase: "gris chico", style: "margin:0 0 6px" },
       t(d.lista.de_implantados ? "imp_lista_sub" : "imp_lista_sub_siempre")),
     tabla, ...pie);
+}
+
+/* El tipo de cambio de un mes en otra moneda (seccion 82): el que estaba
+   puesto cuando se abrio, fijo; si entonces no habia, el visto bueno lo
+   fija. Con el se calculan la utilidad y la comision del mes. */
+function cambioDelMes(x) {
+  const tc = x.tipo_cambio;
+  const valores = { m: x.moneda, l: x.moneda_local, t: tc ? tasa(tc.tasa) : "" };
+  if (!tc) return aviso(reemplazar(t("imp_tc_sin"), valores), "alerta");
+  return h("p", { clase: "gris chico", style: "margin:10px 0 0" },
+    reemplazar(t(tc.fijo ? "imp_tc_fijo" : "imp_tc_vb"), valores));
 }
 
 /* Los terminos del mes: como se cobra y como se cobran los gastos
@@ -2073,8 +2086,11 @@ function tarjetaTerminos(contratoId, periodo, alGuardar) {
     // La hora extra del mes, aparte y en los dos esquemas (seccion 65).
     const horaExtra = numero(x.precio_hora_extra);
 
+    /* Los precios del mes van en la moneda de su lista (seccion 82): si
+       no es la del pais, cada etiqueta lo dice. */
+    const otra = x.moneda && x.moneda_local && x.moneda !== x.moneda_local;
     const campoDe = (texto, control) => h("div", { clase: "campo" },
-      h("label", {}, texto), control);
+      h("label", {}, otra ? `${texto} (${x.moneda})` : texto), control);
     const deDia = [campoDe(t("cie_personal_por_dia"), dia),
                    campoDe(t("cie_dia_adicional"), adicional),
                    campoDe(t("cie_vehiculo_al_mes"), vehiculo)];
@@ -2143,6 +2159,7 @@ function tarjetaTerminos(contratoId, periodo, alGuardar) {
         h("div", {}, h("label", {}, t("cie_gastos_del_servicio")),
           h("div", { clase: "bloque-radio" }, alzado, netos))),
       rejilla,
+      otra ? cambioDelMes(x) : h("div"),
       bloqueDeLaLista(x) || h("div"),
       h("p", { clase: "gris chico", style: "margin:10px 0 12px" },
         t("cie_terminos_pie")),

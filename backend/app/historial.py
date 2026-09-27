@@ -134,7 +134,8 @@ def _por_cierre(db: Session, cierres: list) -> dict[int, dict]:
 
 def _monedas(db: Session, cierres: list) -> dict[int, str | None]:
     """La del renglon de facturacion: la de la cotizacion vigente en el
-    eventual, la del pais en el mes del implantado."""
+    eventual, la de los precios del mes en el implantado (seccion 82); si
+    no dicen, la del pais."""
     eventuales = {c.servicio_id for c in cierres if not c.contrato_id}
     vigentes = {}
     for trozo in archivo.en_trozos(eventuales):
@@ -149,11 +150,20 @@ def _monedas(db: Session, cierres: list) -> dict[int, str | None]:
     del_pais = {p.id: p.moneda_local for p in db.query(m.Pais)}
     salida = {}
     for c in cierres:
-        moneda = (vigentes.get(c.servicio_id, (None, None))[1]
-                  if not c.contrato_id else None)
+        moneda = (c.contrato.moneda if c.contrato_id
+                  else vigentes.get(c.servicio_id, (None, None))[1])
         moneda = moneda or del_pais.get(c.servicio.pais_id)
         salida[c.id] = moneda.value if moneda else None
     return salida
+
+
+def _locales(db: Session, cierres: list) -> dict[int, str | None]:
+    """La de los viaticos de cada renglon: la del pais, que es en la que
+    se pagan aunque la factura sea en dolares (seccion 82)."""
+    del_pais = {p.id: p.moneda_local for p in db.query(m.Pais)}
+    return {c.id: (del_pais[c.servicio.pais_id].value
+                   if del_pais.get(c.servicio.pais_id) else None)
+            for c in cierres}
 
 
 def _rangos(db: Session, cierres: list) -> dict[int, tuple]:
@@ -186,6 +196,7 @@ def _renglones(db: Session, cierres: list, conexion: bool) -> list[dict]:
         return []
     datos = _por_cierre(db, cierres)
     monedas = _monedas(db, cierres)
+    locales = _locales(db, cierres)
     rangos = _rangos(db, cierres)
     personas = _nombres(db, m.Persona,
                         [c.servicio.consultor_id for c in cierres])
@@ -218,6 +229,7 @@ def _renglones(db: Session, cierres: list, conexion: bool) -> list[dict]:
             "total": str(_d(c.total_ejecutado)),
             "moneda": monedas.get(c.id),
             "viaticos": str(d["comprobado"]),
+            "moneda_viaticos": locales.get(c.id),
             "reloj": ({"desde": r["desde"], "inicio": r["inicio"].isoformat(),
                        "archivo": r["archivo"].isoformat()} if r else None),
             "fotos": {"en_centauro": d["en_centauro"],
@@ -232,7 +244,9 @@ def _resumen(filas: list[dict]) -> dict:
     for f in filas:
         clave = f["moneda"] or ""
         facturado[clave] = facturado.get(clave, CERO) + _d(f["total"])
-        viaticos[clave] = viaticos.get(clave, CERO) + _d(f["viaticos"])
+        # Los viaticos, en la suya: la del pais (seccion 82).
+        local = f.get("moneda_viaticos") or clave
+        viaticos[local] = viaticos.get(local, CERO) + _d(f["viaticos"])
     return {"servicios": len(filas),
             "facturado": {k: str(v) for k, v in facturado.items()},
             "viaticos": {k: str(v) for k, v in viaticos.items()},
@@ -426,7 +440,7 @@ TEXTOS = {
         "servicios": ("Folio", "Cliente", "Tipo", "Del", "Al", "Consultor",
                       "Estatus", "Factura", "Fecha de factura", "Aprobado",
                       "Total", "Moneda", "Viáticos comprobados",
-                      "Fotos en Centauro", "Fotos archivadas",
+                      "Moneda de los viáticos", "Fotos en Centauro", "Fotos archivadas",
                       "Fecha de archivo"),
         "comprobantes": ("Folio", "Cliente", "Persona", "Día", "Concepto",
                          "Tipo", "Monto", "Moneda", "Estado", "Referencia",
@@ -453,7 +467,7 @@ TEXTOS = {
         "servicios": ("Folio", "Client", "Type", "From", "To", "Consultant",
                       "Status", "Invoice", "Invoice date", "Approved",
                       "Total", "Currency", "Expenses proven",
-                      "Photos in Centauro", "Photos archived",
+                      "Expenses currency", "Photos in Centauro", "Photos archived",
                       "Archive date"),
         "comprobantes": ("Folio", "Client", "Person", "Day", "Concept",
                          "Type", "Amount", "Currency", "Status", "Reference",
@@ -480,7 +494,7 @@ TEXTOS = {
         "servicios": ("Folio", "Cliente", "Tipo", "De", "Até", "Consultor",
                       "Status", "Nota fiscal", "Data da nota", "Aprovado",
                       "Total", "Moeda", "Despesas comprovadas",
-                      "Fotos no Centauro", "Fotos arquivadas",
+                      "Moeda das despesas", "Fotos no Centauro", "Fotos arquivadas",
                       "Data do arquivo"),
         "comprobantes": ("Folio", "Cliente", "Pessoa", "Dia", "Conceito",
                          "Tipo", "Valor", "Moeda", "Status", "Referência",
@@ -538,6 +552,7 @@ def excel_del_historial(db: Session, f: dict, idioma: str = "es") -> tuple[bytes
             _dia(x["desde"]), _dia(x["hasta"]), x["consultor"], estatus,
             x["factura"], _dia(x["facturado_en"]), _dia(x["aprobado_en"]),
             x["total"], x["moneda"], x["viaticos"],
+            x["moneda_viaticos"] or x["moneda"],
             x["fotos"]["en_centauro"], x["fotos"]["archivadas"],
             _dia(x["reloj"]["archivo"]) if x["reloj"] else None])
 
@@ -549,7 +564,7 @@ def excel_del_historial(db: Session, f: dict, idioma: str = "es") -> tuple[bytes
             comprobantes.append([
                 x["folio"], x["cliente"], persona, _dia(c["fecha"]),
                 t["concepto"]["devolucion"], t["ticket"]["transferencia"],
-                c["monto"], c["moneda"] or x["moneda"], estado,
+                c["monto"], c["moneda"] or x["moneda_viaticos"], estado,
                 c["referencia"], _momento(c["declarada_en"]),
                 _foto(t, c), _momento(c["archivada_en"])])
         else:
@@ -566,14 +581,16 @@ def excel_del_historial(db: Session, f: dict, idioma: str = "es") -> tuple[bytes
                 concepto = c["descripcion"]
             comprobantes.append([
                 x["folio"], x["cliente"], persona, _dia(c["fecha"]), concepto,
-                t["ticket"].get(c["tipo"], c["tipo"]), c["monto"], x["moneda"],
+                t["ticket"].get(c["tipo"], c["tipo"]), c["monto"],
+                x["moneda_viaticos"] or x["moneda"],
                 estado, None, _momento(c["subido_en"]), _foto(t, c),
                 _momento(c["archivada_en"])])
 
     tipos_s = ("texto", "texto", "texto", "fecha", "fecha", "texto", "texto",
                "texto", "fecha", "fecha", "dinero", "texto", "dinero",
-               "entero", "entero", "fecha")
-    anchos_s = (16, 28, 12, 11, 11, 22, 24, 12, 13, 11, 14, 8, 14, 10, 10, 12)
+               "texto", "entero", "entero", "fecha")
+    anchos_s = (16, 28, 12, 11, 11, 22, 24, 12, 13, 11, 14, 8, 14, 10, 10,
+                10, 12)
     tipos_c = ("texto", "texto", "texto", "fecha", "texto", "texto", "dinero",
                "texto", "texto", "texto", "momento", "texto", "momento")
     anchos_c = (16, 28, 22, 11, 20, 13, 12, 8, 26, 16, 16, 14, 16)

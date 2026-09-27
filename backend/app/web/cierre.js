@@ -19,7 +19,7 @@
    maquina solo mide cuanto ha pasado desde que llego la respuesta. */
 import { api, sesion } from "./api.js";
 import { aviso, conAyuda, dinero, entrada, etiqueta, fecha, h, hora,
-         mensaje, plegable } from "./util.js";
+         mensaje, plegable, tasa } from "./util.js";
 import { IDIOMAS, t } from "./idioma.js";
 import { tiene } from "./menu.js";
 
@@ -163,37 +163,86 @@ function fases(c, tuyo) {
    desglose. */
 function renglonGastos(g, moneda) {
   if (!g || !g.modo) return null;
+  /* Lo comprobado va en la moneda del pais, que es en la que se pago; lo
+     cotizado y lo que se factura, en la de la cotizacion (seccion 82). */
+  const local = g.moneda_local || moneda;
   const cotizado = Number(g.cotizado || 0);
   const nombre = g.modo === "netos" ? t("cie_gastos_netos")
     : cotizado ? t("cie_gastos_alzado") : t("cie_gastos_incluidos");
+  const sinCifra = g.a_facturar === null || g.a_facturar === undefined;
   return h("tr", {},
     h("td", {}, nombre),
     h("td", { clase: "der num" + (cotizado ? "" : " gris") },
       cotizado ? dinero(cotizado, moneda) : "—"),
     h("td", { clase: "der num" },
-      reemplazar(t("cie_comprobados"), { m: dinero(g.comprobado, moneda) })),
-    h("td", { clase: "der num" + (Number(g.a_facturar) ? "" : " gris") },
-      Number(g.a_facturar) || g.modo === "netos"
-        ? dinero(g.a_facturar, moneda) : "—"));
+      reemplazar(t("cie_comprobados"), { m: dinero(g.comprobado, local) })),
+    h("td", { clase: "der num" + (Number(g.a_facturar) || sinCifra ? "" : " gris") },
+      sinCifra ? h("span", { clase: "rojo" }, t("cie_sin_tc_corto"))
+        : Number(g.a_facturar) || g.modo === "netos"
+          ? dinero(g.a_facturar, moneda) : "—"));
 }
 
 function notaGastos(g, moneda) {
   if (!g || !g.modo) return null;
+  const local = g.moneda_local || moneda;
   if (g.modo === "netos") {
     /* Lo de quien fue en un paquete que ya trae los viaticos no se cobra
        aparte (seccion 79): se dice cuanto, para que la cuenta cuadre. */
-    return Number(g.en_paquete || 0)
-      ? `${t("cie_nota_netos")} ${reemplazar(t("cie_nota_en_paquete"),
-                                             { m: dinero(g.en_paquete, moneda) })}`
-      : t("cie_nota_netos");
+    const partes = [t("cie_nota_netos")];
+    if (Number(g.en_paquete || 0)) {
+      partes.push(reemplazar(t("cie_nota_en_paquete"),
+                             { m: dinero(g.en_paquete, local) }));
+    }
+    /* En otra moneda (seccion 82): de cuanto en pesos sale lo que se
+       factura, y a que tipo de cambio. */
+    if (g.sin_tipo_de_cambio) {
+      partes.push(reemplazar(t("cie_nota_sin_tc"), { m: moneda, l: local }));
+    } else if (g.tipo_cambio) {
+      partes.push(reemplazar(t(g.tipo_cambio.fijo ? "cie_nota_cambio_fijo"
+                                                  : "cie_nota_cambio_hoy"), {
+        l: local, m: moneda, t: tasa(g.tipo_cambio.tasa),
+        c: dinero(Number(g.comprobado) - Number(g.en_paquete || 0), local),
+        r: dinero(g.a_facturar, moneda) }));
+    }
+    return partes.join(" ");
   }
   const cotizado = Number(g.cotizado || 0);
   if (!cotizado) return t("cie_nota_incluidos");
-  const dif = cotizado - Number(g.comprobado || 0);
-  if (dif >= 0) {
-    return reemplazar(t("cie_nota_alzado_margen"), { m: dinero(dif, moneda) });
+  /* En otra moneda, el monto fijo se mide contra lo gastado en pesos, al
+     tipo de cambio de la cotizacion. */
+  const otra = local !== moneda;
+  if (otra && (g.cotizado_local === null || g.cotizado_local === undefined)) {
+    return null;
   }
-  return reemplazar(t("cie_nota_alzado_absorbe"), { m: dinero(-dif, moneda) });
+  const fijo = otra ? Number(g.cotizado_local) : cotizado;
+  const dif = fijo - Number(g.comprobado || 0);
+  const m = otra ? local : moneda;
+  if (dif >= 0) {
+    return reemplazar(t("cie_nota_alzado_margen"), { m: dinero(dif, m) });
+  }
+  return reemplazar(t("cie_nota_alzado_absorbe"), { m: dinero(-dif, m) });
+}
+
+/* Arriba de la tabla, si se factura en otra moneda que la del pais
+   (seccion 82): el tipo de cambio con que se miden la utilidad y la
+   comision, que ya no se mueve. */
+function bandaDeLaMoneda(cmp, esMes) {
+  const m = cmp.moneda;
+  const l = cmp.moneda_local;
+  if (!m || !l || m === l) return null;
+  const caja = (texto, tono = "") => h("div", {
+    clase: `aviso ${tono}`.trim(), style: "margin:0 0 10px" }, texto);
+  if (esMes) {
+    const tc = cmp.tipo_cambio;
+    if (!tc) return caja(reemplazar(t("cie_mes_sin_tc"), { m, l }), "alerta");
+    return caja(reemplazar(t(tc.fijo ? "cie_mes_otra_moneda"
+                                     : "cie_mes_otra_moneda_vb"),
+                           { m, l, t: tasa(tc.tasa) }));
+  }
+  const tc = cmp.cotizacion.tipo_cambio;
+  if (!tc) return null;
+  return caja(reemplazar(t("cie_cot_otra_moneda"), {
+    m, l, t: tasa(tc.tasa), f: fecha(cmp.cotizacion.autorizada_en) }));
 }
 
 function comparativoEventual(cmp, moneda) {
@@ -283,6 +332,21 @@ const MODALIDAD = { full_day: "mod_full_day", medio_dia: "mod_medio_dia",
 export function tablaDeRenglones(cmp, moneda) {
   const renglones = ((cmp || {}).ejecutado || {}).renglones || [];
   if (!renglones.length) return null;
+  moneda = cmp.moneda || moneda;
+  /* En otra moneda la tabla termina en la factura: el servicio y los
+     gastos, y de donde salen los gastos (seccion 82). */
+  const g = cmp.gastos || {};
+  const otra = cmp.moneda_local && cmp.moneda !== cmp.moneda_local;
+  const conGastos = otra && Number(g.a_facturar || 0) > 0;
+  const gastos = !conGastos ? null : h("tr", {},
+    h("td", {}, g.modo === "netos" && g.tipo_cambio
+      ? reemplazar(t("cie_r_gastos_cambio"), {
+          c: dinero(Number(g.comprobado) - Number(g.en_paquete || 0),
+                    g.moneda_local),
+          t: tasa(g.tipo_cambio.tasa) })
+      : t("cie_gastos_alzado")),
+    h("td"), h("td"),
+    h("td", { clase: "der num" }, dinero(g.a_facturar, moneda)));
   const nombre = (r) => {
     if (r.tipo === "horas_extra") {
       return reemplazar(t("cie_r_horas_extra"), { r: r.descripcion || "—" });
@@ -314,9 +378,13 @@ export function tablaDeRenglones(cmp, moneda) {
             h("td", { clase: "der num" }, r.precio !== null && r.precio !== undefined
               ? dinero(r.precio, moneda) : "—"),
             h("td", { clase: "der num" }, dinero(r.importe, moneda)))),
+          gastos || "",
           h("tr", { clase: "total" },
-            h("td", {}, h("b", {}, t("cie_r_servicio"))), h("td"), h("td"),
-            h("td", { clase: "der num" }, h("b", {}, dinero(total, moneda)))))),
+            h("td", {}, h("b", {}, conGastos
+              ? reemplazar(t("cie_r_factura_en"), { m: moneda })
+              : t("cie_r_servicio"))), h("td"), h("td"),
+            h("td", { clase: "der num" }, h("b", {}, dinero(
+              conGastos ? cmp.a_facturar.total : total, moneda)))))),
       conPaquete
         ? h("p", { clase: "gris chico", style: "margin:4px 0 0" }, t("cie_nota_paquete"))
         : null),
@@ -325,6 +393,10 @@ export function tablaDeRenglones(cmp, moneda) {
 
 function tablaComparativo(cmp, esMes, moneda, desglose) {
   if (!cmp) return null;
+  /* Cada comparativo en la moneda en que se factura (seccion 82): la de
+     la cotizacion, o la de los precios del mes. La de la tarjeta es la
+     del pais. */
+  moneda = cmp.moneda || moneda;
   const d = esMes ? comparativoMes(cmp, moneda) : comparativoEventual(cmp, moneda);
   const cuerpo = h("tbody", {}, ...d.renglones.filter(Boolean),
     h("tr", { clase: "total" },
@@ -333,6 +405,7 @@ function tablaComparativo(cmp, esMes, moneda, desglose) {
   return h("div", {},
     h("h4", { clase: "seccion" },
       esMes ? t("cie_contratado_contra") : t("cie_cotizado_contra")),
+    bandaDeLaMoneda(cmp, esMes) || "",
     h("table", { clase: "tabla-cierre" },
       h("thead", {}, h("tr", {}, h("th"),
         ...d.encabezados.map(x => h("th", { clase: "der" }, x)))),
@@ -392,6 +465,7 @@ const ASUNTOS = {
   "Viaticos sin cerrar": "cie_desv_viatico_no_cerrado",
   "Precios distintos a los de la lista": "cie_pl_asunto",
   "La lista no tiene todo": "cie_li_asunto",
+  "Sin tipo de cambio": "cie_asu_sin_tc",
 };
 
 /* Como se llama cada precio de los terminos del implantado, para decir
@@ -401,7 +475,18 @@ export const CAMPO_DE_TERMINOS = {
   precio_dia_adicional: "cie_dia_adicional",
   precio_mes_vehiculo: "cie_vehiculo_al_mes",
   precio_hora_extra: "cie_hora_extra",
+  moneda: "imp_lista_moneda",
 };
+
+/* Una diferencia de los terminos del mes con la lista, dicha: «personal
+   por dia: $2,900 (la lista, USD 100)». La moneda se dice como moneda
+   (seccion 82), no como monto. */
+export function diferenciaConLaLista(montoMes, montoLista = montoMes) {
+  return (x) => x.campo === "moneda"
+    ? reemplazar(t("imp_lista_dif_moneda"), { m: x.mes, l: x.lista })
+    : reemplazar(t("imp_lista_dif"), { c: t(CAMPO_DE_TERMINOS[x.campo]),
+                                       m: montoMes(x.mes), l: montoLista(x.lista) });
+}
 
 /* Lo que ya dice el reloj de la tarjeta no se repite abajo. */
 const DEL_RELOJ = ["Comprobacion en curso", "Plazo vencido", "Plazo por vencer",
@@ -462,7 +547,7 @@ function antesDeMandarlo(revision, fallo, viaticos) {
       aviso(reemplazar(t("srv_antes_de_enviar"), { n: corregir.length }), "alerta"),
       h("ul", { style: "margin:6px 0;padding-left:18px" },
         ...corregir.map(o => {
-          const dicho = dineroSinCerrar(o, personas);
+          const dicho = o.clave ? paraRevisar(o) : dineroSinCerrar(o, personas);
           return h("li", { style: "margin-bottom:6px" },
             h("b", {}, asunto(o.asunto)), ": ",
             h("span", { clase: "chico" }, dicho.mensaje || ""),
@@ -530,15 +615,23 @@ function paraRevisar(o) {
                accion: t("cie_gps_gasolina_accion") };
     /* Los precios del mes contra la lista de implantados (seccion 80). */
     case "precios_lista": {
-      const monto = (v) => (v === null || v === undefined
-        ? t("imp_lista_sin_precio") : dinero(v, d.moneda || undefined));
+      const en = (moneda) => (v) => (v === null || v === undefined
+        ? t("imp_lista_sin_precio") : dinero(v, moneda || undefined));
       return { asunto: t("cie_pl_asunto"),
                mensaje: reemplazar(t("cie_pl_mensaje"), { l: d.lista }) + " "
-                 + (d.diferencias || []).map(x => reemplazar(t("imp_lista_dif"), {
-                     c: t(CAMPO_DE_TERMINOS[x.campo]), m: monto(x.mes),
-                     l: monto(x.lista) })).join("; ") + ".",
+                 + (d.diferencias || []).map(diferenciaConLaLista(
+                     en(d.moneda_mes || d.moneda), en(d.moneda))).join("; ") + ".",
                accion: t("cie_pl_accion") };
     }
+    /* Sin tipo de cambio no hay cifra en la otra moneda (seccion 82). */
+    case "sin_tipo_de_cambio":
+      return { asunto: t("cie_asu_sin_tc"),
+               mensaje: reemplazar(t(d.motivo === "no_se_convierte"
+                                     ? "cie_sin_tc_no_se_convierte"
+                                     : "cie_sin_tc_mensaje"),
+                                   { m: d.moneda, l: d.local }),
+               accion: t(d.motivo === "no_se_convierte" ? "cie_sin_tc_accion_nada"
+                                                        : "cie_sin_tc_accion") };
     case "lista_incompleta":
       return { asunto: t("cie_li_asunto"),
                mensaje: reemplazar(t("cie_li_mensaje"), d),
@@ -1032,10 +1125,13 @@ async function cuerpo(c, op, recargar) {
           { m: dinero(comision.monto, comision.moneda || m),
             p: comision.porcentaje ?? "",
             q: c.consultor ? c.consultor.nombre : "" });
+  /* La factura sale en la moneda de la cotizacion --o de los precios del
+     mes--, no en la del pais (seccion 82). */
+  const mf = c.moneda || m;
   const factura = c.factura
     ? reemplazar(t("cie_factura_odoo"), { f: c.factura,
-                                          m: dinero(c.total, m) })
-    : reemplazar(t("cie_factura_no_sale"), { m: dinero(c.total, m) });
+                                          m: dinero(c.total, mf) })
+    : reemplazar(t("cie_factura_no_sale"), { m: dinero(c.total, mf) });
 
   if (c.fase === "en_facturacion") {
     nodos.push(

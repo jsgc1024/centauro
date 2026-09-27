@@ -13,10 +13,12 @@
        tambien la factura del paso 4.
      * El tarifario de un cliente, como quedo de su lista de Odoo. Lo ve
        finanzas en su pestana y quien cotiza dentro del servicio. Aqui no
-       se edita: se corrige en Odoo. */
+       se edita: se corrige en Odoo.
+     * El tipo de cambio (seccion 82): cuantos pesos vale un dolar. Lo pone
+       finanzas a mano y aplica para todo hasta que alguien lo cambie. */
 import { api } from "./api.js";
 import { aviso, conAyuda, dinero, etiqueta, fecha, h, hora, listaBuscable,
-         mensaje, plegable } from "./util.js";
+         mensaje, plegable, tasa } from "./util.js";
 import { t } from "./idioma.js";
 
 const MODALIDADES = ["full_day", "medio_dia", "transfer"];
@@ -159,6 +161,19 @@ function cabeza(tar, nombre) {
     ...sellos);
 }
 
+/* Una lista en dolares: el tipo de cambio con que salen los precios que
+   toma de una lista en pesos --los grises-- (seccion 82). */
+function lineaDelCambio(tar, d) {
+  const tc = d.tipo_cambio;
+  if (!tc || tar.moneda !== tc.moneda) return null;
+  if (!tc.vigente) {
+    return aviso(reemplazar(t("tar_tc_sin"), { l: tc.moneda_local }), "alerta");
+  }
+  return h("div", { clase: "aviso", style: "margin:8px 0 0" },
+    reemplazar(t("tar_tc_linea"), { m: tc.moneda, t: tasa(tc.vigente.tasa),
+                                    l: tc.moneda_local }));
+}
+
 function nota(tar, d) {
   if (!tar.de_odoo) {
     return t(d.cliente.de_odoo && d.desde_odoo ? "tar_nota_retenido" : "tar_nota_centauro");
@@ -182,6 +197,7 @@ export function vistaTarifario(d, conNombre = true) {
   const partes = [
     cabeza(d.tarifario, nombre),
     h("p", { clase: "gris chico", style: "margin:0" }, nota(d.tarifario, d)),
+    lineaDelCambio(d.tarifario, d) || "",
     tablas(d.tarifario, d.perfiles, d.categorias, d.puede_editar),
     h("p", { clase: "gris chico", style: "margin:12px 0 0" }, t("tar_leyenda")),
   ];
@@ -191,6 +207,7 @@ export function vistaTarifario(d, conNombre = true) {
     partes.push(h("div", { style: "margin-top:14px" }, plegable(
       reemplazar(t("tar_implantados"), { l: d.implantados.nombre }),
       h("div", { style: "margin-top:8px" }, cabeza(d.implantados, null),
+        lineaDelCambio(d.implantados, d) || "",
         tablas(d.implantados, d.perfiles, d.categorias, d.puede_editar)),
       () => `${d.implantados.nombre} · ${d.implantados.moneda}`, {}, false)));
   }
@@ -215,14 +232,83 @@ export async function bloqueTarifario(clienteId) {
 
 /* ------------------------------------------------------------ la pestana */
 
-/* La pestana de Facturacion: la tabla de productos y el tarifario de
-   cualquier cliente. */
+/* La pestana de Facturacion: el tipo de cambio, la tabla de productos y
+   el tarifario de cualquier cliente. */
 export function pestanaTarifarios() {
+  const cambio = h("div");
   const productos = h("div", {}, h("p", { clase: "gris" }, t("tar_cargando")));
   const cliente = h("div");
+  tarjetaTipoDeCambio(cambio);
   tarjetaProductos(productos);
   tarjetaCliente(cliente);
-  return h("div", {}, productos, cliente);
+  return h("div", {}, cambio, productos, cliente);
+}
+
+/* ------------------------------------------------------------ el tipo de cambio */
+
+/* Cuantos pesos vale un dolar (seccion 82). Decision de Salvador, 26 de
+   septiembre: lo pone finanzas a mano y el que se pone aplica para todo
+   hasta que alguien lo cambie. Lo que ya quedo fijo --una cotizacion
+   autorizada, un visto bueno, un mes abierto-- se queda con el suyo. */
+async function tarjetaTipoDeCambio(caja) {
+  let d;
+  try {
+    d = await api.get("/tarifarios/tipo-de-cambio");
+  } catch (err) {
+    return caja.replaceChildren(aviso(err.message, "grave"));
+  }
+  const pintar = (x) => {
+    const v = x.vigente;
+    const nodos = [conAyuda("h3", t("tar_tc_titulo"), "ay_tar_tipo_cambio")];
+    if (x.puede_editar) {
+      const campo = h("input", { type: "number", min: "0.0001", step: "0.0001",
+                                 clase: "num", style: "width:130px",
+                                 value: v ? tasa(v.tasa) : "" });
+      const guardar = h("button", { type: "button" }, t("tar_tc_guardar"));
+      guardar.addEventListener("click", async () => {
+        const nueva = Number(campo.value);
+        if (!(nueva > 0)) return mensaje(t("tar_tc_falta"), "alerta");
+        /* Un salto grande casi siempre es un dedo que se resbalo: se
+           pregunta antes, porque desde ese momento aplica para todo. */
+        const antes = v ? Number(v.tasa) : null;
+        if (antes && Math.abs(nueva - antes) / antes > 0.1 && !confirm(
+            reemplazar(t("tar_tc_salto"), { a: tasa(v.tasa),
+                                            b: tasa(campo.value) }))) return;
+        guardar.disabled = true;
+        try {
+          pintar(await api.put("/tarifarios/tipo-de-cambio", { tasa: campo.value }));
+          mensaje(t("tar_tc_guardado"));
+        } catch (err) {
+          mensaje(err.message, "grave");
+          guardar.disabled = false;
+        }
+      });
+      nodos.push(h("div", { clase: "acciones",
+                            style: "align-items:center;margin:0 0 8px" },
+        h("span", { style: "font-weight:650" }, `1 ${x.moneda} =`), campo,
+        h("span", { style: "font-weight:650" }, x.moneda_local), guardar));
+    } else if (v) {
+      nodos.push(h("p", { style: "font-size:15px;font-weight:650;margin:0 0 6px" },
+        `1 ${x.moneda} = ${tasa(v.tasa)} ${x.moneda_local}`));
+    }
+    if (v) {
+      nodos.push(h("p", { clase: "gris chico", style: "margin:0 0 6px" },
+        reemplazar(t(v.por ? "tar_tc_puesto" : "tar_tc_puesto_sin"),
+                   { q: v.por || "", c: cuando(v.puesto_en) })));
+    } else {
+      nodos.push(aviso(t("tar_tc_sin_ninguno"), "alerta"));
+    }
+    nodos.push(h("p", { clase: "gris chico", style: "margin:0" }, t("tar_tc_pie")));
+    if (x.anteriores.length) {
+      nodos.push(h("p", { clase: "gris chico", style: "margin:6px 0 0" },
+        reemplazar(t("tar_tc_antes"), { l: x.anteriores.map(a =>
+          reemplazar(t(a.por ? "tar_tc_anterior" : "tar_tc_anterior_sin"),
+                     { t: tasa(a.tasa), f: fecha(a.puesto_en), q: a.por || "" }))
+          .join(" · ") })));
+    }
+    caja.replaceChildren(h("div", { clase: "tarjeta" }, ...nodos));
+  };
+  pintar(d);
 }
 
 async function tarjetaCliente(caja) {

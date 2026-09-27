@@ -682,7 +682,7 @@ AYUDA_POR_PANTALLA = {
     # Los tarifarios de Odoo (seccion 77), en Facturacion: la tabla de
     # productos y el tarifario del cliente. Dentro del servicio va el mismo
     # tarifario, plegado y sin "?": ahi lo explica su propia leyenda.
-    "tarifarios.js": 2,
+    "tarifarios.js": 3,
 
     # --- las que no, y por que
     "api.js": 0,        # habla con el servidor; no pinta nada

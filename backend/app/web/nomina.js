@@ -19,7 +19,7 @@
    hacia adelante como diferencia, con su motivo escrito. */
 import { api, sesion } from "./api.js";
 import { aviso, campo, conAyuda, dinero, entrada, etiqueta, fecha, h, hora,
-         lista, mensaje } from "./util.js";
+         lista, mensaje, tasa } from "./util.js";
 import { catalogos } from "./catalogos.js";
 import { t } from "./idioma.js";
 import { tiene } from "./menu.js";
@@ -876,6 +876,20 @@ const CLASE_DIFERENCIA = {
   saldo_en_contra: "nom_cd_saldo_en_contra",
 };
 
+/* Lo facturado en otra moneda y como se paso a pesos (seccion 82): la
+   comision se paga en pesos, al tipo de cambio de la cotizacion --o del
+   mes del implantado--, y no se mueve con el dolar. */
+function otraMoneda(r, m) {
+  const o = r.en_otra_moneda;
+  if (!o) return null;
+  return h("tr", { clase: "sub" }, h("td", { colspan: "7", clase: "gris chico",
+                                             style: "padding-left:24px" },
+    reemplazar(t("nom_otra_moneda"), {
+      f: dinero(o.facturado, o.moneda), s: dinero(o.servicio, o.moneda),
+      t: tasa(o.tipo_cambio), sl: dinero(o.servicio_local, m),
+      g: dinero(o.gastos_local, m) })));
+}
+
 function detalleConsultor(f, recargar) {
   const m = f.moneda;
   const caja = h("div", { style: "border:1px solid var(--linea);border-radius:8px;padding:4px 16px 14px;margin-top:14px;background:#fcfcfd" });
@@ -891,16 +905,24 @@ function detalleConsultor(f, recargar) {
         h("th", { clase: "der" }, t("nom_cs_base")),
         h("th", { clase: "der" }, "%"),
         h("th", { clase: "der" }, t("nom_cs_comision")))),
-      h("tbody", {}, ...f.se_paga.map(r => h("tr", {},
-        h("td", {}, servicioDe(r)), h("td", {}, diaMes(r.validado)),
+      h("tbody", {}, ...f.se_paga.flatMap(r => [h("tr", {},
+        h("td", {}, servicioDe(r),
+          r.en_otra_moneda ? h("span", { clase: "etiqueta info",
+                                         style: "margin-left:6px" },
+                               r.en_otra_moneda.moneda) : ""),
+        h("td", {}, diaMes(r.validado)),
         h("td", { clase: "der num" }, dinero(r.facturacion, m)),
         h("td", { clase: "der num" }, dinero(r.viaticos, m)),
         h("td", { clase: "der num" }, dinero(r.base, m)),
         h("td", { clase: "der" }, `${r.porcentaje} %`),
-        h("td", { clase: "der num" }, dinero(r.monto, m)))),
+        h("td", { clase: "der num" }, dinero(r.monto, m))),
+        otraMoneda(r, m)].filter(Boolean)),
         h("tr", { clase: "total" },
           h("td", { colspan: "6" }, h("b", {}, t("nom_cc_se_paga"))),
-          h("td", { clase: "der num" }, h("b", {}, dinero(f.totales.se_paga, m)))))));
+          h("td", { clase: "der num" }, h("b", {}, dinero(f.totales.se_paga, m)))))),
+      f.se_paga.some(r => r.en_otra_moneda)
+        ? h("p", { clase: "gris chico", style: "margin:6px 0 0" }, t("nom_otra_moneda_pie"))
+        : "");
   }
 
   if (f.no_se_paga.length) {

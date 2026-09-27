@@ -77,6 +77,33 @@ class Moneda(str, enum.Enum):
     VES = "VES"
 
 
+# ---------------------------------------------------------------- tipo de cambio
+
+class TipoCambio(Base):
+    """Cuantas unidades de la moneda local vale una de otra moneda
+    (seccion 82): pesos por dolar.
+
+    Decision de Salvador, 26 de septiembre: lo pone finanzas a mano, en
+    Tarifarios, y el ultimo que se puso es el que vale para todo hasta que
+    alguien ponga otro. Los anteriores se quedan: son la historia de quien
+    lo cambio y cuando. Nadie convierte fuera de `app/tipo_cambio.py`.
+    """
+    __tablename__ = "tipo_cambio"
+    __table_args__ = (Index("ix_tipo_cambio_par", "moneda", "moneda_local",
+                            "puesto_en"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    moneda: Mapped[Moneda] = mapped_column(Enum(Moneda))          # USD
+    moneda_local: Mapped[Moneda] = mapped_column(Enum(Moneda))    # MXN
+    tasa: Mapped[float] = mapped_column(Numeric(10, 4))
+    puesto_en: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+                                                server_default=func.now())
+    puesto_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+
+    puesto_por: Mapped["Persona | None"] = relationship()
+
+
 # ---------------------------------------------------------------- pais / plaza
 
 class Pais(Base):
@@ -2389,7 +2416,13 @@ class Cotizacion(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
     tarifario_id: Mapped[int] = mapped_column(ForeignKey("tarifario.id"))
     moneda: Mapped[Moneda] = mapped_column(Enum(Moneda))
+    # Si la cotizacion es en otra moneda que la del pais --Amazon, en
+    # dolares--, el tipo de cambio que estaba puesto cuando se autorizo
+    # (seccion 82): cuantos pesos vale un dolar, y de cuando es. Queda
+    # fijo: con el se calculan la utilidad y la comision del consultor, y
+    # no se mueven aunque despues se cambie. Sin el, no se autoriza.
     tipo_cambio: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
+    tipo_cambio_fecha: Mapped[date | None] = mapped_column(Date, nullable=True)
     # Como se le cobran los gastos al cliente (seccion 59). Verdadero: a
     # precio alzado, el monto fijo de sus renglones de gastos (tipo
     # VIATICOS), se gaste mas o menos; sin renglones, van dentro del
@@ -2528,6 +2561,16 @@ class Cierre(Base):
     # sepa cual sustituye.
     factura_anulada: Mapped[str | None] = mapped_column(String(60),
                                                         nullable=True)
+    # Los gastos netos de un cliente que paga en otra moneda (seccion
+    # 82): se comprueban en pesos y se le facturan en dolares, al tipo de
+    # cambio que esta puesto en el visto bueno, que es cuando sale la
+    # factura. Se guarda aqui para que la factura, el desglose y la
+    # bandeja digan lo mismo aunque despues se cambie. Vacio mientras no
+    # hay visto bueno.
+    tipo_cambio_gastos: Mapped[float | None] = mapped_column(
+        Numeric(10, 4), nullable=True)
+    tipo_cambio_gastos_fecha: Mapped[date | None] = mapped_column(
+        Date, nullable=True)
 
     # El primer visto bueno. Si finanzas lo regresa, el consultor tiene
     # 24 horas desde el regreso (`devuelto_en`) para volver a mandarlo,
@@ -2653,6 +2696,15 @@ class ContratoImplantado(Base):
     # que sigue a uno puesto a mano los copia, como siempre.
     precios_de_la_lista: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false"))
+    # En que moneda son los precios del mes (seccion 82): la de su lista
+    # de implantados --dolares, si el cliente los paga en dolares--.
+    # Vacio, la del pais. Y si es otra, el tipo de cambio que estaba
+    # puesto cuando se abrio el mes --como el de una cotizacion
+    # autorizada--: con el se calculan la utilidad y la comision del mes.
+    moneda: Mapped[Moneda | None] = mapped_column(Enum(Moneda), nullable=True)
+    tipo_cambio: Mapped[float | None] = mapped_column(Numeric(10, 4),
+                                                      nullable=True)
+    tipo_cambio_fecha: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     generado: Mapped[bool] = mapped_column(Boolean, default=False)
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -3123,6 +3175,18 @@ class ComisionConsultor(Base):
     porcentaje: Mapped[float] = mapped_column(Numeric(5, 2))
     monto: Mapped[float] = mapped_column(Numeric(12, 2))
     moneda: Mapped[Moneda] = mapped_column(Enum(Moneda))
+    # Lo facturado al cliente en su moneda, cuando no es la del pais
+    # (seccion 82): la comision se paga en pesos y aqui queda de donde
+    # salieron --cuantos dolares en total y cuantos del servicio, y a que
+    # tipo de cambio: el de la cotizacion, o el del mes del implantado--.
+    moneda_facturada: Mapped[Moneda | None] = mapped_column(Enum(Moneda),
+                                                            nullable=True)
+    facturado_en_moneda: Mapped[float | None] = mapped_column(Numeric(12, 2),
+                                                              nullable=True)
+    servicio_en_moneda: Mapped[float | None] = mapped_column(Numeric(12, 2),
+                                                             nullable=True)
+    tipo_cambio: Mapped[float | None] = mapped_column(Numeric(10, 4),
+                                                      nullable=True)
     estatus: Mapped[EstatusComision] = mapped_column(
         Enum(EstatusComision), default=EstatusComision.GENERADA)
     motivo: Mapped[str | None] = mapped_column(String(400), nullable=True)

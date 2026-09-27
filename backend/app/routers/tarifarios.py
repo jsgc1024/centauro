@@ -12,17 +12,20 @@ Dos cosas viven aqui:
     que precio tiene cada rol, cada unidad y cada paquete, y de donde
     salio cada uno. Lo ven quienes cotizan y quienes facturan; aqui no se
     edita: se corrige en Odoo.
+  * **El tipo de cambio** (seccion 82): cuantos pesos vale un dolar. Lo
+    pone finanzas a mano y aplica para todo hasta que se cambie.
 
 La lectura de las listas --ensayo, aplicar y cada hora-- vive en la
 pantalla de Odoo (`/odoo/tarifarios`), como las otras cuatro.
 """
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app import accesos, auth, odoo_api, odoo_tarifarios
+from app import accesos, auth, odoo_api, odoo_tarifarios, tipo_cambio
 from app import cotizacion as cot
 from app import models as m
 from app import odoo_tarifarios_reglas as reglas
@@ -279,6 +282,9 @@ def del_cliente(cliente_id: int, db: Session = Depends(get_db),
             "desde_odoo": odoo_tarifarios.en_marcha(db),
             # Si quien mira puede decir si los paquetes traen los viaticos.
             "puede_editar": auth.puede_el_usuario(db, usuario, "cierre.facturar"),
+            # El que esta puesto, para la lista que no es de la moneda del
+            # pais (seccion 82): de ahi salen sus precios en gris.
+            "tipo_cambio": tipo_cambio.estado(db),
             **_catalogo(db)}
 
 
@@ -317,3 +323,43 @@ def listar(db: Session = Depends(get_db), _=Depends(VER)):
                        "de_odoo": t.odoo_id is not None, "general": t.general,
                        "clientes": len([c for c in t.clientes if c.activo])})
     return salida
+
+
+# ================================================================ tipo de cambio
+
+class TipoCambioIn(BaseModel):
+    """Cuantos pesos vale un dolar."""
+    tasa: Decimal = Field(gt=0, le=9999)
+
+
+def _del_tipo_de_cambio(db: Session, usuario: m.Usuario) -> dict:
+    return {**tipo_cambio.estado(db),
+            "puede_editar": auth.puede_el_usuario(db, usuario, "cierre.facturar")}
+
+
+@router.get("/tipo-de-cambio", summary="El tipo de cambio que esta puesto")
+def ver_tipo_de_cambio(db: Session = Depends(get_db),
+                       usuario: m.Usuario = Depends(VER)):
+    """El que esta puesto, quien lo puso y cuando, y los anteriores
+    (seccion 82)."""
+    return _del_tipo_de_cambio(db, usuario)
+
+
+@router.put("/tipo-de-cambio", summary="Poner el tipo de cambio")
+def poner_tipo_de_cambio(datos: TipoCambioIn, db: Session = Depends(get_db),
+                         usuario: m.Usuario = Depends(PRODUCTOS)):
+    """Finanzas pone cuantos pesos vale un dolar (decision de Salvador, 26
+    de septiembre). Desde ese momento es el que vale para todo lo que se
+    fije --la cotizacion que se autorice, el visto bueno con gastos
+    netos, el mes del implantado que se abra, los precios en dolares que
+    salen de una lista en pesos--; lo que ya se fijo se queda con el
+    suyo. Se queda asi hasta que alguien lo cambie."""
+    antes = tipo_cambio.vigente(db, m.Moneda.USD, m.Moneda.MXN)
+    nuevo = tipo_cambio.poner(db, datos.tasa, usuario)
+    if antes is None or antes["tasa"] != nuevo["tasa"]:
+        accesos.anotar(db, usuario, "tipo de cambio", "tipo_cambio", None,
+                       antes=tipo_cambio.texto(antes["tasa"]) if antes else None,
+                       despues=tipo_cambio.texto(nuevo["tasa"]),
+                       detalle="pesos por dolar")
+    db.commit()
+    return _del_tipo_de_cambio(db, usuario)

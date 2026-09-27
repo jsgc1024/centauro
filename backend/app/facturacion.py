@@ -25,6 +25,7 @@ envio que falla en silencio deja un servicio aprobado que nadie cobra.
 """
 import logging
 from datetime import datetime
+from decimal import Decimal
 
 import httpx
 from fastapi import HTTPException
@@ -32,6 +33,7 @@ from sqlalchemy.orm import Session
 
 from app import cierre as motor_cierre
 from app import models as m
+from app import tipo_cambio
 from app.config import settings
 
 registro = logging.getLogger("centauro.facturacion")
@@ -98,13 +100,23 @@ def armar(db: Session, cierre: m.Cierre) -> dict:
     # alzado sin monto quiere decir que van dentro del precio: no se suma.
     viaticos = motor_cierre.viaticos_por_cobrar(db, servicio.id, cotizacion)
     if viaticos:
-        conceptos.append({"fecha": None, "equipo": None,
-                          "tipo": "viaticos",
-                          "descripcion": ("Gastos a precio alzado"
-                                          if cotizacion.viaticos_incluidos
-                                          else "Gastos comprobados"),
-                          "cantidad": 1, "importe": str(viaticos),
-                          "horas_extra": 0})
+        gastos = {"fecha": None, "equipo": None, "tipo": "viaticos",
+                  "descripcion": ("Gastos a precio alzado"
+                                  if cotizacion.viaticos_incluidos
+                                  else "Gastos comprobados"),
+                  "cantidad": 1, "importe": str(viaticos), "horas_extra": 0}
+        # Netos en otra moneda (seccion 82): se pagaron en pesos y se
+        # facturan en dolares al tipo de cambio del visto bueno. El renglon
+        # lleva de donde sale la cifra, igual que el desglose del cliente.
+        otra, tc = motor_cierre.tipo_de_cambio_de_gastos(db, servicio,
+                                                         cotizacion)
+        if otra and tc and not cotizacion.viaticos_incluidos:
+            gastos["origen"] = origen_de_gastos(
+                motor_cierre.viaticos_por_cobrar_local(db, servicio.id,
+                                                       cotizacion),
+                tipo_cambio.local_del_pais(db, servicio.pais_id), tc["tasa"])
+            gastos["descripcion"] += descripcion_del_origen(gastos["origen"])
+        conceptos.append(gastos)
 
     return {
         # El folio de Centauro viaja siempre: es la llave para conciliar
@@ -124,6 +136,21 @@ def armar(db: Session, cierre: m.Cierre) -> dict:
         # anulo: esta la sustituye (seccion 59).
         "sustituye_a": cierre.factura_anulada,
     }
+
+
+def origen_de_gastos(monto_local, local, tasa) -> dict:
+    """De donde sale el renglon de gastos de una factura en otra moneda:
+    lo que se pago, en que moneda, y el tipo de cambio con que se paso
+    (seccion 82). Lo mismo para el eventual y para el mes del implantado."""
+    return {"moneda": local.value if hasattr(local, "value") else local,
+            "importe": str(monto_local),
+            "tipo_cambio": tipo_cambio.texto(tasa)}
+
+
+def descripcion_del_origen(origen: dict) -> str:
+    """" (MXN 2,204.00 al tipo de cambio 17.50)", para el renglon."""
+    return (f" ({origen['moneda']} {Decimal(origen['importe']):,.2f} al tipo "
+            f"de cambio {tipo_cambio.corto(origen['tipo_cambio'])})")
 
 
 def enviar(db: Session, cierre: m.Cierre) -> dict:
@@ -226,15 +253,9 @@ def renglon(db: Session, c: m.Cierre) -> dict:
     consultor = (db.get(m.Persona, servicio.consultor_id)
                  if servicio.consultor_id else None)
     # En que moneda se factura: la de la cotizacion en el eventual, la
-    # del pais en el mes del implantado.
-    moneda = None
-    if not c.contrato_id:
-        from app import cotizacion as cot
-        vigente = cot.vigente(db, servicio.id)
-        moneda = vigente.moneda.value if vigente else None
-    if moneda is None:
-        pais = db.get(m.Pais, servicio.pais_id)
-        moneda = pais.moneda_local.value if pais else None
+    # de los precios del mes en el implantado (seccion 82).
+    moneda = motor_cierre.moneda_del_cierre(db, c)
+    moneda = moneda.value if moneda else None
     return {
         "cierre_id": c.id,
         "estatus": c.estatus.value,
@@ -268,11 +289,23 @@ def renglon(db: Session, c: m.Cierre) -> dict:
 
 # ---------------------------------------------------------------- la bandeja
 
+def montos(db: Session, cierres: list) -> list[dict]:
+    """Lo que suman esos cierres, uno por moneda: [{moneda, monto}], los
+    dolares al final. Cada cierre se suma en la moneda en que se factura
+    (seccion 82)."""
+    suma: dict[str, Decimal] = {}
+    for c in cierres:
+        moneda = motor_cierre.moneda_del_cierre(db, c)
+        clave = moneda.value if moneda else ""
+        suma[clave] = suma.get(clave, Decimal("0")) + Decimal(
+            str(c.total_ejecutado or 0))
+    return [{"moneda": k or None, "monto": v}
+            for k, v in sorted(suma.items(), key=lambda x: (x[0] == "USD", x[0]))]
+
+
 def gastos_del_cierre(db: Session, cierre: m.Cierre) -> dict:
     """Cuanto de lo que se factura son gastos, y con que trato: la
     bandeja dice "con $1,750 de gastos" y si van a precio alzado."""
-    from decimal import Decimal
-
     if cierre.contrato_id:
         from app import cierre_mes
         contrato = cierre.contrato
@@ -283,14 +316,25 @@ def gastos_del_cierre(db: Session, cierre: m.Cierre) -> dict:
             monto = sum((Decimal(str(v.monto_comprobado or 0))
                          for v in cierre_mes.viaticos_del_mes(db, contrato)),
                         Decimal("0"))
+            # Un mes en dolares factura sus gastos en dolares (seccion 82).
+            moneda, local = cierre_mes.moneda_del_mes(db, contrato)
+            if moneda != local:
+                tc = motor_cierre.tipo_de_cambio_del_cierre(db, cierre,
+                                                            moneda, local)
+                monto = tipo_cambio.de_local(monto, tc["tasa"]) if tc else None
     else:
         from app import cotizacion as cot
         vigente = cot.vigente(db, cierre.servicio_id)
         if not vigente:
             return {"modo": None, "monto": Decimal("0")}
         alzado = vigente.viaticos_incluidos
-        monto = motor_cierre.viaticos_por_cobrar(db, cierre.servicio_id,
-                                                 vigente)
+        try:
+            monto = motor_cierre.viaticos_por_cobrar(db, cierre.servicio_id,
+                                                     vigente)
+        except HTTPException:
+            # Sin tipo de cambio no hay cifra (seccion 82): la bandeja lo
+            # dice, no se cae.
+            monto = None
     return {"modo": motor_cierre.modo_de_gastos(alzado), "monto": monto}
 
 
@@ -301,7 +345,6 @@ def bandeja(db: Session, ahora: datetime | None = None) -> dict:
     facturar: lo que Odoo no acepto, con lo que dijo. Cerrados: lo que
     finanzas ya cerro este mes. Un implantado va por mes.
     """
-    from decimal import Decimal
     from app import comisiones
 
     ahora = ahora or datetime.now()
@@ -328,9 +371,14 @@ def bandeja(db: Session, ahora: datetime | None = None) -> dict:
         "momento": ahora.isoformat(),
         "odoo_configurado": hay_conexion(),
         "resumen": {
-            "por_aprobar": {"cuantos": len(aprobar), "monto": suma(aprobar)},
+            # `monto` se queda para quien ya lo leia; `montos` es el que
+            # vale: uno por moneda (seccion 82). Sumar dolares con pesos
+            # daba un numero sin moneda.
+            "por_aprobar": {"cuantos": len(aprobar), "monto": suma(aprobar),
+                            "montos": montos(db, aprobar)},
             "por_facturar": {"cuantos": len(facturar)},
             "cerrados": {"cuantos": len(cerrados), "monto": suma(cerrados),
+                         "montos": montos(db, cerrados),
                          "mes": ahora.month, "anio": ahora.year},
         },
         "por_aprobar": [con_gastos(c) for c in aprobar],

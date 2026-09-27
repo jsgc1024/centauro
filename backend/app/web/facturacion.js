@@ -23,7 +23,8 @@ import { api, sesion } from "./api.js";
 import { tablaDeRenglones } from "./cierre.js";
 import { pestanaHistorial } from "./historial.js";
 import { pestanaTarifarios } from "./tarifarios.js";
-import { aviso, conAyuda, dinero, etiqueta, h, hora, mensaje } from "./util.js";
+import { aviso, conAyuda, dinero, etiqueta, h, hora, mensaje,
+         montos, tasa } from "./util.js";
 import { t } from "./idioma.js";
 import { CONSULTA, abre, tiene } from "./menu.js";
 
@@ -84,10 +85,13 @@ function aFacturar(f, moneda) {
   moneda = f.moneda || moneda;
   const g = f.gastos || {};
   const monto = Number(g.monto || 0);
-  const pie = g.modo === "netos"
-    ? reemplazar(t("fac_con_gastos_netos"), { m: dinero(monto, moneda) })
-    : monto ? reemplazar(t("fac_con_gastos_alzado"), { m: dinero(monto, moneda) })
-            : t("fac_gastos_incluidos");
+  /* Sin tipo de cambio los gastos en pesos no tienen cifra en dolares
+     (seccion 82): se dice, no se inventa. */
+  const pie = g.monto === null && g.modo ? t("fac_gastos_sin_tc")
+    : g.modo === "netos"
+      ? reemplazar(t("fac_con_gastos_netos"), { m: dinero(monto, moneda) })
+      : monto ? reemplazar(t("fac_con_gastos_alzado"), { m: dinero(monto, moneda) })
+              : t("fac_gastos_incluidos");
   return h("td", { clase: "num der" }, h("b", {}, dinero(f.total, moneda)),
     g.modo ? h("div", { clase: "chico gris" }, pie) : "");
 }
@@ -120,7 +124,11 @@ export async function pantallaFacturacion(main) {
     const corte = h("div", { clase: "corte" },
       h("div", {}, h("div", { clase: "chico gris" }, t("fac_por_aprobar")),
         h("div", { clase: "cifra" }, r.por_aprobar.cuantos),
-        h("div", { clase: "chico gris num" }, dinero(r.por_aprobar.monto, moneda))),
+        /* Uno por moneda (seccion 82): los dolares no se suman a los
+           pesos. */
+        h("div", { clase: "chico gris num" },
+          r.por_aprobar.montos ? montos(r.por_aprobar.montos, moneda)
+                               : dinero(r.por_aprobar.monto, moneda))),
       h("div", {}, h("div", { clase: "chico gris" }, t("fac_por_facturar")),
         h("div", { clase: "cifra", style: r.por_facturar.cuantos
                      ? "color:var(--alerta)" : "" }, r.por_facturar.cuantos),
@@ -129,7 +137,9 @@ export async function pantallaFacturacion(main) {
       h("div", {}, h("div", { clase: "chico gris" },
           reemplazar(t("fac_cerrados_en"), { m: t(MESES[r.cerrados.mes - 1]) })),
         h("div", { clase: "cifra" }, r.cerrados.cuantos),
-        h("div", { clase: "chico gris num" }, dinero(r.cerrados.monto, moneda))));
+        h("div", { clase: "chico gris num" },
+          r.cerrados.montos ? montos(r.cerrados.montos, moneda)
+                            : dinero(r.cerrados.monto, moneda))));
 
     const boton = (clave, texto) => h("button", {
       clase: `pestana ${pestana === clave ? "activa" : ""}`.trim(), type: "button",
@@ -243,6 +253,7 @@ async function detalle(f, moneda, repintar) {
 }
 
 function tablaDetalle(cmp, esMes, moneda) {
+  moneda = cmp.moneda || moneda;
   const g = cmp.gastos || {};
   const renglon = (a, b, c) => h("tr", {}, h("td", {}, a),
     h("td", { clase: "der num" }, b), h("td", {}, c));
@@ -262,10 +273,18 @@ function tablaDetalle(cmp, esMes, moneda) {
                                { n: cmp.ejecutado.horas_extra }) : ""]
                  .filter(Boolean).join(" · "))];
   if (g.modo) {
+    /* Netos en otra moneda (seccion 82): de cuanto en pesos sale y a que
+       tipo de cambio. */
+    const cambio = g.modo === "netos" && g.tipo_cambio
+      ? reemplazar(t("fac_gastos_cambio"), {
+          c: dinero(Number(g.comprobado) - Number(g.en_paquete || 0),
+                    g.moneda_local), t: tasa(g.tipo_cambio.tasa) })
+      : "";
     filas.push(renglon(t("fac_gastos"), dinero(g.a_facturar, moneda),
-      g.modo === "netos" ? t("fac_gastos_netos_pie")
-        : Number(g.cotizado) ? t("fac_gastos_alzado_pie")
-        : t("fac_gastos_incluidos")));
+      g.sin_tipo_de_cambio ? t("fac_gastos_sin_tc")
+        : [g.modo === "netos" ? t("fac_gastos_netos_pie")
+            : Number(g.cotizado) ? t("fac_gastos_alzado_pie")
+            : t("fac_gastos_incluidos"), cambio].filter(Boolean).join(" · ")));
   }
   return h("table", { clase: "tabla-cierre", style: "background:#fff" },
     h("tbody", {}, ...filas));

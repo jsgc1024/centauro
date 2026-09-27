@@ -21,6 +21,7 @@ from app import models as m
 from app import comisiones as motor_comisiones
 from app import reloj
 from app import revisor
+from app import tipo_cambio
 from app.db import get_db
 
 router = APIRouter(tags=["Cierre y cotizacion"])
@@ -235,8 +236,16 @@ def desglose_del_servicio(servicio_id: int, idioma: str | None = None,
     plaza = db.get(m.Plaza, servicio.plaza_id)
     vigente = cotmotor.vigente(db, servicio_id)
     pais = db.get(m.Pais, servicio.pais_id)
-    moneda = (vigente.moneda.value if vigente else
-              pais.moneda_local.value if pais else None)
+    # Los gastos van en la moneda del pais, que es en la que se pagaron.
+    # Si la factura es en otra --Amazon, en dolares--, el desglose dice
+    # tambien el tipo de cambio y el total en esa moneda (seccion 82).
+    # Antes salian los pesos rotulados en dolares.
+    moneda = pais.moneda_local.value if pais else None
+    cambio = None
+    if vigente and not vigente.viaticos_incluidos:
+        otra, tc = motor.tipo_de_cambio_de_gastos(db, servicio, vigente)
+        if otra and tc:
+            cambio = {"moneda": vigente.moneda.value, "tasa": tc["tasa"]}
     # Lo que va dentro de un paquete no se le cobra aparte, y no va en su
     # desglose (seccion 79).
     viaticos = (motor.viaticos_facturables(db, servicio, vigente.tarifario_id)
@@ -245,7 +254,8 @@ def desglose_del_servicio(servicio_id: int, idioma: str | None = None,
         servicio, plaza.nombre if plaza else None, viaticos,
         idioma if idioma in desglose.TEXTOS
         else desglose.idioma_del_cliente(db, servicio),
-        moneda, factura=cierre.factura_odoo if cierre else None))
+        moneda, factura=cierre.factura_odoo if cierre else None,
+        cambio=cambio))
 
 
 @router.get("/cierre/relojes",
@@ -396,6 +406,13 @@ def enviar_finanzas(cierre_id: int, db: Session = Depends(get_db),
             "observaciones": [],
         })
 
+    # Los gastos netos de una cotizacion en otra moneda se facturan al
+    # tipo de cambio que esta puesto en el visto bueno (seccion 82): la
+    # factura sale ahora. Se fija antes de la revision, para que lo que
+    # ella compara sea lo que va a decir la factura. Si la revision no
+    # deja mandarlo, no se guarda nada.
+    motor.fijar_gastos_del_visto_bueno(db, cierre)
+
     revision = revisor.revisar(db, cierre.servicio_id, momento)
 
     if not revision["listo_para_finanzas"]:
@@ -421,10 +438,14 @@ def enviar_finanzas(cierre_id: int, db: Session = Depends(get_db),
                                    m.EstatusServicio.SIN_VISTO_BUENO):
         cierre.servicio.estatus = m.EstatusServicio.EN_FACTURACION
 
+    moneda = comparativo.get("moneda") or ""
     auditoria.registrar(db, usuario, cierre.servicio, "enviar a finanzas",
-                        f"cotizado {cierre.total_cotizado}, "
-                        f"ejecutado {cierre.total_ejecutado}, "
-                        f"{'en plazo' if cierre.dentro_de_plazo else 'FUERA DE PLAZO'}")
+                        f"cotizado {cierre.total_cotizado} {moneda}, "
+                        f"ejecutado {cierre.total_ejecutado} {moneda}, "
+                        f"{'en plazo' if cierre.dentro_de_plazo else 'FUERA DE PLAZO'}"
+                        + (f", gastos al tipo de cambio "
+                           f"{tipo_cambio.texto(cierre.tipo_cambio_gastos)}"
+                           if cierre.tipo_cambio_gastos else ""))
 
     # Revision del periodo completo contra lo que ya se le pago al personal.
     # En eventuales atrapa el dia mal cargado que se corrigio despues del

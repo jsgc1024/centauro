@@ -19,6 +19,7 @@ from sqlalchemy import text
 
 from app import models as m
 from app import odoo_api, odoo_tarifarios
+from app import tipo_cambio
 from app import odoo_tarifarios_reglas as reglas
 
 LISTA0, PRODUCTO0, SOCIO0, REGLA0 = 9_300_000, 9_310_000, 9_320_000, 9_330_000
@@ -500,7 +501,7 @@ def test_el_ensayo_no_guarda_nada(db, clientes):
     odoo = OdooFalso(mundo())
     confirmar_todo(db, odoo)
     informe = leer(db, odoo, ensayo=True)
-    assert len(informe["cambian"]) == 2
+    assert len(informe["cambian"]) == 3
     db.expire_all()
     assert db.query(m.Tarifario).filter(m.Tarifario.odoo_id.isnot(None)).count() == 0
     assert db.get(m.Cliente, clientes[1]).tarifario.odoo_id is None
@@ -508,6 +509,10 @@ def test_el_ensayo_no_guarda_nada(db, clientes):
 
 
 def test_los_precios_como_los_calcula_odoo(db, clientes):
+    # El tipo de cambio que puso finanzas (seccion 82): Odoo dice 20 pesos
+    # por dolar (0.05), y manda el de Centauro.
+    tipo_cambio.poner(db, "17.50", None)
+    db.commit()
     odoo = OdooFalso(mundo())
     confirmar_todo(db, odoo)
     informe = leer(db, odoo)
@@ -535,10 +540,15 @@ def test_los_precios_como_los_calcula_odoo(db, clientes):
         (f"{conductor}+cuv", tr): (D(2500), P)}
     assert hasbro.precio_hora_extra == D(330)
 
-    # La de dolares no se lee: los costos van en pesos y la utilidad y la
-    # comision restarian dolares menos pesos (BITACORA, «La moneda»).
-    db.expire_all()
-    assert db.query(m.Tarifario).filter_by(odoo_id=LISTA0 + 3).first() is None
+    # La de dolares se lee en dolares (seccion 82): lo que pacta Amazon, tal
+    # cual; lo demas sale de la general, en pesos, pasado a dolares con el
+    # tipo de cambio de Centauro --17.50, no el de Odoo--: 4000 / 17.50.
+    amazon = tarifario(db, 3)
+    assert amazon.moneda == m.Moneda.USD and amazon.resto_de == "General México"
+    assert precios(amazon) == {
+        (conductor, fd): (D(180), P), (agente, fd): (D("228.57"), V),
+        ("suv_blindada", fd): (D("502.86"), G), ("minivan", md): (D("108.57"), V),
+        (f"{conductor}+cuv", tr): (D(160), V)}
 
     # La de los implantados de HASBRO toma lo demas de la de HASBRO.
     implantados = tarifario(db, 4)
@@ -559,13 +569,8 @@ def test_los_precios_como_los_calcula_odoo(db, clientes):
     assert hasbro_c.tarifario_implantado_id == implantados.id
     assert general_c.tarifario_id == general.id
     assert general_c.tarifario_implantado_id is None
-    # Amazon se queda con el que tenia, y se dice por que.
-    assert amazon_c.tarifario.nombre == "General Mexico"
-    assert amazon_c.tarifario.odoo_id is None
-    assert {"tipo": "otra_moneda", "lista": "Amazon USD", "moneda": "USD",
-            "pais": "Mexico"} in informe["pendientes"]
-    assert {"tipo": "lista_otra_moneda", "cliente": f"{PREFIJO} Amazon",
-            "lista": "Amazon USD", "moneda": "USD"} in informe["pendientes"]
+    # Y a Amazon, la suya en dolares.
+    assert amazon_c.tarifario_id == amazon.id
 
     assert {c["antes"] for c in informe["cambian"]} == {"General Mexico"}
     assert informe["implantados"] == 1
@@ -576,10 +581,45 @@ def test_los_precios_como_los_calcula_odoo(db, clientes):
     por_cliente = {l["nombre"]: l for l in informe["por_cliente"]}
     assert por_cliente["HASBRO Implantados"]["implantados"] == [f"{PREFIJO} HASBRO"]
     assert {p["tipo"] for p in informe["pendientes"]} == {
-        "lista_sin_cliente", "producto_sin_confirmar", "otra_moneda",
-        "lista_otra_moneda"}
-    assert informe["leidas"] == 6 and len(informe["cambian"]) == 2
+        "lista_sin_cliente", "producto_sin_confirmar"}
+    assert informe["leidas"] == 6 and len(informe["cambian"]) == 3
     assert odoo_tarifarios.en_marcha(db)
+
+
+def test_sin_tipo_de_cambio_lo_que_viene_en_pesos_no_tiene_precio(db, clientes):
+    """Mientras finanzas no pone el tipo de cambio, lo que la lista de
+    Amazon toma de la general --en pesos-- no se pasa a dolares con el de
+    Odoo: sale sin precio y se dice. Lo que Amazon pacta en dolares si."""
+    odoo = OdooFalso(mundo())
+    confirmar_todo(db, odoo)
+    informe = leer(db, odoo)
+    amazon = tarifario(db, 3)
+    assert precios(amazon) == {
+        ("conductor_seguridad", "full_day"): (D(180), reglas.PROPIO)}
+    assert any(p.get("lista") == "Amazon USD" and "tipo de cambio" in str(p)
+               for p in informe["pendientes"]), informe["pendientes"]
+    # Las de pesos no se enteran.
+    assert precios(tarifario(db, 1))[("agente_seguridad", "full_day")][0] == D(4000)
+
+
+def test_la_lista_en_una_moneda_que_no_se_sabe_convertir_no_se_lee(db, clientes):
+    """Dolares en Brasil: Centauro convierte dolares a pesos mexicanos, no
+    a reales (seccion 82). La utilidad y la comision restarian una moneda
+    de otra: la lista se dice y el cliente se queda con la suya."""
+    brasil = db.query(m.Pais).filter_by(codigo="BR").one()
+    amazon = db.get(m.Cliente, clientes[3])
+    amazon.pais_id = brasil.id
+    db.commit()
+    odoo = OdooFalso(mundo())
+    confirmar_todo(db, odoo)
+    informe = leer(db, odoo)
+    assert {"tipo": "otra_moneda", "lista": "Amazon USD", "moneda": "USD",
+            "pais": brasil.nombre} in informe["pendientes"]
+    assert {"tipo": "lista_otra_moneda", "cliente": f"{PREFIJO} Amazon",
+            "lista": "Amazon USD", "moneda": "USD"} in informe["pendientes"]
+    db.expire_all()
+    assert db.query(m.Tarifario).filter_by(odoo_id=LISTA0 + 3).first() is None
+    assert db.get(m.Cliente, clientes[3]).tarifario.nombre == "General Mexico"
 
 
 def test_la_de_cada_hora_espera_a_la_primera_y_trae_lo_nuevo(db, clientes):
@@ -622,6 +662,9 @@ def test_dos_productos_para_lo_mismo_manda_el_preferido(db, cliente, sesion,
     """El gemelo en ingles: si la lista no pacta ninguno de los dos,
     chocan en cada lista que los hereda. Se dice una vez, con esas listas,
     y finanzas escoge cual manda."""
+    # Con tipo de cambio, para que la de dolares tambien tenga al agente.
+    tipo_cambio.poner(db, "17.50", None)
+    db.commit()
     tablas = mundo()
     tablas["product.template"].append({
         "id": PRODUCTO0 + 11, "name": "Bilingual Security Agent",
@@ -634,8 +677,8 @@ def test_dos_productos_para_lo_mismo_manda_el_preferido(db, cliente, sesion,
     assert len(choques) == 1
     assert sorted(n for n, _ in choques[0]["productos"]) == [
         "Agente de Seguridad", "Bilingual Security Agent"]
-    assert choques[0]["listas"] == ["General México", "HASBRO", "Lista vieja",
-                                    "General Brasil"]
+    assert choques[0]["listas"] == ["General México", "HASBRO", "Amazon USD",
+                                    "Lista vieja", "General Brasil"]
 
     conectar(monkeypatch, odoo)
     f = sesion("finanzas")

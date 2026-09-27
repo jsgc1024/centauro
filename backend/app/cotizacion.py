@@ -6,6 +6,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app import models as m
+from app import tipo_cambio
 
 
 def _tarifario_de(db: Session, servicio: m.Servicio) -> m.Tarifario:
@@ -271,6 +272,20 @@ def autorizar(db: Session, cotizacion_id: int, autorizada_por: str) -> m.Cotizac
     if cotizacion.estatus == m.EstatusCotizacion.SUSTITUIDA:
         raise HTTPException(409, "Esa cotizacion fue sustituida por una version posterior")
 
+    # En otra moneda que la del pais --Amazon, en dolares--, la cotizacion
+    # se queda con el tipo de cambio que esta puesto al autorizarla, y ya
+    # no se mueve: con el se calculan la utilidad y la comision (seccion
+    # 82). Sin tipo de cambio no se autoriza: restarian dolares menos pesos.
+    local = tipo_cambio.local_del_pais(db, cotizacion.servicio.pais_id)
+    if local and cotizacion.moneda != local:
+        tc = (tipo_cambio.vigente(db, cotizacion.moneda, local)
+              if tipo_cambio.se_puede(cotizacion.moneda, local) else None)
+        if tc is None:
+            raise HTTPException(409, sin_tipo_de_cambio(db, cotizacion.moneda,
+                                                        local))
+        cotizacion.tipo_cambio = tc["tasa"]
+        cotizacion.tipo_cambio_fecha = tc["fecha"]
+
     cotizacion.estatus = m.EstatusCotizacion.AUTORIZADA
     cotizacion.autorizada_en = datetime.now()
     cotizacion.autorizada_por = autorizada_por
@@ -289,6 +304,42 @@ def autorizar(db: Session, cotizacion_id: int, autorizada_por: str) -> m.Cotizac
     db.commit()
     db.refresh(cotizacion)
     return cotizacion
+
+
+def sin_tipo_de_cambio(db: Session, moneda, local) -> dict:
+    """Por que no hay tipo de cambio, y que hacer: lo mismo lo dice la
+    cotizacion, el cierre y el mes del implantado. `motivo` va en clave
+    para que la pantalla lo diga en su idioma; `mensaje` y `que_hacer`,
+    para quien lee la API."""
+    moneda, local = m.Moneda(moneda), m.Moneda(local)
+    datos = {"moneda": moneda.value, "local": local.value}
+    if not tipo_cambio.se_puede(moneda, local):
+        return {**datos, "motivo": "no_se_convierte",
+                "mensaje": (f"Es en {moneda.value} y se cobra en un pais de "
+                            f"{local.value}: Centauro no convierte entre esas "
+                            "dos monedas"),
+                "que_hacer": ("Hoy solo se convierte de dolares a pesos "
+                              "mexicanos.")}
+    return {**datos, "motivo": "sin_tipo_de_cambio",
+            "mensaje": (f"No hay tipo de cambio de {moneda.value} a "
+                        f"{local.value}"),
+            "que_hacer": ("Finanzas lo pone en Tarifarios: el que se pone "
+                          "aplica para todo hasta que se cambie.")}
+
+
+def tipo_de_cambio(db: Session, cotizacion: m.Cotizacion) -> dict | None:
+    """El de la cotizacion: el que se quedo al autorizarla. Una autorizada
+    antes de la seccion 82 no lo trae: se toma el que este puesto. None si
+    es de la moneda del pais o si no hay."""
+    local = tipo_cambio.local_del_pais(db, cotizacion.servicio.pais_id)
+    if not local or cotizacion.moneda == local:
+        return None
+    if cotizacion.tipo_cambio:
+        return tipo_cambio.fijo(cotizacion.tipo_cambio,
+                                cotizacion.tipo_cambio_fecha)
+    if not tipo_cambio.se_puede(cotizacion.moneda, local):
+        return None
+    return tipo_cambio.vigente(db, cotizacion.moneda, local)
 
 
 def vigente(db: Session, servicio_id: int) -> m.Cotizacion | None:

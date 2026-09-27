@@ -472,7 +472,9 @@ def _dinero(db: Session, ahora: datetime, relojes: reloj.Relojes) -> dict:
             "en_facturacion": {
                 "cuantos": len(en_facturacion),
                 "monto": sum((_d(c.total_ejecutado) for c in en_facturacion),
-                             CERO)},
+                             CERO),
+                # Uno por moneda (seccion 82): el que pinta la pantalla.
+                "montos": facturacion.montos(db, en_facturacion)},
             "por_facturar": {"cuantos": len(por_facturar)},
         },
         "vence_primero": [{

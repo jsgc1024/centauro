@@ -16,9 +16,11 @@ son de esta lectura:
     precio que Centauro sepa leer: se queda con el tarifario que tenia y
     se dice. Asi el primer dia nadie se queda sin poder cotizar.
   * Una lista en otra moneda que la de su pais --Amazon, en dolares-- se
-    dice y no se lee: los costos van en la moneda del pais y la utilidad
-    y la comision del consultor restarian dolares menos pesos (BITACORA,
-    «La moneda», que Salvador decidio dejar para el final).
+    lee en su moneda (seccion 82). Lo que toma de otra lista en pesos se
+    convierte con el tipo de cambio que puso finanzas en Centauro, no con
+    el de Odoo: el que se pone aplica para todo. Solo la lista en una
+    moneda que Centauro no convierte --dolares en Brasil-- se dice y no
+    se lee.
 
 Las reglas --que es cada producto, cuanto cuesta en cada lista-- viven en
 odoo_tarifarios_reglas.py, sin base de datos.
@@ -26,12 +28,14 @@ odoo_tarifarios_reglas.py, sin base de datos.
 import json
 import logging
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
 from app import accesos
 from app import models as m
 from app import odoo_tarifarios_reglas as reglas
+from app import tipo_cambio
 from app.config import settings
 from app.odoo_personal_reglas import nombre_de, normal, texto
 
@@ -200,13 +204,37 @@ def _leer_odoo(db: Session, odoo) -> dict:
             "campo_implantados": campo, "socios": socios}
 
 
+def tasas_de_centauro(db: Session, tasas: dict, empresa: str) -> dict:
+    """Las tasas de Odoo, con el tipo de cambio de Centauro entre dolares y
+    pesos en lugar del de Odoo (seccion 82): el que puso finanzas aplica
+    para todo, tambien para pasar a dolares lo que la lista de Amazon toma
+    de la General. Sin el, esa conversion no se hace y el precio sale sin
+    tipo de cambio: no se inventa uno.
+
+    Odoo dice cada tasa como cuantas unidades de esa moneda vale una de
+    la empresa, y la de la empresa vale 1."""
+    tasas = dict(tasas)
+    tc = tipo_cambio.vigente(db, m.Moneda.USD, m.Moneda.MXN)
+    if empresa == "USD":
+        if tc:
+            tasas["MXN"] = tc["tasa"]
+        else:
+            tasas.pop("MXN", None)
+    elif tc and tasas.get("MXN"):
+        tasas["USD"] = Decimal(str(tasas["MXN"])) / tc["tasa"]
+    else:
+        tasas.pop("USD", None)
+    return tasas
+
+
 def _plan(db: Session, datos: dict, hoy) -> dict:
     """Que tarifario sale de cada lista y que lista le toca a cada cliente,
     sin guardar nada."""
     empresa = next((texto(mo.get("name")) for mo in datos["monedas"]
                     if float(mo.get("rate") or 0) == 1.0), "MXN")
-    tasas = {texto(mo.get("name")): mo.get("rate") for mo in datos["monedas"]
-             if mo.get("rate")}
+    tasas = tasas_de_centauro(db, {texto(mo.get("name")): mo.get("rate")
+                                   for mo in datos["monedas"] if mo.get("rate")},
+                              empresa)
     listas = {l["id"]: {"nombre": texto(l.get("name")),
                         "moneda": texto(nombre_de(l.get("currency_id"))).upper()[:3],
                         "grupos": reglas.ids_de(l.get("country_group_ids"))}
@@ -312,12 +340,12 @@ def _plan(db: Session, datos: dict, hoy) -> dict:
             else:
                 pendientes.append({"tipo": "sin_pais", "lista": lista["nombre"]})
             continue
-        # Los costos --viaticos, comisiones, nomina-- van siempre en la
-        # moneda del pais, y la utilidad y la comision del consultor restan
-        # una de otra sin convertir (BITACORA, «La moneda»: Salvador decidio
-        # que eso espere). Una lista en otra moneda --Amazon, en dolares--
-        # se dice y no se lee hasta que Centauro sepa convertir.
-        if moneda != moneda_del_pais.get(pais_id):
+        # Una lista en otra moneda que la de su pais --Amazon, en dolares--
+        # se lee en su moneda: la cotizacion sale en dolares y guarda el
+        # tipo de cambio que este puesto al autorizarse (seccion 82). Solo
+        # la que Centauro no convierte --dolares en Brasil-- se dice y no
+        # se lee; la utilidad y la comision restarian una moneda de otra.
+        if not tipo_cambio.se_puede(moneda, moneda_del_pais.get(pais_id)):
             otra_moneda[lista_id] = moneda.value
             pendientes.append({"tipo": "otra_moneda", "lista": lista["nombre"],
                                "moneda": moneda.value,

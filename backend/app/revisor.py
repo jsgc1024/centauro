@@ -99,6 +99,20 @@ def revisar(db: Session, servicio_id: int, ahora: datetime | None = None) -> dic
             "mensaje": d["descripcion"],
             "accion": "Recotiza y autoriza con el cliente, o justifica la desviacion."})
 
+    # --- el tipo de cambio (seccion 82). Con gastos netos y la cotizacion
+    # en otra moneda, lo comprobado --en pesos-- se factura en la moneda
+    # de la cotizacion al tipo de cambio que este puesto en el visto
+    # bueno. Sin el no hay cifra de gastos: la factura no puede salir.
+    sin_cambio = comparativo["gastos"].get("sin_tipo_de_cambio")
+    if sin_cambio:
+        observaciones.append({
+            "nivel": GRAVE, "asunto": "Sin tipo de cambio",
+            "clave": "sin_tipo_de_cambio", "datos": sin_cambio,
+            "mensaje": (f"Los gastos se comprobaron en {sin_cambio['local']} "
+                        f"y se facturan en {sin_cambio['moneda']}: "
+                        f"{sin_cambio['mensaje']}"),
+            "accion": sin_cambio["que_hacer"]})
+
     # --- las horas extra en horas, las corregidas y las que no tienen
     # precio (seccion 65). Ninguna frena el visto bueno.
     ejecutado = comparativo["ejecutado"]

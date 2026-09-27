@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 from app import cierre as motor_cierre
 from app import models as m
 from app import reloj
+from app import tipo_cambio
 
 CERO = Decimal("0")
 
@@ -71,9 +72,26 @@ def _ya_ajustado(db: Session, comision: m.ComisionConsultor) -> Decimal:
                            tipo=AJUSTE_REFACTURADA).all()), CERO)
 
 
+def en_otra_moneda(comision: m.ComisionConsultor, otra: dict | None) -> None:
+    """Deja escrito de donde salio lo facturado cuando la factura fue en
+    otra moneda que la del pais (seccion 82): `otra` es {moneda, total,
+    servicio, tasa}. La comision es siempre en la moneda del pais."""
+    if not otra or otra.get("total") is None:
+        comision.moneda_facturada = None
+        comision.facturado_en_moneda = None
+        comision.servicio_en_moneda = None
+        comision.tipo_cambio = None
+        return
+    comision.moneda_facturada = m.Moneda(otra["moneda"])
+    comision.facturado_en_moneda = Decimal(str(otra["total"]))
+    comision.servicio_en_moneda = Decimal(str(otra["servicio"]))
+    comision.tipo_cambio = Decimal(str(otra["tasa"]))
+
+
 def _volver_a_calcular(db: Session, existente: m.ComisionConsultor,
                        facturacion: Decimal, viaticos: Decimal,
-                       base: Decimal, monto: Decimal, hoy: date):
+                       base: Decimal, monto: Decimal, hoy: date,
+                       otra: dict | None = None):
     """Finanzas vuelve a validar un servicio que ya tenia comision.
 
     Mientras su mes no tenga visto bueno, la comision se corrige en su
@@ -89,6 +107,7 @@ def _volver_a_calcular(db: Session, existente: m.ComisionConsultor,
         existente.viaticos = viaticos
         existente.base = base
         existente.monto = monto
+        en_otra_moneda(existente, otra)
         return
     antes = Decimal(str(existente.monto)) + _ya_ajustado(db, existente)
     diferencia = monto - antes
@@ -140,19 +159,25 @@ def generar(db: Session, servicio_id: int) -> m.ComisionConsultor:
                  .filter_by(servicio_id=servicio_id, contrato_id=None,
                             consultor_id=servicio.consultor_id).first())
 
+    # Todo en la moneda del pais (seccion 82): una cotizacion en dolares
+    # llega aqui ya en pesos, al tipo de cambio que estaba puesto cuando se
+    # autorizo --asi la comision no se mueve con el dolar--.
     rent = motor_cierre.rentabilidad(db, servicio_id)
     facturacion = Decimal(str(rent["facturacion"]))
     viaticos = Decimal(str(rent["costos"]["viaticos_comprobados"]))
     base = facturacion - viaticos
     pct = _porcentaje(db, servicio.pais_id, servicio.tipo)
     monto = (base * pct / Decimal("100")).quantize(Decimal("0.01"))
+    otra = rent.get("en_otra_moneda")
+    if otra:
+        otra = {**otra, "tasa": otra["tipo_cambio"]["tasa"]}
 
     referencia = registro.aprobado_en or registro.enviado_en
     periodo = referencia.date() if referencia else date.today()
 
     if existente:
         _volver_a_calcular(db, existente, facturacion, viaticos, base,
-                           monto, periodo)
+                           monto, periodo, otra)
         db.commit()
         db.refresh(existente)
         return existente
@@ -165,6 +190,7 @@ def generar(db: Session, servicio_id: int) -> m.ComisionConsultor:
         facturacion=facturacion, viaticos=viaticos, base=base,
         porcentaje=pct, monto=monto,
         moneda=m.Moneda(rent["moneda"]))
+    en_otra_moneda(comision, otra)
 
     if not registro.dentro_de_plazo:
         comision.estatus = m.EstatusComision.PERDIDA
@@ -206,14 +232,22 @@ def generar_del_mes(db: Session, cierre: m.Cierre) -> m.ComisionConsultor:
                             consultor_id=servicio.consultor_id).first())
 
     contrato = cierre.contrato
-    facturacion = Decimal(str(cierre.total_ejecutado or 0))
-    # El costo real de los viaticos del mes es lo comprobado.
-    viaticos = sum((Decimal(str(v.monto_comprobado or 0))
-                    for v in cierre_mes.viaticos_del_mes(db, contrato)),
-                   CERO)
+    # En la moneda del pais (seccion 82): un mes en dolares pasa a pesos
+    # con el tipo de cambio del mes, fijo desde que se abrio. El costo
+    # real de los viaticos del mes es lo comprobado.
+    cuenta = cierre_mes.facturado_en_moneda_local(db, cierre)
+    if cuenta is None:
+        raise HTTPException(409, {
+            "mensaje": (f"El mes {cierre_mes.periodo(contrato)} se facturo en "
+                        f"{contrato.moneda.value if contrato.moneda else ''} y "
+                        "no tiene tipo de cambio"),
+            "que_hacer": "Finanzas pone el tipo de cambio en Tarifarios."})
+    facturacion = cuenta["facturacion"]
+    viaticos = cuenta["viaticos"]
     base = facturacion - viaticos
     pct = _porcentaje(db, servicio.pais_id, servicio.tipo)
     monto = (base * pct / Decimal("100")).quantize(Decimal("0.01"))
+    otra = cuenta["en_otra_moneda"]
 
     referencia = cierre.aprobado_en or cierre.enviado_en
     periodo = referencia.date() if referencia else date.today()
@@ -221,7 +255,7 @@ def generar_del_mes(db: Session, cierre: m.Cierre) -> m.ComisionConsultor:
 
     if existente:
         _volver_a_calcular(db, existente, facturacion, viaticos, base,
-                           monto, periodo)
+                           monto, periodo, otra)
         db.commit()
         db.refresh(existente)
         return existente
@@ -233,6 +267,7 @@ def generar_del_mes(db: Session, cierre: m.Cierre) -> m.ComisionConsultor:
         anio=anio, mes=mes,
         facturacion=facturacion, viaticos=viaticos, base=base,
         porcentaje=pct, monto=monto, moneda=pais.moneda_local)
+    en_otra_moneda(comision, otra)
 
     ultimo = calendar.monthrange(contrato.anio, contrato.mes)[1]
     grave = (db.query(m.Incidencia)
@@ -283,7 +318,8 @@ def del_cierre(db: Session, cierre: m.Cierre) -> dict | None:
         return {"generada": True, "estatus": generada.estatus.value,
                 "monto": generada.monto, "base": generada.base,
                 "porcentaje": float(generada.porcentaje),
-                "moneda": generada.moneda.value, "motivo": generada.motivo}
+                "moneda": generada.moneda.value, "motivo": generada.motivo,
+                "en_otra_moneda": _otra_moneda_de(generada)}
     if not cierre.enviado_en or cierre.estatus not in (
             m.EstatusCierre.ENVIADO_FINANZAS, m.EstatusCierre.APROBADO,
             m.EstatusCierre.FACTURADO):
@@ -296,23 +332,46 @@ def del_cierre(db: Session, cierre: m.Cierre) -> dict | None:
         pct = _porcentaje(db, servicio.pais_id, servicio.tipo)
     except HTTPException:
         return None
-    if cierre.contrato_id:
-        from app import cierre_mes
-        viaticos = cierre_mes.viaticos_del_mes(db, cierre.contrato)
-        pais = db.get(m.Pais, servicio.pais_id)
-        moneda = pais.moneda_local.value if pais else None
+    pais = db.get(m.Pais, servicio.pais_id)
+    local = pais.moneda_local.value if pais else None
+    factura = motor_cierre.moneda_del_cierre(db, cierre)
+    if local and factura and factura.value != local:
+        # Facturado en otra moneda (seccion 82): la estimada sale de la
+        # misma cuenta que la comision que se va a generar, en pesos.
+        base = base_en_moneda_local(db, cierre)
+        if base is None:
+            return None
     else:
-        viaticos = motor_cierre.viaticos_del_servicio(db, servicio.id)
-        from app import cotizacion as cot
-        vigente = cot.vigente(db, servicio.id)
-        moneda = vigente.moneda.value if vigente else None
-    comprobado = sum((Decimal(str(v.monto_comprobado or 0))
-                      for v in viaticos), CERO)
-    base = Decimal(str(cierre.total_ejecutado or 0)) - comprobado
+        if cierre.contrato_id:
+            from app import cierre_mes
+            viaticos = cierre_mes.viaticos_del_mes(db, cierre.contrato)
+        else:
+            viaticos = motor_cierre.viaticos_del_servicio(db, servicio.id)
+        comprobado = sum((Decimal(str(v.monto_comprobado or 0))
+                          for v in viaticos), CERO)
+        base = Decimal(str(cierre.total_ejecutado or 0)) - comprobado
     return {"generada": False, "estatus": "por_generar",
             "monto": (base * pct / Decimal("100")).quantize(Decimal("0.01")),
-            "base": base, "porcentaje": float(pct), "moneda": moneda,
+            "base": base, "porcentaje": float(pct), "moneda": local,
             "motivo": None}
+
+
+def base_en_moneda_local(db: Session, cierre: m.Cierre) -> Decimal | None:
+    """La base de la comision de un cierre facturado en otra moneda, en la
+    del pais: lo facturado en pesos menos los viaticos. None si no hay
+    tipo de cambio con que decirlo."""
+    if cierre.contrato_id:
+        from app import cierre_mes
+        cuenta = cierre_mes.facturado_en_moneda_local(db, cierre)
+        if cuenta is None:
+            return None
+        return cuenta["facturacion"] - cuenta["viaticos"]
+    try:
+        rent = motor_cierre.rentabilidad(db, cierre.servicio_id)
+    except HTTPException:
+        return None
+    return (Decimal(str(rent["facturacion"]))
+            - Decimal(str(rent["costos"]["viaticos_comprobados"])))
 
 
 def solo_la_suya(datos, usuario: m.Usuario):
@@ -481,7 +540,26 @@ def _renglon_comision(db: Session, c: m.ComisionConsultor) -> dict:
         "limite": _iso(cierre.limite_consultor if cierre else None),
         "facturacion": _d(c.facturacion), "viaticos": _d(c.viaticos),
         "base": _d(c.base), "porcentaje": float(pct), "monto": monto,
-        "moneda": c.moneda.value, "motivo": c.motivo}
+        "moneda": c.moneda.value, "motivo": c.motivo,
+        "en_otra_moneda": _otra_moneda_de(c)}
+
+
+def _otra_moneda_de(c: m.ComisionConsultor) -> dict | None:
+    """Lo que se facturo en otra moneda y como se paso a pesos (seccion
+    82): «se facturaron USD 1,247.94: el servicio, USD 1,122 x 17.40 =
+    $19,522.80; y los gastos, $2,204 en pesos»."""
+    if not c.moneda_facturada or c.facturado_en_moneda is None:
+        return None
+    servicio = _d(c.servicio_en_moneda)
+    servicio_local = (tipo_cambio.a_local(servicio, c.tipo_cambio)
+                      if c.tipo_cambio else None)
+    return {"moneda": c.moneda_facturada.value,
+            "facturado": _d(c.facturado_en_moneda),
+            "servicio": servicio,
+            "tipo_cambio": tipo_cambio.texto(c.tipo_cambio),
+            "servicio_local": servicio_local,
+            "gastos_local": (_d(c.facturacion) - servicio_local
+                             if servicio_local is not None else None)}
 
 
 def _renglon_ajuste(db: Session, a: m.AjusteComision, moneda: str) -> dict:

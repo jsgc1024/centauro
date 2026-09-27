@@ -22,6 +22,7 @@ from datetime import date
 from decimal import Decimal
 
 from app import models as m
+from app import tipo_cambio
 from app.marca import logo_incrustado
 
 LINEA = "AI/EP"
@@ -54,6 +55,12 @@ TEXTOS = {
         "meses_cortos": ["ene", "feb", "mar", "abr", "may", "jun", "jul",
                          "ago", "sep", "oct", "nov", "dic"],
         "y": "y", "del": "del", "al": "al", "de": "de",
+        # Seccion 82: gastos en pesos, factura en dolares.
+        "cambio": "Tipo de cambio",
+        "por": "{l} por {m}",
+        "total_en": "Total facturado en {m}",
+        "nota_cambio": ("Los gastos se pagaron en {l}. Se facturan en {m} "
+                        "al tipo de cambio de la factura."),
     },
     "en": {
         "titulo": "Expense breakdown",
@@ -81,6 +88,11 @@ TEXTOS = {
         "meses_cortos": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul",
                          "Aug", "Sep", "Oct", "Nov", "Dec"],
         "y": "and", "del": "from", "al": "to", "de": "",
+        "cambio": "Exchange rate",
+        "por": "{l} per {m}",
+        "total_en": "Total invoiced in {m}",
+        "nota_cambio": ("The expenses were paid in {l}. They are invoiced in "
+                        "{m} at the exchange rate of the invoice."),
     },
     "pt": {
         "titulo": "Detalhamento de despesas",
@@ -108,6 +120,11 @@ TEXTOS = {
         "meses_cortos": ["jan", "fev", "mar", "abr", "mai", "jun", "jul",
                          "ago", "set", "out", "nov", "dez"],
         "y": "e", "del": "de", "al": "a", "de": "de",
+        "cambio": "Taxa de câmbio",
+        "por": "{l} por {m}",
+        "total_en": "Total faturado em {m}",
+        "nota_cambio": ("As despesas foram pagas em {l}. São faturadas em "
+                        "{m} pela taxa de câmbio da fatura."),
     },
 }
 
@@ -192,8 +209,14 @@ def _etiqueta(g: dict, t: dict) -> str:
 
 def render(servicio: m.Servicio, plaza: str | None, viaticos: list,
            idioma: str, moneda: str | None, factura: str | None = None,
-           periodo: tuple[int, int] | None = None) -> str:
-    """El documento completo, listo para imprimir o guardar como PDF."""
+           periodo: tuple[int, int] | None = None,
+           cambio: dict | None = None) -> str:
+    """El documento completo, listo para imprimir o guardar como PDF.
+
+    `moneda` es la de los gastos --la del pais--. `cambio`, si la factura
+    es en otra (seccion 82): {moneda, tasa}, el tipo de cambio con que se
+    factura; el desglose dice las dos cifras y el tipo de cambio, con la
+    misma cuenta que la factura."""
     t = TEXTOS.get(idioma, TEXTOS["es"])
     filas = gastos(viaticos)
     if periodo:
@@ -234,13 +257,26 @@ def render(servicio: m.Servicio, plaza: str | None, viaticos: list,
         for g in filas if (g["imagen"] or "").startswith("data:image"))
     factura_fila = (f'<b>{t["factura"]}</b><span>{_esc(factura)}</span>'
                     if factura else "")
+    importe = t["importe"] + (f" ({_esc(moneda)})" if cambio and moneda else "")
+    en_otra = ""
+    nota_cambio = ""
+    if cambio and filas:
+        otra = cambio["moneda"]
+        convertido = tipo_cambio.de_local(total, cambio["tasa"])
+        en_otra = (
+            f'<tr class="resumen"><td class="gris">{_esc(t["cambio"])}</td>'
+            f'<td class="der num">{tipo_cambio.corto(cambio["tasa"])} '
+            f'{_esc(t["por"].format(l=moneda or "", m=otra))}</td></tr>'
+            f'<tr class="total"><td>{_esc(t["total_en"].format(m=otra))}</td>'
+            f'<td class="der num">{_dinero(convertido, otra)}</td></tr>')
+        nota_cambio = " " + _esc(t["nota_cambio"].format(l=moneda or "", m=otra))
     cuerpo = (f'''<table><thead><tr><th>{t["fecha"]}</th><th>{t["concepto"]}</th>
-<th>{t["comprobante"]}</th><th class="der">{t["importe"]}</th></tr></thead>
+<th>{t["comprobante"]}</th><th class="der">{importe}</th></tr></thead>
 <tbody>{renglones}</tbody></table>
 <table class="totales"><tbody>{resumen}
 <tr class="total"><td>{t["total"]}</td><td class="der num">{_dinero(total, moneda)}</td></tr>
-</tbody></table>
-<p class="nota">{t["nota"]}</p>''' if filas else
+{en_otra}</tbody></table>
+<p class="nota">{t["nota"]}{nota_cambio}</p>''' if filas else
               f'<p class="nota">{t["sin_gastos"]}</p>')
 
     return f"""<!doctype html>

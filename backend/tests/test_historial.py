@@ -343,8 +343,11 @@ def test_el_excel_trae_lo_mismo_que_la_pantalla(cliente, sesion, datos, google):
     assert sum(Decimal(f["K"]) for f in servicios[1:]) == Decimal("106500.00")
     # Las fechas van como fechas de Excel, no como texto.
     assert float(servicios[1]["I"]) == 46366.0        # 10/12/2026
-    assert servicios[1]["N"] == "6" and servicios[1]["O"] == "0"
-    assert servicios[2]["N"] == "0" and servicios[2]["O"] == "6"
+    # Los viaticos, en la moneda en que se pagaron (seccion 82).
+    assert servicios[0]["N"] == "Moneda de los viáticos"
+    assert servicios[1]["N"] == "MXN"
+    assert servicios[1]["O"] == "6" and servicios[1]["P"] == "0"
+    assert servicios[2]["O"] == "0" and servicios[2]["P"] == "6"
 
     tickets = hojas["Comprobantes"]
     assert len(tickets) == 1 + 12

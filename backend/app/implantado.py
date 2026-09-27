@@ -1627,6 +1627,10 @@ def abrir_siguiente(db: Session, servicio: m.Servicio,
         viaticos_incluidos=anterior.viaticos_incluidos,
         gastos_mes=anterior.gastos_mes,
         precio_hora_extra=anterior.precio_hora_extra,
+        # Los precios copiados van en su moneda (seccion 82); el tipo de
+        # cambio no se copia: el mes nuevo toma el que este puesto cuando
+        # se abre.
+        moneda=anterior.moneda,
         dias_base=len(dias_del_mes(anio, mes, anterior.dias_servicio,
                                    None,
                                    turno_del_servicio(db, servicio.id))))
@@ -1654,10 +1658,12 @@ def abrir_siguiente(db: Session, servicio: m.Servicio,
     # (seccion 80), el nuevo la vuelve a tomar: con sus dias de servicio y
     # con lo que la lista diga hoy. Si iba a mano --un acuerdo especial--,
     # se queda lo copiado, como siempre.
+    from app import implantado_precios
     if (anterior.precios_de_la_lista
             and anterior.esquema == m.EsquemaCotizacionImplantado.POR_DIA):
-        from app import implantado_precios
         implantado_precios.al_abrir(db, contrato)
+    else:
+        implantado_precios.fijar_moneda_del_mes(db, contrato)
     db.commit()
     db.refresh(contrato)
 

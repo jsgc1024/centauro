@@ -22,6 +22,7 @@ from app import implantado_precios
 from app import tasksheet
 from app import viaticos_implantado as viaticos
 from app import models as m
+from app import cierre as motor_cierre
 from app.db import get_db
 from app.routers.servicios import siguiente_folio
 
@@ -207,6 +208,14 @@ def desglose_del_mes(contrato_id: int, idioma: str | None = None,
     cierre = cierre_mes.cierre_de(db, contrato)
     plaza = db.get(m.Plaza, servicio.plaza_id)
     pais = db.get(m.Pais, servicio.pais_id)
+    # Un mes en dolares: los gastos en pesos, y el tipo de cambio y el
+    # total en dolares, como la factura del mes (seccion 82).
+    moneda, local = cierre_mes.moneda_del_mes(db, contrato)
+    cambio = None
+    if moneda != local and not contrato.viaticos_incluidos:
+        tc = motor_cierre.tipo_de_cambio_del_cierre(db, cierre, moneda, local)
+        if tc:
+            cambio = {"moneda": moneda.value, "tasa": tc["tasa"]}
     return HTMLResponse(desglose.render(
         servicio, plaza.nombre if plaza else None,
         cierre_mes.viaticos_del_mes(db, contrato),
@@ -214,7 +223,7 @@ def desglose_del_mes(contrato_id: int, idioma: str | None = None,
         else desglose.idioma_del_cliente(db, servicio),
         pais.moneda_local.value if pais else None,
         factura=cierre.factura_odoo if cierre else None,
-        periodo=(contrato.anio, contrato.mes)))
+        periodo=(contrato.anio, contrato.mes), cambio=cambio))
 
 
 class TerminosDelMesIn(BaseModel):
@@ -236,6 +245,7 @@ class TerminosDelMesIn(BaseModel):
 def _terminos(db: Session, contrato: m.ContratoImplantado) -> dict:
     pais = db.get(m.Pais, contrato.servicio.pais_id)
     propuesta = implantado_precios.de_la_lista(db, contrato)
+    local = pais.moneda_local.value if pais else None
     return {
         "contrato_id": contrato.id,
         "periodo": cierre_mes.periodo(contrato),
@@ -250,7 +260,14 @@ def _terminos(db: Session, contrato: m.ContratoImplantado) -> dict:
                         else "netos"),
         "gastos_mes": contrato.gastos_mes,
         "precio_hora_extra": contrato.precio_hora_extra,
-        "moneda": pais.moneda_local.value if pais else None,
+        # La de los precios del mes: la de su lista (seccion 82). Si no es
+        # la del pais, con el tipo de cambio que estaba puesto cuando se
+        # abrio el mes; sin el, el que esta puesto hoy, que es el que
+        # fijaria el visto bueno.
+        "moneda": contrato.moneda.value if contrato.moneda else local,
+        "moneda_local": local,
+        "tipo_cambio": motor_cierre.cambio_en_json(
+            cierre_mes.tipo_de_cambio_del_mes(db, contrato)),
         # Con el visto bueno dado ya no se cambian: la factura del mes
         # salio, o esta por salir, con estos precios.
         "editable": not cierre_mes.con_visto_bueno(db, contrato),
@@ -332,7 +349,9 @@ def terminos_de_la_lista(contrato_id: int, db: Session = Depends(get_db),
             "mensaje": ("El cliente no tiene una lista de la que tomar los "
                         "precios" if propuesta["lista"] is None else
                         f"La lista {propuesta['lista']['nombre']} esta en "
-                        "otra moneda que la del pais del servicio"),
+                        f"{propuesta['lista']['moneda']}, una moneda que "
+                        "Centauro no sabe convertir a la del pais del "
+                        "servicio"),
             "que_hacer": "Los terminos del mes se capturan a mano."})
     cambios = []
     if contrato.esquema != m.EsquemaCotizacionImplantado.POR_DIA:
@@ -340,6 +359,9 @@ def terminos_de_la_lista(contrato_id: int, db: Session = Depends(get_db),
         cambios.append(f"esquema: {contrato.esquema.value} -> por_dia")
         contrato.esquema = m.EsquemaCotizacionImplantado.POR_DIA
     cambios += implantado_precios.aplicar(contrato, propuesta)
+    # En la moneda de la lista; si es otra, con el tipo de cambio que esta
+    # puesto (seccion 82).
+    implantado_precios.fijar_moneda_del_mes(db, contrato)
     if cambios:
         auditoria.registrar(db, usuario, contrato.servicio,
                             "terminos del mes",
@@ -1022,6 +1044,7 @@ def guardar_acuerdo(servicio_id: int, datos: AcuerdoIn,
                     and not cierre_mes.con_visto_bueno(db, contrato)):
                 implantado_precios.aplicar(
                     contrato, implantado_precios.de_la_lista(db, contrato))
+                implantado_precios.fijar_moneda_del_mes(db, contrato)
             db.commit()
             contrato_ajustado = {
                 "periodo": f"{contrato.mes:02d}/{contrato.anio}",

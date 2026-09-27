@@ -15,6 +15,7 @@ from app import cotizacion as cot
 from app import horas_extra
 from app import models as m
 from app import reloj
+from app import tipo_cambio
 
 # Los dos relojes (decision de Salvador, 22 sep). T0 es el termino
 # general del servicio: de T0 a T0 + 24 el personal comprueba sus
@@ -287,22 +288,120 @@ def gastos_cotizados(cotizacion) -> Decimal:
                 if l.tipo == m.TipoLinea.VIATICOS), CERO)
 
 
-def _viatico_facturable(cotizacion, comprobado: Decimal) -> Decimal:
-    """Cuanto de gastos lleva la factura del cliente.
+MISMA_MONEDA = (False, None)
+
+
+def _viatico_facturable(cotizacion, comprobado: Decimal,
+                        cambio: tuple = MISMA_MONEDA) -> Decimal | None:
+    """Cuanto de gastos lleva la factura del cliente, en la moneda de la
+    cotizacion.
 
     A precio alzado, el monto fijo de la cotizacion, pase lo que pase
     con la comprobacion --hasta la seccion 59 ese monto no llegaba a la
     factura: el servicio se cobraba sin los gastos--. Netos, lo
     comprobado valido, que ya excluye lo rechazado.
+
+    Lo comprobado es en la moneda del pais. `cambio` es lo que contesta
+    `tipo_de_cambio_de_gastos`: si la cotizacion es de otra moneda, lo
+    comprobado se pasa a la suya con el tipo de cambio de los gastos
+    (seccion 82), y sin tipo de cambio no hay cifra --None--: un monto en
+    pesos rotulado en dolares es justo lo que no puede pasar.
     """
     if cotizacion.viaticos_incluidos:
         return gastos_cotizados(cotizacion)
-    return comprobado
+    otra, tc = cambio
+    if not otra:
+        return comprobado
+    return tipo_cambio.de_local(comprobado, tc["tasa"]) if tc else None
+
+
+def tipo_de_cambio_de_gastos(db: Session, servicio: m.Servicio,
+                             cotizacion) -> tuple[bool, dict | None]:
+    """(si la cotizacion es de otra moneda, su tipo de cambio de gastos).
+
+    Los gastos se comprueban en la moneda del pais y se le facturan al
+    cliente en la de su cotizacion, al tipo de cambio que esta puesto en
+    el visto bueno --que es cuando sale la factura-- (seccion 82). Antes
+    del visto bueno, el que esta puesto hoy, para que el consultor vea
+    cuanto va a ser. (False, None) si la cotizacion es de la moneda del
+    pais; (True, None) si es de otra y no hay tipo de cambio.
+    """
+    local = tipo_cambio.local_del_pais(db, servicio.pais_id)
+    if not local or cotizacion.moneda == local:
+        return MISMA_MONEDA
+    cierre = (db.query(m.Cierre)
+              .filter_by(servicio_id=servicio.id, contrato_id=None).first())
+    return True, tipo_de_cambio_del_cierre(db, cierre, cotizacion.moneda, local)
+
+
+def tipo_de_cambio_del_cierre(db: Session, cierre: m.Cierre | None,
+                              moneda, local) -> dict | None:
+    """El de los gastos de ese cierre: el que quedo fijo con el visto
+    bueno ("fijo": True) o, mientras no lo hay, el que esta puesto. Lo
+    mismo para el eventual y para el mes del implantado."""
+    if cierre is not None and cierre.tipo_cambio_gastos:
+        return tipo_cambio.fijo(cierre.tipo_cambio_gastos,
+                                cierre.tipo_cambio_gastos_fecha)
+    if not tipo_cambio.se_puede(moneda, local):
+        return None
+    tc = tipo_cambio.vigente(db, moneda, local)
+    return {**tc, "fijo": False} if tc else None
+
+
+def fijar_tipo_de_cambio_de_gastos(db: Session, cierre: m.Cierre, moneda,
+                                   local) -> dict | None:
+    """Con el visto bueno sale la factura: el tipo de cambio de los gastos
+    queda fijo en el cierre, el que esta puesto en ese momento. Si
+    finanzas lo regresa, se borra (`regresar`) y el visto bueno que sigue
+    lo vuelve a fijar, porque sale otra factura. None si no hay: entonces
+    no se fija nada, y la revision lo frena."""
+    tc = (tipo_cambio.vigente(db, moneda, local)
+          if tipo_cambio.se_puede(moneda, local) else None)
+    cierre.tipo_cambio_gastos = tc["tasa"] if tc else None
+    cierre.tipo_cambio_gastos_fecha = tc["fecha"] if tc else None
+    db.flush()
+    return tc
+
+
+def fijar_gastos_del_visto_bueno(db: Session, cierre: m.Cierre) -> dict | None:
+    """El visto bueno del eventual fija el tipo de cambio de sus gastos,
+    si la cotizacion es de otra moneda y los cobra netos. A precio alzado
+    no hace falta: el monto ya esta en la moneda de la cotizacion."""
+    vigente = cot.vigente(db, cierre.servicio_id)
+    local = tipo_cambio.local_del_pais(db, cierre.servicio.pais_id)
+    if (vigente is None or local is None or vigente.moneda == local
+            or vigente.viaticos_incluidos):
+        return None
+    return fijar_tipo_de_cambio_de_gastos(db, cierre, vigente.moneda, local)
+
+
+def cambio_en_json(tc: dict | None) -> dict | None:
+    """Un tipo de cambio para la pantalla: cuanto, de cuando, quien lo
+    puso y si ya quedo fijo."""
+    if tc is None:
+        return None
+    return {**tipo_cambio.en_json(tc), "fijo": bool(tc.get("fijo"))}
+
+
+def moneda_del_cierre(db: Session, cierre: m.Cierre) -> m.Moneda | None:
+    """En que moneda se factura ese cierre (seccion 82): la de la
+    cotizacion vigente en el eventual, la de los precios del mes en el
+    implantado; si no dicen, la del pais."""
+    moneda = None
+    if cierre.contrato_id:
+        moneda = cierre.contrato.moneda if cierre.contrato else None
+    else:
+        vigente = cot.vigente(db, cierre.servicio_id)
+        moneda = vigente.moneda if vigente else None
+    return moneda or tipo_cambio.local_del_pais(db, cierre.servicio.pais_id)
 
 
 def _viaticos_del_comparativo(cotizacion, asignado, comprobado, devuelto,
                               rechazado, descontado, absorbido,
-                              en_paquete=CERO) -> dict:
+                              en_paquete=CERO,
+                              cambio: tuple = MISMA_MONEDA) -> dict:
+    """El dinero del personal va en la moneda del pais; lo cotizado y lo
+    facturable, en la de la cotizacion (seccion 82)."""
     alzado = cotizacion.viaticos_incluidos
     return {
         "asignado": asignado,
@@ -317,8 +416,8 @@ def _viaticos_del_comparativo(cotizacion, asignado, comprobado, devuelto,
         "gastos_cotizados": gastos_cotizados(cotizacion),
         # Lo que ya va dentro de un paquete no se cobra aparte (seccion 79).
         "en_paquete": en_paquete,
-        "facturable_al_cliente": _viatico_facturable(cotizacion,
-                                                     comprobado - en_paquete),
+        "facturable_al_cliente": _viatico_facturable(
+            cotizacion, comprobado - en_paquete, cambio),
         "nota_facturacion": (
             "A precio alzado se factura el monto fijo de la propuesta, se "
             "gaste mas o menos. Si no lleva monto, los gastos van dentro "
@@ -339,8 +438,34 @@ def viaticos_por_cobrar(db: Session, servicio_id: int,
     """
     if cotizacion.viaticos_incluidos:
         return gastos_cotizados(cotizacion)
+    servicio = db.get(m.Servicio, servicio_id)
+    comprobado = sum((_d(v.monto_comprobado) for v in viaticos_facturables(
+        db, servicio, cotizacion.tarifario_id)), CERO)
+    # En pesos; si la cotizacion es en dolares, a dolares (seccion 82).
+    monto = _viatico_facturable(
+        cotizacion, comprobado,
+        tipo_de_cambio_de_gastos(db, servicio, cotizacion))
+    if monto is None:
+        raise HTTPException(409, cot.sin_tipo_de_cambio(
+            db, cotizacion.moneda,
+            tipo_cambio.local_del_pais(db, servicio.pais_id)))
+    return monto
+
+
+def viaticos_por_cobrar_local(db: Session, servicio_id: int, cotizacion,
+                              tc: dict | None = None) -> Decimal:
+    """Los mismos gastos de la factura, en la moneda del pais: para la
+    utilidad y la comision, que son en pesos (seccion 82). Netos, lo
+    comprobado --que ya es en pesos, sin convertir de ida y vuelta--; a
+    precio alzado, el monto de la cotizacion a `tc`, el tipo de cambio de
+    la cotizacion (`cot.tipo_de_cambio`). Sin `tc`, la cotizacion es de
+    la moneda del pais."""
+    if cotizacion.viaticos_incluidos:
+        monto = gastos_cotizados(cotizacion)
+        return tipo_cambio.a_local(monto, tc["tasa"]) if tc else monto
+    servicio = db.get(m.Servicio, servicio_id)
     return sum((_d(v.monto_comprobado) for v in viaticos_facturables(
-        db, db.get(m.Servicio, servicio_id), cotizacion.tarifario_id)), CERO)
+        db, servicio, cotizacion.tarifario_id)), CERO)
 
 
 def viaticos_facturables(db: Session, servicio: m.Servicio,
@@ -528,7 +653,14 @@ def comparar(db: Session, servicio_id: int) -> dict:
     rechazado = sum((_d(c.monto) for v in viaticos for c in v.comprobantes
                      if c.rechazado), CERO)
 
-    desviaciones.extend(desviaciones_del_dinero(viaticos))
+    # Cada desviacion dice en que moneda va su monto (seccion 82): las
+    # del servicio, en la de la cotizacion; las del dinero del personal,
+    # en la del pais.
+    local = tipo_cambio.local_del_pais(db, servicio.pais_id) or cotizacion.moneda
+    for d in desviaciones:
+        d["moneda"] = cotizacion.moneda.value
+    desviaciones.extend({**d, "moneda": local.value}
+                        for d in desviaciones_del_dinero(viaticos))
 
     # Con gastos netos, lo de quien fue en un paquete que ya trae los
     # viaticos no se cobra aparte (seccion 79): va dentro del paquete.
@@ -544,13 +676,33 @@ def comparar(db: Session, servicio_id: int) -> dict:
     fijo = gastos_cotizados(cotizacion)
     total_cotizado = _d(cotizacion.total)
     servicio_cotizado = total_cotizado - fijo
-    gastos_a_facturar = _viatico_facturable(cotizacion, comprobado - en_paquete)
+
+    # La moneda (seccion 82). El servicio y lo cotizado van en la de la
+    # cotizacion; el dinero del personal, en la del pais. Con gastos
+    # netos en otra moneda, lo comprobado se pasa a la de la cotizacion
+    # con el tipo de cambio del visto bueno --el que este puesto, mientras
+    # no lo hay--; sin tipo de cambio no hay cifra de gastos, y la
+    # revision no deja mandarlo.
+    cambio = tipo_de_cambio_de_gastos(db, servicio, cotizacion)
+    otra, tc_gastos = cambio
+    netos = not cotizacion.viaticos_incluidos
+    gastos_a_facturar = _viatico_facturable(cotizacion, comprobado - en_paquete,
+                                            cambio)
+    sin_cambio = gastos_a_facturar is None
+    tc_cotizacion = cot.tipo_de_cambio(db, cotizacion) if otra else None
     return {
         "servicio": servicio.folio,
+        "moneda": cotizacion.moneda.value,
+        "moneda_local": local.value,
         "cotizacion": {"version": cotizacion.version, "total": total_cotizado,
                        "servicio": servicio_cotizado, "gastos": fijo,
                        "moneda": cotizacion.moneda.value,
-                       "viaticos_incluidos": cotizacion.viaticos_incluidos},
+                       "viaticos_incluidos": cotizacion.viaticos_incluidos,
+                       # El de la autorizacion: con el se miden la utilidad
+                       # y la comision, y no se mueve.
+                       "tipo_cambio": tipo_cambio.en_json(tc_cotizacion),
+                       "autorizada_en": (cotizacion.autorizada_en.isoformat()
+                                         if cotizacion.autorizada_en else None)},
         "ejecutado": {"total": real["total"], "horas_extra": real["horas_extra"],
                       "importe_horas_extra": real["importe_horas_extra"],
                       "horas_extra_por_dia": horas_por_dia(
@@ -567,20 +719,54 @@ def comparar(db: Session, servicio_id: int) -> dict:
                       "renglones": renglones(real["detalle"])},
         "diferencia": real["total"] - servicio_cotizado,
         "gastos": {"modo": modo_de_gastos(cotizacion.viaticos_incluidos),
+                   # `cotizado` y `a_facturar`, en la moneda de la
+                   # cotizacion; `comprobado` y `en_paquete`, en la del pais.
                    "cotizado": fijo, "comprobado": comprobado,
                    "en_paquete": en_paquete,
-                   "a_facturar": gastos_a_facturar},
+                   "a_facturar": gastos_a_facturar,
+                   "moneda_local": local.value,
+                   # Netos en otra moneda: de donde sale la cifra.
+                   "tipo_cambio": (cambio_en_json(tc_gastos)
+                                   if otra and netos else None),
+                   "sin_tipo_de_cambio": (
+                       cot.sin_tipo_de_cambio(db, cotizacion.moneda, local)
+                       if sin_cambio else None),
+                   # A precio alzado en otra moneda, el monto fijo en la
+                   # del pais al tipo de cambio de la cotizacion: contra
+                   # eso se mide lo que se gasto.
+                   "cotizado_local": (tipo_cambio.a_local(fijo,
+                                                          tc_cotizacion["tasa"])
+                                      if otra and not netos and tc_cotizacion
+                                      and fijo else None)},
         "a_facturar": {"servicio": real["total"], "gastos": gastos_a_facturar,
-                       "total": real["total"] + gastos_a_facturar},
+                       "total": (None if sin_cambio
+                                 else real["total"] + gastos_a_facturar)},
         "viaticos": _viaticos_del_comparativo(
             cotizacion, asignado, comprobado, devuelto, rechazado,
-            descontado, absorbido, en_paquete),
+            descontado, absorbido, en_paquete, cambio),
         "desviaciones": desviaciones,
         "sin_desviaciones": not desviaciones,
     }
 
 
 # ---------------------------------------------------------------- rentabilidad
+
+def _facturado_en_otra_moneda(db: Session, servicio_id: int, cotizacion,
+                              real: dict, tc: dict) -> dict:
+    """Lo que dice la factura en la moneda de la cotizacion, al lado de
+    lo que eso es en pesos: el servicio y los gastos, y el total. Los
+    gastos pueden no tener cifra todavia (sin tipo de cambio): entonces
+    tampoco el total."""
+    try:
+        gastos = viaticos_por_cobrar(db, servicio_id, cotizacion)
+    except HTTPException:
+        gastos = None
+    return {"moneda": cotizacion.moneda.value,
+            "servicio": real["total"],
+            "gastos": gastos,
+            "total": None if gastos is None else real["total"] + gastos,
+            "tipo_cambio": tipo_cambio.en_json(tc)}
+
 
 def rentabilidad(db: Session, servicio_id: int) -> dict:
     """Tres bloques: facturacion, costo directo de personal y viaticos,
@@ -594,11 +780,26 @@ def rentabilidad(db: Session, servicio_id: int) -> dict:
         raise HTTPException(409, "El servicio no tiene cotizacion autorizada")
 
     real = ejecutado(db, servicio, cotizacion.tarifario_id)
+
+    # Todo en la moneda del pais, que es la de los costos (seccion 82).
+    # Una cotizacion en dolares se pasa a pesos con el tipo de cambio que
+    # estaba puesto cuando se autorizo --fijo: la utilidad y la comision no
+    # se mueven con el dolar--. Sin el, no hay utilidad que decir:
+    # restaria dolares menos pesos.
+    local = tipo_cambio.local_del_pais(db, servicio.pais_id) or cotizacion.moneda
+    tc = None
+    if cotizacion.moneda != local:
+        tc = cot.tipo_de_cambio(db, cotizacion)
+        if tc is None:
+            raise HTTPException(409, cot.sin_tipo_de_cambio(
+                db, cotizacion.moneda, local))
+    servicio_local = (tipo_cambio.a_local(real["total"], tc["tasa"]) if tc
+                      else real["total"])
     # Lo que se le factura: lo ejecutado y, si la cotizacion cobra los
     # viaticos aparte, lo comprobado (seccion 57). Sin esto la utilidad
     # y la comision restaban unos viaticos que no se facturaban.
-    viaticos_cobrados = viaticos_por_cobrar(db, servicio_id, cotizacion)
-    facturacion = real["total"] + viaticos_cobrados
+    viaticos_cobrados = viaticos_por_cobrar_local(db, servicio_id, cotizacion, tc)
+    facturacion = servicio_local + viaticos_cobrados
 
     costo_personal = CERO
     costo_vehiculo = CERO
@@ -653,9 +854,16 @@ def rentabilidad(db: Session, servicio_id: int) -> dict:
 
     return {
         "servicio": servicio.folio,
-        "moneda": cotizacion.moneda.value,
+        # La de todas las cifras de aqui: la del pais.
+        "moneda": local.value,
         "facturacion": facturacion,
+        "servicio_facturado": servicio_local,
         "viaticos_cobrados": viaticos_cobrados,
+        # Si la factura es en otra moneda, lo que dice la factura y el
+        # tipo de cambio con que aqui se paso a pesos.
+        "en_otra_moneda": (_facturado_en_otra_moneda(db, servicio_id,
+                                                     cotizacion, real, tc)
+                           if tc else None),
         "costos": {
             "personal": costo_personal,
             "dias_festivos_pagados_al_doble": dias_festivos,
@@ -708,6 +916,7 @@ VACIO = {"existe": False, "cierre_id": None, "estatus": None, "fase": None,
          "minutos_restantes": None, "viaticos_abiertos": None,
          "motivo": None, "factura": None, "factura_error": None,
          "factura_anulada": None, "dentro_de_plazo": None, "total": None,
+         "moneda": None, "tipo_cambio_gastos": None,
          "visto_bueno_en": None, "enviado_en": None, "devuelto_en": None,
          "devuelto_motivo": None, "aprobado_en": None, "reloj": None,
          "consultor": None, "comision": None}
@@ -759,6 +968,7 @@ def ficha_del_cierre(db: Session, fila: m.Cierre, ahora: datetime) -> dict:
 
     consultor = (db.get(m.Persona, fila.servicio.consultor_id)
                  if fila.servicio and fila.servicio.consultor_id else None)
+    moneda = moneda_del_cierre(db, fila)
     return {
         "existe": True,
         "cierre_id": fila.id,
@@ -779,6 +989,11 @@ def ficha_del_cierre(db: Session, fila: m.Cierre, ahora: datetime) -> dict:
         "dentro_de_plazo": fila.dentro_de_plazo,
         # Lo que se mando a facturar; antes del visto bueno no hay cifra.
         "total": str(fila.total_ejecutado) if fila.enviado_en else None,
+        # En que moneda sale la factura (seccion 82), y el tipo de cambio
+        # con que se pasaron los gastos si quedo fijo con el visto bueno.
+        "moneda": moneda.value if moneda else None,
+        "tipo_cambio_gastos": cambio_en_json(tipo_cambio.fijo(
+            fila.tipo_cambio_gastos, fila.tipo_cambio_gastos_fecha)),
         "visto_bueno_en": iso(fila.visto_bueno_en or fila.enviado_en),
         "enviado_en": iso(fila.enviado_en),
         "devuelto_en": iso(fila.devuelto_en),
@@ -910,6 +1125,10 @@ def regresar(db: Session, cierre: m.Cierre, motivo: str, usuario: m.Usuario,
         cierre.factura_odoo = None
         cierre.facturado_en = None
     cierre.factura_error = None
+    # La factura que sigue sale con el tipo de cambio de su visto bueno
+    # (seccion 82): mientras tanto se ve el que este puesto.
+    cierre.tipo_cambio_gastos = None
+    cierre.tipo_cambio_gastos_fecha = None
     # Vuelve al consultor: el eventual regresa a sin visto bueno. El
     # implantado no cambia de estatus: la fase la lleva el mes.
     if (not cierre.contrato_id

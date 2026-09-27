@@ -9,7 +9,7 @@
    motor —el mismo numero que usa la central— y esta pantalla solo lo
    pinta. */
 import { api } from "./api.js";
-import { aviso, conAyuda, dinero, etiqueta, fecha, h, hora } from "./util.js";
+import { aviso, conAyuda, dinero, etiqueta, fecha, h, hora, montos } from "./util.js";
 import { t } from "./idioma.js";
 
 const REFRESCO_SEGUNDOS = 60;
@@ -340,7 +340,10 @@ function caminoAlCobro(d) {
                     t("pan_camino_fuera").replace("{n}", fuera))
                 : h("div", { clase: "chico gris" }, t("pan_camino_del_consultor"))),
     celda(t("est_en_facturacion"), c.en_facturacion.cuantos,
-          h("div", { clase: "chico gris num" }, dinero(c.en_facturacion.monto))),
+          /* Uno por moneda (seccion 82): dolares y pesos no se suman. */
+          h("div", { clase: "chico gris num" },
+            c.en_facturacion.montos ? montos(c.en_facturacion.montos)
+                                    : dinero(c.en_facturacion.monto))),
     celda(t("pan_camino_por_facturar"), c.por_facturar.cuantos,
           h("div", { clase: "chico gris" }, t("pan_camino_sin_factura")),
           c.por_facturar.cuantos ? "color:var(--alerta)" : ""));

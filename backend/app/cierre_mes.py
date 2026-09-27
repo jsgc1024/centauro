@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 from app import auditoria
 from app import cierre as motor
 from app import comisiones
+from app import cotizacion as cot
 from app import facturacion
 from app import horas_extra
 from app import implantado as motor_implantado
@@ -44,6 +45,7 @@ from app import implantado_precios
 from app import models as m
 from app import nomina
 from app import reloj
+from app import tipo_cambio
 from app import viaticos as motor_viaticos
 from app.revisor import (AVISO, GRAVE, INFO, observaciones_del_dinero,
                          observaciones_del_plazo)
@@ -114,6 +116,31 @@ def viaticos_del_mes(db: Session, contrato: m.ContratoImplantado) -> list:
         return []
     return (db.query(m.AsignacionViatico)
             .filter(m.AsignacionViatico.jornada_id.in_(ids)).all())
+
+
+def moneda_del_mes(db: Session, contrato: m.ContratoImplantado
+                   ) -> tuple[m.Moneda, m.Moneda]:
+    """(la de los precios del mes, la del pais). La del mes es la de su
+    lista de implantados (seccion 82); sin decir, la del pais."""
+    local = tipo_cambio.local_del_pais(db, contrato.servicio.pais_id)
+    return (contrato.moneda or local), local
+
+
+def tipo_de_cambio_del_mes(db: Session, contrato: m.ContratoImplantado
+                           ) -> dict | None:
+    """El del mes en otra moneda: el que se fijo al abrirlo ("fijo":
+    True); mientras no lo tenga, el que este puesto, que es el que fijaria
+    el visto bueno. None si el mes es en la moneda del pais o si no hay."""
+    moneda, local = moneda_del_mes(db, contrato)
+    if moneda == local:
+        return None
+    if contrato.tipo_cambio:
+        return tipo_cambio.fijo(contrato.tipo_cambio,
+                                contrato.tipo_cambio_fecha)
+    if not tipo_cambio.se_puede(moneda, local):
+        return None
+    tc = tipo_cambio.vigente(db, moneda, local)
+    return {**tc, "fijo": False} if tc else None
 
 
 def viaticos_abiertos(db: Session, contrato: m.ContratoImplantado) -> int:
@@ -439,12 +466,37 @@ def comparar(db: Session, contrato: m.ContratoImplantado) -> dict:
     # monto, van dentro del precio--; netos, lo comprobado valido.
     alzado = contrato.viaticos_incluidos
     fijo = _d(contrato.gastos_mes)
-    por_cobrar = fijo if alzado else comprobado
+
+    # La moneda (seccion 82). Los precios del mes van en la de su lista;
+    # el dinero del personal, en la del pais. Netos en otra moneda, lo
+    # comprobado se factura al tipo de cambio del visto bueno --el que este
+    # puesto, mientras no lo hay--; sin tipo de cambio no hay cifra, y la
+    # revision no deja mandarlo.
+    moneda, local = moneda_del_mes(db, contrato)
+    otra = moneda != local
+    tc_gastos = None
+    if alzado:
+        por_cobrar = fijo
+    elif not otra:
+        por_cobrar = comprobado
+    else:
+        tc_gastos = motor.tipo_de_cambio_del_cierre(
+            db, cierre_de(db, contrato), moneda, local)
+        por_cobrar = (tipo_cambio.de_local(comprobado, tc_gastos["tasa"])
+                      if tc_gastos else None)
+    tc_mes = tipo_de_cambio_del_mes(db, contrato) if otra else None
+    sin_cambio = otra and (por_cobrar is None or tc_mes is None)
+    for d in desviaciones:
+        d["moneda"] = moneda.value
 
     return {
         "servicio": contrato.servicio.folio,
         "periodo": periodo(contrato),
         "esquema": contrato.esquema.value,
+        "moneda": moneda.value,
+        "moneda_local": local.value,
+        # El del mes: con el se miden la utilidad y la comision.
+        "tipo_cambio": motor.cambio_en_json(tc_mes),
         "precios": precios,
         "contratado": {"dias_base": contrato.dias_base,
                        "importe": contratado},
@@ -467,11 +519,21 @@ def comparar(db: Session, contrato: m.ContratoImplantado) -> dict:
                      "facturable_al_cliente": por_cobrar},
         "gastos": {"modo": motor.modo_de_gastos(alzado),
                    "cotizado": fijo if alzado else CERO,
-                   "comprobado": comprobado, "a_facturar": por_cobrar},
+                   "comprobado": comprobado, "a_facturar": por_cobrar,
+                   "moneda_local": local.value,
+                   "tipo_cambio": (motor.cambio_en_json(tc_gastos)
+                                   if otra and not alzado else None),
+                   "sin_tipo_de_cambio": (
+                       cot.sin_tipo_de_cambio(db, moneda, local)
+                       if sin_cambio else None),
+                   "cotizado_local": (tipo_cambio.a_local(fijo, tc_mes["tasa"])
+                                      if otra and alzado and tc_mes and fijo
+                                      else None)},
         # Lo que sale en la factura del mes: el servicio y, si se cobran
         # aparte, los viaticos comprobados.
         "a_facturar": {"servicio": trabajado, "viaticos": por_cobrar,
-                       "total": trabajado + por_cobrar},
+                       "total": (None if por_cobrar is None
+                                 else trabajado + por_cobrar)},
         "desviaciones": desviaciones,
         "notas": notas,
         "sin_desviaciones": not desviaciones,
@@ -505,6 +567,17 @@ def revisar(db: Session, contrato: m.ContratoImplantado,
     # (seccion 80). Se dice y no frena: puede ser un acuerdo especial.
     observaciones.extend(implantado_precios.observaciones(
         contrato, implantado_precios.de_la_lista(db, contrato)))
+    # El mes en otra moneda sin tipo de cambio (seccion 82): sin el no
+    # hay cifra de gastos ni utilidad del mes. Frena, como en el eventual.
+    sin_cambio = comparativo["gastos"].get("sin_tipo_de_cambio")
+    if sin_cambio:
+        observaciones.append({
+            "nivel": GRAVE, "asunto": "Sin tipo de cambio",
+            "clave": "sin_tipo_de_cambio", "datos": sin_cambio,
+            "mensaje": (f"El mes se factura en {sin_cambio['moneda']} y sus "
+                        f"costos son en {sin_cambio['local']}: "
+                        f"{sin_cambio['mensaje']}"),
+            "accion": sin_cambio["que_hacer"]})
     for d in comparativo["desviaciones"]:
         if d["descripcion"] in respaldadas:
             observaciones.append({
@@ -633,6 +706,12 @@ def enviar_a_finanzas(db: Session, cierre: m.Cierre, usuario: m.Usuario,
             "observaciones": [],
         })
 
+    # En otra moneda (seccion 82): el mes que no tuvo tipo de cambio al
+    # abrirse lo toma aqui, y los gastos netos se facturan al que esta
+    # puesto. Antes de la revision, para que compare lo que va a decir la
+    # factura; si no deja mandarlo, no se guarda nada.
+    fijar_del_visto_bueno(db, cierre)
+
     revision = revisar(db, contrato, momento)
     if not revision["listo_para_finanzas"]:
         raise HTTPException(409, {
@@ -646,11 +725,15 @@ def enviar_a_finanzas(db: Session, cierre: m.Cierre, usuario: m.Usuario,
     cierre.total_ejecutado = comparativo["a_facturar"]["total"]
     motor.dar_visto_bueno(cierre, momento)
     cierre.cerrado_por_id = usuario.persona_id
+    moneda = comparativo["moneda"]
     auditoria.registrar(db, usuario, cierre.servicio, "enviar a finanzas",
                         f"{periodo(contrato)}: contratado "
-                        f"{cierre.total_cotizado}, trabajado "
-                        f"{cierre.total_ejecutado}, "
-                        f"{'en plazo' if cierre.dentro_de_plazo else 'FUERA DE PLAZO'}")
+                        f"{cierre.total_cotizado} {moneda}, trabajado "
+                        f"{cierre.total_ejecutado} {moneda}, "
+                        f"{'en plazo' if cierre.dentro_de_plazo else 'FUERA DE PLAZO'}"
+                        + (f", mes al tipo de cambio "
+                           f"{tipo_cambio.texto(contrato.tipo_cambio)}"
+                           if contrato.tipo_cambio else ""))
 
     # Lo pagado cada semana contra lo que corresponde al corte del mes:
     # las diferencias van a la nomina siguiente, como en el eventual.
@@ -676,6 +759,50 @@ def enviar_a_finanzas(db: Session, cierre: m.Cierre, usuario: m.Usuario,
                                    if cierre.dentro_de_plazo
                                    else "se pierde por cierre fuera de plazo"),
             "ajustes_de_nomina": ajustes["ajustes_generados"]}
+
+
+def fijar_del_visto_bueno(db: Session, cierre: m.Cierre) -> None:
+    """Lo que el visto bueno de un mes en otra moneda deja fijo: el tipo
+    de cambio del mes, si no lo tuvo al abrirse, y el de sus gastos
+    netos, que se facturan ahora (seccion 82). El que esta puesto."""
+    contrato = cierre.contrato
+    moneda, local = moneda_del_mes(db, contrato)
+    if moneda == local:
+        return
+    implantado_precios.fijar_moneda_del_mes(db, contrato)
+    if not contrato.viaticos_incluidos:
+        motor.fijar_tipo_de_cambio_de_gastos(db, cierre, moneda, local)
+    db.flush()
+
+
+def facturado_en_moneda_local(db: Session, cierre: m.Cierre) -> dict | None:
+    """Lo facturado del mes en la moneda del pais, para la comision (y la
+    utilidad): {facturacion, viaticos, en_otra_moneda}. El servicio pasa
+    a pesos con el tipo de cambio del mes --fijo, como el de una
+    cotizacion--; los gastos netos ya son pesos; a precio alzado, el
+    monto del mes al mismo tipo de cambio. None si el mes es en otra
+    moneda y no tiene tipo de cambio."""
+    contrato = cierre.contrato
+    viaticos = sum((_d(v.monto_comprobado)
+                    for v in viaticos_del_mes(db, contrato)), CERO)
+    moneda, local = moneda_del_mes(db, contrato)
+    if moneda == local:
+        return {"facturacion": _d(cierre.total_ejecutado),
+                "viaticos": viaticos, "en_otra_moneda": None}
+    if not contrato.tipo_cambio:
+        return None
+    tasa = _d(contrato.tipo_cambio)
+    a_facturar = comparar(db, contrato)["a_facturar"]
+    servicio_local = tipo_cambio.a_local(a_facturar["servicio"], tasa)
+    gastos_local = (tipo_cambio.a_local(_d(contrato.gastos_mes), tasa)
+                    if contrato.viaticos_incluidos else viaticos)
+    return {"facturacion": servicio_local + gastos_local,
+            "viaticos": viaticos,
+            "en_otra_moneda": {
+                "moneda": moneda.value, "servicio": a_facturar["servicio"],
+                "total": (_d(cierre.total_ejecutado) if cierre.enviado_en
+                          else a_facturar["total"]),
+                "tasa": tasa}}
 
 
 def aprobar(db: Session, cierre: m.Cierre, usuario: m.Usuario) -> dict:
@@ -768,16 +895,29 @@ def armar_factura(db: Session, cierre: m.Cierre) -> dict:
             "importe": str(trabajado["desglose"]["horas_extra"])})
 
     a_facturar = comparativo["a_facturar"]
+    if a_facturar["total"] is None:
+        # Sin tipo de cambio no hay cifra de gastos (seccion 82): la
+        # factura no sale y el mes se queda por facturar con el motivo.
+        raise HTTPException(409, comparativo["gastos"]["sin_tipo_de_cambio"])
     if a_facturar["viaticos"]:
-        conceptos.append({
+        gastos = {
             "tipo": "viaticos",
             "descripcion": (f"Gastos a precio alzado {de_que}"
                             if contrato.viaticos_incluidos
                             else f"Gastos comprobados {de_que}"),
             "cantidad": 1, "precio": str(a_facturar["viaticos"]),
-            "importe": str(a_facturar["viaticos"])})
+            "importe": str(a_facturar["viaticos"])}
+        # Netos en otra moneda: se pagaron en pesos y se facturan al tipo
+        # de cambio del visto bueno. El renglon lleva de donde sale la cifra.
+        tc = comparativo["gastos"]["tipo_cambio"]
+        if tc and not contrato.viaticos_incluidos:
+            gastos["origen"] = facturacion.origen_de_gastos(
+                comparativo["gastos"]["comprobado"], comparativo["moneda_local"],
+                tc["tasa"])
+            gastos["descripcion"] += facturacion.descripcion_del_origen(
+                gastos["origen"])
+        conceptos.append(gastos)
 
-    pais = db.get(m.Pais, servicio.pais_id)
     cliente = servicio.cliente
     return {
         "referencia": f"{servicio.folio} {de_que}",
@@ -785,7 +925,8 @@ def armar_factura(db: Session, cierre: m.Cierre) -> dict:
         "periodo": de_que,
         "cliente": {"id_odoo": cliente.odoo_id if cliente else None,
                     "nombre": cliente.nombre if cliente else None},
-        "moneda": pais.moneda_local.value if pais else None,
+        # La de los precios del mes (seccion 82).
+        "moneda": comparativo["moneda"],
         "fecha": (cierre.enviado_en or cierre.aprobado_en
                   or datetime.now()).date().isoformat(),
         "total": str(a_facturar["total"]),

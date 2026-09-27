@@ -474,6 +474,22 @@ export function dinero(valor, moneda = "MXN") {
   }).format(numero);
 }
 
+/* Un tipo de cambio como se lee: "17.50", no "17.5000"; los decimales
+   que traiga de mas se quedan ("17.4523"). */
+export function tasa(valor) {
+  if (valor === null || valor === undefined || valor === "") return "—";
+  const [enteros, decimales = ""] = Number(valor).toFixed(4).split(".");
+  return `${enteros}.${decimales.replace(/0+$/, "").padEnd(2, "0")}`;
+}
+
+/* Lo que suman varios cierres, uno por moneda (seccion 82): pesos y
+   dolares no se suman. `lista` es [{moneda, monto}], como la manda el
+   servidor; vacia, un cero en la moneda que se diga. */
+export function montos(lista, porOmision = "MXN") {
+  if (!lista || !lista.length) return dinero(0, porOmision);
+  return lista.map(x => dinero(x.monto, x.moneda || porOmision)).join(" · ");
+}
+
 export function vaciar(nodo) {
   while (nodo.firstChild) nodo.removeChild(nodo.firstChild);
   return nodo;

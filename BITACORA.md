@@ -5136,13 +5136,118 @@ que debajo siga diciendo EP Connect.
   agregar desde `appep.mycentauro.lat`. Android lo cambia por su cuenta,
   pero puede tardar unos días.
 
+## 82. Dólares en la cotización
+
+Salvador, 26 de septiembre: «terminando esto nos pasamos a dólares en
+cotización». Vio la maqueta —el tarifario de Amazon en dólares, el
+cierre en dólares y la comisión en pesos— y decidió cuatro cosas:
+
+1. **El tipo de cambio.** Primero escogió el FIX del Banco de México.
+   El mismo día lo cambió: «Será mejor que se ponga manual y pueda ser
+   editable. El número de cambio que se coloque se queda y aplica para
+   todo hasta que sea cambiado».
+2. **La utilidad y la comisión**, al tipo de cambio del día en que se
+   autoriza la cotización, fijo.
+3. **Los gastos netos**, en dólares y en la misma factura.
+4. **También los implantados.**
+
+### Lo que cambió
+
+- **El tipo de cambio lo pone finanzas a mano**, en *Facturación →
+  Tarifarios*: «1 USD = [17.50] MXN». El que se pone aplica para todo
+  hasta que alguien lo cambie. Los anteriores se quedan, con quién los
+  puso y cuándo. Un cambio de más de 10% pregunta antes de guardarse: casi
+  siempre es un dedo que se resbaló. Lo ven quienes cotizan y cierran; lo
+  cambian finanzas y administración. No hay llave ni lectura de nadie:
+  nada sale a la red. Tabla `tipo_cambio`.
+- **Lo que ya se fijó no se mueve**:
+  - La cotización en dólares se queda con el tipo de cambio que estaba
+    puesto cuando se autorizó. Sin tipo de cambio puesto, no se
+    autoriza.
+  - Los gastos netos se comprueban en pesos y se facturan en dólares, al
+    tipo de cambio que está puesto en el visto bueno. Ese queda fijo en
+    el cierre. Si finanzas lo regresa, el siguiente visto bueno toma el
+    que esté puesto entonces, porque sale otra factura.
+  - El mes del implantado en dólares se queda con el tipo de cambio de
+    cuando se abrió. Si entonces no había ninguno, lo fija el visto
+    bueno.
+- **La lista de Amazon se lee en dólares.** Antes se quedaba afuera.
+  - Lo que toma de la General, que está en pesos, se pasa a dólares con
+    el tipo de cambio de Centauro, no con el de Odoo. Se vuelve a
+    calcular en la lectura de cada hora.
+  - Solo se sigue quedando afuera una lista en una moneda que Centauro
+    no convierte, como dólares en Brasil.
+- **El cierre del eventual en dólares**:
+  - Arriba, el tipo de cambio de la cotización.
+  - Los gastos comprobados en pesos, lo que se factura en dólares y la
+    cuenta: $2,204 ÷ 17.50 = USD 125.94.
+  - Renglón por renglón, la factura en dólares.
+- **La factura** sale en dólares. El renglón de gastos dice de dónde
+  sale la cifra, «(MXN 2,204.00 al tipo de cambio 17.50)», y lleva aparte
+  el importe en pesos y el tipo de cambio.
+- **El desglose del cliente** trae los gastos en pesos, como se pagaron,
+  y abajo el tipo de cambio y el total en dólares, igual que la factura.
+  Antes salían los pesos con la etiqueta de dólares.
+- **La utilidad y la comisión se calculan en pesos**:
+  - El servicio pasa a pesos al tipo de cambio de la cotización.
+  - Los gastos van en pesos, como se comprobaron.
+  - La comisión guarda de dónde salió: cuántos dólares se facturaron,
+    cuántos del servicio y a qué tipo de cambio. En *Nóminas* se lee
+    debajo de su renglón.
+- **Ningún total suma dólares con pesos**:
+  - La bandeja de Facturación, Panorama y el historial dan un monto por
+    moneda.
+  - El historial y su Excel dicen aparte en qué moneda van los viáticos:
+    una columna nueva.
+- **El implantado en dólares**:
+  - El mes toma la moneda de su lista de implantados.
+  - *Términos del mes* pone la moneda en cada precio y dice el tipo de
+    cambio del mes.
+  - La factura del mes, el desglose y la comisión van igual que en el
+    eventual.
+  - El mes que sigue copia la moneda y toma el tipo de cambio que esté
+    puesto ese día.
+  - Si un mes en pesos pasa a una lista en dólares con *Usar los de la
+    lista*, se borra lo que la lista no trae, el precio fijo del mes y
+    los gastos a precio alzado: eran pesos.
+- **Sin tipo de cambio no se inventa uno**: la cotización no se autoriza
+  y el visto bueno no pasa, con el aviso de que finanzas lo ponga.
+
+### Las pruebas
+
+- `tests/test_dolares.py`:
+  - Finanzas pone el tipo de cambio, se queda hasta que se cambia y el
+    consultor no lo cambia.
+  - Sin tipo de cambio no se autoriza.
+  - El eventual en dólares, de la cotización a la comisión: los gastos al
+    tipo de cambio del visto bueno; la factura, el desglose y la bandeja
+    en dólares; la comisión en pesos, al tipo de cambio de la cotización.
+  - Regresado por finanzas, el cierre toma el tipo de cambio del nuevo
+    visto bueno.
+  - A precio alzado no se convierte nada.
+  - La bandeja no suma monedas.
+  - El mes del implantado en dólares, de la lista a la comisión.
+  - Un mes sin tipo de cambio no pasa el visto bueno.
+  - Pasar un mes a una lista en dólares borra lo que era en pesos.
+- `tests/test_odoo_tarifarios.py`:
+  - La lista de Amazon usa el tipo de cambio de Centauro, 17.50, no el
+    de Odoo.
+  - Sin tipo de cambio, lo que viene en pesos sale sin precio.
+- `tests/test_historial.py`: la columna de la moneda de los viáticos.
+
+### Para subirlo
+
+- Lleva migración (`e7a3c9d15b28`).
+- Después de subirlo, finanzas pone el tipo de cambio en *Facturación →
+  Tarifarios*. Mientras no lo ponga, una cotización en dólares no se
+  autoriza y la lista de Amazon trae sin precio lo que toma de la
+  General.
+- Lo que ya existe no cambia: todo está en pesos.
+
 ## 14. Lo que falta
 
 ### Abierto
 
-- **La lista de Amazon, en dólares** (sección 77): no se lee hasta que
-  Centauro sepa cobrar en otra moneda que la del país —*La moneda*, más
-  abajo—. Mientras, Amazon se queda con el tarifario que tenga.
 - **El puesto de administración del sistema y calidad** (pedido el 26 de
   septiembre, para después de los tarifarios): Aridiai Morales, que ya
   está en Odoo. Primero se enseña con pantallas qué haría ese puesto.
@@ -5300,31 +5405,9 @@ busca, está en las secciones 15 y 16.*
   **Cerrado el 20 de septiembre**, sección 27. Se construyó como un tipo
   de implantado aparte —12 × 36— y el de 12 horas naturales no se tocó.
 
-- **La moneda.** Ver `PROPUESTA_MONEDA.md`. Decisión de Salvador
-  (18 sep): **la rentabilidad se deja para el final**, es la cereza del
-  pastel. Pero el defecto queda escrito aquí para que no se pierda:
-
-  En `cierre.rentabilidad()`, `utilidad = facturacion - costo_total`
-  resta la moneda del tarifario menos la moneda local. Los costos
-  —comisiones, viáticos, unidad— **siempre** son locales; el tarifario
-  tiene su propia moneda. Un servicio en México cotizado en 5,000 USD
-  con 80,000 MXN de costo diría margen **−1,500%**, rotulado con la
-  moneda de la cotización, o sea con cara de número normal.
-
-  Hoy no muerde porque no hay tarifarios en dólares cargados. **El día
-  que se cargue uno, muerde en silencio.**
-
-  Se propuso adelantar un candado —no autorizar una cotización en moneda
-  distinta a la local sin tipo de cambio, pocas líneas, sin depender de
-  ninguna decisión pendiente— y **Salvador decidió que también espere**.
-  Va todo junto al final. No adelantarlo por iniciativa propia.
-
-  El aviso práctico mientras tanto: **mientras no exista el candado, no
-  cargar tarifarios en otra moneda.** Es lo único que dispara el
-  problema.
-
-  Lo que sí quedó cerrado, y acota el problema: **el costo nunca
-  necesita conversión.** Los viáticos se crean en cinco lugares y los
-  cinco toman `servicio.pais_id → pais.moneda_local`; el país del
-  servicio se captura en el alta y ningún endpoint lo reasigna; la
-  nómina se calcula por país. El tipo de cambio solo toca el precio.
+- ~~**La moneda.**~~ **Cerrado el 26 de septiembre**, sección 82. La
+  utilidad ya no resta dólares menos pesos: todo se pasa a pesos con el
+  tipo de cambio de la cotización, que pone finanzas a mano. Una
+  cotización en otra moneda sin tipo de cambio no se autoriza. El costo
+  sigue sin necesitar conversión: los viáticos y la nómina son de la
+  moneda del país.

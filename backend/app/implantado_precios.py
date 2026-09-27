@@ -24,6 +24,11 @@ Si el cliente no tiene lista de implantados, sale de su lista de siempre,
 y se dice. En 12x36 trabaja una de las dos personas cada dia: se cobra
 una. Lo que la lista no tiene no se adivina: se dice, y ese precio se
 queda como este.
+
+Los precios del mes van en la moneda de su lista (seccion 82): una lista
+en dolares deja el mes en dolares, con el tipo de cambio que esta puesto
+cuando se abre --como el de una cotizacion autorizada--. Solo la lista en
+una moneda que Centauro no sabe convertir se queda sin propuesta.
 """
 from decimal import Decimal
 
@@ -33,6 +38,7 @@ from app import cierre as motor_cierre
 from app import cotizacion as cot
 from app import implantado as motor
 from app import models as m
+from app import tipo_cambio
 from app.revisor import AVISO
 
 CERO = Decimal("0")
@@ -49,7 +55,8 @@ OTRA_MONEDA = "otra_moneda"
 NOMBRES = {"precio_dia_personal": "personal por dia",
            "precio_dia_adicional": "dia adicional",
            "precio_mes_vehiculo": "vehiculo al mes",
-           "precio_hora_extra": "hora extra"}
+           "precio_hora_extra": "hora extra",
+           "moneda": "moneda"}
 
 
 def _d(valor) -> Decimal | None:
@@ -95,15 +102,19 @@ def de_la_lista(db: Session, contrato: m.ContratoImplantado) -> dict:
     """Los terminos del mes segun la lista, renglon por renglon.
 
     {lista, motivo, renglones, faltan, terminos, completa, dias_base,
-    mes_completo}: `motivo` dice por que no hay propuesta (sin lista, o
-    una lista en otra moneda que la del pais); `faltan`, lo que la lista
-    no tiene; `completa`, si todo lo del dia y de las unidades salio de
-    ella. La hora extra que la lista no trae no se cobra: eso no falta.
+    mes_completo, moneda_local}: `motivo` dice por que no hay propuesta
+    (sin lista, o una lista en una moneda que no se sabe convertir);
+    `faltan`, lo que la lista no tiene; `completa`, si todo lo del dia y
+    de las unidades salio de ella. La hora extra que la lista no trae no
+    se cobra: eso no falta. Los precios, en la moneda de la lista.
     """
     salida = {"lista": None, "motivo": None, "renglones": [], "faltan": [],
               "terminos": dict.fromkeys(CAMPOS), "completa": False,
-              "dias_base": contrato.dias_base, "mes_completo": None}
+              "dias_base": contrato.dias_base, "mes_completo": None,
+              "moneda_local": None}
     servicio = contrato.servicio
+    local = tipo_cambio.local_del_pais(db, servicio.pais_id)
+    salida["moneda_local"] = local.value if local else None
     lista, de_implantados = lista_del_implantado(db, servicio)
     if lista is None:
         salida["motivo"] = SIN_LISTA
@@ -112,10 +123,10 @@ def de_la_lista(db: Session, contrato: m.ContratoImplantado) -> dict:
                        "de_implantados": de_implantados,
                        "de_odoo": lista.odoo_id is not None,
                        "moneda": lista.moneda.value}
-    pais = db.get(m.Pais, servicio.pais_id)
-    if pais is not None and lista.moneda != pais.moneda_local:
-        # Una lista en dolares para un servicio que se cobra en pesos: la
-        # utilidad restaria dolares menos pesos (seccion 77).
+    if local is not None and not tipo_cambio.se_puede(lista.moneda, local):
+        # Una lista en dolares para un servicio en Brasil: Centauro no
+        # convierte de dolares a reales, y la utilidad restaria dolares
+        # menos reales (seccion 82). En dolares para Mexico si se lee.
         salida["motivo"] = OTRA_MONEDA
         return salida
 
@@ -213,6 +224,13 @@ def diferencias(contrato: m.ContratoImplantado, propuesta: dict) -> list[dict]:
     campos = (CAMPOS if contrato.esquema == m.EsquemaCotizacionImplantado.POR_DIA
               else ("precio_hora_extra",))
     salida = []
+    # Unos precios en pesos no son los de una lista en dolares aunque
+    # digan el mismo numero (seccion 82).
+    moneda_mes = contrato.moneda.value if contrato.moneda else propuesta.get(
+        "moneda_local")
+    if moneda_mes and moneda_mes != propuesta["lista"]["moneda"]:
+        salida.append({"campo": "moneda", "mes": moneda_mes,
+                       "lista": propuesta["lista"]["moneda"]})
     for campo in campos:
         lista = propuesta["terminos"][campo]
         if lista is None and campo != "precio_hora_extra":
@@ -232,12 +250,33 @@ def sigue_la_lista(contrato: m.ContratoImplantado, propuesta: dict) -> bool:
 
 
 def aplicar(contrato: m.ContratoImplantado, propuesta: dict) -> list[str]:
-    """Pone en el mes los precios de la lista. Lo que la lista no tiene se
-    queda como estaba. Devuelve lo que cambio, para la auditoria."""
+    """Pone en el mes los precios de la lista, y su moneda. Lo que la
+    lista no tiene se queda como estaba, si la moneda no cambia. Devuelve
+    lo que cambio, para la auditoria."""
     cambios = []
+    # Los precios del mes van en la moneda de la lista (seccion 82). Si el
+    # mes cambia de moneda, lo que la lista no trae ya no se queda como
+    # estaba --eran pesos y ahora se leerian como dolares--: se borra, y
+    # tambien el precio fijo del mes y los gastos a precio alzado. Se
+    # capturan de nuevo en la moneda del mes. Su tipo de cambio se vuelve
+    # a fijar (`fijar_moneda_del_mes`).
+    local = propuesta.get("moneda_local")
+    de_la_lista = propuesta["lista"]["moneda"]
+    moneda = None if de_la_lista == local else m.Moneda(de_la_lista)
+    cambia = contrato.moneda != moneda
+    if cambia:
+        cambios.append(f"moneda: {contrato.moneda.value if contrato.moneda else local}"
+                       f" -> {de_la_lista}")
+        contrato.moneda = moneda
+        contrato.tipo_cambio = None
+        contrato.tipo_cambio_fecha = None
+        for campo in ("precio_mes_completo", "gastos_mes"):
+            if getattr(contrato, campo) is not None:
+                cambios.append(f"{campo}: {_d(getattr(contrato, campo))} -> None")
+                setattr(contrato, campo, None)
     for campo in CAMPOS:
         nuevo = propuesta["terminos"][campo]
-        if nuevo is None and campo != "precio_hora_extra":
+        if nuevo is None and campo != "precio_hora_extra" and not cambia:
             continue
         antes = _d(getattr(contrato, campo))
         if antes != nuevo:
@@ -245,6 +284,30 @@ def aplicar(contrato: m.ContratoImplantado, propuesta: dict) -> list[str]:
             setattr(contrato, campo, nuevo)
     contrato.precios_de_la_lista = sigue_la_lista(contrato, propuesta)
     return cambios
+
+
+def fijar_moneda_del_mes(db: Session,
+                         contrato: m.ContratoImplantado) -> dict | None:
+    """El tipo de cambio de un mes en otra moneda que la del pais: el que
+    esta puesto cuando se abre, como el de una cotizacion autorizada, y ya
+    no se mueve --con el se calculan la utilidad y la comision del mes--.
+    Si entonces no habia ninguno, lo fija el visto bueno. Un mes en la
+    moneda del pais no lleva ninguno. None si no hay."""
+    local = tipo_cambio.local_del_pais(db, contrato.servicio.pais_id)
+    if contrato.moneda is None or contrato.moneda == local:
+        contrato.moneda = None
+        contrato.tipo_cambio = None
+        contrato.tipo_cambio_fecha = None
+        return None
+    if contrato.tipo_cambio:
+        return tipo_cambio.fijo(contrato.tipo_cambio,
+                                contrato.tipo_cambio_fecha)
+    tc = (tipo_cambio.vigente(db, contrato.moneda, local)
+          if tipo_cambio.se_puede(contrato.moneda, local) else None)
+    if tc:
+        contrato.tipo_cambio = tc["tasa"]
+        contrato.tipo_cambio_fecha = tc["fecha"]
+    return tc
 
 
 def al_abrir(db: Session, contrato: m.ContratoImplantado) -> dict:
@@ -258,6 +321,7 @@ def al_abrir(db: Session, contrato: m.ContratoImplantado) -> dict:
     propuesta = de_la_lista(db, contrato)
     if propuesta["lista"] is not None and not propuesta["motivo"]:
         aplicar(contrato, propuesta)
+    fijar_moneda_del_mes(db, contrato)
     return propuesta
 
 
@@ -282,6 +346,8 @@ def observaciones(contrato: m.ContratoImplantado, propuesta: dict) -> list[dict]
             "nivel": AVISO, "asunto": "Precios distintos a los de la lista",
             "clave": "precios_lista",
             "datos": {"lista": lista["nombre"], "moneda": lista["moneda"],
+                      "moneda_mes": (contrato.moneda.value if contrato.moneda
+                                     else propuesta.get("moneda_local")),
                       "diferencias": distintos},
             "mensaje": (f"Los terminos del mes no son los de la lista "
                         f"{lista['nombre']}: {detalle}"),

@@ -73,6 +73,9 @@ TABLAS_DE_OPERACION = [
     # Lo que se leyo de Pegasus (seccion 60): cada prueba arma su propio
     # Pegasus de mentiras y no puede heredar las unidades de otra.
     "unidad_gps", "grupo_gps",
+    # El tipo de cambio que pone finanzas (seccion 82): cada prueba arranca
+    # sin ninguno puesto, como el servidor el primer dia.
+    "tipo_cambio",
 ]
 
 
