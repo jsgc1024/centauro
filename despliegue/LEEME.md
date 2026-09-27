@@ -490,8 +490,13 @@ región y de ninguna otra.
 6. **El acceso a producción**: SES → *Account dashboard → Request
    production access*: *Transactional*, `https://centauro.lat`, y, si lo
    piden, el uso, en inglés: el texto está en la bitácora, sección 93.
-   Amazon contesta en unas 24 horas; si pide más datos, se le contesta
-   con lo mismo. La aprobación es por región.
+   Amazon contesta en unas 24 horas. Con una cuenta nueva puede no
+   aprobar de entrada: en *Prepárese* el estado dice «Se necesita más
+   información» y abre un caso en el centro de soporte, donde pregunta
+   cada cuánto se manda, de dónde salen los correos, qué se hace con
+   rebotes, quejas y bajas, y pide ejemplos. Se contesta en el mismo caso,
+   con *Responder*; la respuesta que se mandó está en la bitácora. La
+   aprobación es por región.
 7. **Encenderlo, ya aprobado.** Antes no: con la cuenta a prueba, Amazon
    rechazaría los avisos a clientes y cada uno gastaría sus cinco
    intentos y quedaría en fallido. `--encender` no enciende sin la llave

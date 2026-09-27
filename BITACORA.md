@@ -6183,6 +6183,86 @@ En inglés, porque lo revisan en inglés. *Mail type*: Transactional.
 > complaint rates in the SES console. Replies go to our monitored mailbox
 > cecc.notification@centauro.lat.
 
+Amazon no aprobó de entrada. En *Prepárese* el estado quedó en «Se
+necesita más información» y abrió un caso en el centro de soporte, el
+179054803100125, con su pregunta de siempre: cada cuánto se manda, cómo
+se mantienen las listas, qué se hace con rebotes, quejas y bajas, y
+ejemplos de los correos. Se le contestó en el mismo caso el 27 de
+septiembre, en primera persona y firmado por Salvador. Trae dos
+compromisos que el sistema no cumple solo y que Salvador aceptó al
+mandarlo: si rebota el correo de un cliente, alguien le llama para pedir
+el bueno; y si alguien pide que no le escribamos, se deja de usar su
+correo. Lo que se mandó, tal cual:
+
+> Hello,
+>
+> Thanks for getting back to me. Here is how we plan to use SES.
+>
+> I'm the CEO of Centauro (https://centauro.lat), a security company
+> operating in Mexico and Brazil. We provide executive protection: a
+> team of drivers and security agents that accompanies a client's
+> executive during their stay. mycentauro.lat is the domain of Centauro
+> Connect, the internal platform we use to run those services, and SES
+> will only carry the emails that platform sends. No marketing,
+> newsletters or campaigns of any kind from this account.
+>
+> What we send. Everything is triggered by a service a client booked
+> with us. Before the service, the client gets the task sheet: the names
+> and phone numbers of the team, the vehicle, the meeting point and the
+> report time, plus a new version if something changes. On the day,
+> short notices: the team is at the meeting point, the service started,
+> a heads-up before overtime begins, and a summary when the day ends. If
+> we replace an agent or the vehicle, we let them know. After the
+> service, we send one short satisfaction survey to the person who
+> booked it and one to the executive we protected, with a single
+> reminder after five days if there is no answer; the link closes after
+> 15 days. For our own employees, the platform sends account
+> invitations, password resets and a few internal notices.
+>
+> How often. It follows our operation, not a schedule: about 600
+> services a month, which comes to around 10,000 emails a month, and at
+> most a few hundred on a busy day.
+>
+> Recipients. We don't keep mailing lists. Each email goes to the people
+> on a specific service: the contact at the client company who booked it
+> (usually an assistant or their security department) and the executive
+> we protect. The client gives us those addresses when they book.
+> Employee addresses come from our HR records. We have never bought or
+> imported a list.
+>
+> Bounces and complaints. The account-level suppression list is on for
+> both, so SES won't send again to an address that bounced or
+> complained. Our platform logs every email with its status and the last
+> error SES returned, and when a client's address bounces, our team
+> calls the client to get the right one. We also watch the bounce and
+> complaint rates in the SES console.
+>
+> Unsubscribe requests. These are service messages people receive
+> because they asked for the service, so there is no list to unsubscribe
+> from. Every email has Reply-To set to our monitored mailbox,
+> cecc.notification@centauro.lat. If someone asks us to stop, we stop
+> sending to that address.
+>
+> The domain mycentauro.lat is verified with DKIM, uses a custom MAIL
+> FROM domain (envio.mycentauro.lat) with SPF, and has a DMARC record.
+> We send from connect@mycentauro.lat.
+>
+> Two examples:
+>
+> Subject: EP/E-042: team at the meeting point  
+> Body: "The security team has arrived at the meeting point and is
+> standing by to make contact." Below that, the team with their phone
+> numbers, the vehicle and the meeting point.
+>
+> Subject: EP/E-042: How would you rate the security service you
+> received?  
+> Body: a one-question survey (1 to 5) with a single button, "Answer in
+> one tap". If the score is low, it asks what went wrong.
+>
+> Thanks,  
+> Salvador García Carrasco  
+> CEO, Centauro
+
 ### El paso a paso con Salvador
 
 Pidió ir de uno en uno. Nueve pasos: la cuenta de AWS; el segundo
@@ -6216,6 +6296,9 @@ en el servidor y probar; el acceso a producción; encender.
   Amazon aceptó el correo al buzón de pruebas y el de
   `salvador.garcia@grupocentauro.mx` llegó. El correo del sistema sigue
   apagado.
+- **El acceso a producción**: la solicitud ya estaba mandada; Amazon
+  pidió más datos en el caso 179054803100125 y se le contestó con el texto
+  de arriba. Falta su respuesta: dice que en unas 24 horas.
 - **El MAIL FROM propio**, después de la prueba, porque SES lo marcó de
   impacto alto: `envio.mycentauro.lat`, y si falla el `MX`, el
   predeterminado de Amazon. En Cloud DNS, el `MX`
@@ -6319,7 +6402,9 @@ busca, está en las secciones 15 y 16.*
   (`envio.mycentauro.lat`) en Cloud DNS, sin los de MailerSend; el
   dominio y el correo de las pruebas, verificados; la
   llave SMTP puesta en el servidor y probada. Falta, en ese orden (guía,
-  paso 7c): el acceso a producción y `--encender`.
+  paso 7c): que Amazon apruebe el acceso a producción —se pidió, preguntó
+  más en el caso 179054803100125 y se le contestó el 27 de septiembre— y
+  `--encender`.
   Plan B: Microsoft 365, ya programado (sección 67). Con el correo, la invitación y la
   recuperación de contraseña llegan solas (sección 58); mientras, cada
   invitación la copia Dirección general, y a quien revisa los reportes de
