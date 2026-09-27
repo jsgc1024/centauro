@@ -56,7 +56,9 @@ const FAMILIAS = [
   { clave: "cat_fam_otras", prefijos: [] },
 ];
 
-function porFamilia(catalogo) {
+/* La usa tambien el manual (seccion 90), en Quien puede que: las mismas
+   familias que ve quien arma un puesto. */
+export function porFamilia(catalogo) {
   const conocidos = new Set(FAMILIAS.flatMap(f => f.prefijos));
   return FAMILIAS.map(f => ({
     titulo: t(f.clave),

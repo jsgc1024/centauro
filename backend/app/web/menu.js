@@ -72,6 +72,10 @@ export const CATALOGOS = ["admin", "director_general", "director_operaciones",
    porque compara a unos con otros. */
 export const CALIDAD = ["admin", "director_general", "director_operaciones",
                         "sistema_calidad"];
+/* El manual del sistema (seccion 90): lo lee quien administra el sistema
+   --sistema y calidad y administracion; direccion general, por lo que
+   hereda--. Decision 1 de Salvador, 27 sep. */
+export const MANUAL = ["admin", "director_general", "sistema_calidad"];
 
 /* El menu de arriba, en una sola lista.
 
@@ -170,6 +174,11 @@ export const MENU = [
   { ruta: "/catalogos", clave: "catalogos", necesita: ["catalogos.editar", "catalogos.dinero", "bitacora.ver"],
     texto: "nav_catalogos", grupo: "nav_administrativa",
     cuenta: "rec_catalogos", quienes: CATALOGOS },
+  /* Como funciona el sistema, que hacer cuando algo se atora y el estado
+     del sistema en vivo (seccion 90). `nueva` pinta la etiqueta de nueva
+     en el menu hasta ese dia. */
+  { ruta: "/manual", clave: "manual", necesita: "manual.ver", texto: "nav_manual", grupo: "nav_administrativa",
+    cuenta: "rec_manual", quienes: MANUAL, nueva: "2026-10-11" },
 ];
 
 /* Si esta persona abre esta pantalla. Con puesto que dice sus

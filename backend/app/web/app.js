@@ -16,6 +16,7 @@ import { pantallaAccesos } from "./accesos.js";
 import { pantallaOdoo } from "./odoo.js";
 import { pantallaCatalogos } from "./catalogos_pantalla.js";
 import { pantallaCalidad } from "./calidad.js";
+import { pantallaManual } from "./manual.js";
 import { pantallaCodigo } from "./codigo.js";
 import { pantallaEnlace, pantallaOlvide } from "./contrasena.js";
 import { pantallaServicio } from "./servicio.js";
@@ -25,8 +26,8 @@ import { IDIOMAS, idioma, ponerIdioma, t } from "./idioma.js";
 import { abrirRecorrido } from "./recorrido.js";
 import { firma } from "./firma.js";
 import { ADMINISTRA, CALIDAD, CATALOGOS, CODIGO, CONSULTA, DESEMPENO,
-         DINERO, LEE_ODOO, MONITOREO, NOMINAS, PANORAMA, VOZ_CLIENTE, abre,
-         destinoDe, menuDe } from "./menu.js";
+         DINERO, LEE_ODOO, MANUAL, MONITOREO, NOMINAS, PANORAMA, VOZ_CLIENTE,
+         abre, destinoDe, menuDe } from "./menu.js";
 
 /* La regla de captura vale para toda la consola, no para una
    pantalla: se engancha una sola vez al documento. */
@@ -177,13 +178,20 @@ function aqui(x) {
   return rutas.some(r => location.hash.startsWith(`#${r}`));
 }
 
+/* Una pantalla recien llegada lo dice en el menu unos dias, hasta la
+   fecha que trae en `nueva` (menu.js). */
+function esNueva(x) {
+  return !!x.nueva && new Date() <= new Date(`${x.nueva}T23:59:59`);
+}
+
 function armazon() {
   const rol = sesion.usuario.rol;
   const nav = h("nav");
   const enlace = (x) => h("a", {
     href: `#${x.ruta}`,
     clase: aqui(x) ? "activo" : "",
-  }, t(x.texto));
+  }, t(x.texto), esNueva(x) ? h("span", { clase: "etiqueta alerta nav-nueva" },
+                                t("nav_nueva")) : null);
 
   /* El menu se arma respetando el orden de MENU: las entradas que
      comparten `grupo` se juntan en un solo boton que se abre. Se usa
@@ -354,6 +362,9 @@ const RUTAS = [
   [/^#\/accesos$/, pantallaAccesos, "accesos", ADMINISTRA],
   [/^#\/odoo$/, pantallaOdoo, "odoo", LEE_ODOO],
   [/^#\/catalogos$/, pantallaCatalogos, "catalogos", CATALOGOS],
+  /* El manual y sus paginas: #/manual, #/manual/atorado,
+     #/manual/leer/<capitulo>, y asi. La pantalla reparte el resto. */
+  [/^#\/manual\b\/?(.*)$/, pantallaManual, "manual", MANUAL],
 ];
 
 async function pintar() {

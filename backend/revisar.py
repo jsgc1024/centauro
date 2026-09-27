@@ -717,6 +717,8 @@ AYUDA_POR_PANTALLA = {
     # El recorrido ES ayuda: la capa 3. Ponerle un "?" a la ayuda seria
     # explicar la explicacion.
     "recorrido.js": 0,
+    # El manual del sistema (seccion 90), por lo mismo: es la ayuda entera.
+    "manual.js": 0,
 
     # --- la app de campo no lleva "?", y es a proposito
     #

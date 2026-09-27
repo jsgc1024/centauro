@@ -5769,6 +5769,126 @@ algo falle». Prueba: `tests/test_lo_que_falta_en_odoo.py`.
 - Lleva migración (`888a6638f18c`): la pantalla de Calidad entra al menú
   de los puestos que ya existen y traen `calidad.ver`. Solo agrega.
 
+## 90. El manual del sistema
+
+Salvador, 27 de septiembre: «me podrías hacer un manual del sistema para
+Aridiai… que esté guardado en el mismo sistema y se vaya actualizando
+cada vez que hagamos modificaciones… el alcance es que si algo se atora
+en el sistema Aridiai sepa cómo solucionarlo y entender cuál fue la causa
+raíz». Se le propuso que viviera dentro de la consola y no en un PDF
+suelto —un PDF se queda viejo el día que cambia una pantalla—
+(`Propuesta_manual_del_sistema.pdf`), y decidió: lo leen Aridiai,
+dirección general y administración; con el estado del sistema en vivo;
+con casos resueltos; en español y en portugués.
+
+Y dejó una regla para lo que se atore por una falla del sistema: «si
+llega a ser un bug que es de sistema y no afecta nada, lo arreglas
+directo, me comentas qué es y actualizamos. Si es un bug que requiere
+cambios más importantes y desarrollo de cambio de proceso, me das
+primero la propuesta antes de desarrollar». Por eso cada caso resuelto
+dice si la causa fue una falla del sistema.
+
+### La pantalla
+
+- **Gestión Administrativa → Manual del sistema** (`web/manual.js`), con
+  la etiqueta de nueva en el menú hasta el 11 de octubre. La abre quien
+  trae `manual.ver`: sistema y calidad y administración; dirección
+  general, por lo que hereda. Sin «?»: el manual es la ayuda.
+- **La portada**: un buscador sobre todo el manual —sin acentos ni
+  mayúsculas, palabra por palabra— que dice también cuántos mensajes,
+  actividades y tareas del reloj traen lo buscado; con qué actualización
+  está al día; **Guardar en PDF**; las tres partes, y lo nuevo de la
+  última actualización.
+- **Para entender**: siete capítulos —las piezas y cómo se hablan, el
+  camino de un servicio eventual, el implantado, lo que viene de Odoo, el
+  dinero y las dos manos, accesos, roles y puestos, y cada pantalla con
+  su ancla—.
+- **Cuando algo se atora**: arriba, el estado del sistema en ese momento
+  —la base, el reloj, el correo, Odoo, el GPS y los avisos al teléfono—,
+  cada tarjeta con su tono y la parte del manual a la que lleva. Abajo,
+  22 síntomas por área, escritos igual: qué ves, por qué pasa —de lo más
+  común a lo menos—, cómo confirmarlo, cómo se arregla y la causa de
+  fondo. Revisados contra el código, como la lista de Odoo.
+- **Lo que el sistema hace solo**: las 20 tareas del reloj y el respaldo
+  de la noche, a qué hora, qué hacen, qué revisar si no pasaron y su
+  última vuelta.
+- **Quién puede qué**: cada actividad con sus roles de fábrica y los
+  puestos que la traen hoy, en las familias de la pantalla de Puestos, y
+  las cinco parejas de las dos manos.
+- **Cuando el sistema dice que no**: los 168 mensajes de «no se puede»
+  con su qué hacer, tal como salen en pantalla, por área.
+- **Lo nuevo de cada actualización**, desde la sección 77.
+- **Casos resueltos**: qué se vio, la causa, cómo se arregló, el área y
+  si fue una falla del sistema —sí, no o no sé—. Se corrigen después, y
+  queda quién y cuándo.
+- **Guardar en PDF** arma el manual entero en una hoja —con el estado
+  del sistema al imprimir— y abre la ventana de imprimir del navegador;
+  cada parte empieza en su página.
+
+### Cómo se mantiene al día
+
+- **Lo escrito viaja en el código**: `backend/manual/es` y
+  `backend/manual/pt`, un archivo por capítulo con su cabeza —id, parte,
+  orden, título, resumen, área y palabras para buscar— y un Markdown
+  corto: títulos con ancla, párrafos, listas, la nota de la causa de
+  fondo, negritas y ligas a la consola. El servidor lo lee una vez y la
+  consola lo pinta con `h()`, sin HTML a mano. Las novedades, en
+  `backend/manual/novedades`.
+- **Lo que se puede sacar del sistema sale solo**, cada vez que se abre:
+  las tareas del calendario del reloj, los permisos de `permisos.py`, los
+  mensajes —leídos del propio código: cada diccionario con `mensaje` y
+  `que_hacer`, o `accion`— y las novedades.
+- **El reloj anota su última vuelta** (`vuelta_del_reloj`): al empezar y
+  al terminar cada tarea, con el error si reventó o si la lectura lo
+  devolvió, y la nota de la que se saltó —«espera la primera lectura a
+  mano», «sin la llave de Odoo»—. Una fila por tarea; el último error se
+  queda con su hora aunque la siguiente vuelta salga bien. Si en 12
+  minutos no termina ninguna, el estado dice **Parado**.
+- **El candado** (`tests/test_manual.py`): no pasa una pantalla del menú
+  sin su ancla en «Cada pantalla», una tarea del reloj sin su renglón, un
+  archivo con mensajes sin su área, una sección de la bitácora desde la
+  77 sin su novedad en los dos idiomas, un síntoma escrito distinto, una
+  liga que no lleve a nada, ni un portugués con otros capítulos, anclas o
+  ligas que el español.
+
+### Lo que se vio al escribirlo
+
+Dos huecos que van a «Para poder operar», lo que sigue:
+
+- **La cotización autorizada no se captura en la consola.** El servidor
+  la sabe armar —con los precios del tarifario, los paquetes y el tipo de
+  cambio— y el visto bueno la exige, pero ninguna pantalla la pide. Sin
+  ella, el visto bueno de un eventual no sale. El manual lo dice así.
+- **El correo del ejecutivo y el del solicitante no se corrigen después
+  del alta.** Si quedó mal escrito, sus avisos no llegan.
+
+Los dos cambian un proceso: van con su propuesta primero.
+
+### Las pruebas
+
+- `tests/test_manual.py`: el candado de arriba; cómo se dice cada horario
+  del reloj; la última vuelta —con su error, su nota y el reloj parado—;
+  la señal del reloj que la anota sola; quién lo lee y quién no; el
+  manual en español, en portugués y en inglés —que se lee en español, con
+  su aviso—; el estado del sistema; los casos resueltos: se anotan, se
+  corrigen y sin la causa no pasan.
+- `tests/test_puesto_sistema_calidad.py`: el puesto trae la pantalla y
+  `manual.ver`.
+- **La vista previa**, en español y en portugués: la portada, cuando algo
+  se atora con un síntoma abierto, un capítulo, el reloj, los mensajes,
+  quién puede qué, los casos con su formulario, la hoja para el PDF y el
+  menú con la etiqueta de nueva. Sin errores en la consola.
+
+### Para subirlo
+
+- Lleva migración (`9c2e5a7b41d8`): crea `vuelta_del_reloj` y
+  `caso_resuelto`, le da `manual.ver` a los puestos que ya existen con el
+  rol de sistema y calidad y les pone la pantalla del manual. Solo
+  agrega.
+- Se reinician `api`, `worker` y `beat`: el reloj empieza a anotar sus
+  vueltas desde que sube, y el estado del sistema dice «Sin vueltas
+  anotadas» hasta la primera, unos minutos.
+
 ## 14. Lo que falta
 
 ### Abierto
@@ -5777,8 +5897,20 @@ algo falle». Prueba: `tests/test_lo_que_falta_en_odoo.py`.
   Morales. Aprobado el 27 de septiembre con sus pantallas. Hechos los
   cuatro pasos: los candados de Accesos (sección 83), el puesto con sus
   puertas (sección 85), Catálogos con su bitácora (sección 86) y Calidad
-  con su reporte (sección 89). Siguen su manual y la lista de lo que
-  falta en Odoo, por área, para limpiarlo.
+  con su reporte (sección 89). Su manual vive en la consola desde la
+  sección 90, y la lista de lo que falta en Odoo, por área, ya está hecha
+  para que la limpie con cada área.
+- **Para poder operar** (lo que sigue, sección 90). Salvador, 27 de
+  septiembre: «terminando iniciamos: Para poder operar». Van ahí los dos
+  huecos que se vieron al escribir el manual: la cotización autorizada
+  desde la consola y la corrección del correo del ejecutivo y del
+  solicitante. Con su propuesta primero.
+- **El primer agente del sistema: los casos resueltos** (sección 90).
+  Salvador, 27 de septiembre: «más adelante podemos poner a un agente
+  dedicado a ello… será el primer agente que coloquemos en el sistema».
+  Lee los casos cuya causa fue una falla del sistema y sigue la regla: la
+  falla chica que no cambia cómo se trabaja la arregla directo y avisa; la
+  que pide cambiar un proceso la lleva primero como propuesta.
 - **Puestos y Odoo: el paso 4** (secciones 73 a 75). La factura en
   borrador hacia Odoo, probada primero en una copia de Odoo: hace falta
   la copia y una llave que pueda escribir en ella.

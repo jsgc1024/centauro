@@ -475,6 +475,16 @@ ACTIVIDADES: dict[str, dict] = {
                        "reporte",
         "roles": {R.SISTEMA_CALIDAD, R.DIRECTOR_OPERACIONES},
     },
+    # El manual del sistema (seccion 90): como funciona cada pieza, que
+    # hacer cuando algo se atora y el estado del sistema en vivo. Lo leen
+    # quien administra el sistema --sistema y calidad y administracion--
+    # y, por lo que hereda, direccion general (decision de Salvador, 27
+    # sep). Quien lo lee anota tambien los casos resueltos.
+    "manual.ver": {
+        "descripcion": "Leer el manual del sistema, ver el estado del "
+                       "sistema en vivo y anotar los casos resueltos",
+        "roles": {R.ADMIN, R.SISTEMA_CALIDAD},
+    },
 
     # ------------------------------------------ las que iban por rol
     #
@@ -510,10 +520,13 @@ ACTIVIDADES: dict[str, dict] = {
 # rol sino `odoo.administrar`, y un puesto la puede traer.
 #
 # Calidad entro en la seccion 89: la abre quien trae `calidad.ver`.
+#
+# El manual del sistema entro en la seccion 90: lo abre quien trae
+# `manual.ver`.
 PANTALLAS = ("panorama", "servicios", "implantados", "equipo", "unidades",
              "bonos", "encuestas", "calidad", "central", "codigo",
              "finanzas", "facturacion", "nomina", "accesos", "odoo",
-             "catalogos")
+             "catalogos", "manual")
 
 
 def roles_de(actividad: str) -> set:

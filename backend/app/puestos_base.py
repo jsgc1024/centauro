@@ -202,9 +202,11 @@ PUESTOS: list[dict] = [
         "descripcion": "Administra el sistema —accesos, Odoo y catálogos— "
                        "y mide la calidad del servicio. No mueve dinero ni "
                        "opera.",
+        # El manual del sistema (seccion 90): lo que hay que saber para
+        # que, si algo se atora, sepa resolverlo y ver la causa de fondo.
         "pantallas": ["panorama", "servicios", "implantados", "equipo",
                       "unidades", "bonos", "encuestas", "accesos", "odoo",
-                      "catalogos", "calidad"],
+                      "catalogos", "calidad", "manual"],
         "actividades": _de(R.SISTEMA_CALIDAD),
         "puestos_odoo": None,
     },

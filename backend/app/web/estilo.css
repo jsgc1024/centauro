@@ -1429,3 +1429,93 @@ a.cal-liga { text-decoration: none; }
 @media (max-width: 800px) {
   .cal-datos { grid-template-columns: 1fr; }
 }
+
+/* El manual del sistema (seccion 90). Se lee como un documento: renglones
+   con aire, titulos que ordenan y la nota de la causa de fondo en su caja.
+   Las paginas de referencia --el reloj, quien puede que, los mensajes--
+   son tablas y listas de la casa. */
+.man-barra { margin: 0 0 16px; align-items: center; gap: 10px; }
+.man-buscar { flex: 1 1 340px; width: auto; }
+.man-pdf { margin-left: auto; }
+.man-volver { display: inline-block; margin-bottom: 10px; text-decoration: none; }
+.man-donde { margin: 0 0 2px; }
+.man-parte h3 { margin: 2px 0 2px; }
+.man-parte p { margin: 0; }
+.man-indice { margin: 10px 0 0; padding-left: 18px; }
+.man-indice li { margin-bottom: 7px; }
+.man-novedad { margin: 0; padding: 10px 0; border-top: 1px solid var(--linea); }
+.man-resultado { padding: 9px 0; border-top: 1px solid var(--linea); }
+.man-estado-cabeza { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+                     margin: 4px 0 8px; }
+.man-estado-cabeza h4 { margin: 0; }
+.man-estado { margin-bottom: 16px; }
+.man-tile { border-left: 4px solid var(--ok); margin: 0; }
+.man-tile-alerta { border-left-color: var(--alerta); }
+.man-tile-grave { border-left-color: var(--grave); }
+.man-tile p { margin: 8px 0 6px; }
+.man-sintomas h4.man-area { margin: 18px 0 4px; }
+.man-sintoma { border-top: 1px solid var(--linea); padding: 0 4px; }
+.man-sintoma > summary { cursor: pointer; padding: 11px 0; font-weight: 600; }
+.man-sintoma[open] { border-left: 3px solid var(--centauro); padding: 0 12px 12px; }
+.man-no-esta { margin: 16px 0 0; }
+.man-texto p, .man-texto li { line-height: 1.6; }
+.man-texto p { margin: 6px 0 10px; }
+.man-h2 { font-size: 16px; margin: 24px 0 8px; color: var(--centauro); scroll-margin-top: 150px; }
+.man-h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .7px;
+          color: var(--gris); margin: 16px 0 4px; scroll-margin-top: 150px; }
+.man-lista { padding-left: 20px; margin: 6px 0 10px; }
+.man-lista li { margin-bottom: 6px; }
+.man-nota { background: #f4f6fa; border-radius: 6px; padding: 10px 14px; margin: 12px 0 4px; }
+.man-pasos { display: flex; justify-content: space-between; gap: 12px; margin-top: 4px; }
+.man-reloj td.man-cuando { white-space: nowrap; }
+tr.man-grupo td {
+  background: #fafbfc; font-size: 10.5px; text-transform: uppercase;
+  letter-spacing: .6px; color: var(--gris); font-weight: 650; padding: 8px 14px;
+}
+.man-error { margin-top: 4px; overflow-wrap: anywhere; }
+.man-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 6px; }
+.man-mensaje { padding: 12px 0; border-top: 1px solid var(--linea); }
+.man-codigo { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.man-novedad-larga { padding: 12px 0; border-top: 1px solid var(--linea); }
+.man-novedad-larga:first-child { border-top: 0; padding-top: 0; }
+.man-novedad-larga h3 { margin: 0; font-size: 15px; }
+.man-novedad-larga p { margin: 6px 0 0; }
+.man-caso-cabeza { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.man-caso-cabeza h3 { margin: 0; font-size: 15px; flex: 1 1 auto; }
+.man-caso h4 { margin: 12px 0 2px; }
+.man-largo { white-space: pre-line; margin: 0; }
+.man-formulario textarea { resize: vertical; }
+.nav-nueva { margin-left: 6px; font-size: 9.5px; }
+.man-impreso-parte h1 { margin: 34px 0 10px; color: var(--centauro); }
+.man-impreso-capitulo > h2 { font-size: 19px; margin: 30px 0 6px; padding-bottom: 4px;
+                             border-bottom: 1px solid var(--linea); }
+.man-impreso-capitulo > h3 { font-size: 15px; margin: 24px 0 4px; padding-bottom: 3px;
+                             border-bottom: 1px solid var(--linea); }
+/* Los enlaces del manual, en el azul de la casa: se leen como parte del
+   texto y no como la liga cruda del navegador. */
+.man-texto a, .man-indice a, .man-resultado a, .man-volver, .man-pasos a,
+.man-tile a, .man-no-esta a, .man-sintoma a { color: var(--centauro); }
+.man-indice a, .man-resultado a { text-decoration: none; }
+.man-indice a:hover, .man-resultado a:hover { text-decoration: underline; }
+.man-sintomas .man-buscar { width: 100%; }
+@media (max-width: 800px) {
+  .man-pdf { margin-left: 0; }
+}
+
+/* El PDF del manual sale de la ventana de imprimir del navegador: fuera
+   la barra, los botones y lo que solo sirve en pantalla. Cada parte
+   empieza en su hoja; lo de adentro corre seguido. */
+@page { margin: 16mm 14mm; }
+@media print {
+  header.barra, #mensajes, .man-no-imprimir, .boton-ayuda { display: none !important; }
+  body { background: #fff; font-size: 11.5px; }
+  main { max-width: none; padding: 0; }
+  .man-impreso-parte { break-before: page; }
+  .man-impreso h1, .man-impreso h2, .man-impreso h3, .man-impreso h4 { break-after: avoid; }
+  .man-impreso .tarjeta, .man-impreso .man-nota, .man-impreso li { break-inside: avoid; }
+  .man-impreso a { color: inherit; text-decoration: none; }
+  .man-impreso table { font-size: 10.5px; }
+  .man-impreso tr { break-inside: avoid; }
+  .man-mensaje { break-inside: avoid; }
+  .man-impreso .man-tile a { display: none; }
+}

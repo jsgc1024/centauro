@@ -1,5 +1,9 @@
+import logging
+from datetime import datetime, timezone
+
 from celery import Celery
 from celery.schedules import crontab
+from celery.signals import task_postrun, task_prerun
 
 from app.config import settings
 
@@ -165,6 +169,47 @@ celery.conf.update(
         },
     },
 )
+
+
+# La vuelta de cada tarea, anotada (seccion 90). Hasta aqui nadie sabia
+# cuando habia corrido cada una: si el reloj se detenia, se notaba horas
+# despues, por lo que dejaba de pasar. Cada tarea anota cuando empezo,
+# cuando termino y como salio, y el manual lo ensena. Anotar no puede
+# tumbar la tarea: si falla, se dice en el registro y se sigue.
+registro_reloj = logging.getLogger("centauro.reloj")
+
+
+def _anotar(tarea, **datos) -> None:
+    try:
+        from app import manual
+        manual.anotar_vuelta(tarea, **datos)
+    except Exception:                                 # noqa: BLE001
+        registro_reloj.exception("no se pudo anotar la vuelta de %s", tarea)
+
+
+@task_prerun.connect
+def _empieza(task=None, **_):
+    if task is not None:
+        _anotar(task.name, empezo=datetime.now(timezone.utc))
+
+
+@task_postrun.connect
+def _termina(task=None, state=None, retval=None, **_):
+    if task is None:
+        return
+    error = nota = None
+    if state == "FAILURE":
+        error = f"{retval.__class__.__name__}: {retval}"[:300]
+    elif isinstance(retval, dict):
+        # Las lecturas de Odoo no revientan cuando Odoo no contesta:
+        # devuelven su error. Y la que espera su primera lectura a mano lo
+        # dice con `omitido`. Las dos cosas son lo que se quiere ver.
+        if retval.get("error"):
+            error = str(retval["error"])[:300]
+        if retval.get("omitido"):
+            nota = str(retval["omitido"])[:200]
+    _anotar(task.name, termino=datetime.now(timezone.utc), error=error,
+            nota=nota)
 
 
 @celery.task(name="ping")

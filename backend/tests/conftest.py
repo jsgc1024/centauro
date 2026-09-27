@@ -81,6 +81,10 @@ TABLAS_DE_OPERACION = [
     # El tipo de cambio que pone finanzas (seccion 82): cada prueba arranca
     # sin ninguno puesto, como el servidor el primer dia.
     "tipo_cambio",
+    # El manual del sistema (seccion 90): la ultima vuelta de cada tarea
+    # del reloj y los casos resueltos. Una vuelta que dejo otra prueba
+    # haria ver corriendo un reloj que en esta prueba nunca corrio.
+    "vuelta_del_reloj", "caso_resuelto",
 ]
 
 

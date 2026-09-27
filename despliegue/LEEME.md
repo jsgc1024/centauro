@@ -679,7 +679,27 @@ journalctl -t centauro-archivo --since "7 days ago"
 # Lo que falta o esta mal cargado en Odoo, por area (seccion 89): los
 # cinco ensayos de la pantalla de Odoo, en la terminal. No guarda nada.
 docker compose -f docker-compose.prod.yml run --rm api python lo_que_falta_en_odoo.py
+
+# El reloj: el que marca la hora (beat) y el que hace el trabajo (worker)
+docker compose -f docker-compose.prod.yml logs --tail=100 beat worker
 ```
+
+**Lo primero, desde la consola**: *Gestión Administrativa → Manual del
+sistema → Cuando algo se atora* dice cómo están la base, el reloj, el
+correo, Odoo, el GPS y los avisos al teléfono, y *Lo que el sistema hace
+solo* dice la última vuelta de cada tarea (sección 90). Casi siempre
+basta con eso para saber por dónde empezar.
+
+**Si el manual dice que el reloj está parado** —ninguna tarea terminó en
+los últimos 12 minutos: los correos no salen, los cierres no avanzan,
+Odoo y el GPS no se leen—, se revisan los procesos de arriba y se vuelve
+a levantar el reloj. No toca la base ni la api:
+
+```bash
+if [ "$(hostname)" = "centauro" ]; then cd /opt/centauro && docker compose -f docker-compose.prod.yml up -d redis worker beat && docker compose -f docker-compose.prod.yml ps; else echo "ALTO: este bloque va dentro del servidor. Primero entra con el bloque de ssh."; fi
+```
+
+Si vuelven a caerse, sus `logs` dicen por qué.
 
 **Si la app de campo deja de funcionar en los teléfonos**, lo primero
 que hay que mirar es el certificado. Sin HTTPS válido no hay service

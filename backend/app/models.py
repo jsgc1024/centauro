@@ -4078,3 +4078,66 @@ class ParametroProfesionalismo(Base):
     # cada mil km (seccion 60). De ejemplo, como los castigos de arriba.
     puntos_por_evento_manejo: Mapped[float] = mapped_column(
         Numeric(5, 2), default=3, server_default="3")
+
+
+class VueltaDelReloj(Base):
+    """La ultima vuelta de cada tarea del reloj (seccion 90).
+
+    El reloj --celery beat y su worker-- corre veinte tareas solas, y
+    hasta aqui nadie sabia cuando habia corrido cada una: si el reloj se
+    detenia, se notaba horas despues, por lo que dejaba de pasar. Cada
+    tarea anota aqui cuando empezo, cuando termino, si salio bien y su
+    ultimo error. Una fila por tarea, que se sobreescribe: es el «ultima
+    vez», no un historial. El manual la ensena en su reloj y en el estado
+    del sistema.
+    """
+    __tablename__ = "vuelta_del_reloj"
+
+    # El nombre de la tarea en celery: "gps.leer", "odoo.sincronizar_flota".
+    tarea: Mapped[str] = mapped_column(String(80), primary_key=True)
+    empezo_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    termino_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    # Como salio la ultima vuelta: "ok" o "error".
+    estado: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # El ultimo error se queda aunque la siguiente salga bien: un error de
+    # anoche explica un hueco de hoy.
+    error: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    error_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    # Lo que la tarea dijo que no hizo y por que: la lectura de Odoo que
+    # espera su primera lectura a mano, la que no tiene llave.
+    nota: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    vueltas: Mapped[int] = mapped_column(Integer, default=0,
+                                         server_default=text("0"))
+
+
+class CasoResuelto(Base):
+    """Lo que se atoro, por que y como se arreglo (seccion 90).
+
+    Lo anota quien lo resolvio, en el manual del sistema. Lo que se atora
+    dos veces ya tiene respuesta, y lo que se atoro por una falla del
+    sistema llega para arreglarse de fondo: la falla chica que no cambia
+    nada de como se trabaja se arregla directo y se avisa; la que pide
+    cambiar un proceso lleva primero su propuesta (Salvador, 27 sep).
+    """
+    __tablename__ = "caso_resuelto"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    titulo: Mapped[str] = mapped_column(String(160))
+    que_se_vio: Mapped[str] = mapped_column(Text)
+    causa: Mapped[str] = mapped_column(Text)
+    solucion: Mapped[str] = mapped_column(Text)
+    area: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    # Si la causa fue una falla del sistema: "si", "no" o "no_se".
+    falla: Mapped[str] = mapped_column(String(10), default="no_se",
+                                       server_default="no_se")
+    escrito_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id", ondelete="SET NULL"), nullable=True)
+    escrito_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    editado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id", ondelete="SET NULL"), nullable=True)
+    editado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
