@@ -89,9 +89,20 @@ def _obtener(db: Session, usuario_id: int) -> m.Usuario:
 
 
 def _admins_vivos(db: Session, menos: int | None = None) -> int:
-    """Cuantos administradores activos quedarian sin contar a uno."""
+    """Cuantos quedarian con la llave maestra sin contar a uno.
+
+    La llave la tienen administracion y direccion general (`ALTOS`, mas
+    abajo): direccion general alcanza todo, administracion incluida, y es
+    quien la da (seccion 83).
+
+    Antes contaba solo administracion (seccion 88). A la unica persona
+    con ese rol no se le podia quitar ni cuando se le dio por error --a
+    Aridiai, el 27 de septiembre, confundido con el nombre de su puesto--,
+    aunque direccion general, que si estaba, se lo puede volver a dar a
+    quien sea.
+    """
     consulta = (db.query(m.Usuario)
-                .filter(m.Usuario.rol == m.Rol.ADMIN,
+                .filter(m.Usuario.rol.in_(ALTOS),
                         m.Usuario.activo.is_(True)))
     if menos is not None:
         consulta = consulta.filter(m.Usuario.id != menos)
@@ -99,17 +110,18 @@ def _admins_vivos(db: Session, menos: int | None = None) -> int:
 
 
 def _no_es_el_ultimo_admin(db: Session, usuario: m.Usuario, que: str) -> None:
-    """Quedarse sin administradores es no poder volver a entrar.
+    """Quedarse sin la llave maestra es no poder volver a entrar.
 
     No es un caso raro: pasa el dia que alguien limpia accesos viejos y
     el ultimo administrador resulta ser una cuenta que nadie reconocia.
     """
-    if usuario.rol != m.Rol.ADMIN or not usuario.activo:
+    if usuario.rol not in ALTOS or not usuario.activo:
         return
     if _admins_vivos(db, menos=usuario.id) == 0:
         raise HTTPException(409, {
-            "mensaje": f"No se puede {que}: es el ultimo administrador "
-                       "activo del sistema.",
+            "mensaje": f"No se puede {que}: nadie mas quedaria con la "
+                       "llave maestra del sistema (administracion o "
+                       "direccion general).",
             "que_hacer": "Dale administracion a alguien mas primero.",
         })
 
@@ -486,8 +498,8 @@ def cambiar_rol(db: Session, usuario_id: int, rol: m.Rol, actor: m.Usuario,
                                          or reparte_de_fabrica(usuario.rol)):
         solo_direccion(actor, "Darle o quitarle a alguien el poder de "
                                "repartir accesos")
-    if rol != m.Rol.ADMIN:
-        _no_es_el_ultimo_admin(db, usuario, "quitarle administracion")
+    if rol not in ALTOS:
+        _no_es_el_ultimo_admin(db, usuario, "quitarle ese rol")
 
     antes = usuario.rol
     usuario.rol = rol
@@ -801,8 +813,8 @@ def _ponerle_su_rol(db: Session, actor: m.Usuario, usuario: m.Usuario,
     """El rol que le toca por su puesto, con los mismos candados que un
     cambio de rol a mano: no sobre uno mismo --eso ya se reviso antes--
     y no dejar al sistema sin administracion."""
-    if rol != m.Rol.ADMIN:
-        _no_es_el_ultimo_admin(db, usuario, "quitarle administracion")
+    if rol not in ALTOS:
+        _no_es_el_ultimo_admin(db, usuario, "quitarle ese rol")
     antes = usuario.rol
     usuario.rol = rol
     anotar(db, actor, "rol cambiado", "usuario", usuario.id,

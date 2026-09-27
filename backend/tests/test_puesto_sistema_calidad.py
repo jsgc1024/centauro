@@ -141,6 +141,35 @@ def test_entra_con_su_rol_su_menu_y_lo_suyo(cliente, sesion, aridiai):
     assert "cierre.facturar" not in yo["actividades"]
 
 
+def test_si_se_le_dio_la_llave_maestra_por_error_se_le_corrige(
+        cliente, sesion, base_de_pruebas):
+    """Salvador, 27 sep (seccion 88): a Aridiai se le dio el rol de
+    administracion --confundido con el nombre de su puesto-- y al ponerle
+    el puesto no lo dejaba guardar. Era la unica con ese rol, y el candado
+    de la llave maestra no contaba a direccion general, que la tiene."""
+    dg = sesion("dirgeneral")
+    u = _usuario(cliente, sesion, ARIDIAI)
+    r = cliente.post(f"/auth/usuarios/{u['usuario_id']}/rol",
+                     json={"rol": "admin"}, headers=dg)
+    assert r.status_code == 200, r.text
+    # Y es la unica: las demas cuentas de administracion no estan
+    # (`como_estaba` las vuelve a abrir).
+    with base_de_pruebas.begin() as con:
+        con.execute(text("UPDATE usuario SET activo = false "
+                         "WHERE rol::text = 'ADMIN' AND correo <> :ella"),
+                    {"ella": ARIDIAI})
+        solas = con.execute(text("SELECT correo FROM usuario "
+                                 "WHERE activo AND rol::text = 'ADMIN'")).scalars().all()
+    assert solas == [ARIDIAI]
+    puesto = _puestos(cliente, sesion)[PUESTO]
+    r = cliente.post(f"/auth/usuarios/{u['usuario_id']}/categoria",
+                     json={"categoria_id": puesto["categoria_id"]}, headers=dg)
+    assert r.status_code == 200, r.text
+    ella = _usuario(cliente, sesion, ARIDIAI)
+    assert ella["rol"] == "sistema_calidad"
+    assert ella["categoria"] == PUESTO
+
+
 # ====================================================== lo que abre
 
 @pytest.mark.parametrize("ruta", [

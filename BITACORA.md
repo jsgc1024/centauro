@@ -5622,6 +5622,43 @@ de consultor, la lista caía en la plantilla completa.
 
 - Sin migración.
 
+## 88. La llave maestra cuenta a Dirección general
+
+Salvador, 27 de septiembre: «No me deja guardar». A Aridiai se le había
+dado el rol de administración —confundido con el nombre de su puesto— y
+al ponerle el puesto «Administración del sistema y calidad» el servidor
+lo detenía. El puesto le cambia el rol, y el candado de la sección 15 no
+deja quitarle administración al último administrador activo. Ella era
+la única con ese rol: la primera cuenta de producción es la de Dirección
+general.
+
+El candado contaba solo administración. Pero Dirección general alcanza
+todo, administración incluida, y desde la sección 83 es quien la da y la
+quita. Con ella activa el sistema no se queda sin quien vuelva a abrir
+la puerta.
+
+- **El candado cuenta la llave maestra: administración y Dirección
+  general.** Salta cuando, sin esa persona, no quedaría nadie activo con
+  ninguna de las dos, y cuida también a Dirección general.
+- Desde la consola ya no se llega a él: a quien tiene la llave solo lo
+  toca otra persona que también la tiene, y esa se queda. Sigue ahí para
+  lo que venga después.
+
+### Las pruebas
+
+- `tests/test_accesos.py`: el candado salta cuando nadie más tendría la
+  llave, probado sin guardar nada —la cuenta de administración la usa
+  toda la batería—. La prueba anterior desactivaba de verdad al único
+  administrador desde Dirección general, y ahora sí pasaría.
+- `tests/test_puesto_sistema_calidad.py`: el caso de Salvador. A la única
+  con el rol de administración se le pone su puesto y queda con el rol
+  «Sistema y calidad».
+
+### Para subirlo
+
+- Sin migración. Ya subido, a Aridiai se le pone el puesto como a
+  cualquiera.
+
 ## 14. Lo que falta
 
 ### Abierto

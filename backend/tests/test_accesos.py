@@ -93,23 +93,39 @@ def test_no_se_desactiva_dos_veces(cliente, sesion, conejillo):
 
 # ================================================== los candados
 
-def test_no_se_puede_desactivar_al_ultimo_administrador(cliente, sesion):
-    """Quedarse sin administradores es no poder volver a entrar.
+def test_no_se_queda_el_sistema_sin_llave_maestra(base_de_pruebas):
+    """Quedarse sin la llave maestra es no poder volver a entrar.
 
     Pasa el dia que alguien limpia accesos viejos y el ultimo
     administrador resulta ser una cuenta que nadie reconocia.
-    """
-    admin_id = _id_de(cliente, sesion, "admin@centauro.lat")
-    # Lo intenta direccion general, que ahora alcanza administracion.
-    r = cliente.post(f"/auth/usuarios/{admin_id}/desactivar", json={},
-                     headers=sesion("dirgeneral"))
-    assert r.status_code == 409, r.text
-    assert "ultimo administrador" in r.text.lower()
 
-    # Y tampoco por la puerta de atras: quitarle el rol.
-    r = cliente.post(f"/auth/usuarios/{admin_id}/rol",
-                     json={"rol": "consultor"}, headers=sesion("dirgeneral"))
-    assert r.status_code == 409, r.text
+    La llave la tienen administracion y direccion general (seccion 88):
+    el candado salta cuando, sin esa persona, no quedaria nadie activo con
+    ninguna de las dos. Desde la consola ya no se llega ahi --a quien
+    tiene la llave solo lo toca otra persona que tambien la tiene, y esa
+    se queda--; el candado sigue para lo que venga despues. Se prueba
+    sin guardar nada: la cuenta de administracion la usa toda la bateria.
+    """
+    from fastapi import HTTPException
+    from sqlalchemy.orm import Session
+
+    from app import accesos
+    from app import models as m
+
+    with Session(base_de_pruebas) as db:
+        admin = db.query(m.Usuario).filter_by(correo="admin@centauro.lat").one()
+        # Con direccion general activa no salta: ella tiene la llave.
+        accesos._no_es_el_ultimo_admin(db, admin, "desactivar este acceso")
+
+        (db.query(m.Usuario)
+         .filter(m.Usuario.rol == m.Rol.DIRECTOR_GENERAL)
+         .update({"activo": False}))
+        for que in ("desactivar este acceso", "quitarle ese rol"):
+            with pytest.raises(HTTPException) as salto:
+                accesos._no_es_el_ultimo_admin(db, admin, que)
+            assert salto.value.status_code == 409
+            assert "llave maestra" in salto.value.detail["mensaje"]
+        db.rollback()
 
 
 def test_nadie_se_cierra_la_puerta_a_si_mismo(cliente, sesion):
