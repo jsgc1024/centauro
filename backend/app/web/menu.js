@@ -67,6 +67,11 @@ export const LEE_ODOO = ["admin", "director_general", "sistema_calidad"];
    direccion de operaciones los que si-- y direccion general. */
 export const CATALOGOS = ["admin", "director_general", "director_operaciones",
                           "sistema_calidad"];
+/* Calidad (seccion 89): el mes en cifras. La abren sistema y calidad,
+   direccion de operaciones y direccion general; los consultores no,
+   porque compara a unos con otros. */
+export const CALIDAD = ["admin", "director_general", "director_operaciones",
+                        "sistema_calidad"];
 
 /* El menu de arriba, en una sola lista.
 
@@ -146,6 +151,10 @@ export const MENU = [
      calificacion baja acaba abriendo la cartera en el mismo minuto. */
   { ruta: "/encuestas", clave: "encuestas", necesita: "encuestas.ver", texto: "nav_encuestas", grupo: "nav_operaciones_ep",
     cuenta: "rec_encuestas", quienes: VOZ_CLIENTE },
+  /* Como salio el servicio en el mes, junto a lo que dijo el cliente: el
+     mes en cifras y su reporte para la junta (seccion 89). */
+  { ruta: "/calidad", clave: "calidad", necesita: "calidad.ver", texto: "nav_calidad", grupo: "nav_operaciones_ep",
+    cuenta: "rec_calidad", quienes: CALIDAD },
   /* A un toque, porque la llamada llega a las 5:40 y casi siempre al
      telefono. Escondida dentro de un servicio serian cuatro toques con
      una mano. */

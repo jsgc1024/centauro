@@ -346,9 +346,13 @@ def ver_mes(pais_id: int, anio: int, mes: int, plaza_id: int | None = None,
             db: Session = Depends(get_db), _=Depends(LECTURA)):
     evaluaciones = _evaluaciones(db, pais_id, anio, mes, plaza_id)
     renglones = [_renglon(e) for e in evaluaciones]
+    # El mes anulado por incidencia conserva sus estrellas y paga cero:
+    # no es completo (seccion 89; antes contaba en completo y en cero a
+    # la vez, y el parcial salia de menos).
     completos = sum(1 for r in renglones
-                    if r["estrellas_posibles"] and
-                    r["estrellas"] == r["estrellas_posibles"])
+                    if r["estrellas_posibles"]
+                    and not r["anulado_por_incidencia"]
+                    and r["estrellas"] == r["estrellas_posibles"])
     en_cero = sum(1 for r in renglones if Decimal(str(r["bono"])) == CERO)
     return {
         "periodo": f"{mes:02d}/{anio}",

@@ -57,9 +57,11 @@ PUESTOS: list[dict] = [
         # Sin Codigo: lo que protege ese camino es que quien dicta el
         # codigo reconozca la voz de quien llama (seccion 57).
         # Catalogos (seccion 86): fija lo que en ellos decide dinero.
+        # Calidad (seccion 89): ve el mes en cifras.
         "pantallas": ["panorama", "servicios", "implantados", "equipo",
                       "unidades", "bonos", "encuestas", "central",
-                      "finanzas", "facturacion", "nomina", "catalogos"],
+                      "finanzas", "facturacion", "nomina", "catalogos",
+                      "calidad"],
         "actividades": _de(R.DIRECTOR_OPERACIONES),
         "puestos_odoo": "Director de Operaciones, Director Operativo",
     },
@@ -202,7 +204,7 @@ PUESTOS: list[dict] = [
                        "opera.",
         "pantallas": ["panorama", "servicios", "implantados", "equipo",
                       "unidades", "bonos", "encuestas", "accesos", "odoo",
-                      "catalogos"],
+                      "catalogos", "calidad"],
         "actividades": _de(R.SISTEMA_CALIDAD),
         "puestos_odoo": None,
     },

@@ -675,6 +675,10 @@ journalctl -t centauro-respaldo --since "7 days ago"
 
 # Como salio el archivo de los comprobantes
 journalctl -t centauro-archivo --since "7 days ago"
+
+# Lo que falta o esta mal cargado en Odoo, por area (seccion 89): los
+# cinco ensayos de la pantalla de Odoo, en la terminal. No guarda nada.
+docker compose -f docker-compose.prod.yml run --rm api python lo_que_falta_en_odoo.py
 ```
 
 **Si la app de campo deja de funcionar en los teléfonos**, lo primero

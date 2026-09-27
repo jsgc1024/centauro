@@ -508,9 +508,12 @@ ACTIVIDADES: dict[str, dict] = {
 #
 # Odoo entro en la seccion 85: su puerta ya no pide administracion por
 # rol sino `odoo.administrar`, y un puesto la puede traer.
+#
+# Calidad entro en la seccion 89: la abre quien trae `calidad.ver`.
 PANTALLAS = ("panorama", "servicios", "implantados", "equipo", "unidades",
-             "bonos", "encuestas", "central", "codigo", "finanzas",
-             "facturacion", "nomina", "accesos", "odoo", "catalogos")
+             "bonos", "encuestas", "calidad", "central", "codigo",
+             "finanzas", "facturacion", "nomina", "accesos", "odoo",
+             "catalogos")
 
 
 def roles_de(actividad: str) -> set:

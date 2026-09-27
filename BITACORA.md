@@ -5659,14 +5659,126 @@ la puerta.
 - Sin migración. Ya subido, a Aridiai se le pone el puesto como a
   cualquiera.
 
+## 89. Calidad: el mes en cifras
+
+Cuarto y último paso de lo aprobado el 27 de septiembre (sección 83), con
+la maqueta de la propuesta: la pantalla de Calidad, con su reporte del
+mes. Cómo salió el servicio en el mes —lo que dijo el cliente, lo que
+pasó en la calle, cómo se cerró, la gente y los datos— y de cada cifra al
+detalle.
+
+No se captura nada nuevo, y cada cifra se mide con la regla que ya existe
+donde la hay: una cifra que dijera otra cosa que el bono sería una
+discusión en cada junta.
+
+### La pantalla
+
+- **Calidad**, en *Operaciones EP*, después de Clientes. La abren sistema
+  y calidad, Dirección de operaciones y Dirección general
+  (`calidad.ver`). Los consultores no: compara a unos con otros.
+- **País y mes**. El mes en curso va al día de hoy; los anteriores, desde
+  el primer mes con operación y hasta dos años atrás.
+- **Las cinco cifras de arriba**, cada una contra el mes de antes: la
+  flecha dice si subió o bajó y el color si fue para bien o para mal.
+  - *Satisfacción del cliente*: el promedio de la encuesta del ejecutivo.
+  - *Puntualidad*: la llegada marcada dentro del punto y no después de la
+    hora citada, persona por persona y día por día —la regla del bono sin
+    su margen del mes—. La llegada que asentó la central a mano no se
+    mide; el día en que alguien entró a media jornada relevando a otro es
+    de quien lo empezó.
+  - *Jornadas con su reporte completo*: llegada, contacto y fin, sin
+    alertas de silencio, como el bono.
+  - *Cierres en 24 horas*: el visto bueno del consultor en su plazo —el
+    mismo que decide su comisión—, en el mes en que vence. El que venció
+    sin visto bueno cuenta tarde; el que sigue en plazo no se cuenta.
+  - *Calificaciones de 3 o menos*, y cuántas siguen sin revisar.
+- **Los cuatro bloques**, cada renglón con su **Ver**: el detalle se abre
+  abajo, y cada servicio lleva a su pantalla y cada persona a su ficha.
+  - *Lo que dijo el cliente*: cuántas contestaron y cuántas se vencieron;
+    las de 3 o menos —fue incidencia, no castiga, sin revisar—; lo que
+    califica el solicitante de su consultor. Con su botón a Clientes.
+  - *En la calle*: marcas intentadas lejos del punto y quién; marcas que
+    espera la central; relevos por contingencia —lo planeado no—;
+    unidades que salieron sin su revisión al recibirlas, y las que
+    volvieron con daño nuevo.
+  - *El cierre*: los cerrados después de las 24 horas, por consultor; lo
+    que regresó finanzas, con su motivo tal como lo escribió —no se le
+    adivina el tipo—; el dinero que el personal comprobó a tiempo, con la
+    regla del bono.
+  - *La gente*: incidencias autorizadas —leves, graves, errores menores y
+    las que esperan su visto bueno—; quién trabajó con un curso vencido y
+    cuántos vencen en 30 días; el bono completo del mes, o el del mes de
+    antes si todavía no se calcula; el profesionalismo promedio de quien
+    trabajó en la calle, sin quien casi no tiene datos.
+- **Los datos**: lo que falta para que el sistema calcule bien y la hoja
+  del servicio salga completa. *En Odoo*: personal de seguridad sin foto o
+  sin celular, clientes sin RFC y unidades del GPS que no ligan con la
+  flota. *En Catálogos*: festivos del año, combustible y pesos del
+  profesionalismo todavía de ejemplo, hoteles sin ubicación, ciudades con
+  personal propio y sin hospitales, tabulador, horas de las modalidades y
+  categorías sin foto. Cada lado con su botón, si quien mira abre esa
+  pantalla.
+
+### El reporte del mes
+
+**Bajar el reporte del mes** da el Excel para la junta de dirección: el
+resumen con el mes de antes a su lado —promedios y porcentajes como
+números, no como texto— y una hoja por cada detalle. Dice lo mismo que la
+pantalla: las frases se arman una sola vez, en el servidor, en el idioma
+de quien lo baja (`app/calidad.py`).
+
+### Lo chico
+
+- La ficha de una persona abre directo con `#/equipo/<id>`: desde Calidad,
+  el certificado vencido lleva a quien lo trae.
+- El Excel sabe de decimales y porcentajes, y una celda puede traer su
+  propio tipo.
+- **Bonos**: el mes anulado por incidencia contaba como bono completo y
+  como bono en cero a la vez. Ya no cuenta como completo.
+- El combustible y los pesos del profesionalismo de ejemplo tienen nombre
+  en `seed.py`, para que Calidad los reconozca mientras nadie los cambie.
+
+### Las pruebas
+
+- `tests/test_calidad.py`: un agosto armado a mano, y julio para
+  compararlo. Las cinco cifras de arriba con su flecha; cada bloque
+  renglón por renglón —lo cancelado no cuenta, lo asentado a mano no se
+  mide, lo planeado no es contingencia, la marca anulada no espera a
+  nadie, el cierre de septiembre no es de agosto—; en inglés y en
+  portugués; quién la ve y quién no; la pantalla y el Excel; el
+  combustible de ejemplo; el menú de los dos puestos, y el bono anulado
+  en Bonos.
+- **La vista previa**, con un agosto y un septiembre sembrados: la
+  pantalla, su detalle abierto, el menú y agosto contra julio. Sin
+  errores en la consola.
+
+### La lista de lo que falta en Odoo
+
+Salvador, 27 de septiembre: que Aridiai tenga todo lo que está pendiente
+o mal cargado en Odoo, para hablar con cada área y empezar a limpiarlo.
+`lo_que_falta_en_odoo.py` corre en el servidor los cinco ensayos de la
+pantalla de Odoo —el personal de seguridad, la flota y el taller, la
+oficina, los clientes y los tarifarios— y escribe en la terminal lo que
+cada uno dejó pendiente, con quién lo corrige, y quién del personal no
+tiene foto de verdad. No guarda nada, ni aquí ni en Odoo: el cliente de
+Odoo del sistema solo sabe leer. La guía lo trae en «Qué mirar cuando
+algo falle». Prueba: `tests/test_lo_que_falta_en_odoo.py`.
+
+### Para subirlo
+
+- Lleva migración (`888a6638f18c`): la pantalla de Calidad entra al menú
+  de los puestos que ya existen y traen `calidad.ver`. Solo agrega.
+
 ## 14. Lo que falta
 
 ### Abierto
 
 - **El puesto de administración del sistema y calidad**: Aridiai
   Morales. Aprobado el 27 de septiembre con sus pantallas. Hechos los
-  candados de Accesos (sección 83), el puesto con sus puertas (sección
-  85) y Catálogos con su bitácora (sección 86); sigue Calidad.
+  cuatro pasos: los candados de Accesos (sección 83), el puesto con sus
+  puertas (sección 85), Catálogos con su bitácora (sección 86) y Calidad
+  con su reporte (sección 89). Siguen su manual y la lista de lo que
+  falta en Odoo, por área, para limpiarlo.
 - **Puestos y Odoo: el paso 4** (secciones 73 a 75). La factura en
   borrador hacia Odoo, probada primero en una copia de Odoo: hace falta
   la copia y una llave que pueda escribir en ella.

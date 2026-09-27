@@ -14,7 +14,11 @@ fechas como numeros y fechas de verdad --se suman y se ordenan en Excel,
 no son texto que parece numero--.
 
 Tipos de columna: "texto", "dinero", "entero", "fecha" y "momento"
-(fecha con hora).
+(fecha con hora); "decimal" (un decimal) y "porcentaje" (el valor como
+fraccion: 0.96 se lee 96 %) llegaron con el reporte de Calidad (seccion
+89). Una celda puede traer su propio tipo como `(valor, tipo)`: el resumen
+de un mes pone en la misma columna un promedio, un porcentaje y una
+cuenta.
 """
 import io
 import re
@@ -24,7 +28,8 @@ from decimal import Decimal
 from xml.sax.saxutils import escape
 
 _ESTILO = {"texto": 0, "encabezado": 1, "dinero": 2, "fecha": 3,
-           "entero": 4, "momento": 5}
+           "entero": 4, "momento": 5, "decimal": 6, "porcentaje": 7}
+_NUMEROS = ("dinero", "entero", "decimal", "porcentaje")
 
 # Lo que XML no acepta ni escapado.
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
@@ -44,9 +49,10 @@ _RAIZ = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 _ESTILOS = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">\
-<numFmts count="3"><numFmt numFmtId="164" formatCode="#,##0.00"/>\
+<numFmts count="4"><numFmt numFmtId="164" formatCode="#,##0.00"/>\
 <numFmt numFmtId="165" formatCode="dd/mm/yyyy"/>\
-<numFmt numFmtId="166" formatCode="dd/mm/yyyy hh:mm"/></numFmts>\
+<numFmt numFmtId="166" formatCode="dd/mm/yyyy hh:mm"/>\
+<numFmt numFmtId="167" formatCode="0.0"/></numFmts>\
 <fonts count="2"><font><sz val="11"/><name val="Calibri"/><family val="2"/></font>\
 <font><b/><sz val="11"/><name val="Calibri"/><family val="2"/></font></fonts>\
 <fills count="3"><fill><patternFill patternType="none"/></fill>\
@@ -54,13 +60,15 @@ _ESTILOS = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <fill><patternFill patternType="solid"><fgColor rgb="FFE9EDF2"/><bgColor indexed="64"/></patternFill></fill></fills>\
 <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>\
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>\
-<cellXfs count="6">\
+<cellXfs count="8">\
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>\
 <xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>\
 <xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>\
 <xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>\
 <xf numFmtId="1" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>\
 <xf numFmtId="166" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>\
+<xf numFmtId="167" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>\
+<xf numFmtId="9" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>\
 </cellXfs>\
 <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>\
 </styleSheet>"""
@@ -92,9 +100,11 @@ def _texto(valor) -> str:
 
 
 def _celda(ref: str, valor, tipo: str) -> str:
+    if isinstance(valor, tuple):
+        valor, tipo = valor
     if valor is None or valor == "":
         return ""
-    if tipo in ("dinero", "entero"):
+    if tipo in _NUMEROS:
         numero = Decimal(str(valor))
         return f'<c r="{ref}" s="{_ESTILO[tipo]}"><v>{numero}</v></c>'
     if tipo in ("fecha", "momento") and isinstance(valor, (date, datetime)):

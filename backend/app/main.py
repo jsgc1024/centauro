@@ -15,11 +15,11 @@ from app.config import (es_desarrollo, puertas_de_la_api, revisar_secretos,
                         settings)
 from app.marca import logo_incrustado
 from app.db import engine, get_db
-from app.routers import (acceso, archivo, bitacora_admin, bonos, campo,
-                         catalogos, central, cierre, contingencia, encuestas,
-                         gps, implantados, mapas, nomina, odoo, operacion,
-                         panorama, profesionalismo, servicios, solicitantes,
-                         tarifarios, tasksheet, viaticos)
+from app.routers import (acceso, archivo, bitacora_admin, bonos, calidad,
+                         campo, catalogos, central, cierre, contingencia,
+                         encuestas, gps, implantados, mapas, nomina, odoo,
+                         operacion, panorama, profesionalismo, servicios,
+                         solicitantes, tarifarios, tasksheet, viaticos)
 from app.seed import (sembrar, sembrar_bonos, sembrar_festivos,
                       sembrar_lugares, sembrar_parametros, sembrar_recursos)
 
@@ -70,6 +70,7 @@ app.include_router(gps.router)
 app.include_router(campo.router)
 app.include_router(mapas.router)
 app.include_router(bitacora_admin.router)
+app.include_router(calidad.router)
 
 
 @app.exception_handler(IntegrityError)

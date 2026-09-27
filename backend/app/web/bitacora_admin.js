@@ -44,8 +44,9 @@ function consulta(filtros, extra = {}) {
 }
 
 /* El Excel se baja con la sesion puesta y con el nombre que pone el
-   servidor, como el del historial de lo facturado. */
-async function bajar(ruta) {
+   servidor, como el del historial de lo facturado. Lo usa tambien el
+   reporte de Calidad (seccion 89). */
+export async function bajar(ruta) {
   const cab = sesion.token ? { Authorization: `Bearer ${sesion.token}` } : {};
   const r = await fetch(ruta, { headers: cab });
   if (!r.ok) {

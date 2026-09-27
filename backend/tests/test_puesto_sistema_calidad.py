@@ -133,10 +133,11 @@ def test_entra_con_su_rol_su_menu_y_lo_suyo(cliente, sesion, aridiai):
     assert yo["rol"] == "sistema_calidad"
     assert yo["puesto"] == PUESTO
     assert yo["es_direccion"] is False
-    # Catalogos llego con la seccion 86.
+    # Catalogos llego con la seccion 86, y Calidad con la 89. Van en el
+    # orden de `permisos.PANTALLAS`: asi se guardan al crear el puesto.
     assert yo["pantallas"] == ["panorama", "servicios", "implantados", "equipo",
-                               "unidades", "bonos", "encuestas", "accesos", "odoo",
-                               "catalogos"]
+                               "unidades", "bonos", "encuestas", "calidad",
+                               "accesos", "odoo", "catalogos"]
     assert "odoo.administrar" in yo["actividades"]
     assert "cierre.facturar" not in yo["actividades"]
 

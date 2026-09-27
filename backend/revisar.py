@@ -663,6 +663,9 @@ AYUDA_POR_PANTALLA = {
     # sirve y que pasa si esta mal; la lista de la izquierda no lleva,
     # porque su renglon ya dice que le falta a cada uno.
     "catalogos_pantalla.js": 11,
+    # Calidad (seccion 89): uno por bloque --lo que dijo el cliente, la
+    # calle, el cierre, la gente y los datos-- y el de las cinco cifras.
+    "calidad.js": 6,
     # La bitacora de administracion (seccion 86): el de la tabla.
     "bitacora_admin.js": 1,
     "central.js": 5,

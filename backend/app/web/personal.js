@@ -24,7 +24,9 @@ let busqueda = "";
    cinco dimensiones por persona. */
 let ultimas = [];
 
-export async function pantallaPersonal(main) {
+/* `personaId`: la ficha de esa persona, abierta directo (#/equipo/12):
+   desde Calidad, el certificado vencido lleva a quien lo trae. */
+export async function pantallaPersonal(main, personaId = null) {
   const paises = await api.get("/catalogos/paises");
   if (!paises.length) {
     return main.append(h("h1", {}, t("personal_titulo")),
@@ -73,6 +75,7 @@ export async function pantallaPersonal(main) {
     zona);
 
   await pintar(zona);
+  if (personaId) await abrirFicha(zona, { persona_id: Number(personaId) });
 }
 
 /* ------------------------------------------------------------- la lista */

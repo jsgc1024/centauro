@@ -15,6 +15,7 @@ import { detenerPanorama, pantallaPanorama } from "./panorama.js";
 import { pantallaAccesos } from "./accesos.js";
 import { pantallaOdoo } from "./odoo.js";
 import { pantallaCatalogos } from "./catalogos_pantalla.js";
+import { pantallaCalidad } from "./calidad.js";
 import { pantallaCodigo } from "./codigo.js";
 import { pantallaEnlace, pantallaOlvide } from "./contrasena.js";
 import { pantallaServicio } from "./servicio.js";
@@ -23,8 +24,8 @@ import { aviso, campo, entrada, h, lista, mensaje, vaciar,
 import { IDIOMAS, idioma, ponerIdioma, t } from "./idioma.js";
 import { abrirRecorrido } from "./recorrido.js";
 import { firma } from "./firma.js";
-import { ADMINISTRA, CATALOGOS, CODIGO, CONSULTA, DESEMPENO, DINERO,
-         LEE_ODOO, MONITOREO, NOMINAS, PANORAMA, VOZ_CLIENTE, abre,
+import { ADMINISTRA, CALIDAD, CATALOGOS, CODIGO, CONSULTA, DESEMPENO,
+         DINERO, LEE_ODOO, MONITOREO, NOMINAS, PANORAMA, VOZ_CLIENTE, abre,
          destinoDe, menuDe } from "./menu.js";
 
 /* La regla de captura vale para toda la consola, no para una
@@ -339,12 +340,16 @@ const RUTAS = [
   [/^#\/implantado\/(\d+)$/, pantallaImplantado, "implantados", CONSULTA],
   [/^#\/central$/, tableroCentral, "central", MONITOREO],
   [/^#\/equipo$/, pantallaPersonal, "equipo", CONSULTA],
+  /* La ficha de una persona, abierta directo: desde Calidad (seccion 89),
+     el certificado vencido lleva a quien lo trae. */
+  [/^#\/equipo\/(\d+)$/, pantallaPersonal, "equipo", CONSULTA],
   [/^#\/unidades$/, pantallaUnidades, "unidades", MONITOREO],
   [/^#\/finanzas$/, bandejaFinanzas, "finanzas", DINERO],
   [/^#\/facturacion$/, pantallaFacturacion, "facturacion", DINERO],
   [/^#\/nomina$/, pantallaNomina, "nomina", NOMINAS],
   [/^#\/bonos$/, pantallaBonos, "bonos", DESEMPENO],
   [/^#\/encuestas$/, pantallaEncuestas, "encuestas", VOZ_CLIENTE],
+  [/^#\/calidad$/, pantallaCalidad, "calidad", CALIDAD],
   [/^#\/codigo$/, pantallaCodigo, "codigo", CODIGO],
   [/^#\/accesos$/, pantallaAccesos, "accesos", ADMINISTRA],
   [/^#\/odoo$/, pantallaOdoo, "odoo", LEE_ODOO],

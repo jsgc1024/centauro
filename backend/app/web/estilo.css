@@ -1405,3 +1405,27 @@ b.folio { white-space: nowrap; }
   .ctl-marco { grid-template-columns: 1fr; }
   .ctl-hist-renglon { grid-template-columns: 1fr; gap: 0; }
 }
+
+/* Calidad (seccion 89): el mes en cifras, cuatro bloques y los datos.
+   Cada renglon abre su detalle abajo de si mismo, sin mover la pagina
+   a otra pantalla: se ve, se cierra y se sigue leyendo. */
+.cal-barra { margin: 0 0 14px; align-items: center; gap: 8px; }
+.cal-sobre { margin: 0; font-size: 15px; }
+a.cal-liga { text-decoration: none; }
+.cal-mejor { color: var(--ok); }
+.cal-peor { color: var(--alerta); }
+.calidad .tarjeta h3 { margin: 0; font-size: 15px; }
+.cal-renglones { width: 100%; border-collapse: collapse; margin-top: 6px; }
+.cal-renglones td { padding: 9px 10px; border-top: 1px solid var(--linea); vertical-align: top; }
+.cal-renglones tr:first-child td { border-top: 0; }
+.cal-renglones td.cal-valor { white-space: nowrap; }
+.cal-ver { margin-left: 6px; }
+.cal-detalle > td { background: #f7f9fb; padding: 6px 10px 10px; }
+.cal-tabla { margin: 0; }
+.cal-ir { margin-top: 10px; display: block; }
+.cal-datos { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 10px; }
+.cal-cosas { margin: 0 0 10px; padding-left: 18px; }
+.cal-cuales { margin: 2px 0 4px; overflow-wrap: anywhere; }
+@media (max-width: 800px) {
+  .cal-datos { grid-template-columns: 1fr; }
+}

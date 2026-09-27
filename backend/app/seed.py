@@ -344,6 +344,22 @@ def sembrar_recursos() -> dict:
         db.close()
 
 
+# Los valores de ejemplo con que arranca un sistema nuevo. Tienen nombre
+# porque la pantalla de Calidad (seccion 89) avisa mientras sigan puestos:
+# el combustible y los pesos del profesionalismo los tiene que fijar la
+# direccion, y un valor de ejemplo que nadie cambio no se distingue de
+# uno que alguien decidio.
+COMBUSTIBLE_DE_EJEMPLO = (date(2026, 1, 1), D("24.50"))
+PESOS_DE_EJEMPLO = {
+    m.DimensionProfesionalismo.ESTRELLAS: D("25"),
+    m.DimensionProfesionalismo.SATISFACCION: D("25"),
+    m.DimensionProfesionalismo.INCIDENCIAS: D("20"),
+    m.DimensionProfesionalismo.CAPACITACION: D("10"),
+    m.DimensionProfesionalismo.EXPERIENCIA: D("10"),
+    m.DimensionProfesionalismo.MANEJO: D("10"),
+}
+
+
 def sembrar_parametros() -> dict:
     """Precio del combustible por pais. MONTO DE EJEMPLO."""
     db = SessionLocal()
@@ -353,22 +369,14 @@ def sembrar_parametros() -> dict:
             return {"error": "Primero hay que sembrar los catalogos"}
         _obtener_o_crear(
             db, m.ParametroCombustible,
-            {"pais_id": mx.id, "vigencia_desde": date(2026, 1, 1)},
-            {"precio_litro": D("24.50"), "holgura_pct": D("20")})
+            {"pais_id": mx.id, "vigencia_desde": COMBUSTIBLE_DE_EJEMPLO[0]},
+            {"precio_litro": COMBUSTIBLE_DE_EJEMPLO[1], "holgura_pct": D("20")})
         # Si el parametro ya existia, se actualiza la holgura vigente.
         for p in db.query(m.ParametroCombustible).filter_by(pais_id=mx.id).all():
             p.holgura_pct = D("20")
         # Pesos del tablero de profesionalismo. SON DE EJEMPLO: la
         # direccion tiene que definir los suyos, suman 100.
-        pesos = {
-            m.DimensionProfesionalismo.ESTRELLAS: D("25"),
-            m.DimensionProfesionalismo.SATISFACCION: D("25"),
-            m.DimensionProfesionalismo.INCIDENCIAS: D("20"),
-            m.DimensionProfesionalismo.CAPACITACION: D("10"),
-            m.DimensionProfesionalismo.EXPERIENCIA: D("10"),
-            m.DimensionProfesionalismo.MANEJO: D("10"),
-        }
-        for dimension, peso in pesos.items():
+        for dimension, peso in PESOS_DE_EJEMPLO.items():
             _obtener_o_crear(
                 db, m.PesoProfesionalismo,
                 {"pais_id": mx.id, "dimension": dimension}, {"peso": peso})
