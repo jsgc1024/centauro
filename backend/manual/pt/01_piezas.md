@@ -4,7 +4,7 @@ parte: entender
 orden: 10
 titulo: As peças do sistema e como elas se falam
 resumen: O console, o app de campo, o servidor, o relógio, o Odoo, o GPS, o e-mail e os avisos no telefone. Quase tudo o que trava vive numa dessas peças.
-buscar: arquitetura servidor google cloud banco de dados redis worker beat odoo pegasus mailersend push backup arquivo
+buscar: arquitetura servidor google cloud banco de dados redis worker beat odoo pegasus postmark push backup arquivo
 ---
 O Centauro Connect não é um programa só: são várias peças que passam dados entre si. Quando algo trava, a primeira pergunta é **em qual peça**, e a segunda, **o que chegou ou o que faltou para ela**.
 
@@ -31,7 +31,7 @@ A fonte de verdade do pessoal de segurança, do escritório, da frota e da ofici
 O Pegasus, da Centauro Satelital. A cada dois minutos as unidades são lidas: o pânico, o caminho até o ponto, o bloqueador de sinal, a corrente e a segunda testemunha das marcações. Cada unidade do Pegasus se liga sozinha à do Centauro **pela placa**, e a placa sai da frota do Odoo: sem a frota lida, nenhuma se liga.
 
 ### O e-mail
-Sai de **connect@mycentauro.lat** pelo MailerSend, e as respostas chegam em cecc.notification@centauro.lat. Leva os convites e as recuperações de senha, os avisos aos clientes e as pesquisas. É escrito na hora e sai a cada cinco minutos; o que passa de 24 horas sem sair já não sai. Enquanto o e-mail estiver desligado, nada sai e tudo espera.
+Sai de **connect@mycentauro.lat** pelo Postmark, e as respostas chegam em cecc.notification@centauro.lat. Leva os convites e as recuperações de senha, os avisos aos clientes e as pesquisas. É escrito na hora e sai a cada cinco minutos; o que passa de 24 horas sem sair já não sai. Enquanto o e-mail estiver desligado, nada sai e tudo espera.
 
 ### Os avisos no telefone
 Os lembretes e alertas que chegam ao telefone mesmo com o app fechado. Precisam de duas coisas: as chaves colocadas no servidor, e que cada telefone os tenha aceitado.

@@ -78,8 +78,14 @@ def _notificar(db: Session, jornada: m.Jornada, destinatario: m.Destinatario,
                enlace: str | None = None, expira: datetime | None = None,
                pares=None) -> m.Notificacion:
     servicio = jornada.equipo.servicio
+    # Al principal de ESTE equipo (seccion 91): el suyo si lo tiene, si no
+    # el del servicio, igual que el task sheet. Con varios equipos que
+    # cuidan a principales distintos, el aviso de que el equipo llego, del
+    # contacto, de las horas extra y del relevo le llegaba al principal
+    # del servicio, y al de ese equipo, nada.
     correo = (servicio.solicitante_correo if destinatario == m.Destinatario.SOLICITANTE
-              else servicio.ejecutivo_correo if destinatario == m.Destinatario.EJECUTIVO
+              else jornada.equipo.ejecutivo_correo_efectivo
+              if destinatario == m.Destinatario.EJECUTIVO
               else None)
     nota = m.Notificacion(
         jornada_id=jornada.id, servicio_id=servicio.id,

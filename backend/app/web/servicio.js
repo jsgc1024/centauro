@@ -88,13 +88,16 @@ function encabezado(servicio, cliente, plaza) {
       h("div", {},
         h("h1", { style: "margin:0" }, servicio.folio),
         h("div", { clase: "gris" },
-          `${cliente ? cliente.nombre : "—"} · ${servicio.tipo} · ${plaza ? plaza.nombre : "—"}`)),
+          `${cliente ? cliente.nombre : "—"} · ${tipoDe(servicio.tipo)} · ${plaza ? plaza.nombre : "—"}`)),
       /* Lo que se puede hacer con el servicio va debajo de su estatus:
          de el depende cual de los dos aplica. Antes de que se mueva se
          borra; despues ya no, pero se cancela, y entonces se queda con
          su rastro y libera a la gente y las unidades. */
       h("div", { clase: "sello" },
-        etiqueta(servicio.estatus, servicio.estatus === "cancelado" ? "grave" : ""),
+        /* Con su nombre, no con su clave (seccion 91): decia
+           «SIN_VISTO_BUENO», tambien en ingles y en portugues. */
+        etiqueta(estatus(servicio.estatus),
+                 servicio.estatus === "cancelado" ? "grave" : ""),
         h("div", { clase: "acciones bajo-sello" },
           /* El otro lado del mismo servicio: el contrato del mes, la
              plantilla, los viaticos y el taller. Solo en implantado,
@@ -124,6 +127,12 @@ function encabezado(servicio, cliente, plaza) {
       h("div", {},
         h("h4", {}, t("srv_solicita")),
         h("div", {}, servicio.solicitante_completo || h("span", { clase: "gris" }, "—")))));
+}
+
+/* El tipo del servicio en el idioma de quien mira (seccion 91): el
+   encabezado pintaba la clave, «eventual», tambien en ingles. */
+function tipoDe(tipo) {
+  return tipo === "implantado" ? t("implantado") : t("eventual");
 }
 
 /* Un servicio que ya arranco no se borra: se cancela. La pantalla no
@@ -2718,7 +2727,8 @@ function tablaDias(servicio, equipo, cat, cambios = []) {
         h("td", {}, fechaDia),
         h("td", {}, modalidad),
         h("td", { clase: "col-hora" }, hora_, nota, botonDia),
-        h("td", { clase: "chico gris" }, etiqueta(jornada.estatus || ""),
+        h("td", { clase: "chico gris" },
+          etiqueta(jornada.estatus ? estatus(jornada.estatus) : ""),
           /* Un dia que cambio de gente no se lee igual que uno normal:
              puede traer dos personas en la nomina. */
           huboCambio(cambios, jornada.fecha)

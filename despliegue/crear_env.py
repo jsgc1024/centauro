@@ -46,14 +46,15 @@ GOOGLE_MAPS_KEY=
 # Avisos al telefono. Las dos llaves las escribe generar_llaves_push.py.
 VAPID_CONTACTO=mailto:operaciones@centauro.lat
 
-# Correo, por MailerSend (guia, paso 7c). El usuario y la clave los pone
-# poner_correo.py. El correo del sistema sale hasta CORREO_ENCENDIDO=si,
-# despues de probar la llave (seccion 86). Los CORREO_MS_ son la otra
-# forma (paso 7b): llenos, manda Microsoft 365.
+# Correo, por Postmark (guia, paso 7c; seccion 91). La llave la pone
+# poner_correo.py: el Server API Token va de usuario y de clave. El correo
+# del sistema sale hasta CORREO_ENCENDIDO=si, despues de probar la llave
+# (seccion 86). Los CORREO_MS_ son la otra forma (paso 7b): llenos, manda
+# Microsoft 365.
 CORREO_ENCENDIDO=no
 CORREO_DE=Centauro Connect <connect@mycentauro.lat>
 CORREO_RESPONDER_A=Centauro Connect <cecc.notification@centauro.lat>
-CORREO_HOST=smtp.mailersend.net
+CORREO_HOST=smtp.postmarkapp.com
 CORREO_PUERTO=587
 CORREO_USUARIO=
 CORREO_CLAVE=

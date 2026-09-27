@@ -1458,6 +1458,15 @@ function tarjetaBono(b) {
 
 /* ------------------------------------------------------------- yo */
 
+/* El nombre de cada parte de la calificacion (seccion 91). Se pintaba la
+   clave --«satisfaccion», «capacitacion»--, sin acento y en espanol
+   tambien en Brasil. Son los mismos nombres que usa Catalogos. */
+const DIMENSION = {
+  estrellas: "ctl_dim_estrellas", satisfaccion: "ctl_dim_satisfaccion",
+  incidencias: "ctl_dim_incidencias", capacitacion: "ctl_dim_capacitacion",
+  experiencia: "ctl_dim_experiencia", manejo: "ctl_dim_manejo",
+};
+
 async function pantallaYo() {
   cargando();
   const cuerpo = [h("h1", {},
@@ -1476,7 +1485,8 @@ async function pantallaYo() {
           .replace("{confianza}", c.confianza || "—")),
       ...(c.dimensiones || []).filter(x => x.aplica).map(x =>
         h("div", { clase: "fila separa chico", style: "margin-top:8px" },
-          h("span", {}, x.dimension),
+          h("span", {}, DIMENSION[x.dimension] ? t(DIMENSION[x.dimension])
+                                              : x.dimension),
           h("span", { clase: "num" }, String(x.valor ?? "—"))))));
   } catch { /* sin tablero todavia */ }
 

@@ -503,6 +503,11 @@ def aprobar(cierre_id: int, db: Session = Depends(get_db),
         raise HTTPException(409, {
             "mensaje": (f"Solo se aprueba lo que esta en facturacion; este "
                         f"esta en {motor.nombre_estatus(cierre.estatus)}")})
+    # Sin porcentaje de comision en su pais, se dice antes de guardar
+    # nada (seccion 91): antes quedaba aprobado a medias.
+    falta = motor_comisiones.sin_porcentaje(db, cierre.servicio)
+    if falta:
+        raise HTTPException(409, falta)
     # El mes del implantado: se aprueba el mes, el servicio sigue vivo
     # y la comision es de ese mes (seccion 56).
     if cierre.contrato_id:

@@ -2,6 +2,9 @@
 
 O que há de novo em cada atualização, escrito para quem usa o sistema. A mais nova fica em cima.
 
+## 91 · 2026-09-27 · O e-mail sai pelo Postmark, e quatro correções
+O MailerSend não aprovou a conta: os e-mails do sistema saem pelo Postmark, do mesmo connect@mycentauro.lat, e as respostas continuam chegando em cecc.notification@centauro.lat. Além disso: os avisos do dia e da substituição chegam ao principal de cada equipe, como a task sheet; o cabeçalho do serviço mostra o status, o tipo e a situação de cada dia com o seu nome, no idioma de quem vê; no app, «Minha avaliação» mostra o nome de cada parte; e aprovar um serviço de um país sem percentual de comissão avisa antes, sem salvar nada.
+
 ## 90 · 2026-09-27 · O manual do sistema
 O manual vive no console, em Gestão Administrativa → Manual do sistema, em espanhol e em português. Explica como funciona cada peça, o que fazer quando algo trava e por que aconteceu. Traz o estado do sistema ao vivo, o que o sistema faz sozinho com a sua última volta, cada mensagem de «não é possível» com o que fazer, quem pode o quê, estas novidades e os casos resolvidos. É salvo em PDF com um botão e se atualiza a cada atualização do sistema.
 

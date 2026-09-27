@@ -111,7 +111,7 @@ export async function cartera(main) {
         h("td", {}, cliente(s.cliente_id)),
         h("td", {}, s.ejecutivo_completo
           || h("span", { clase: "gris" }, t("sin_ejecutivo"))),
-        h("td", {}, s.tipo),
+        h("td", {}, s.tipo === "implantado" ? t("implantado") : t("eventual")),
         h("td", {}, etiqueta(estatus(s.estatus), TONO_ESTATUS[s.estatus] || ""),
           relojDeCartera(relojDe.get(s.id), s)),
         h("td", { clase: "num" }, s.equipos ? s.equipos.length : 1),

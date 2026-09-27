@@ -1,10 +1,11 @@
-"""El correo en el .env del servidor, por MailerSend (seccion 84).
+"""El correo en el .env del servidor, por Postmark (secciones 84 y 91).
 
 `despliegue/poner_correo.py` corre en el servidor, fuera de los
 contenedores: pone de donde sale el correo, a donde llegan las respuestas
-y el servidor de MailerSend, y pide el usuario y la contrasena sin que la
-contrasena se vea. Lo que escribe lo tienen que leer igual docker compose
-y la aplicacion.
+y el servidor de envio, y pide la llave sin que se vea. Postmark da una
+sola llave, que va de usuario y de contrasena; MailerSend, que rechazo la
+cuenta dos veces, se queda como la otra forma, con usuario y contrasena.
+Lo que escribe lo tienen que leer igual docker compose y la aplicacion.
 """
 import importlib.util
 import pathlib
@@ -30,6 +31,9 @@ CORREO_MS_SECRETO=
 ODOO_BASE=
 """
 
+# Una llave con la forma de las de Postmark.
+LLAVE = "1a2b3c4d-5e6f-7a8b-9c0d-e1f2a3b4c5d6"
+
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
@@ -44,39 +48,82 @@ def _correr(respuestas, clave, argv=()):
                    secreto=lambda _: clave)
 
 
-def test_pone_el_correo_y_deja_lo_demas(env, capsys):
+def test_pone_postmark_y_deja_lo_demas(env, capsys):
+    """Seccion 91: la llave de Postmark va de usuario y de contrasena, y
+    no se pregunta nada mas."""
     env.write_text(DEL_SERVIDOR)
     env.chmod(0o600)
-    assert _correr(["MS_abc123@mycentauro.lat"], "Xy9$kq.Lm") == 0
+    assert _correr([], LLAVE) == 0
     leido = dotenv_values(env)
     assert leido["CORREO_DE"] == "Centauro Connect <connect@mycentauro.lat>"
     assert (leido["CORREO_RESPONDER_A"]
             == "Centauro Connect <cecc.notification@centauro.lat>")
-    assert leido["CORREO_HOST"] == "smtp.mailersend.net"
+    assert leido["CORREO_HOST"] == "smtp.postmarkapp.com"
     assert leido["CORREO_PUERTO"] == "587"
-    assert leido["CORREO_USUARIO"] == "MS_abc123@mycentauro.lat"
-    # El $ va entre comillas simples: compose no lo toma por variable.
-    assert leido["CORREO_CLAVE"] == "Xy9$kq.Lm"
-    assert "CORREO_CLAVE='Xy9$kq.Lm'\n" in env.read_text()
+    assert leido["CORREO_USUARIO"] == LLAVE
+    assert leido["CORREO_CLAVE"] == LLAVE
     # Lo demas, igual; nada repetido; el archivo sigue siendo solo suyo.
     texto = env.read_text()
     assert texto.startswith("APP_ENV=produccion\nSECRET_KEY=abc\n")
     assert "ODOO_BASE=\n" in texto
     assert texto.count("CORREO_DE=") == 1
     assert "Microsoft 365 (guia, paso 7b). Vacio" not in texto
+    assert pc.NUEVO in texto
     assert leido["CORREO_MS_SECRETO"] == ""
     assert env.stat().st_mode & 0o777 == 0o600
-    # La contrasena no sale en pantalla.
+    # La llave no sale en pantalla, ni un pedazo: es tambien la contrasena.
+    salida = capsys.readouterr().out
+    assert LLAVE[:3] not in salida and "Postmark" in salida
+
+
+def test_por_mailersend_sigue_sirviendo(env, capsys):
+    """La otra forma: usuario y contrasena, con el $ entre comillas."""
+    env.write_text(DEL_SERVIDOR)
+    assert _correr(["MS_abc123@mycentauro.lat"], "Xy9$kq.Lm",
+                   argv=["--mailersend"]) == 0
+    leido = dotenv_values(env)
+    assert leido["CORREO_HOST"] == "smtp.mailersend.net"
+    assert leido["CORREO_USUARIO"] == "MS_abc123@mycentauro.lat"
+    # El $ va entre comillas simples: compose no lo toma por variable.
+    assert leido["CORREO_CLAVE"] == "Xy9$kq.Lm"
+    assert "CORREO_CLAVE='Xy9$kq.Lm'\n" in env.read_text()
     assert "Xy9$kq.Lm" not in capsys.readouterr().out
+
+
+def test_de_mailersend_a_postmark(env):
+    """El .env del servidor ya trae MailerSend: al poner Postmark se
+    cambian el servidor y la llave, y el comentario deja de decir
+    MailerSend."""
+    env.write_text(DEL_SERVIDOR)
+    assert _correr(["MS_abc@mycentauro.lat"], "clave-ms",
+                   argv=["--mailersend"]) == 0
+    viejo = env.read_text().replace(pc.NUEVO, pc.VIEJOS[1])
+    env.write_text(viejo)
+    assert _correr([], LLAVE) == 0
+    texto = env.read_text()
+    leido = dotenv_values(env)
+    assert leido["CORREO_HOST"] == "smtp.postmarkapp.com"
+    assert leido["CORREO_USUARIO"] == leido["CORREO_CLAVE"] == LLAVE
+    assert "mailersend" not in texto.lower()
+    for c in ("CORREO_HOST=", "CORREO_USUARIO=", "CORREO_CLAVE="):
+        assert texto.count(c) == 1
 
 
 def test_se_puede_volver_a_correr(env):
     env.write_text(DEL_SERVIDOR)
-    assert _correr(["MS_abc123@mycentauro.lat"], "primera") == 0
-    assert _correr(["MS_abc123@mycentauro.lat"], "segunda") == 0
+    assert _correr([], "primera-llave") == 0
+    assert _correr([], "segunda-llave") == 0
     texto = env.read_text()
     assert texto.count("CORREO_CLAVE=") == 1
-    assert dotenv_values(env)["CORREO_CLAVE"] == "segunda"
+    assert texto.count(pc.NUEVO) == 1
+    assert dotenv_values(env)["CORREO_CLAVE"] == "segunda-llave"
+
+
+@pytest.mark.parametrize("llave", ["", "dos palabras", "con'comilla"])
+def test_sin_llave_buena_no_toca_nada(env, llave):
+    env.write_text(DEL_SERVIDOR)
+    assert _correr([], llave) == 1
+    assert env.read_text() == DEL_SERVIDOR
 
 
 @pytest.mark.parametrize("usuario, clave", [
@@ -84,27 +131,28 @@ def test_se_puede_volver_a_correr(env):
     ("MS_abc@mycentauro.lat", ""),
     ("MS_abc@mycentauro.lat", "dos palabras"),
 ])
-def test_sin_usuario_o_clave_buenos_no_toca_nada(env, usuario, clave):
+def test_por_mailersend_sin_usuario_o_clave_buenos_no_toca_nada(env, usuario,
+                                                                clave):
     env.write_text(DEL_SERVIDOR)
-    assert _correr([usuario], clave) == 1
+    assert _correr([usuario], clave, argv=["--mailersend"]) == 1
     assert env.read_text() == DEL_SERVIDOR
 
 
 def test_con_microsoft_puesto_pregunta_antes(env):
-    """Con los datos de Microsoft 365 llenos manda Microsoft: MailerSend
-    no se usaria. Se pregunta; si no, nada cambia."""
+    """Con los datos de Microsoft 365 llenos manda Microsoft: Postmark no
+    se usaria. Se pregunta; si no, nada cambia."""
     lleno = DEL_SERVIDOR.replace("CORREO_MS_TENANT=", "CORREO_MS_TENANT=t-1")
     env.write_text(lleno)
-    assert _correr(["MS_abc@mycentauro.lat", "n"], "clave") == 1
+    assert _correr(["n"], LLAVE) == 1
     assert env.read_text() == lleno
-    assert _correr(["MS_abc@mycentauro.lat", "s"], "clave") == 0
+    assert _correr(["s"], LLAVE) == 0
     leido = dotenv_values(env)
     assert leido["CORREO_MS_TENANT"] == ""
-    assert leido["CORREO_HOST"] == "smtp.mailersend.net"
+    assert leido["CORREO_HOST"] == "smtp.postmarkapp.com"
 
 
 def test_sin_env_no_crea_uno(env):
-    assert _correr(["MS_abc@mycentauro.lat"], "clave") == 1
+    assert _correr([], LLAVE) == 1
     assert not env.exists()
 
 
@@ -113,12 +161,12 @@ def test_sin_env_no_crea_uno(env):
 def test_poner_la_llave_no_enciende_el_correo(env, capsys):
     """Seccion 86: la llave se pone y se prueba con el correo apagado."""
     env.write_text(DEL_SERVIDOR)
-    assert _correr(["MS_abc@mycentauro.lat"], "clave") == 0
+    assert _correr([], LLAVE) == 0
     assert dotenv_values(env)["CORREO_ENCENDIDO"] == "no"
     assert "sigue apagado" in capsys.readouterr().out
     # Y encendido se queda encendido si se vuelve a poner la llave.
     assert _correr([], "", argv=["--encender"]) == 0
-    assert _correr(["MS_abc@mycentauro.lat"], "otra") == 0
+    assert _correr([], "otra-llave") == 0
     assert dotenv_values(env)["CORREO_ENCENDIDO"] == "si"
     assert env.read_text().count("CORREO_ENCENDIDO=") == 1
 
@@ -127,10 +175,10 @@ def test_encender_pide_la_llave_antes(env):
     env.write_text(DEL_SERVIDOR)
     assert _correr([], "", argv=["--encender"]) == 1
     assert env.read_text() == DEL_SERVIDOR
-    assert _correr(["MS_abc@mycentauro.lat"], "clave") == 0
+    assert _correr([], LLAVE) == 0
     assert _correr([], "", argv=["--encender"]) == 0
     assert dotenv_values(env)["CORREO_ENCENDIDO"] == "si"
     assert _correr([], "", argv=["--apagar"]) == 0
     assert dotenv_values(env)["CORREO_ENCENDIDO"] == "no"
     # La llave no se toca al mover el interruptor.
-    assert dotenv_values(env)["CORREO_CLAVE"] == "clave"
+    assert dotenv_values(env)["CORREO_CLAVE"] == LLAVE

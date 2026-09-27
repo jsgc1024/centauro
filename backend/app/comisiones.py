@@ -132,6 +132,35 @@ def _porcentaje(db: Session, pais_id: int, tipo: m.TipoServicio) -> Decimal:
     return Decimal(str(fila.porcentaje))
 
 
+def sin_porcentaje(db: Session, servicio: m.Servicio) -> dict | None:
+    """Por que no se podria generar la comision de este servicio, antes de
+    aprobarlo (seccion 91). None si no falta nada.
+
+    Aprobar guardaba la aprobacion y despues, al generar la comision,
+    contestaba 400 porque el pais --hoy, Brasil-- no tiene porcentaje:
+    el servicio quedaba aprobado, sin comision y sin intentar su factura,
+    y finanzas veia un error de algo que si se habia guardado. Ahora se
+    dice antes y no se guarda nada. El porcentaje no se inventa, como no
+    se inventa lo que se paga por dia en la nomina."""
+    if not servicio.consultor_id:
+        return None
+    hay = (db.query(m.PorcentajeComision.id)
+           .filter_by(pais_id=servicio.pais_id, tipo_servicio=servicio.tipo,
+                      activo=True).first())
+    if hay:
+        return None
+    pais = db.get(m.Pais, servicio.pais_id)
+    return {
+        "clave": "sin_porcentaje_de_comision",
+        "mensaje": (f"No hay porcentaje de comision para los consultores de "
+                    f"{pais.nombre if pais else 'ese pais'} en servicios "
+                    f"{servicio.tipo.value}. Sin el, la comision de este "
+                    f"servicio no se puede calcular"),
+        "que_hacer": ("No se aprueba hasta que este puesto: avisale a sistema "
+                      "y calidad."),
+    }
+
+
 def incidencia_grave_del_servicio(db: Session, servicio_id: int):
     return (db.query(m.Incidencia)
             .filter_by(servicio_id=servicio_id,

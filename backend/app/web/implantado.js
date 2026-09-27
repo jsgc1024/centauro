@@ -1481,7 +1481,8 @@ export async function pantallaImplantado(main, servicioId) {
         h("h1", { style: "margin:0" }, ficha.folio),
         h("p", { clase: "sub", style: "margin:4px 0 0" },
           [ficha.cliente, ficha.ciudad].filter(Boolean).join(" · "))),
-      etiqueta(ficha.estatus, TONO_ESTATUS[ficha.estatus] || "")),
+      /* Con su nombre, como en la cartera (seccion 91). */
+      etiqueta(estatus(ficha.estatus), TONO_ESTATUS[ficha.estatus] || "")),
     h("div", { clase: "acciones", style: "margin:0 0 16px" },
       h("button", { clase: "claro chico consulta-si", type: "button",
         onclick: () => (location.hash = "#/implantados") },

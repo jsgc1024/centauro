@@ -537,6 +537,25 @@ def test_por_mailersend_las_respuestas_llegan_a_una_persona(monkeypatch):
     assert mensaje["To"] == "ejecutivo@cliente.com"
 
 
+def test_por_postmark_la_llave_va_de_usuario_y_de_clave(monkeypatch):
+    """Seccion 91: MailerSend rechazo la cuenta dos veces y Salvador
+    escogio Postmark. Es el mismo SMTP por el 587; Postmark da una sola
+    llave, el Server API Token, y va de usuario y de contrasena."""
+    _por_mailersend(monkeypatch,
+                    "Centauro Connect <cecc.notification@centauro.lat>")
+    monkeypatch.setattr(correo.settings, "correo_host", "smtp.postmarkapp.com")
+    monkeypatch.setattr(correo.settings, "correo_usuario", "llave-pm")
+    monkeypatch.setattr(correo.settings, "correo_clave", "llave-pm")
+    correo.entregar("ejecutivo@cliente.com", "Su equipo llegó", "Texto",
+                    "<p>HTML</p>")
+    servidor, mensaje = _SmtpFalso.enviados[-1]
+    assert (servidor.host, servidor.puerto) == ("smtp.postmarkapp.com", 587)
+    assert servidor.pasos == ["cifrado", ("llave", "llave-pm", "llave-pm")]
+    assert mensaje["From"] == "Centauro Connect <connect@mycentauro.lat>"
+    assert (mensaje["Reply-To"]
+            == "Centauro Connect <cecc.notification@centauro.lat>")
+
+
 def test_sin_a_donde_responder_no_se_inventa(monkeypatch):
     """Vacio, el correo no lleva a donde responder: las respuestas van a
     quien lo manda, como antes."""

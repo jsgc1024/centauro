@@ -46,9 +46,10 @@ class Settings(BaseSettings):
     correo_de: str = ""            # "Centauro Connect <connect@mycentauro.lat>"
     # A donde llegan las respuestas (seccion 84). Decision de Salvador, 27
     # sep: el correo sale de mycentauro.lat por un servicio de envio
-    # --MailerSend, por SMTP--, para no depender de nadie, y ese servicio
-    # no tiene buzon: sin esto, lo que conteste un cliente no le llega a
-    # nadie. Vacio: las respuestas van a `correo_de`.
+    # --Postmark, por SMTP, desde la seccion 91; MailerSend rechazo la
+    # cuenta--, para no depender de nadie, y ese servicio no tiene buzon:
+    # sin esto, lo que conteste un cliente no le llega a nadie. Vacio: las
+    # respuestas van a `correo_de`.
     correo_responder_a: str = ""   # "Centauro Connect <cecc.notification@centauro.lat>"
     # El interruptor (seccion 86). Con el servidor y la llave puestos, el
     # correo del sistema sigue apagado hasta que aqui diga "si". Sin el,

@@ -5889,6 +5889,116 @@ Los dos cambian un proceso: van con su propuesta primero.
   vueltas desde que sube, y el estado del sistema dice «Sin vueltas
   anotadas» hasta la primera, unos minutos.
 
+## 91. El correo por Postmark, y cuatro fallas chicas
+
+Salvador, 27 de septiembre: MailerSend rechazó la cuenta por segunda
+vez —«does not meet our Terms and Community Standards»—. Se le
+propusieron su Microsoft 365, que no lo revisa nadie de fuera, o Amazon
+SES; preguntó por **Postmark**, que había sido la primera recomendación
+(sección 84), y se queda Postmark. Microsoft 365 queda como plan B: el
+camino por Graph ya está programado (sección 67).
+
+### El correo
+
+- **`poner_correo.py` pide la llave de Postmark** por omisión: el
+  *Server API Token*, que Postmark usa de usuario y de contraseña. No se
+  ve al pegarla y no se imprime ningún pedazo, porque es también la
+  contraseña. `--mailersend` hace lo de antes, con usuario y contraseña.
+  El comentario del `.env` deja de decir MailerSend.
+- **La guía, paso 7c**: la cuenta con el correo de centauro.lat; el
+  dominio con su DKIM y su Return-Path en Cloud DNS, y fuera los de
+  MailerSend; la llave; la prueba antes de la aprobación, con el buzón
+  de Postmark que recibe y tira (`test@blackhole.postmarkapp.com`); y
+  encender ya aprobada.
+- `crear_env.py`, el comentario de `config.py` y el manual dicen
+  Postmark.
+- **El plan**: el gratis trae 100 correos al mes y no alcanza. Con unos
+  600 servicios al mes salen del orden de 10,000 correos: el de 10,000
+  al mes, 15 dólares (precios de septiembre de 2026).
+- **Lo que se le escribe a Postmark para la aprobación**, en inglés
+  porque la revisan en inglés:
+
+  > Centauro (https://centauro.lat) is a security company operating in
+  > Mexico and Brazil (executive protection and an intelligence center).
+  > mycentauro.lat is the domain of our private operations platform,
+  > Centauro Connect, used by our own staff and security personnel. We
+  > will send only transactional emails triggered by our own operations:
+  > service notifications to the client contacts who booked each service
+  > (the security team's details before the service, arrival at the
+  > meeting point, start of the service and overtime notices); a short
+  > satisfaction survey after each service (one per contact, with at most
+  > one reminder); and account invitations and password resets for our
+  > own employees. Recipients are only the contacts of our corporate
+  > clients for each booked service, and our own employees. No marketing,
+  > newsletters or purchased lists. Expected volume: about 10,000 emails
+  > per month (around 600 services a month). Replies go to our monitored
+  > mailbox cecc.notification@centauro.lat, and we will watch bounces and
+  > spam complaints in Postmark.
+
+### Cuatro fallas chicas
+
+La regla de Salvador (sección 90): la falla de sistema que no cambia
+cómo se trabaja se arregla directo y se avisa. Salieron al revisar lo que
+falta para operar:
+
+- **Los avisos del día, al principal de cada equipo.** `_notificar`
+  mandaba al ejecutivo del servicio aunque el equipo trajera el suyo; el
+  task sheet ya usaba el del equipo. Ahora los dos igual: el suyo si lo
+  tiene, si no el del servicio. Cubre la llegada, el contacto, las horas
+  extra y el relevo. La encuesta sigue yendo al principal del servicio:
+  es una por servicio.
+- **El estatus con su nombre.** El encabezado del servicio y el del
+  implantado pintaban la clave —«SIN_VISTO_BUENO»—, y lo mismo el tipo
+  del servicio, el estado de cada día y el tipo en la cartera del
+  consultor, también en inglés y en portugués. Ahora pasan por
+  `estatus()` y por las claves `eventual` e `implantado`.
+- **«Mi calificación», en la app**, decía «satisfaccion» o
+  «capacitacion»: la clave, sin acento, y en español también en Brasil.
+  Ahora con los nombres de Catálogos (`ctl_dim_*`).
+- **Aprobar sin porcentaje de comisión.** Finanzas aprobaba, el cierre
+  quedaba guardado como aprobado y después, al generar la comisión, la
+  API contestaba 400 porque el país —hoy, Brasil— no tiene porcentaje:
+  aprobado a medias, sin comisión y sin intentar la factura. Ahora
+  `comisiones.sin_porcentaje` lo dice antes (409,
+  `sin_porcentaje_de_comision`) y no se guarda nada. Que a Brasil se le
+  puedan poner su porcentaje y los criterios de su bono —hoy solo
+  existen los de México y ninguna pantalla los crea— va con «Para poder
+  operar».
+
+### Para poder operar: la propuesta
+
+Entregada el mismo día, con pantallas sobre la consola real:
+`Claude outputs/Propuesta_para_poder_operar.pdf`. La lista de lo que
+falta con su dueño; cinco piezas por construir —la cotización autorizada
+en el servicio, corregir los contactos, reportar una falla (aprobada:
+«así cerramos el ciclo»), anotar la factura que se hace en Odoo y el
+arranque en vivo—; el calendario —el piloto del 19 al 30 de octubre,
+todo lo nuevo de México en Connect el 2 de noviembre, Brasil en
+noviembre y OVH apagado el 7 de diciembre—, y ocho decisiones. Espera su
+respuesta.
+
+### Las pruebas
+
+- `tests/test_poner_correo.py`: Postmark por omisión, con la llave de
+  usuario y de clave y sin imprimir nada de ella; MailerSend con
+  `--mailersend`; de MailerSend a Postmark sin que quede rastro; una
+  llave mala no toca nada; con Microsoft 365 puesto pregunta antes; el
+  interruptor.
+- `tests/test_correo.py`: por Postmark sale por el 587, con la llave de
+  usuario y de clave, y las respuestas a una persona.
+- `tests/test_aviso_principal_del_equipo.py`: la llegada y el contacto
+  de Beta le llegan a su principal; los de Alfa, sin principal propio, al
+  del servicio. Sin el arreglo, falla.
+- `tests/test_aprobar_sin_porcentaje.py`: sin porcentaje, 409 y el cierre
+  sigue en finanzas; con él, se aprueba con su 3 %.
+
+### Para subirlo
+
+- Sin migración: se reconstruye y se reinician `api`, `worker` y `beat`.
+- El correo sigue apagado. La llave de Postmark se pone con
+  `poner_correo.py` cuando el dominio esté verificado, y se enciende ya
+  aprobada la cuenta (guía, paso 7c).
+
 ## 14. Lo que falta
 
 ### Abierto
@@ -5900,11 +6010,16 @@ Los dos cambian un proceso: van con su propuesta primero.
   con su reporte (sección 89). Su manual vive en la consola desde la
   sección 90, y la lista de lo que falta en Odoo, por área, ya está hecha
   para que la limpie con cada área.
-- **Para poder operar** (lo que sigue, sección 90). Salvador, 27 de
-  septiembre: «terminando iniciamos: Para poder operar». Van ahí los dos
-  huecos que se vieron al escribir el manual: la cotización autorizada
-  desde la consola y la corrección del correo del ejecutivo y del
-  solicitante. Con su propuesta primero.
+- **Para poder operar** (secciones 90 y 91). Salvador, 27 de
+  septiembre: «terminando iniciamos: Para poder operar». La propuesta,
+  con pantallas, se entregó el mismo día
+  (`Claude outputs/Propuesta_para_poder_operar.pdf`): cinco piezas —la
+  cotización autorizada desde la consola, la corrección del correo del
+  ejecutivo y del solicitante, reportar una falla, anotar la factura
+  hecha en Odoo y el arranque en vivo—, la lista de lo que falta con su
+  dueño, el calendario y ocho decisiones. Para Brasil falta además que
+  se puedan poner su porcentaje de comisión y los criterios de su bono.
+  Espera su respuesta.
 - **El primer agente del sistema: los casos resueltos** (sección 90).
   Salvador, 27 de septiembre: «más adelante podemos poner a un agente
   dedicado a ello… será el primer agente que coloquemos en el sistema».
@@ -5948,19 +6063,17 @@ busca, está en las secciones 15 y 16.*
   dirección con HTTPS ya existe (sección 71); mientras no se configure,
   el pánico llega con la lectura de cada dos minutos. De este lado, las
   placas ligan contra la flota leída de Odoo: sin ella, ninguna.
-- **El correo: lo que falta es encenderlo** (secciones 84 y 86). Sale de
-  `connect@mycentauro.lat` por MailerSend, con SMTP, y ya no del buzón
-  de Microsoft 365 (sección 67); las respuestas llegan a
-  `cecc.notification@centauro.lat`. Hechos, el 27 de septiembre: la
-  cuenta, los registros en Cloud DNS —SPF, DKIM, Return-Path y DMARC— y
-  el dominio verificado; el usuario de envío de su sección *SMTP*,
-  puesto con `poner_correo.py`, y la prueba, que le llegó a Salvador.
-  Falta que MailerSend apruebe la cuenta —mientras, solo manda a dos
-  destinatarios y cien correos al mes— y `--encender`. Si al acabar la
-  prueba de 14 días no hay plan escogido, la cuenta pasa sola al plan
-  gratis: 500 correos al mes, 100 al día. El paso 7c de
-  `despliegue/LEEME.md` lo dice en orden. Con eso, la invitación y la
-  recuperación de contraseña llegan solas (sección 58).
+- **El correo: por Postmark** (secciones 84, 86 y 91). Sale de
+  `connect@mycentauro.lat` por SMTP y las respuestas llegan a
+  `cecc.notification@centauro.lat`. MailerSend rechazó la cuenta dos
+  veces; el 27 de septiembre se pasó a Postmark. Falta: la cuenta de
+  Postmark con el correo de centauro.lat, sus dos registros en Cloud DNS
+  —y quitar los de MailerSend—, la aprobación, la llave con
+  `poner_correo.py`, la prueba y `--encender`, en ese orden (guía, paso
+  7c). El plan de 10,000 correos al mes. Plan B: Microsoft 365, ya
+  programado (sección 67). Con el correo, la invitación y la
+  recuperación de contraseña llegan solas (sección 58); mientras, cada
+  invitación la copia Dirección general.
 
   *(Lo de abajo es el texto de cuando no existía el envío, que explica
   por qué la tabla es como es.)*
