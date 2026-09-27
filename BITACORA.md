@@ -6203,7 +6203,14 @@ en el servidor y probar; el acceso a producción; encender.
 - **Verificados en SES** el dominio y `salvador.garcia@grupocentauro.mx`,
   el correo de las pruebas mientras la cuenta está a prueba.
 - **La llave SMTP** la creó Salvador en SES y la guarda él; no pasó por
-  el chat.
+  el chat. Es la de siempre, la de IAM (usuario `AKIA…`, servidor
+  `email-smtp.us-east-2.amazonaws.com`). La consola ofrece ahora también
+  la de «Mail Manager» —un servidor propio por cuenta y una contraseña
+  que puede traer comillas y `$`—; esa no se usó.
+- **La llave en el servidor**, con `poner_correo.py`, y **la prueba**:
+  Amazon aceptó el correo al buzón de pruebas y el de
+  `salvador.garcia@grupocentauro.mx` llegó. El correo del sistema sigue
+  apagado.
 
 ### Las pruebas
 
@@ -6295,10 +6302,9 @@ busca, está en las secciones 15 y 16.*
   veces y Postmark no aceptó el dominio; el 27 de septiembre se pasó a
   Amazon SES, en Ohio. Ya están la cuenta de AWS (plan de pago, con
   MFA), el dominio en SES y sus tres DKIM en Cloud DNS, sin los de
-  MailerSend; el dominio y el correo de las pruebas, verificados, y la
-  llave SMTP creada. Falta, en ese orden (guía, paso 7c): la llave en el
-  servidor con `poner_correo.py`, la prueba, el acceso a producción y
-  `--encender`.
+  MailerSend; el dominio y el correo de las pruebas, verificados; la
+  llave SMTP puesta en el servidor y probada. Falta, en ese orden (guía,
+  paso 7c): el acceso a producción y `--encender`.
   Plan B: Microsoft 365, ya programado (sección 67). Con el correo, la invitación y la
   recuperación de contraseña llegan solas (sección 58); mientras, cada
   invitación la copia Dirección general, y a quien revisa los reportes de
