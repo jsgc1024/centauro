@@ -5364,6 +5364,47 @@ dejar andando sin ayuda y hecho para correos automáticos.
 - Nada sale hasta poner la llave en el `.env`, después de verificar el
   dominio en Postmark.
 
+### Ajuste del mismo día: MailerSend
+
+Salvador abrió la cuenta en **MailerSend**, no en Postmark: sirve igual,
+porque también habla SMTP. Y escogió las direcciones: el correo sale de
+**`connect@mycentauro.lat`** y lo que contesten llega a
+**`cecc.notification@centauro.lat`**.
+
+- **Los registros**, de la página de MailerSend: SPF en la raíz
+  (`include:_spf.mailersend.net`), dos DKIM como CNAME
+  (`ms1._domainkey` y `ms2._domainkey`, hacia `mailersend.net`), el
+  Return-Path (`mta`, hacia `mailersend.net`) y, de este lado, DMARC con
+  `p=none`. Van en Cloud DNS con `gcloud`, desde afuera del servidor.
+- **No se usó la verificación automática de MailerSend.** Su *Verify now*
+  pide permiso sobre el Google Cloud de Centauro. Y la ventana que ofrece
+  Squarespace sale porque los servidores de Cloud DNS se llaman
+  `googledomains`: Google Domains ahora es de Squarespace, pero el DNS de
+  Centauro no está ahí.
+- **MailerSend da usuario y contraseña**, no una sola llave como
+  Postmark. Los escribe **`despliegue/poner_correo.py`**, que corre en el
+  servidor fuera de los contenedores. Pone los renglones del correo en el
+  `.env`, pide la contraseña sin que se vea y, si la contraseña trae un
+  `$`, la guarda entre comillas simples: sin ellas, docker compose la
+  tomaría por una variable y la cambiaría. Si el `.env` trae los datos de
+  Microsoft 365, pregunta antes de vaciarlos, porque con ellos mandaría
+  Microsoft. Se puede volver a correr.
+- **El bloque de la prueba no reinicia sin usuario y contraseña.** Con el
+  servidor de correo puesto y sin la llave, cada aviso gastaría sus cinco
+  intentos y quedaría en fallido.
+- `crear_env.py`, la plantilla del `.env` para un servidor nuevo, ya trae
+  los renglones de MailerSend. Deja vacío el servidor hasta tener la
+  llave.
+- El plan gratis de MailerSend trae 500 correos al mes, con tope diario,
+  y MailerSend aprueba la cuenta antes de dejarla mandar. Si no alcanza,
+  el Hobby trae 5,000 al mes.
+- La guía (`despliegue/LEEME.md`, paso 7c) quedó con MailerSend.
+- Pruebas: `tests/test_correo.py` manda por `smtp.mailersend.net` con
+  usuario y contraseña. `tests/test_poner_correo.py` comprueba el script:
+  lo que escribe se lee igual; una segunda corrida reemplaza sin
+  repetir; sin usuario o contraseña buenos no toca nada; pregunta antes
+  de vaciar Microsoft 365; y la contraseña no sale en pantalla.
+
 ## 85. El puesto de administración del sistema y calidad
 
 Segundo paso de lo aprobado el 27 de septiembre (sección 83): el puesto
@@ -5480,13 +5521,15 @@ busca, está en las secciones 15 y 16.*
   dirección con HTTPS ya existe (sección 71); mientras no se configure,
   el pánico llega con la lectura de cada dos minutos. De este lado, las
   placas ligan contra la flota leída de Odoo: sin ella, ninguna.
-- **El correo: lo que falta es la cuenta de Postmark** (sección 84).
-  Desde el 27 de septiembre sale de `avisos@mycentauro.lat` por Postmark,
-  con SMTP, y ya no del buzón de Microsoft 365 (sección 67). Falta la
-  cuenta con su aprobación, verificar el dominio —DKIM, Return-Path y
-  DMARC en Cloud DNS— y poner la llave en el `.env` del servidor; el paso
-  7c de `despliegue/LEEME.md` lo dice en orden. Con eso, la invitación y
-  la recuperación de contraseña llegan solas (sección 58).
+- **El correo: lo que falta es verificar MailerSend** (sección 84).
+  Desde el 27 de septiembre sale de `connect@mycentauro.lat` por
+  MailerSend, con SMTP, y ya no del buzón de Microsoft 365 (sección
+  67); las respuestas llegan a `cecc.notification@centauro.lat`. La
+  cuenta ya existe. Falta su aprobación, los registros en Cloud DNS
+  —SPF, DKIM, Return-Path y DMARC—, verificar el dominio, y poner el
+  usuario y la contraseña con `poner_correo.py`. El paso 7c de
+  `despliegue/LEEME.md` lo dice en orden. Con eso, la invitación y la
+  recuperación de contraseña llegan solas (sección 58).
 
   *(Lo de abajo es el texto de cuando no existía el envío, que explica
   por qué la tabla es como es.)*

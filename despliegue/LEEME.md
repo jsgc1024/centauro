@@ -145,17 +145,19 @@ VAPID_CONTACTO=mailto:operaciones@centauro.lat
 # el mismo DOMINIO de arriba: la consola.
 URL_PUBLICA=https://mycentauro.lat
 
-# El correo que sale del sistema: desde mycentauro.lat, por Postmark,
+# El correo que sale del sistema: desde mycentauro.lat, por MailerSend,
 # con SMTP (paso 7c). Las respuestas de los clientes van a
-# CORREO_RESPONDER_A. Los tres CORREO_MS_ se dejan vacios: llenos,
-# mandaria Microsoft 365 (paso 7b) y el SMTP no se usaria. Sin ninguno
-# de los dos, no sale nada: los avisos quedan pendientes.
-CORREO_DE=Centauro Connect <avisos@mycentauro.lat>
-CORREO_RESPONDER_A=Operaciones <operaciones@centauro.lat>
+# CORREO_RESPONDER_A. Estos renglones los escribe poner_correo.py, que
+# pide el usuario y la contrasena de MailerSend sin que se vean. Los
+# tres CORREO_MS_ se dejan vacios: llenos, mandaria Microsoft 365 (paso
+# 7b) y el SMTP no se usaria. Sin ninguno de los dos, no sale nada: los
+# avisos quedan pendientes.
+CORREO_DE=Centauro Connect <connect@mycentauro.lat>
+CORREO_RESPONDER_A=Centauro Connect <cecc.notification@centauro.lat>
 CORREO_MS_TENANT=
 CORREO_MS_CLIENTE=
 CORREO_MS_SECRETO=
-CORREO_HOST=smtp.postmarkapp.com
+CORREO_HOST=smtp.mailersend.net
 CORREO_PUERTO=587
 CORREO_USUARIO=
 CORREO_CLAVE=
@@ -369,35 +371,66 @@ en correo no deseado.
    de administración— dice cuántos avisos esperan y cuántos ya no
    saldrían por viejos.
 
-**7c. El correo, por Postmark (el que se usa).** Decisión de Salvador,
-27 de septiembre: los avisos salen de `avisos@mycentauro.lat` por un
-servicio de envío, para no depender de nadie. El dominio y su DNS son
-de Centauro (Google Cloud DNS, zona `mycentauro-lat`), y el sistema
-manda por SMTP, que ya sabía: no se programa nada.
+**7c. El correo, por MailerSend (el que se usa).** Decisión de
+Salvador, 27 de septiembre: los avisos salen de un servicio de envío,
+para no depender de nadie. Abrió la cuenta en MailerSend. Salen de
+`connect@mycentauro.lat` y lo que contesten llega a
+`cecc.notification@centauro.lat`. El dominio y su DNS son de Centauro
+(Google Cloud DNS, zona `mycentauro-lat`), y el sistema manda por SMTP,
+que ya sabía: no se programa nada.
 
-1. **La cuenta**, en postmarkapp.com, con un correo de trabajo. Postmark
-   revisa las cuentas nuevas: hasta que la aprueba, no manda a correos
-   de fuera. El uso: avisos automáticos del sistema a clientes y
-   personal —invitaciones, avisos del servicio, encuestas—.
-2. **El dominio**, en *Sender Signatures → Add Domain*:
-   `mycentauro.lat`. Postmark da dos registros —**DKIM**, un TXT en
-   `…pm._domainkey.mycentauro.lat`, y **Return-Path**, un CNAME
-   `pm-bounces.mycentauro.lat` hacia `pm.mtasv.net`— que se ponen en
-   Cloud DNS, con un **DMARC** en `_dmarc.mycentauro.lat`. Después, en
-   Postmark, *Verify*. No son secretos.
-3. **La llave**: el *Server API Token* del servidor de Postmark va en el
-   `.env` como `CORREO_USUARIO` **y** como `CORREO_CLAVE`, pegado directo
-   en el servidor. Nunca por correo ni por chat. Google Cloud no deja
-   salir el puerto 25; el 587 sí, y es el que se usa.
-4. **Probarlo**:
+1. **La cuenta**, en mailersend.com. MailerSend revisa y aprueba las
+   cuentas nuevas antes de dejarlas mandar. El plan gratis trae 500
+   correos al mes, con tope diario; si no alcanza, el siguiente (Hobby)
+   trae 5,000 (precios de septiembre de 2026).
+2. **El dominio**: `mycentauro.lat`. MailerSend pide cuatro registros
+   y aquí se agrega un quinto; ninguno es secreto. En su página, **no**
+   se usa *Verify now* —le daría a MailerSend permiso sobre el Google
+   Cloud de Centauro— ni la ventana de Squarespace: sale porque los
+   servidores de Cloud DNS se llaman `googledomains` y Google Domains
+   ahora es de Squarespace, pero el DNS no está ahí. Los registros se
+   ponen desde la terminal donde se corre el ssh, **afuera** del
+   servidor:
 
    ```bash
-   docker compose -f docker-compose.prod.yml up -d api worker beat
-   docker compose -f docker-compose.prod.yml run --rm api python probar_correo.py tu@correo.com
+   P=project-8fda7c0c-0799-4989-9c2; Z=mycentauro-lat
+   gcloud dns record-sets create mycentauro.lat. --zone=$Z --project=$P --type=TXT --ttl=3600 --rrdatas='"v=spf1 include:_spf.mailersend.net ~all"'
+   gcloud dns record-sets create ms1._domainkey.mycentauro.lat. --zone=$Z --project=$P --type=CNAME --ttl=3600 --rrdatas=ms1._domainkey.mailersend.net.
+   gcloud dns record-sets create ms2._domainkey.mycentauro.lat. --zone=$Z --project=$P --type=CNAME --ttl=3600 --rrdatas=ms2._domainkey.mailersend.net.
+   gcloud dns record-sets create mta.mycentauro.lat. --zone=$Z --project=$P --type=CNAME --ttl=3600 --rrdatas=mailersend.net.
+   gcloud dns record-sets create _dmarc.mycentauro.lat. --zone=$Z --project=$P --type=TXT --ttl=3600 --rrdatas='"v=DMARC1; p=none"'
+   gcloud dns record-sets list --zone=$Z --project=$P --format="table(name,type,rrdatas)"
+   ```
+
+   SPF, los dos DKIM, el Return-Path (`mta`) y DMARC. El DMARC no lo
+   exige MailerSend, pero Gmail y Outlook confían más en el correo que
+   lo trae; con `p=none` solo vigila. `create` no reemplaza nada: si un
+   registro ya existe, lo dice y sigue. Si ya había un TXT en
+   `mycentauro.lat.`, el SPF se agrega a ese mismo registro, porque solo
+   puede haber uno. Después, en MailerSend, el botón de verificar del
+   final de la lista.
+3. **El usuario de envío**: en MailerSend, *Domains → mycentauro.lat →
+   SMTP → Generate new user*. Da un usuario y una contraseña. No se
+   mandan por correo ni por chat: se pegan en el servidor, dentro, con
+
+   ```bash
+   cd /opt/centauro && python3 despliegue/poner_correo.py
+   ```
+
+   que escribe los renglones del correo en el `.env` y pide el usuario y
+   la contraseña; la contraseña no se ve al pegarla. Se puede volver a
+   correr el día que haya otra contraseña. Google Cloud no deja salir el
+   puerto 25; el 587 sí, y es el que se usa.
+4. **Probarlo**. Sin usuario y contraseña, el bloque se detiene antes de
+   reiniciar: con el servidor puesto y sin la llave, cada aviso gastaría
+   sus intentos y quedaría en fallido.
+
+   ```bash
+   if grep -q '^CORREO_USUARIO=.\+' .env && grep -q '^CORREO_CLAVE=.\+' .env; then docker compose -f docker-compose.prod.yml up -d api worker beat && docker compose -f docker-compose.prod.yml run --rm api python probar_correo.py tu@correo.com; else echo "Faltan el usuario o la contrasena de MailerSend: corre poner_correo.py"; fi
    ```
 
    Dice por dónde salió, desde qué dirección y a dónde irán las
-   respuestas; si no salió, lo que contestó Postmark.
+   respuestas; si no salió, lo que contestó MailerSend.
 
 **8. El respaldo.** En el cron del servidor, no en Celery: si la
 aplicación está caída es justo cuando más falta hace. En Google Cloud,
