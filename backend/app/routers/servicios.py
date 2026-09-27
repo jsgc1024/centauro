@@ -5,6 +5,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app import accesos
 from app import auditoria
 from app import auth
 from app import programacion
@@ -142,6 +143,10 @@ def crear_servicio(datos: s.ServicioIn, db: Session = Depends(get_db),
 
     Si el alta trae el minimo (cliente, quien solicita, el dia con su hora
     y el punto de inicio), el servicio queda programado de una vez."""
+    # Lo lleva un consultor (seccion 87): la lista de la pantalla solo los
+    # ofrece a ellos, y aqui se cuida lo mismo.
+    if datos.consultor_id and not accesos.lleva_servicios(db, datos.consultor_id):
+        raise accesos.no_es_consultor(datos.consultor_id)
     servicio = m.Servicio(
         folio="",           # se arma con el consecutivo, ya con id asignado
         **datos.model_dump(exclude={"equipos"}),

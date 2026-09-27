@@ -8,7 +8,7 @@
    ejecutivo— y termina distinto: en lugar de dias con agenda se captura
    el trato, que no cambia, y la plantilla del primer mes. */
 import { api, sesion } from "./api.js";
-import { catalogos } from "./catalogos.js";
+import { catalogos, faltaConsultor, listaDeConsultores } from "./catalogos.js";
 import { aviso, buscador, campo, coincide, conAyuda, dinero, entrada,
          estatus, etiqueta, h, lista, listaBuscable, mensaje, tasa, telefono,
          vaciar } from "./util.js";
@@ -793,12 +793,9 @@ export async function nuevoImplantado(main) {
     }
   }
 
-  const consultores = lista("consultor_id",
-    cat.consultores.map(c => ({ valor: c.id, texto: c.nombre })));
-  if (sesion.usuario && sesion.usuario.persona_id) {
-    const suyo = cat.consultores.find(c => c.id === sesion.usuario.persona_id);
-    if (suyo) consultores.value = suyo.id;
-  }
+  /* Solo consultores (seccion 87), como en el eventual. */
+  const consultores = listaDeConsultores(cat);
+  consultores.addEventListener("change", () => revisar());
 
   const paises = lista("pais_id",
     cat.paises.map(p => ({ valor: p.id, texto: p.nombre })),
@@ -1156,6 +1153,7 @@ export async function nuevoImplantado(main) {
   function faltaDelAcuerdo() {
     const falta = [];
     if (!clientes.value) falta.push(t("min_cliente"));
+    if (faltaConsultor(cat, consultores)) falta.push(t("min_consultor"));
     if (!ciudadElegida()) falta.push(t("ciudad_opera"));
     if (!solicitante.value.trim()) falta.push(t("quien_solicita"));
     if (!ejecutivoNombre.value.trim()) falta.push(t("ejecutivo_principal"));

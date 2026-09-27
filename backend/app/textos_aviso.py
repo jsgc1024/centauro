@@ -168,7 +168,7 @@ TEXTOS = {
         "rol_finanzas": "Finance",
         "rol_recursos_humanos": "Human Resources",
         "rol_sistema_calidad": "Systems and quality",
-        "rol_admin": "Administration",
+        "rol_admin": "Administration (master key)",
     },
     "es": {
         "equipo": "Equipo",
@@ -285,7 +285,7 @@ TEXTOS = {
         "rol_finanzas": "Finanzas",
         "rol_recursos_humanos": "Recursos Humanos",
         "rol_sistema_calidad": "Sistema y calidad",
-        "rol_admin": "Administración",
+        "rol_admin": "Administración (llave maestra)",
     },
     "pt": {
         "equipo": "Equipe",
@@ -400,7 +400,7 @@ TEXTOS = {
         "rol_finanzas": "Finanças",
         "rol_recursos_humanos": "Recursos Humanos",
         "rol_sistema_calidad": "Sistema e qualidade",
-        "rol_admin": "Administração",
+        "rol_admin": "Administração (chave mestra)",
     },
 }
 

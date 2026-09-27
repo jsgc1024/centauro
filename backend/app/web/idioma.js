@@ -338,7 +338,7 @@ const TEXTOS = {
     rol_director_operaciones: "Dirección de operaciones",
     rol_director_general: "Dirección general",
     rol_finanzas: "Finanzas",
-    rol_admin: "Administración",
+    rol_admin: "Administración (llave maestra)",
     acc_titulo: "Accesos",
     acc_pie: "Quién puede entrar al sistema, con qué puesto, y cuándo entró por última vez.",
     acc_buscar: "Buscar por nombre o correo",
@@ -3548,6 +3548,9 @@ const TEXTOS = {
     bta_pagina: "Página {p} de {n} · {total} cambios",
     bta_cuantos: "{total} cambio(s)",
     cat_base_crear_uno: "Crear el puesto que falta",
+    min_consultor: "Consultor asignado",
+    consultor_escoge: "Escoge al consultor",
+    consultor_ninguno: "Nadie tiene acceso de consultor todavía",
   },
 
   en: {
@@ -3858,7 +3861,7 @@ const TEXTOS = {
     rol_director_operaciones: "Head of operations",
     rol_director_general: "Managing director",
     rol_finanzas: "Finance",
-    rol_admin: "Administration",
+    rol_admin: "Administration (master key)",
     acc_titulo: "Access",
     acc_pie: "Who can get into the system, with what job, and when they last signed in.",
     acc_buscar: "Search by name or email",
@@ -7062,6 +7065,9 @@ const TEXTOS = {
     bta_pagina: "Page {p} of {n} · {total} changes",
     bta_cuantos: "{total} change(s)",
     cat_base_crear_uno: "Create the missing job",
+    min_consultor: "Assigned consultant",
+    consultor_escoge: "Choose the consultant",
+    consultor_ninguno: "Nobody has consultant access yet",
   },
 
   pt: {
@@ -7372,7 +7378,7 @@ const TEXTOS = {
     rol_director_operaciones: "Direção de operações",
     rol_director_general: "Direção geral",
     rol_finanzas: "Finanças",
-    rol_admin: "Administração",
+    rol_admin: "Administração (chave mestra)",
     acc_titulo: "Acessos",
     acc_pie: "Quem pode entrar no sistema, com que cargo, e quando entrou pela última vez.",
     acc_buscar: "Buscar por nome ou e-mail",
@@ -10575,6 +10581,9 @@ const TEXTOS = {
     bta_pagina: "Página {p} de {n} · {total} mudanças",
     bta_cuantos: "{total} mudança(s)",
     cat_base_crear_uno: "Criar o cargo que falta",
+    min_consultor: "Consultor designado",
+    consultor_escoge: "Escolha o consultor",
+    consultor_ninguno: "Ninguém tem acesso de consultor ainda",
   },
 };
 

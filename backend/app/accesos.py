@@ -53,6 +53,32 @@ def anotar(db: Session, actor: m.Usuario, accion: str, objeto: str,
         antes=antes, despues=despues, detalle=detalle))
 
 
+# ------------------------------------------- quien lleva un servicio
+
+def lleva_servicios(db: Session, persona_id: int | None) -> bool:
+    """Si esta persona puede ser el consultor de un servicio (seccion 87):
+    tiene acceso de consultor, abierto, y sigue activa. Es la misma
+    lista de /catalogos/consultores, que es la que ofrece la pantalla."""
+    if not persona_id:
+        return False
+    return (db.query(m.Usuario.id)
+            .join(m.Persona, m.Persona.id == m.Usuario.persona_id)
+            .filter(m.Usuario.persona_id == persona_id,
+                    m.Usuario.rol == m.Rol.CONSULTOR,
+                    m.Usuario.activo.is_(True),
+                    m.Persona.activo.is_(True))
+            .first()) is not None
+
+
+def no_es_consultor(persona_id: int) -> HTTPException:
+    return HTTPException(400, {
+        "mensaje": "Un servicio lo lleva alguien con acceso de consultor.",
+        "que_hacer": "Escoge a uno de la lista. Si falta alguien, se le da "
+                     "acceso de consultor en Accesos.",
+        "consultor_id": persona_id,
+    })
+
+
 # ------------------------------------------------------------- los candados
 
 def _obtener(db: Session, usuario_id: int) -> m.Usuario:

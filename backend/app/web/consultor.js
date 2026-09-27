@@ -5,7 +5,7 @@
    encabezado, equipo y unidad, los dias con su agenda, y al final el
    hospedaje. Quien arma el documento lo ve igual que quien lo recibe. */
 import { api, sesion } from "./api.js";
-import { catalogos } from "./catalogos.js";
+import { catalogos, faltaConsultor, listaDeConsultores } from "./catalogos.js";
 import { aviso, buscador, campo, coincide, conAyuda, datosDeFormulario,
          dinero, entrada, estatus, etiqueta, fecha, h, hora, lista,
          listaBuscable, mensaje, plegable, telefono, textoDe,
@@ -225,14 +225,11 @@ export async function nuevoServicio(main) {
     }
   }
 
-  const consultores = lista("consultor_id",
-    cat.consultores.map(c => ({ valor: c.id, texto: c.nombre })));
-  /* El consultor que da de alta se propone a si mismo: casi siempre es su
-     propio cliente, y si esta cubriendo a alguien lo cambia. */
-  if (sesion.usuario && sesion.usuario.persona_id) {
-    const suyo = cat.consultores.find(c => c.id === sesion.usuario.persona_id);
-    if (suyo) consultores.value = suyo.id;
-  }
+  /* Solo consultores (seccion 87). El que da de alta se propone a si
+     mismo: casi siempre es su propio cliente, y si esta cubriendo a
+     alguien lo cambia. */
+  const consultores = listaDeConsultores(cat);
+  consultores.addEventListener("change", () => revisar());
 
   const paises = lista("pais_id", cat.paises.map(
     p => ({ valor: p.id, texto: p.nombre })), {
@@ -1107,6 +1104,7 @@ export async function nuevoServicio(main) {
 
   const puntos = {
     cliente: t("min_cliente"),
+    consultor: t("min_consultor"),
     ciudad: t("min_ciudad"),
     solicitante: t("min_solicitante"),
     ejecutivo: t("min_ejecutivo"),
@@ -1133,6 +1131,7 @@ export async function nuevoServicio(main) {
 
     const cumple = {
       cliente: !!clientes.value,
+      consultor: !faltaConsultor(cat, consultores),
       ciudad: todos("ciudad"),
       solicitante: !!solicitante.value.trim()
                    && !!solicitanteApellidos.value.trim(),

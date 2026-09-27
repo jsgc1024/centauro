@@ -5586,6 +5586,42 @@ cada aviso a un cliente gastaba sus cinco intentos y quedaba en fallido.
   llave. Se enciende con `poner_correo.py --encender`, ya aprobada la
   cuenta de MailerSend y con la prueba hecha.
 
+## 87. Solo un consultor lleva un servicio
+
+Salvador, 27 de septiembre, en el alta de un servicio: «Aquí filtrar.
+Solo los Consultores deben aparecer aquí, o en su defecto quitarlo y que
+se ligue con su sesión al armar el servicio. Ya sea para eventual como
+implantado». En «Consultor asignado» salía él mismo: sin nadie con acceso
+de consultor, la lista caía en la plantilla completa.
+
+- **La lista es solo de consultores** —quien tiene acceso de consultor,
+  abierto—, en el eventual y en el implantado. Se quitó la caída a la
+  plantilla completa.
+- **El consultor que da de alta queda ligado a su sesión**: se propone a
+  sí mismo, y si está cubriendo a alguien lo cambia. Quien no es
+  consultor escoge, y no se escoge a nadie por él: la primera opción dice
+  «Escoge al consultor» y el alta lo pide en lo que le falta.
+- Sin nadie con acceso de consultor, la lista lo dice y el alta no se
+  detiene: el servicio queda sin asignar.
+- **El servidor cuida lo mismo**: no da de alta un servicio a nombre de
+  alguien que no es consultor, y dice qué hacer. El implantado que da de
+  alta quien no es consultor queda sin asignar, y ya no a su nombre.
+- **El rol de administración se llama «Administración (llave
+  maestra)»**, en las listas y en el correo de acceso. Se confundía con
+  el puesto «Administración del sistema y calidad»: a Aridiai se le dio
+  primero ese rol.
+
+### Las pruebas
+
+- `tests/test_consultor_del_servicio.py`: la lista es solo de
+  consultores; el eventual lo lleva un consultor; el implantado también,
+  y sin escoger queda sin asignar o a nombre del consultor que lo da de
+  alta.
+
+### Para subirlo
+
+- Sin migración.
+
 ## 14. Lo que falta
 
 ### Abierto

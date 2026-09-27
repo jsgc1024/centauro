@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app import auditoria, auth
+from app import accesos, auditoria, auth
 from app import bolson
 from app import desglose
 from app import disponibilidad as disp
@@ -592,6 +592,8 @@ def _idioma_del_pais(db: Session, pais_id: int) -> str:
 
 def _guardar_servicio(db: Session, usuario: m.Usuario, datos) -> m.Servicio:
     """Crea el servicio y su acuerdo. No abre ningun mes todavia."""
+    if datos.consultor_id and not accesos.lleva_servicios(db, datos.consultor_id):
+        raise accesos.no_es_consultor(datos.consultor_id)
     if not db.get(m.Cliente, datos.cliente_id):
         raise HTTPException(404, f"No existe el cliente {datos.cliente_id}")
 
@@ -613,7 +615,13 @@ def _guardar_servicio(db: Session, usuario: m.Usuario, datos) -> m.Servicio:
         # implantado casi siempre es del cliente, en el pais.
         idioma_solicitante=(datos.idioma_solicitante
                             or _idioma_del_pais(db, datos.pais_id)),
-        consultor_id=datos.consultor_id or usuario.persona_id,
+        # Lo lleva un consultor (seccion 87). Sin escogerlo, quien lo da de
+        # alta si es consultor; si no lo es --direccion, por ejemplo--, se
+        # queda sin asignar y no a su nombre.
+        consultor_id=(datos.consultor_id
+                      or (usuario.persona_id
+                          if accesos.lleva_servicios(db, usuario.persona_id)
+                          else None)),
         # Con el acuerdo capturado el servicio ya esta pedido, no en
         # borrador: hay un compromiso con el cliente esperando gente.
         estatus=m.EstatusServicio.SOLICITADO)
