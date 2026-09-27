@@ -2,6 +2,9 @@
 
 O que há de novo em cada atualização, escrito para quem usa o sistema. A mais nova fica em cima.
 
+## 93 · 2026-09-27 · O e-mail sai pela Amazon
+O Postmark não aceitou o domínio mycentauro.lat: os e-mails do sistema saem pelo Amazon SES, do mesmo connect@mycentauro.lat, e as respostas continuam chegando em cecc.notification@centauro.lat. Primeiro se testa com o e-mail desligado; ele é ligado quando a Amazon aprovar a conta.
+
 ## 92 · 2026-09-27 · Reportar uma falha
 Em cima, ao lado do seu nome, em todas as telas do console, e em **Eu** no app de campo: escreve-se o que aconteceu e, se quiser, cola-se uma captura ou adiciona-se uma foto; o resto —a tela, o serviço, a versão e o último que apareceu em vermelho— vai sozinho, e nunca senhas. Chega a sistema e qualidade em [Manual do sistema → Casos](#/manual/casos), em **Para revisar**, com o aviso por e-mail. Ali se resolve ou se copia para o Claude; já resolvido, quem reportou recebe o aviso com a causa e como se resolveu.
 

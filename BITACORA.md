@@ -6102,6 +6102,100 @@ cuenta una vez, y el propio reporte no se anota.
   portada del manual los cuenta. Al personal de campo sí le llega a su
   teléfono cuando se resuelve el suyo.
 
+## 93. El correo por Amazon SES
+
+Salvador, 27 de septiembre. Postmark contestó «Sorry! Public domains are
+not allowed» al dar de alta `mycentauro.lat`, y MailerSend ya había
+rechazado la cuenta dos veces (sección 91). Preguntó por Amazon y quedó:
+«vamos con el correo para amazon. veme dando el paso a paso y poco a
+poco». Preguntó también si Google no tiene ese servicio, por tener ahí
+el servidor: no lo tiene. Su guía para mandar correo desde una máquina
+de Google Cloud recomienda SendGrid, Mailgun o Mailjet, o el relevo de
+Google Workspace para quien ya lo paga, y el correo de Centauro está en
+Microsoft 365.
+
+### Lo que cambió
+
+- **`poner_correo.py` pone Amazon SES por omisión**: el servidor de
+  Virginia (`email-smtp.us-east-1.amazonaws.com`), por el 587, con el
+  usuario y la contraseña SMTP que da Amazon. La contraseña no se ve al
+  pegarla y no se imprime; del usuario salen tres letras. `--region=` es
+  para otra región; `--postmark` y `--mailersend` se quedan como la otra
+  forma.
+- **La guía, paso 7c**, es la de Amazon: la cuenta, el dominio con sus
+  tres DKIM en Cloud DNS, la cuenta a prueba con su buzón de pruebas, la
+  llave, la prueba, el acceso a producción y encender. Postmark y
+  MailerSend pasan al 7d.
+- `crear_env.py`, el comentario de `config.py` y el manual dicen Amazon
+  SES.
+
+### Lo que hay que saber de Amazon
+
+- **Virginia**: Amazon no manda correo desde su región de México. La
+  llave SMTP sirve solo en la región donde se creó.
+- **El plan de pago** de la cuenta de AWS: el gratis la cierra a los
+  seis meses, y con ella el correo.
+- **El precio**, a septiembre de 2026: desde el 21 de julio, una cuenta
+  nueva de SES empieza en el plan Essentials, 0.16 dólares por cada mil
+  correos y sin cuota; con 10,000 al mes, unos 1.60. El cobro por uso, a
+  0.10, se escoge cuando se quiera.
+- **La cuenta a prueba (sandbox)**: solo manda a correos y dominios
+  verificados y al buzón de pruebas de Amazon, hasta 200 al día y uno por
+  segundo. Para salir se pide el acceso a producción: contestan en unas
+  24 horas y a veces piden más datos. Es por región.
+- **Rebotes y quejas**: la lista de supresión de la cuenta viene
+  encendida para las dos cosas en las cuentas nuevas. Amazon no le vuelve
+  a mandar a quien rebotó o se quejó.
+- **Sin custom MAIL FROM**: Amazon manda con su Return-Path y DMARC pasa
+  con el DKIM del dominio. El SPF de la raíz, el de MailerSend, se cambia
+  por `v=spf1 -all` si ese TXT no trae nada más.
+
+### Lo que se le escribe a Amazon para el acceso a producción
+
+En inglés, porque lo revisan en inglés. *Mail type*: Transactional.
+*Website URL*: `https://centauro.lat`. Y el uso, si lo piden:
+
+> Centauro (https://centauro.lat) is a security company operating in
+> Mexico and Brazil (executive protection and an intelligence center).
+> mycentauro.lat is the domain of our private operations platform,
+> Centauro Connect, used by our own staff and security personnel. We will
+> send only transactional emails triggered by our own operations: service
+> notifications to the client contacts who booked each service (the
+> security team's details before the service, arrival at the meeting
+> point, start of the service and overtime notices); a short satisfaction
+> survey after each service (one per contact, with at most one reminder);
+> and account invitations and password resets for our own employees.
+> Recipients are only the contacts of our corporate clients for each
+> booked service, and our own employees. No marketing, newsletters or
+> purchased lists. Expected volume: about 10,000 emails per month (around
+> 600 services a month), at most a few hundred per day. The domain is
+> verified with DKIM and has a DMARC record. We keep the SES account-level
+> suppression list on for bounces and complaints, so we never send again
+> to an address that bounced or complained, and we watch the bounce and
+> complaint rates in the SES console. Replies go to our monitored mailbox
+> cecc.notification@centauro.lat.
+
+### El paso a paso con Salvador
+
+Pidió ir de uno en uno. Nueve pasos: la cuenta de AWS; el segundo
+candado (MFA); el dominio en SES; sus registros en Cloud DNS; su correo
+verificado para las pruebas; la llave SMTP; subir esto, poner la llave
+en el servidor y probar; el acceso a producción; encender.
+
+### Las pruebas
+
+- `tests/test_poner_correo.py`: Amazon por omisión, con usuario y
+  contraseña, sin imprimir la contraseña, y la contraseña con `+` y `/`
+  escrita tal cual; otra región; una región mal escrita no toca nada; de
+  Postmark a Amazon sin renglones repetidos; sin usuario o contraseña
+  buenos no toca nada; Postmark y MailerSend siguen sirviendo; con
+  Microsoft 365 puesto pregunta antes; el interruptor.
+
+### Para subirlo
+
+- Sin migración. `poner_correo.py` corre fuera de los contenedores,
+  desde `/opt/centauro`: basta el `git pull` del bloque de siempre.
+
 ## 14. Lo que falta
 
 ### Abierto
@@ -6172,17 +6266,18 @@ busca, está en las secciones 15 y 16.*
   de septiembre, en producción todavía no se hace la primera lectura del
   personal, de la flota ni de los tarifarios, y el estado del sistema
   dice «sin unidades ligadas».
-- **El correo: por Postmark** (secciones 84, 86 y 91). Sale de
+- **El correo: por Amazon SES** (secciones 84, 86, 91 y 93). Sale de
   `connect@mycentauro.lat` por SMTP y las respuestas llegan a
   `cecc.notification@centauro.lat`. MailerSend rechazó la cuenta dos
-  veces; el 27 de septiembre se pasó a Postmark. Falta: la cuenta de
-  Postmark con el correo de centauro.lat, sus dos registros en Cloud DNS
-  —y quitar los de MailerSend—, la aprobación, la llave con
-  `poner_correo.py`, la prueba y `--encender`, en ese orden (guía, paso
-  7c). El plan de 10,000 correos al mes. Plan B: Microsoft 365, ya
-  programado (sección 67). Con el correo, la invitación y la
+  veces y Postmark no aceptó el dominio; el 27 de septiembre se pasó a
+  Amazon SES, en Virginia. Falta, en ese orden (guía, paso 7c): la cuenta
+  de AWS en el plan de pago, el dominio con sus tres DKIM en Cloud DNS
+  —y quitar los de MailerSend—, la llave con `poner_correo.py`, la
+  prueba, el acceso a producción y `--encender`. Plan B: Microsoft 365,
+  ya programado (sección 67). Con el correo, la invitación y la
   recuperación de contraseña llegan solas (sección 58); mientras, cada
-  invitación la copia Dirección general.
+  invitación la copia Dirección general, y a quien revisa los reportes de
+  fallas no le llega aviso (sección 92).
 
   *(Lo de abajo es el texto de cuando no existía el envío, que explica
   por qué la tabla es como es.)*

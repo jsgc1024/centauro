@@ -1,19 +1,26 @@
 #!/usr/bin/env python3
-"""El correo en el .env del servidor, por Postmark (secciones 84 y 91).
+"""El correo en el .env del servidor, por Amazon SES (secciones 84, 91 y 93).
 
     cd /opt/centauro && python3 despliegue/poner_correo.py
 
 Escribe los renglones del correo --de donde sale, a donde llegan las
-respuestas, el servidor de Postmark y su puerto-- y pide la llave que da
-Postmark: el *Server API Token* (Servers -> Centauro Connect -> API
-Tokens). Postmark usa esa misma llave de usuario y de contrasena. Se
-pega en la terminal del servidor y no se ve al pegarla: no queda en
-pantalla, ni en el historial, ni pasa por un chat.
+respuestas, el servidor de Amazon y su puerto-- y pide el usuario y la
+contrasena SMTP que da Amazon (SES -> SMTP settings -> Create SMTP
+credentials). La contrasena se pega en la terminal del servidor y no se
+ve al pegarla: no queda en pantalla, ni en el historial, ni pasa por un
+chat.
 
-MailerSend rechazo la cuenta dos veces (seccion 91) y Salvador escogio
-Postmark, que fue la primera recomendacion. MailerSend se queda como la
-otra forma, con usuario y contrasena:
+MailerSend rechazo la cuenta dos veces (seccion 91) y Postmark no acepto
+el dominio (seccion 93); Salvador escogio Amazon SES. La cuenta es de
+Virginia (us-east-1): Amazon no manda correo desde su region de Mexico.
+Si algun dia es otra region, se dice:
 
+    python3 despliegue/poner_correo.py --region=us-east-2
+
+Los otros dos se quedan como la otra forma: Postmark con su sola llave y
+MailerSend con usuario y contrasena:
+
+    python3 despliegue/poner_correo.py --postmark
     python3 despliegue/poner_correo.py --mailersend
 
 Se puede volver a correr: el dia que haya otra llave, se corre otra vez
@@ -21,13 +28,13 @@ y se reemplaza. Lo demas del .env no se toca.
 
 El interruptor (seccion 86). Poner la llave no enciende el correo del
 sistema: queda CORREO_ENCENDIDO=no, se prueba con probar_correo.py --que
-sale igual-- y, ya aprobada la cuenta de Postmark, se enciende:
+sale igual-- y, ya aprobado el acceso a produccion de Amazon, se enciende:
 
     python3 despliegue/poner_correo.py --encender
     python3 despliegue/poner_correo.py --apagar
 
-Encendido antes de tiempo, con la llave equivocada o la cuenta sin
-aprobar, cada aviso a un cliente gastaria sus intentos y quedaria en
+Encendido antes de tiempo, con la llave equivocada o la cuenta todavia a
+prueba, cada aviso a un cliente gastaria sus intentos y quedaria en
 fallido.
 
 Decision de Salvador, 27 de septiembre: sale de connect@mycentauro.lat y
@@ -47,11 +54,15 @@ FIJOS = {
     "CORREO_PUERTO": "587",
 }
 
-# Los servicios de envio que se saben poner. Postmark da una sola llave,
-# que va de usuario y de contrasena; MailerSend da un usuario y una
-# contrasena. Los dos hablan SMTP por el 587: Google Cloud no deja salir
-# el 25.
+# Los servicios de envio que se saben poner. Amazon y MailerSend dan un
+# usuario y una contrasena; Postmark, una sola llave que va de usuario y
+# de contrasena. Los tres hablan SMTP por el 587: Google Cloud no deja
+# salir el 25. El servidor de Amazon es uno por region.
 PROVEEDORES = {
+    "amazon": {"nombre": "Amazon SES",
+               "host": "email-smtp.{region}.amazonaws.com",
+               "donde": "SES -> SMTP settings -> Create SMTP credentials",
+               "una_llave": False},
     "postmark": {"nombre": "Postmark", "host": "smtp.postmarkapp.com",
                  "donde": "Servers -> Centauro Connect -> API Tokens",
                  "una_llave": True},
@@ -59,6 +70,9 @@ PROVEEDORES = {
                    "donde": "Domains -> mycentauro.lat -> SMTP",
                    "una_llave": False},
 }
+# La region de la cuenta de Amazon (seccion 93): Virginia.
+REGION = "us-east-1"
+FORMA_REGION = re.compile(r"[a-z]{2}(-gov)?-[a-z]+-[0-9]")
 LLAVES = ("CORREO_USUARIO", "CORREO_CLAVE")
 # Llenos, el correo sale por Microsoft 365 y no por el servicio de envio
 # (paso 7b).
@@ -188,7 +202,7 @@ def _pedir_llave(p: dict, preguntar, secreto) -> tuple | None:
             print(f"{falla} No se toco nada.")
             return None
         return llave, llave
-    usuario = preguntar(f"Usuario SMTP de {nombre}: ").strip()
+    usuario = preguntar(f"Usuario SMTP de {nombre} ({p['donde']}): ").strip()
     falla = _falla(usuario, "El usuario", nombre)
     if falla:
         print(f"{falla} No se toco nada.")
@@ -201,6 +215,26 @@ def _pedir_llave(p: dict, preguntar, secreto) -> tuple | None:
     return usuario, clave
 
 
+def elegir(argv: list) -> dict | None:
+    """El servicio de envio, con su servidor ya escrito. Amazon, salvo que
+    se pida otro; su region, la de la cuenta, salvo que se diga otra."""
+    if "--postmark" in argv:
+        return dict(PROVEEDORES["postmark"])
+    if "--mailersend" in argv:
+        return dict(PROVEEDORES["mailersend"])
+    p = dict(PROVEEDORES["amazon"])
+    region = REGION
+    for arg in argv:
+        if arg.startswith("--region="):
+            region = arg.split("=", 1)[1].strip().lower()
+    if not FORMA_REGION.fullmatch(region):
+        print(f"La region «{region}» no tiene forma de region de Amazon "
+              "(como us-east-1). No se toco nada.")
+        return None
+    p["host"] = p["host"].format(region=region)
+    return p
+
+
 def main(argv=None, preguntar=input, secreto=getpass.getpass) -> int:
     if not os.path.exists(ENV):
         print("No veo el .env aqui. Corre esto desde /opt/centauro:\n"
@@ -209,7 +243,9 @@ def main(argv=None, preguntar=input, secreto=getpass.getpass) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if "--encender" in argv or "--apagar" in argv:
         return interruptor("--encender" in argv)
-    p = PROVEEDORES["mailersend" if "--mailersend" in argv else "postmark"]
+    p = elegir(argv)
+    if p is None:
+        return 1
 
     actual = io.open(ENV, encoding="utf-8").read()
     valores = _valores(actual)
@@ -263,6 +299,10 @@ def main(argv=None, preguntar=input, secreto=getpass.getpass) -> int:
         print(f"El correo del sistema sigue apagado. Primero la prueba "
               f"(probar_correo.py); ya aprobada la cuenta de {p['nombre']}, se "
               "enciende con --encender (guia, paso 7c).")
+        if p["nombre"] == "Amazon SES":
+            print("Mientras Amazon no apruebe el acceso a produccion, la prueba "
+                  "va a success@simulator.amazonses.com o a un correo "
+                  "verificado en SES.")
     return 0
 
 

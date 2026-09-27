@@ -4,7 +4,7 @@ parte: entender
 orden: 10
 titulo: Las piezas del sistema y cómo se hablan
 resumen: La consola, la app de campo, el servidor, el reloj, Odoo, el GPS, el correo y los avisos al teléfono. Casi todo lo que se atora vive en una de estas piezas.
-buscar: arquitectura servidor google cloud base de datos redis worker beat odoo pegasus postmark push respaldo archivo
+buscar: arquitectura servidor google cloud base de datos redis worker beat odoo pegasus amazon ses correo push respaldo archivo
 ---
 Centauro Connect no es un solo programa: son varias piezas que se pasan datos. Cuando algo se atora, la primera pregunta es **en qué pieza**, y la segunda, **qué le llegó o qué le faltó**.
 
@@ -31,7 +31,7 @@ La fuente de verdad del personal de seguridad, de la oficina, de la flota y el t
 Pegasus, de Centauro Satelital. Cada dos minutos se leen las unidades: el pánico, el camino al punto, el inhibidor, la corriente y el segundo testigo de las marcas. Cada unidad de Pegasus se liga sola con la de Centauro **por la placa**, y la placa sale de la flota de Odoo: sin la flota leída, no liga ninguna.
 
 ### El correo
-Sale de **connect@mycentauro.lat** por Postmark, y las respuestas llegan a cecc.notification@centauro.lat. Lleva las invitaciones y las recuperaciones de contraseña, los avisos a los clientes y las encuestas. Se escribe al momento y sale cada cinco minutos; lo que tiene más de 24 horas sin salir ya no sale. Mientras el correo esté apagado, nada sale y todo espera.
+Sale de **connect@mycentauro.lat** por Amazon SES, y las respuestas llegan a cecc.notification@centauro.lat. Lleva las invitaciones y las recuperaciones de contraseña, los avisos a los clientes y las encuestas. Se escribe al momento y sale cada cinco minutos; lo que tiene más de 24 horas sin salir ya no sale. Mientras el correo esté apagado, nada sale y todo espera.
 
 ### Los avisos al teléfono
 Los recordatorios y alertas que llegan al teléfono aunque la app esté cerrada. Necesitan dos cosas: las llaves puestas en el servidor, y que cada teléfono los haya aceptado.

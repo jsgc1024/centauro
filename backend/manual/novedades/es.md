@@ -2,6 +2,9 @@
 
 Lo nuevo de cada actualización, escrito para quien usa el sistema. La más nueva va arriba.
 
+## 93 · 2026-09-27 · El correo sale por Amazon
+Postmark no aceptó el dominio mycentauro.lat: los correos del sistema salen por Amazon SES, desde la misma connect@mycentauro.lat, y las respuestas siguen llegando a cecc.notification@centauro.lat. Primero se prueba con el correo apagado; se enciende cuando Amazon apruebe la cuenta.
+
 ## 92 · 2026-09-27 · Reportar una falla
 Arriba, junto a tu nombre, en todas las pantallas de la consola, y en **Yo** en la app de campo: se escribe qué pasó y, si quieres, se pega una captura o se agrega una foto; lo demás —la pantalla, el servicio, la versión y lo último que salió en rojo— se manda solo, y nunca contraseñas. Llega a sistema y calidad en [Manual del sistema → Casos](#/manual/casos), en **Por revisar**, con su aviso por correo. Ahí se resuelve o se copia para Claude; ya resuelto, a quien lo reportó le llega el aviso con la causa y cómo se arregló.
 

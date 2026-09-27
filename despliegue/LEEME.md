@@ -145,10 +145,10 @@ VAPID_CONTACTO=mailto:operaciones@centauro.lat
 # el mismo DOMINIO de arriba: la consola.
 URL_PUBLICA=https://mycentauro.lat
 
-# El correo que sale del sistema: desde mycentauro.lat, por Postmark,
+# El correo que sale del sistema: desde mycentauro.lat, por Amazon SES,
 # con SMTP (paso 7c). Las respuestas de los clientes van a
 # CORREO_RESPONDER_A. Estos renglones los escribe poner_correo.py, que
-# pide la llave de Postmark sin que se vea: va de usuario y de clave. Los
+# pide el usuario y la contrasena SMTP de Amazon; la contrasena no se ve. Los
 # tres CORREO_MS_ se dejan vacios: llenos, mandaria Microsoft 365 (paso
 # 7b) y el SMTP no se usaria. Sin ninguno de los dos, no sale nada: los
 # avisos quedan pendientes. Y nada sale hasta CORREO_ENCENDIDO=si, que se
@@ -159,7 +159,7 @@ CORREO_RESPONDER_A=Centauro Connect <cecc.notification@centauro.lat>
 CORREO_MS_TENANT=
 CORREO_MS_CLIENTE=
 CORREO_MS_SECRETO=
-CORREO_HOST=smtp.postmarkapp.com
+CORREO_HOST=email-smtp.us-east-1.amazonaws.com
 CORREO_PUERTO=587
 CORREO_USUARIO=
 CORREO_CLAVE=
@@ -373,81 +373,97 @@ en correo no deseado.
    de administración— dice cuántos avisos esperan y cuántos ya no
    saldrían por viejos.
 
-**7c. El correo, por Postmark (el que se usa).** Decisión de
+**7c. El correo, por Amazon SES (el que se usa).** Decisión de
 Salvador, 27 de septiembre: los avisos salen de un servicio de envío,
 para no depender de nadie. Salen de `connect@mycentauro.lat` y lo que
 contesten llega a `cecc.notification@centauro.lat`. El dominio y su DNS
 son de Centauro (Google Cloud DNS, zona `mycentauro-lat`), y el sistema
-manda por SMTP, que ya sabía: no se programa nada. MailerSend, el primero
-que se abrió, rechazó la cuenta dos veces; se quedó Postmark, que había
-sido la primera recomendación (sección 91).
+manda por SMTP, que ya sabía: no se programa nada. MailerSend rechazó la
+cuenta dos veces y Postmark no aceptó el dominio («Public domains are not
+allowed»); se quedó Amazon SES (sección 93). Google Cloud no tiene un
+servicio de correo propio. La cuenta es de Virginia (`us-east-1`): Amazon
+no manda correo desde su región de México.
 
-1. **La cuenta**, en postmarkapp.com, **con el correo de centauro.lat**,
-   no con uno personal. Adentro, un *Server* que se llame «Centauro
-   Connect». Postmark revisa a mano cada cuenta nueva —menos de 24 horas
-   entre semana— y mientras tanto solo deja mandar a direcciones de los
-   dominios de la cuenta. La aprobación se pide desde su página, explicando el
-   uso: el texto está en la bitácora, sección 91. Si piden ejemplos, se
-   mandan los correos del sistema. El plan gratis trae 100 correos al mes
-   y no alcanza: el de 10,000 al mes es el que va (precios de septiembre
-   de 2026).
-2. **El dominio**: en *Sender Signatures*, agregar `mycentauro.lat`.
-   Postmark pide dos registros; ninguno es secreto: el DKIM, un `TXT`
-   con un nombre que termina en `._domainkey`, y el Return-Path, un
-   `CNAME` hacia `pm.mtasv.net`. Se ponen desde la terminal donde se
-   corre el ssh, **afuera** del servidor, con los valores que da
-   Postmark, y de paso se quitan los de MailerSend:
+1. **La cuenta de AWS**, en aws.amazon.com, **con un correo de
+   centauro.lat**, a nombre de «Centauro» y en el **plan de pago**: el
+   gratis cierra la cuenta a los seis meses y el correo dejaría de salir.
+   Al usuario raíz se le pone el segundo candado (MFA). Precio, a
+   septiembre de 2026: la cuenta nueva empieza en el plan Essentials, 0.16
+   dólares por cada mil correos y sin cuota; unos 1.60 al mes con 10,000.
+   Se puede pasar al cobro por uso, a 0.10.
+2. **El dominio**: arriba a la derecha, la región *N. Virginia*. En SES,
+   *Identities → Create identity → Domain*, `mycentauro.lat`, con *Easy
+   DKIM* (RSA 2048) y sin *custom MAIL FROM*: DMARC pasa con el DKIM.
+   Amazon da tres `CNAME` que terminan en `._domainkey`; ninguno es
+   secreto. Se ponen desde la terminal donde se corre el ssh, **afuera**
+   del servidor, con los valores que da Amazon, y de paso se quitan los de
+   MailerSend:
 
    ```bash
    P=project-8fda7c0c-0799-4989-9c2; Z=mycentauro-lat
    gcloud dns record-sets list --zone=$Z --project=$P --format="table(name,type,rrdatas)"
-   gcloud dns record-sets create <nombre del DKIM>.mycentauro.lat. --zone=$Z --project=$P --type=TXT --ttl=3600 --rrdatas='"<valor del DKIM>"'
-   gcloud dns record-sets create <nombre del Return-Path>.mycentauro.lat. --zone=$Z --project=$P --type=CNAME --ttl=3600 --rrdatas=pm.mtasv.net.
+   gcloud dns record-sets create <token1>._domainkey.mycentauro.lat. --zone=$Z --project=$P --type=CNAME --ttl=3600 --rrdatas=<token1>.dkim.amazonses.com.
+   gcloud dns record-sets create <token2>._domainkey.mycentauro.lat. --zone=$Z --project=$P --type=CNAME --ttl=3600 --rrdatas=<token2>.dkim.amazonses.com.
+   gcloud dns record-sets create <token3>._domainkey.mycentauro.lat. --zone=$Z --project=$P --type=CNAME --ttl=3600 --rrdatas=<token3>.dkim.amazonses.com.
    gcloud dns record-sets delete ms1._domainkey.mycentauro.lat. --zone=$Z --project=$P --type=CNAME
    gcloud dns record-sets delete ms2._domainkey.mycentauro.lat. --zone=$Z --project=$P --type=CNAME
    gcloud dns record-sets delete mta.mycentauro.lat. --zone=$Z --project=$P --type=CNAME
    ```
 
-   El DKIM de Postmark es largo: se copia entero, de su página. El SPF de
-   la raíz, el de MailerSend, ya no sirve: con el Return-Path, el SPF lo
-   pone Postmark. Se cambia por uno que diga que nadie más manda como
-   `mycentauro.lat`, solo si ese TXT no trae nada más:
+   El SPF de la raíz, el de MailerSend, ya no sirve: Amazon manda con su
+   propio Return-Path (`amazonses.com`). Se cambia por uno que diga que
+   nadie más manda como `mycentauro.lat`, solo si ese TXT no trae nada
+   más:
 
    ```bash
    gcloud dns record-sets update mycentauro.lat. --zone=$Z --project=$P --type=TXT --ttl=3600 --rrdatas='"v=spf1 -all"'
    ```
 
-   DMARC se queda como está. Después, en Postmark, *Verify* en cada
-   registro; puede tardar unos minutos.
-3. **La llave**: en Postmark, *Servers → Centauro Connect → API Tokens*,
-   el *Server API Token*. Postmark lo usa de usuario y de contraseña. No
-   se manda por correo ni por chat: se pega en el servidor, dentro, con
+   DMARC se queda como está. SES marca el dominio como *Verified* cuando
+   lee los tres registros: minutos, y hasta 72 horas.
+3. **La cuenta a prueba (sandbox).** Una cuenta nueva solo manda a
+   correos verificados, hasta 200 al día, y al buzón de pruebas de
+   Amazon, `success@simulator.amazonses.com`, que recibe y tira. Para
+   probar con un correo de verdad: *Identities → Create identity → Email
+   address*, y se pica el enlace que llega. Amazon no vuelve a mandar a
+   un correo que rebotó o que se quejó: la lista de supresión de la
+   cuenta viene encendida para las dos cosas.
+4. **La llave**: SES → *SMTP settings → Create SMTP credentials*. Crea un
+   usuario de IAM y da un usuario y una contraseña SMTP, que se ven **una
+   sola vez**: se baja el `.csv` y se guarda. Sirven solo en esa región.
+   No se mandan por correo ni por chat: se pegan en el servidor, dentro,
+   con
 
    ```bash
    cd /opt/centauro && python3 despliegue/poner_correo.py
    ```
 
-   que escribe los renglones del correo en el `.env` y pide la llave, que
-   no se ve al pegarla. Se puede volver a correr el día que haya otra
-   llave. Google Cloud no deja salir el puerto 25; el 587 sí, y es el que
-   se usa. MailerSend se queda como la otra forma:
-   `poner_correo.py --mailersend`, con usuario y contraseña.
-4. **Probarlo sin encenderlo.** Poner la llave no enciende el correo del
+   que escribe los renglones del correo en el `.env` y pide el usuario y
+   la contraseña; la contraseña no se ve al pegarla. Se puede volver a
+   correr el día que haya otra llave. Google Cloud no deja salir el
+   puerto 25; el 587 sí, y es el que se usa.
+5. **Probarlo sin encenderlo.** Poner la llave no enciende el correo del
    sistema: queda `CORREO_ENCENDIDO=no` y los avisos esperan en la cola.
-   La prueba sale igual. Mientras Postmark no apruebe la cuenta, se
-   prueba con su buzón de prueba, que recibe y tira lo que le llega: si
-   Postmark lo acepta, la llave y el dominio están bien.
+   La prueba sale igual. Primero al buzón de pruebas y después a un
+   correo verificado, que tiene que llegar:
 
    ```bash
-   docker compose -f docker-compose.prod.yml run --rm api python probar_correo.py test@blackhole.postmarkapp.com
+   docker compose -f docker-compose.prod.yml run --rm api python probar_correo.py success@simulator.amazonses.com
    ```
 
    Dice por dónde salió, desde qué dirección y a dónde irán las
-   respuestas; si no salió, lo que contestó Postmark —un 535 es la llave
-   equivocada—.
-5. **Encenderlo, ya aprobada la cuenta.** Antes no: Postmark rechazaría
-   los avisos a clientes y cada uno gastaría sus cinco intentos y quedaría
-   en fallido. `--encender` no enciende sin la llave puesta:
+   respuestas; si no salió, lo que contestó Amazon. Un 535 es la llave
+   equivocada o de otra región; «Email address is not verified» es la
+   cuenta todavía a prueba, escribiéndole a un correo sin verificar.
+6. **El acceso a producción**: SES → *Account dashboard → Request
+   production access*: *Transactional*, `https://centauro.lat`, y, si lo
+   piden, el uso, en inglés: el texto está en la bitácora, sección 93.
+   Amazon contesta en unas 24 horas; si pide más datos, se le contesta
+   con lo mismo. La aprobación es por región.
+7. **Encenderlo, ya aprobado.** Antes no: con la cuenta a prueba, Amazon
+   rechazaría los avisos a clientes y cada uno gastaría sus cinco
+   intentos y quedaría en fallido. `--encender` no enciende sin la llave
+   puesta:
 
    ```bash
    python3 despliegue/poner_correo.py --encender && docker compose -f docker-compose.prod.yml up -d api worker beat && docker compose -f docker-compose.prod.yml run --rm api python probar_correo.py cecc.notification@centauro.lat
@@ -456,6 +472,16 @@ sido la primera recomendación (sección 91).
    Con el interruptor, las actualizaciones se pueden subir en cualquier
    momento: el `up -d` de cada una no enciende nada que no diga `si`. Se
    apaga igual, con `--apagar` y el mismo `up -d`.
+
+**7d. La otra forma: Postmark o MailerSend.** Si algún día se cambia de
+servicio, la llave se pone con `poner_correo.py --postmark` —Postmark da
+una sola llave, el *Server API Token*, que va de usuario y de
+contraseña— o con `--mailersend`, con usuario y contraseña. Postmark pide
+un DKIM (un `TXT` que termina en `._domainkey`) y un Return-Path (un
+`CNAME` hacia `pm.mtasv.net`), y se prueba con su buzón que recibe y
+tira, `test@blackhole.postmarkapp.com`. El 27 de septiembre Postmark no
+aceptó `mycentauro.lat` («Public domains are not allowed»): antes habría
+que resolverlo con su soporte.
 
 **8. El respaldo.** En el cron del servidor, no en Celery: si la
 aplicación está caída es justo cuando más falta hace. En Google Cloud,
