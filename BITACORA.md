@@ -6185,6 +6185,26 @@ candado (MFA); el dominio en SES; sus registros en Cloud DNS; su correo
 verificado para las pruebas; la llave SMTP; subir esto, poner la llave
 en el servidor y probar; el acceso a producción; encender.
 
+### Lo hecho el 27 de septiembre, paso a paso
+
+- **La cuenta de AWS**, abierta por Salvador: plan de pago, soporte
+  básico y MFA en el usuario raíz. Trae 100 dólares de crédito de
+  bienvenida por seis meses.
+- **El dominio en SES**, con el asistente de la primera vez, en Ohio:
+  `mycentauro.lat` con Easy DKIM y sin MAIL FROM propio; plan Essentials;
+  sin IP dedicadas ni inquilinos; el seguimiento de la interacción y la
+  validación automática, apagados.
+- **El DNS**, desde Cloud Shell: los tres `CNAME` de Amazon
+  (`tezrvfp2…`, `rigiribt…` y `tzx46hhw…` `._domainkey` →
+  `….dkim.amazonses.com`); fuera los de MailerSend (`ms1._domainkey`,
+  `ms2._domainkey` y `mta`); el SPF de la raíz pasó de
+  `v=spf1 include:_spf.mailersend.net ~all` a `v=spf1 -all`, y el DMARC
+  se quedó en `p=none`. Quedan además los `A` de la raíz y de `appep`.
+- **Verificados en SES** el dominio y `salvador.garcia@grupocentauro.mx`,
+  el correo de las pruebas mientras la cuenta está a prueba.
+- **La llave SMTP** la creó Salvador en SES y la guarda él; no pasó por
+  el chat.
+
 ### Las pruebas
 
 - `tests/test_poner_correo.py`: Amazon por omisión, con usuario y
@@ -6273,10 +6293,12 @@ busca, está en las secciones 15 y 16.*
   `connect@mycentauro.lat` por SMTP y las respuestas llegan a
   `cecc.notification@centauro.lat`. MailerSend rechazó la cuenta dos
   veces y Postmark no aceptó el dominio; el 27 de septiembre se pasó a
-  Amazon SES, en Ohio. La cuenta de AWS ya está abierta, en el plan de
-  pago y con MFA. Falta, en ese orden (guía, paso 7c): el dominio con sus
-  tres DKIM en Cloud DNS —y quitar los de MailerSend—, la llave con
-  `poner_correo.py`, la prueba, el acceso a producción y `--encender`.
+  Amazon SES, en Ohio. Ya están la cuenta de AWS (plan de pago, con
+  MFA), el dominio en SES y sus tres DKIM en Cloud DNS, sin los de
+  MailerSend; el dominio y el correo de las pruebas, verificados, y la
+  llave SMTP creada. Falta, en ese orden (guía, paso 7c): la llave en el
+  servidor con `poner_correo.py`, la prueba, el acceso a producción y
+  `--encender`.
   Plan B: Microsoft 365, ya programado (sección 67). Con el correo, la invitación y la
   recuperación de contraseña llegan solas (sección 58); mientras, cada
   invitación la copia Dirección general, y a quien revisa los reportes de

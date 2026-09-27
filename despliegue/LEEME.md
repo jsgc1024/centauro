@@ -398,11 +398,14 @@ región y de ninguna otra.
    Domain*—, `mycentauro.lat`, con *Easy DKIM* (RSA 2048) y sin *custom
    MAIL FROM*: DMARC pasa con el DKIM. En el plan de precios, Essentials;
    los pasos opcionales se saltan, y el seguimiento de aperturas y clics
-   se queda apagado, porque reescribe las ligas de los correos.
+   y la validación automática se quedan apagados: el primero reescribe
+   las ligas de los correos y la segunda deja de mandar, sin avisar, a
+   los correos que le parecen dudosos.
    Amazon da tres `CNAME` que terminan en `._domainkey`; ninguno es
-   secreto. Se ponen desde la terminal donde se corre el ssh, **afuera**
-   del servidor, con los valores que da Amazon, y de paso se quitan los de
-   MailerSend:
+   secreto. Se ponen desde **Cloud Shell**, la terminal de Google en el
+   navegador (`https://console.cloud.google.com/?cloudshell=true`),
+   **afuera** del servidor —la Mac no tiene `gcloud`—, con los valores que
+   da Amazon, y de paso se quitan los de MailerSend:
 
    ```bash
    P=project-8fda7c0c-0799-4989-9c2; Z=mycentauro-lat
