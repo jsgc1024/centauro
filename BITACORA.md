@@ -5325,6 +5325,45 @@ que los dicen fallan con el código de antes:
   ya no se pueden. El acceso de Aridiai llega con el puesto nuevo, en el
   paso que sigue.
 
+## 84. El correo sale de mycentauro.lat
+
+Salvador, 27 de septiembre: «si quiero contratar email con @mycentauro
+para el envío de correos automáticos, ¿cómo lo podríamos hacer?». Se le
+dieron dos caminos —agregar `mycentauro.lat` a su Microsoft 365, o un
+servicio de envío— y escogió el segundo: «prefiero la dos para no
+depender de nadie». Se le recomendó **Postmark**: el más sencillo de
+dejar andando sin ayuda y hecho para correos automáticos.
+
+- Los avisos salen de **`Centauro Connect <avisos@mycentauro.lat>`**,
+  el mismo dominio de los enlaces de la consola: ayuda a no caer en
+  correo no deseado, y `centauro.lat` —el correo de la empresa— no
+  carga con la reputación de los envíos automáticos.
+- El dominio y su DNS son de Centauro (Google Cloud DNS, zona
+  `mycentauro-lat`): los registros de Postmark los pone Salvador.
+- El sistema ya mandaba por SMTP; no se programó el envío. Lo único
+  nuevo: **`CORREO_RESPONDER_A`**, a dónde llegan las respuestas. Un
+  servicio de envío no tiene buzón, y sin esto lo que contestara un
+  cliente no le llegaría a nadie. Vacío, las respuestas van a quien
+  manda, como antes.
+- `probar_correo.py` dice también a dónde irán las respuestas.
+- La guía (`despliegue/LEEME.md`, paso 7c) dice los pasos: la cuenta y
+  su aprobación, el dominio con DKIM, Return-Path y DMARC, la llave en el
+  `.env` —el *Server API Token* como usuario y como contraseña— y la
+  prueba. El paso 7b, el de Microsoft 365, se queda como la otra forma.
+- Google Cloud no deja salir el puerto 25; se usa el 587.
+
+### Las pruebas
+
+- `tests/test_correo.py`: por Postmark sale cifrado, con la llave, por
+  el 587, desde `avisos@mycentauro.lat` y con las respuestas a una
+  persona; sin `CORREO_RESPONDER_A` no se inventa a dónde responder.
+
+### Para subirlo
+
+- Sin migración.
+- Nada sale hasta poner la llave en el `.env`, después de verificar el
+  dominio en Postmark.
+
 ## 14. Lo que falta
 
 ### Abierto
@@ -5370,14 +5409,13 @@ busca, está en las secciones 15 y 16.*
   dirección con HTTPS ya existe (sección 71); mientras no se configure,
   el pánico llega con la lectura de cada dos minutos. De este lado, las
   placas ligan contra la flota leída de Odoo: sin ella, ninguna.
-- **El correo: lo que falta es de Microsoft 365** (sección 67). Ya se
-  decidió: sale del buzón `ai@centauro.lat` por Microsoft Graph y los
-  enlaces cuelgan de `https://mycentauro.lat`. Falta el buzón,
-  registrar la aplicación en Entra con su secreto, darle permiso en
-  Exchange solo sobre ese buzón y poner los tres datos en el `.env` del
-  servidor; el paso 7b de `despliegue/LEEME.md` lo dice en orden. Con
-  eso, la invitación y la recuperación de contraseña llegan solas
-  (sección 58).
+- **El correo: lo que falta es la cuenta de Postmark** (sección 84).
+  Desde el 27 de septiembre sale de `avisos@mycentauro.lat` por Postmark,
+  con SMTP, y ya no del buzón de Microsoft 365 (sección 67). Falta la
+  cuenta con su aprobación, verificar el dominio —DKIM, Return-Path y
+  DMARC en Cloud DNS— y poner la llave en el `.env` del servidor; el paso
+  7c de `despliegue/LEEME.md` lo dice en orden. Con eso, la invitación y
+  la recuperación de contraseña llegan solas (sección 58).
 
   *(Lo de abajo es el texto de cuando no existía el envío, que explica
   por qué la tabla es como es.)*

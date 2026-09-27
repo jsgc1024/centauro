@@ -145,14 +145,17 @@ VAPID_CONTACTO=mailto:operaciones@centauro.lat
 # el mismo DOMINIO de arriba: la consola.
 URL_PUBLICA=https://mycentauro.lat
 
-# El correo que sale de la empresa: del buzon de Microsoft 365 (paso 7b).
-# Con los tres CORREO_MS_ llenos manda Microsoft y el SMTP de abajo no se
-# usa. Sin ninguno de los dos, no sale nada: los avisos quedan pendientes.
-CORREO_DE=Centauro <ai@centauro.lat>
+# El correo que sale del sistema: desde mycentauro.lat, por Postmark,
+# con SMTP (paso 7c). Las respuestas de los clientes van a
+# CORREO_RESPONDER_A. Los tres CORREO_MS_ se dejan vacios: llenos,
+# mandaria Microsoft 365 (paso 7b) y el SMTP no se usaria. Sin ninguno
+# de los dos, no sale nada: los avisos quedan pendientes.
+CORREO_DE=Centauro Connect <avisos@mycentauro.lat>
+CORREO_RESPONDER_A=Operaciones <operaciones@centauro.lat>
 CORREO_MS_TENANT=
 CORREO_MS_CLIENTE=
 CORREO_MS_SECRETO=
-CORREO_HOST=
+CORREO_HOST=smtp.postmarkapp.com
 CORREO_PUERTO=587
 CORREO_USUARIO=
 CORREO_CLAVE=
@@ -312,7 +315,8 @@ referrer—, con **solo** Places API (New) y Maps Static API habilitadas, y
 con **cuota diaria**. Sin tope, un error en un ciclo se convierte en una
 factura.
 
-**7b. El correo, por Microsoft 365.** Sale del buzón `ai@centauro.lat`
+**7b. El correo, por Microsoft 365** *(la otra forma; no es la que se
+usa: ver 7c)*. Sale del buzón `ai@centauro.lat`
 y no por SMTP: Microsoft apaga el SMTP con usuario y contraseña el 31 de
 diciembre de 2026. Va por Microsoft Graph, con una aplicación registrada
 en Entra que **solo puede mandar desde ese buzón**. El DNS no se toca:
@@ -364,6 +368,36 @@ en correo no deseado.
    de soltar la cola, `GET /sistema/correo` —en `/docs`, con una cuenta
    de administración— dice cuántos avisos esperan y cuántos ya no
    saldrían por viejos.
+
+**7c. El correo, por Postmark (el que se usa).** Decisión de Salvador,
+27 de septiembre: los avisos salen de `avisos@mycentauro.lat` por un
+servicio de envío, para no depender de nadie. El dominio y su DNS son
+de Centauro (Google Cloud DNS, zona `mycentauro-lat`), y el sistema
+manda por SMTP, que ya sabía: no se programa nada.
+
+1. **La cuenta**, en postmarkapp.com, con un correo de trabajo. Postmark
+   revisa las cuentas nuevas: hasta que la aprueba, no manda a correos
+   de fuera. El uso: avisos automáticos del sistema a clientes y
+   personal —invitaciones, avisos del servicio, encuestas—.
+2. **El dominio**, en *Sender Signatures → Add Domain*:
+   `mycentauro.lat`. Postmark da dos registros —**DKIM**, un TXT en
+   `…pm._domainkey.mycentauro.lat`, y **Return-Path**, un CNAME
+   `pm-bounces.mycentauro.lat` hacia `pm.mtasv.net`— que se ponen en
+   Cloud DNS, con un **DMARC** en `_dmarc.mycentauro.lat`. Después, en
+   Postmark, *Verify*. No son secretos.
+3. **La llave**: el *Server API Token* del servidor de Postmark va en el
+   `.env` como `CORREO_USUARIO` **y** como `CORREO_CLAVE`, pegado directo
+   en el servidor. Nunca por correo ni por chat. Google Cloud no deja
+   salir el puerto 25; el 587 sí, y es el que se usa.
+4. **Probarlo**:
+
+   ```bash
+   docker compose -f docker-compose.prod.yml up -d api worker beat
+   docker compose -f docker-compose.prod.yml run --rm api python probar_correo.py tu@correo.com
+   ```
+
+   Dice por dónde salió, desde qué dirección y a dónde irán las
+   respuestas; si no salió, lo que contestó Postmark.
 
 **8. El respaldo.** En el cron del servidor, no en Celery: si la
 aplicación está caída es justo cuando más falta hace. En Google Cloud,

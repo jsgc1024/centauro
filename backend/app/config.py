@@ -43,7 +43,13 @@ class Settings(BaseSettings):
     correo_puerto: int = 587
     correo_usuario: str = ""
     correo_clave: str = ""
-    correo_de: str = ""            # "Centauro <ai@centauro.lat>"
+    correo_de: str = ""            # "Centauro Connect <avisos@mycentauro.lat>"
+    # A donde llegan las respuestas (seccion 84). Decision de Salvador, 27
+    # sep: el correo sale de mycentauro.lat por un servicio de envio
+    # --Postmark, por SMTP--, para no depender de nadie, y ese servicio no
+    # tiene buzon: sin esto, lo que conteste un cliente no le llega a
+    # nadie. Vacio: las respuestas van a `correo_de`.
+    correo_responder_a: str = ""   # "Operaciones <operaciones@centauro.lat>"
     # Microsoft 365 (seccion 67). Decision de Salvador, 25 de septiembre:
     # el correo sale del buzon de la empresa. Microsoft apaga la entrada
     # por SMTP con usuario y contrasena el 31 de diciembre de 2026, asi

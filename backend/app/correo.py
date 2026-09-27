@@ -156,6 +156,10 @@ def entregar(destino: str, asunto: str, cuerpo: str,
     mensaje["From"] = settings.correo_de
     mensaje["To"] = destino
     mensaje["Subject"] = asunto
+    # Seccion 84: el servicio de envio no tiene buzon; lo que contesten
+    # llega a una persona.
+    if settings.correo_responder_a:
+        mensaje["Reply-To"] = settings.correo_responder_a
     # El charset, dicho: el acento de "Proteccion" viaja en dos bytes y
     # el buzon que no sabe cual es el juego de caracteres los pinta como
     # basura. Va aqui y tambien dentro del HTML, porque hay clientes que

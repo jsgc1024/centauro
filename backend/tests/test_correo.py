@@ -473,3 +473,69 @@ def test_el_logo_va_pegado_al_correo(monkeypatch):
     assert html.count(f'src="cid:{cid}"') == 2
     assert logo.get_content() == base64.b64decode(PUNTO_PNG)
     assert logo.get_content_disposition() == "inline"
+
+
+# ------------------------------------ desde mycentauro.lat (seccion 84)
+
+class _SmtpFalso:
+    """Un SMTP de mentiras: guarda lo que le mandan y como se lo mandan."""
+    enviados = []
+
+    def __init__(self, host, puerto, timeout=None):
+        self.host, self.puerto, self.pasos = host, puerto, []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+    def starttls(self):
+        self.pasos.append("cifrado")
+
+    def login(self, usuario, clave):
+        self.pasos.append(("llave", usuario, clave))
+
+    def send_message(self, mensaje):
+        _SmtpFalso.enviados.append((self, mensaje))
+
+
+def _por_postmark(monkeypatch, responder_a):
+    _SmtpFalso.enviados = []
+    monkeypatch.setattr(correo.smtplib, "SMTP", _SmtpFalso)
+    for dato in ("correo_ms_tenant", "correo_ms_cliente", "correo_ms_secreto"):
+        monkeypatch.setattr(correo.settings, dato, "")
+    monkeypatch.setattr(correo.settings, "correo_host", "smtp.postmarkapp.com")
+    monkeypatch.setattr(correo.settings, "correo_puerto", 587)
+    monkeypatch.setattr(correo.settings, "correo_usuario", "llave-x")
+    monkeypatch.setattr(correo.settings, "correo_clave", "llave-x")
+    monkeypatch.setattr(correo.settings, "correo_de",
+                        "Centauro Connect <avisos@mycentauro.lat>")
+    monkeypatch.setattr(correo.settings, "correo_responder_a", responder_a)
+
+
+def test_por_postmark_las_respuestas_llegan_a_una_persona(monkeypatch):
+    """Decision de Salvador, 27 sep: el correo sale de mycentauro.lat por
+    un servicio de envio, para no depender de nadie. Ese servicio no
+    tiene buzon: lo que conteste un cliente va a CORREO_RESPONDER_A. Y
+    sale cifrado y con la llave, por el 587 --Google Cloud no deja salir
+    el 25--."""
+    _por_postmark(monkeypatch, "Operaciones <operaciones@centauro.lat>")
+    assert correo.configurado() and not correo.por_microsoft()
+    correo.entregar("ejecutivo@cliente.com", "Su equipo llegó", "Texto",
+                    "<p>HTML</p>")
+    servidor, mensaje = _SmtpFalso.enviados[-1]
+    assert (servidor.host, servidor.puerto) == ("smtp.postmarkapp.com", 587)
+    assert servidor.pasos == ["cifrado", ("llave", "llave-x", "llave-x")]
+    assert mensaje["From"] == "Centauro Connect <avisos@mycentauro.lat>"
+    assert mensaje["Reply-To"] == "Operaciones <operaciones@centauro.lat>"
+    assert mensaje["To"] == "ejecutivo@cliente.com"
+
+
+def test_sin_a_donde_responder_no_se_inventa(monkeypatch):
+    """Vacio, el correo no lleva a donde responder: las respuestas van a
+    quien lo manda, como antes."""
+    _por_postmark(monkeypatch, "")
+    correo.entregar("ejecutivo@cliente.com", "Aviso", "Texto")
+    _, mensaje = _SmtpFalso.enviados[-1]
+    assert mensaje["Reply-To"] is None

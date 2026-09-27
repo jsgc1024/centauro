@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Manda un correo de prueba con lo que dice el .env (seccion 67).
+"""Manda un correo de prueba con lo que dice el .env (secciones 67 y 84).
 
 En el servidor, despues de poner el correo en el .env y reiniciar:
 
@@ -37,6 +37,8 @@ def main() -> int:
         return 1
     print(f"Lo acepto {por}: sale desde {settings.correo_de} hacia "
           f"{destino}. Revisa esa bandeja, y la de correo no deseado.")
+    print("Si alguien lo contesta, la respuesta va a "
+          f"{settings.correo_responder_a or settings.correo_de}.")
     return 0
 
 
