@@ -167,6 +167,39 @@ def consultores(db: Session = Depends(get_db),
              "plaza_id": p.plaza_id} for p in gente]
 
 
+# ------------------------------------------- lo ligero, para Catalogos
+
+@router.get("/freelance", tags=["Personal"],
+            summary="Quien es freelance: nombre y nada mas")
+def freelance(db: Session = Depends(get_db), _=Depends(LEER)):
+    """Las tarifas de freelance dicen de quien son por su numero. La
+    pantalla de Catalogos (seccion 86) necesita el nombre, y la plantilla
+    completa trae la foto de cada persona: doscientas fotos para leer
+    cinco nombres."""
+    gente = (db.query(m.Persona)
+             .filter(m.Persona.es_freelance.is_(True))
+             .order_by(m.Persona.nombre).all())
+    return [{"id": p.id, "nombre": p.nombre, "activo": p.activo}
+            for p in gente]
+
+
+@router.get("/categorias-vehiculo/colores", tags=["Categorias de vehiculo"],
+            summary="Los colores de la flota, por categoria")
+def colores_por_categoria(db: Session = Depends(get_db), _=Depends(LEER)):
+    """Los colores en que hay unidades de cada categoria, como los deja
+    color_de(): son los colores en que vale la pena subir una foto. Solo
+    la flota de la casa; el auto rentado se devuelve."""
+    colores: dict[int, set] = {}
+    for categoria_id, color in (
+            db.query(m.Vehiculo.categoria_id, m.Vehiculo.color)
+            .filter(m.Vehiculo.activo.is_(True),
+                    m.Vehiculo.rentado.is_(False)).all()):
+        tono = color_de(color)
+        if tono:
+            colores.setdefault(categoria_id, set()).add(tono)
+    return {str(k): sorted(v) for k, v in colores.items()}
+
+
 # ------------------------------------------------ la foto de la categoria
 
 # Las fotos de las categorias de vehiculo son de los catalogos que lleva
@@ -202,6 +235,22 @@ async def poner_foto_de_categoria(
     db.refresh(categoria)
     return {"categoria_id": categoria.id, "color": color,
             "fotos": categoria.fotos}
+
+
+@router.get("/categorias-vehiculo/{categoria_id}/foto",
+            tags=["Categorias de vehiculo"],
+            summary="La foto de una categoria en un color, para verla")
+def ver_foto_de_categoria(categoria_id: int, color: str = "",
+                          db: Session = Depends(get_db), _=Depends(LEER)):
+    """La pantalla de Catalogos (seccion 86) ensena la foto que ya esta
+    antes de cambiarla: sin verla, se sube una encima de otra a ciegas."""
+    foto = (db.query(m.FotoCategoria)
+            .filter_by(categoria_id=categoria_id, color=color_de(color))
+            .first())
+    if not foto:
+        raise HTTPException(404, "Esa categoria no tiene foto en ese color")
+    return {"categoria_id": categoria_id, "color": foto.color,
+            "foto": foto.foto_url}
 
 
 @router.delete("/categorias-vehiculo/{categoria_id}/foto", status_code=204,

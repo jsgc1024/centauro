@@ -659,6 +659,12 @@ AYUDA_POR_PANTALLA = {
     "encuestas.js": 1,
     "personal.js": 1,
     "categorias.js": 2,
+    # Catalogos (seccion 86): uno por catalogo --once--, que dice para que
+    # sirve y que pasa si esta mal; la lista de la izquierda no lleva,
+    # porque su renglon ya dice que le falta a cada uno.
+    "catalogos_pantalla.js": 11,
+    # La bitacora de administracion (seccion 86): el de la tabla.
+    "bitacora_admin.js": 1,
     "central.js": 5,
     "consultor.js": 4,
     "facturacion.js": 1,

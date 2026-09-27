@@ -12,6 +12,17 @@ no queda en pantalla, ni en el historial, ni pasa por un chat.
 Se puede volver a correr: el dia que MailerSend de otra contrasena, se
 corre otra vez y se reemplaza. Lo demas del .env no se toca.
 
+El interruptor (seccion 86). Poner la llave no enciende el correo del
+sistema: queda CORREO_ENCENDIDO=no, se prueba con probar_correo.py --que
+sale igual-- y, ya aprobada la cuenta de MailerSend, se enciende:
+
+    python3 despliegue/poner_correo.py --encender
+    python3 despliegue/poner_correo.py --apagar
+
+Encendido antes de tiempo, con la llave equivocada o la cuenta sin
+aprobar, cada aviso a un cliente gastaria sus intentos y quedaria en
+fallido.
+
 Decision de Salvador, 27 de septiembre: sale de connect@mycentauro.lat y
 lo que contesten llega a cecc.notification@centauro.lat.
 """
@@ -108,11 +119,46 @@ def nuevo_texto(actual: str, poner: dict) -> str:
     return texto
 
 
-def main(preguntar=input, secreto=getpass.getpass) -> int:
+INTERRUPTOR = "CORREO_ENCENDIDO"
+# Lo que tiene que estar antes de encender.
+PARA_ENCENDER = ("CORREO_DE", "CORREO_HOST", "CORREO_USUARIO", "CORREO_CLAVE")
+
+
+def encendido(valores: dict) -> bool:
+    return (valores.get(INTERRUPTOR) or "").strip().lower() in (
+        "si", "s\u00ed", "yes", "true", "1")
+
+
+def interruptor(encender: bool) -> int:
+    """--encender o --apagar: solo el interruptor, sin tocar la llave."""
+    actual = io.open(ENV, encoding="utf-8").read()
+    valores = _valores(actual)
+    if encender:
+        faltan = [c for c in PARA_ENCENDER if not valores.get(c)]
+        if faltan:
+            print(f"Falta {', '.join(faltan)} en el .env. Primero la llave:\n"
+                  "  python3 despliegue/poner_correo.py")
+            return 1
+    with io.open(ENV, "w", encoding="utf-8") as f:
+        f.write(nuevo_texto(actual, {INTERRUPTOR: "si" if encender else "no"}))
+    if encender:
+        print("Listo: CORREO_ENCENDIDO=si. Los avisos salen desde que la "
+              "aplicacion se reinicia.")
+    else:
+        print("Listo: CORREO_ENCENDIDO=no. Desde que la aplicacion se "
+              "reinicia, los avisos esperan en la cola.")
+    return 0
+
+
+def main(argv=None, preguntar=input, secreto=getpass.getpass) -> int:
     if not os.path.exists(ENV):
         print("No veo el .env aqui. Corre esto desde /opt/centauro:\n"
               "  cd /opt/centauro && python3 despliegue/poner_correo.py")
         return 1
+    argv = sys.argv[1:] if argv is None else argv
+    if "--encender" in argv or "--apagar" in argv:
+        return interruptor("--encender" in argv)
+
     actual = io.open(ENV, encoding="utf-8").read()
     valores = _valores(actual)
 
@@ -130,6 +176,9 @@ def main(preguntar=input, secreto=getpass.getpass) -> int:
     poner = dict(FIJOS)
     poner["CORREO_USUARIO"] = escrito(usuario)
     poner["CORREO_CLAVE"] = escrito(clave)
+    # El interruptor no se mueve aqui: si no esta, entra apagado.
+    if INTERRUPTOR not in valores:
+        poner[INTERRUPTOR] = "no"
 
     llenos = [c for c in MICROSOFT if valores.get(c)]
     if llenos:
@@ -154,8 +203,13 @@ def main(preguntar=input, secreto=getpass.getpass) -> int:
     print("  CORREO_CLAVE: guardada; no se imprime.")
     if llenos:
         print("  Los datos de Microsoft 365 quedaron vacios.")
-    print("Para que la aplicacion lo tome, falta reiniciarla y mandar la "
-          "prueba (guia, paso 7c).")
+    if encendido(valores):
+        print("El correo ya estaba encendido: la llave nueva vale desde que "
+              "la aplicacion se reinicia.")
+    else:
+        print("El correo del sistema sigue apagado. Primero la prueba "
+              "(probar_correo.py); ya aprobada la cuenta de MailerSend, se "
+              "enciende con --encender (guia, paso 7c).")
     return 0
 
 

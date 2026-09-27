@@ -38,9 +38,10 @@ def env(tmp_path, monkeypatch):
     return ruta
 
 
-def _correr(respuestas, clave):
+def _correr(respuestas, clave, argv=()):
     otra = iter(respuestas)
-    return pc.main(preguntar=lambda _: next(otra), secreto=lambda _: clave)
+    return pc.main(argv=list(argv), preguntar=lambda _: next(otra),
+                   secreto=lambda _: clave)
 
 
 def test_pone_el_correo_y_deja_lo_demas(env, capsys):
@@ -105,3 +106,31 @@ def test_con_microsoft_puesto_pregunta_antes(env):
 def test_sin_env_no_crea_uno(env):
     assert _correr(["MS_abc@mycentauro.lat"], "clave") == 1
     assert not env.exists()
+
+
+# ====================================================== el interruptor
+
+def test_poner_la_llave_no_enciende_el_correo(env, capsys):
+    """Seccion 86: la llave se pone y se prueba con el correo apagado."""
+    env.write_text(DEL_SERVIDOR)
+    assert _correr(["MS_abc@mycentauro.lat"], "clave") == 0
+    assert dotenv_values(env)["CORREO_ENCENDIDO"] == "no"
+    assert "sigue apagado" in capsys.readouterr().out
+    # Y encendido se queda encendido si se vuelve a poner la llave.
+    assert _correr([], "", argv=["--encender"]) == 0
+    assert _correr(["MS_abc@mycentauro.lat"], "otra") == 0
+    assert dotenv_values(env)["CORREO_ENCENDIDO"] == "si"
+    assert env.read_text().count("CORREO_ENCENDIDO=") == 1
+
+
+def test_encender_pide_la_llave_antes(env):
+    env.write_text(DEL_SERVIDOR)
+    assert _correr([], "", argv=["--encender"]) == 1
+    assert env.read_text() == DEL_SERVIDOR
+    assert _correr(["MS_abc@mycentauro.lat"], "clave") == 0
+    assert _correr([], "", argv=["--encender"]) == 0
+    assert dotenv_values(env)["CORREO_ENCENDIDO"] == "si"
+    assert _correr([], "", argv=["--apagar"]) == 0
+    assert dotenv_values(env)["CORREO_ENCENDIDO"] == "no"
+    # La llave no se toca al mover el interruptor.
+    assert dotenv_values(env)["CORREO_CLAVE"] == "clave"

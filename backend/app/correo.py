@@ -24,7 +24,9 @@ mandar desde el buzon de `CORREO_DE`. Se arma el mismo mensaje --texto y
 HTML-- y se le entrega a Graph tal cual; lo demas no se entera.
 
 **Apagado por omision.** Sin a donde mandar --SMTP o Microsoft-- y sin
-`CORREO_DE` no sale nada: el aviso se queda pendiente y espera. Un sistema que se cree configurado
+`CORREO_DE` no sale nada: el aviso se queda pendiente y espera. Y desde
+la seccion 86, tampoco sin `CORREO_ENCENDIDO=si`: la llave se pone y se
+prueba con el correo apagado, y se enciende cuando ya salio la prueba. Un sistema que se cree configurado
 y no lo esta es peor que uno apagado, porque nadie va a buscar el correo
 que nunca llego.
 
@@ -90,10 +92,23 @@ def por_microsoft() -> bool:
                 and settings.correo_ms_secreto)
 
 
-def configurado() -> bool:
-    """Si hay a donde entregar. Sin esto, la cola solo se acumula."""
+def listo() -> bool:
+    """Si hay a donde entregar: el proveedor --SMTP o Microsoft-- y de
+    donde sale. Es lo que prueba `probar_correo.py`."""
     return bool((settings.correo_host or por_microsoft())
                 and settings.correo_de)
+
+
+def encendido() -> bool:
+    """Si el interruptor dice que salga (seccion 86): CORREO_ENCENDIDO=si."""
+    return (settings.correo_encendido or "").strip().lower() in (
+        "si", "s\u00ed", "yes", "true", "1")
+
+
+def configurado() -> bool:
+    """Si el correo del sistema sale: listo y encendido. Sin esto, la cola
+    solo se acumula."""
+    return encendido() and listo()
 
 
 def con_dominio(enlace: str | None) -> str | None:
@@ -456,6 +471,8 @@ def estado(db: Session) -> dict:
     viejos = sum(1 for a in en_espera if vencio(a))
     return {
         "configurado": configurado(),
+        "listo": listo(),
+        "encendido": encendido(),
         "desde": settings.correo_de or None,
         "por": ("microsoft" if por_microsoft()
                 else "smtp" if settings.correo_host else None),

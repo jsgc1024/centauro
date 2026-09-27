@@ -56,9 +56,13 @@ ACTIVIDADES: dict[str, dict] = {
         "descripcion": "Dar de alta un servicio y dejarlo programado",
         "roles": {R.CONSULTOR, R.DIRECTOR_OPERACIONES},
     },
+    # Sistema y calidad tambien (seccion 86): lleva los hospitales y los
+    # hoteles, y con Google salen con su direccion y su ubicacion en vez
+    # de escribir coordenadas a mano.
     "mapas.buscar": {
         "descripcion": "Buscar un punto de encuentro en Google Maps",
-        "roles": {R.CONSULTOR, R.CENTRAL, R.DIRECTOR_OPERACIONES},
+        "roles": {R.CONSULTOR, R.CENTRAL, R.DIRECTOR_OPERACIONES,
+                  R.SISTEMA_CALIDAD},
     },
     "ciudades.alta": {
         "descripcion": "Agregar una ciudad donde se dan servicios",
@@ -506,7 +510,7 @@ ACTIVIDADES: dict[str, dict] = {
 # rol sino `odoo.administrar`, y un puesto la puede traer.
 PANTALLAS = ("panorama", "servicios", "implantados", "equipo", "unidades",
              "bonos", "encuestas", "central", "codigo", "finanzas",
-             "facturacion", "nomina", "accesos", "odoo")
+             "facturacion", "nomina", "accesos", "odoo", "catalogos")
 
 
 def roles_de(actividad: str) -> set:

@@ -194,8 +194,10 @@ function tarjetaBase(zona, faltan, deDireccion, recargar) {
      a los demás no se les ofrece, y se dice quién lo crea. */
   const esDireccion = !!yo().es_direccion;
   const puede = esDireccion ? faltan : faltan.filter(n => !deDireccion.includes(n));
+  /* Uno solo no se dice "Crear los 1 puestos" (seccion 86). */
   const crear = h("button", { clase: "chico", type: "button" },
-                  t("cat_base_crear").replace("{n}", puede.length));
+                  puede.length === 1 ? t("cat_base_crear_uno")
+                    : t("cat_base_crear").replace("{n}", puede.length));
   crear.addEventListener("click", async () => {
     crear.disabled = true;
     try {

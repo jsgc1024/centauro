@@ -56,9 +56,10 @@ PUESTOS: list[dict] = [
         "descripcion": "Toda la operación y sus vistos buenos; no mueve dinero.",
         # Sin Codigo: lo que protege ese camino es que quien dicta el
         # codigo reconozca la voz de quien llama (seccion 57).
+        # Catalogos (seccion 86): fija lo que en ellos decide dinero.
         "pantallas": ["panorama", "servicios", "implantados", "equipo",
                       "unidades", "bonos", "encuestas", "central",
-                      "finanzas", "facturacion", "nomina"],
+                      "finanzas", "facturacion", "nomina", "catalogos"],
         "actividades": _de(R.DIRECTOR_OPERACIONES),
         "puestos_odoo": "Director de Operaciones, Director Operativo",
     },
@@ -200,7 +201,8 @@ PUESTOS: list[dict] = [
                        "y mide la calidad del servicio. No mueve dinero ni "
                        "opera.",
         "pantallas": ["panorama", "servicios", "implantados", "equipo",
-                      "unidades", "bonos", "encuestas", "accesos", "odoo"],
+                      "unidades", "bonos", "encuestas", "accesos", "odoo",
+                      "catalogos"],
         "actividades": _de(R.SISTEMA_CALIDAD),
         "puestos_odoo": None,
     },

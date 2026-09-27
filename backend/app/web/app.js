@@ -14,6 +14,7 @@ import { carteraImplantados, nuevoImplantado,
 import { detenerPanorama, pantallaPanorama } from "./panorama.js";
 import { pantallaAccesos } from "./accesos.js";
 import { pantallaOdoo } from "./odoo.js";
+import { pantallaCatalogos } from "./catalogos_pantalla.js";
 import { pantallaCodigo } from "./codigo.js";
 import { pantallaEnlace, pantallaOlvide } from "./contrasena.js";
 import { pantallaServicio } from "./servicio.js";
@@ -22,9 +23,9 @@ import { aviso, campo, entrada, h, lista, mensaje, vaciar,
 import { IDIOMAS, idioma, ponerIdioma, t } from "./idioma.js";
 import { abrirRecorrido } from "./recorrido.js";
 import { firma } from "./firma.js";
-import { ADMINISTRA, CODIGO, CONSULTA, DESEMPENO, DINERO, LEE_ODOO,
-         MONITOREO, NOMINAS, PANORAMA, VOZ_CLIENTE, abre, destinoDe,
-         menuDe } from "./menu.js";
+import { ADMINISTRA, CATALOGOS, CODIGO, CONSULTA, DESEMPENO, DINERO,
+         LEE_ODOO, MONITOREO, NOMINAS, PANORAMA, VOZ_CLIENTE, abre,
+         destinoDe, menuDe } from "./menu.js";
 
 /* La regla de captura vale para toda la consola, no para una
    pantalla: se engancha una sola vez al documento. */
@@ -347,6 +348,7 @@ const RUTAS = [
   [/^#\/codigo$/, pantallaCodigo, "codigo", CODIGO],
   [/^#\/accesos$/, pantallaAccesos, "accesos", ADMINISTRA],
   [/^#\/odoo$/, pantallaOdoo, "odoo", LEE_ODOO],
+  [/^#\/catalogos$/, pantallaCatalogos, "catalogos", CATALOGOS],
 ];
 
 async function pintar() {

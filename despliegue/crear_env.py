@@ -46,13 +46,14 @@ GOOGLE_MAPS_KEY=
 # Avisos al telefono. Las dos llaves las escribe generar_llaves_push.py.
 VAPID_CONTACTO=mailto:operaciones@centauro.lat
 
-# Correo, por MailerSend (guia, paso 7c). CORREO_HOST se llena junto con
-# el usuario y la clave de MailerSend: sin host no sale nada, y con host
-# pero sin clave cada aviso gasta sus intentos. Los CORREO_MS_ son la otra
+# Correo, por MailerSend (guia, paso 7c). El usuario y la clave los pone
+# poner_correo.py. El correo del sistema sale hasta CORREO_ENCENDIDO=si,
+# despues de probar la llave (seccion 86). Los CORREO_MS_ son la otra
 # forma (paso 7b): llenos, manda Microsoft 365.
+CORREO_ENCENDIDO=no
 CORREO_DE=Centauro Connect <connect@mycentauro.lat>
 CORREO_RESPONDER_A=Centauro Connect <cecc.notification@centauro.lat>
-CORREO_HOST=
+CORREO_HOST=smtp.mailersend.net
 CORREO_PUERTO=587
 CORREO_USUARIO=
 CORREO_CLAVE=

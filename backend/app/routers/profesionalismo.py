@@ -1,8 +1,10 @@
 """Tablero de profesionalismo del personal de seguridad."""
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app import auth
+from app import accesos, auth
 from app import models as m
 from app import profesionalismo as motor
 from app import schemas as s
@@ -63,11 +65,46 @@ def ver_pesos(pais_id: int, db: Session = Depends(get_db), _=Depends(LECTURA)):
     }
 
 
+# Los parametros que no son peso y se pueden mover desde aqui.
+PARAMETROS = ("meses_ventana", "horas_referencia", "castigo_error_menor",
+              "castigo_leve", "castigo_grave", "puntos_por_evento_manejo")
+
+
+def _en_200(partes: list[str]) -> str | None:
+    """Lo que cabe en la columna de la bitacora."""
+    texto = "; ".join(partes)
+    return (texto[:197] + "...") if len(texto) > 200 else (texto or None)
+
+
+def _lo_que_cambio(antes_pesos: dict, antes_p, datos) -> tuple[list, list]:
+    """Solo lo que se movio, con su valor de antes (seccion 86)."""
+    antes, despues = [], []
+    for nombre, peso in datos.pesos.items():
+        previo = antes_pesos.get(nombre)
+        if previo is None or Decimal(str(previo)) != Decimal(str(peso)):
+            antes.append(f"{nombre}: {previo}")
+            despues.append(f"{nombre}: {peso}")
+    for campo in PARAMETROS:
+        nuevo = getattr(datos, campo)
+        if nuevo is None:
+            continue
+        previo = getattr(antes_p, campo)
+        if Decimal(str(previo)) != Decimal(str(nuevo)):
+            antes.append(f"{campo}: {previo}")
+            despues.append(f"{campo}: {nuevo}")
+    return antes, despues
+
+
 @router.put("/pesos", summary="Definir los pesos de cada dimension")
 def definir_pesos(datos: s.PesosProfesionalismoIn,
-                  db: Session = Depends(get_db), _=Depends(CONFIGURA)):
+                  db: Session = Depends(get_db),
+                  actor: m.Usuario = Depends(CONFIGURA)):
     """Los seis pesos tienen que sumar 100. Si no, la calificacion no
-    significaria lo mismo entre una persona y otra."""
+    significaria lo mismo entre una persona y otra.
+
+    Desde la seccion 86 el cambio queda en la bitacora, como el de
+    cualquier catalogo: los pesos deciden como se califica a la gente, y
+    un dia alguien va a preguntar desde cuando pesa asi."""
     suma = sum(datos.pesos.values())
     if abs(suma - 100) > 0.01:
         raise HTTPException(409, {
@@ -80,6 +117,8 @@ def definir_pesos(datos: s.PesosProfesionalismoIn,
             "mensaje": "Faltan dimensiones por definir",
             "dimensiones": sorted(faltan)})
 
+    antes_pesos = {d.value: v for d, v in motor.pesos(db, datos.pais_id).items()}
+    antes_p = motor.parametros(db, datos.pais_id)
     for nombre, peso in datos.pesos.items():
         dimension = m.DimensionProfesionalismo(nombre)
         fila = (db.query(m.PesoProfesionalismo)
@@ -109,6 +148,13 @@ def definir_pesos(datos: s.PesosProfesionalismoIn,
     if datos.puntos_por_evento_manejo is not None:
         p.puntos_por_evento_manejo = datos.puntos_por_evento_manejo
 
+    antes, despues = _lo_que_cambio(antes_pesos, antes_p, datos)
+    if antes:
+        pais = db.get(m.Pais, datos.pais_id)
+        accesos.anotar(db, actor, "catalogo cambiado", "profesionalismo",
+                       datos.pais_id, antes=_en_200(antes),
+                       despues=_en_200(despues),
+                       detalle=pais.nombre if pais else None)
     db.commit()
     return {"resultado": "guardado", "pais_id": datos.pais_id,
             "pesos": datos.pesos}

@@ -61,6 +61,12 @@ export const VOZ_CLIENTE = ["consultor", "central", "finanzas",
    traen administracion y sistema y calidad, y direccion general hereda.
    Aplicar da de alta gente con acceso a la app. */
 export const LEE_ODOO = ["admin", "director_general", "sistema_calidad"];
+/* Catalogos (seccion 86): lo que el sistema usa para calcular y para armar
+   la hoja del servicio, y la bitacora de lo que se le ha hecho. La abre
+   quien lleva un catalogo --sistema y calidad los que no deciden dinero,
+   direccion de operaciones los que si-- y direccion general. */
+export const CATALOGOS = ["admin", "director_general", "director_operaciones",
+                          "sistema_calidad"];
 
 /* El menu de arriba, en una sola lista.
 
@@ -152,6 +158,9 @@ export const MENU = [
      produccion ya no se abre (seccion 64). */
   { ruta: "/odoo", clave: "odoo", necesita: "odoo.administrar", texto: "nav_odoo", grupo: "nav_administrativa",
     cuenta: "rec_odoo", quienes: LEE_ODOO },
+  { ruta: "/catalogos", clave: "catalogos", necesita: ["catalogos.editar", "catalogos.dinero", "bitacora.ver"],
+    texto: "nav_catalogos", grupo: "nav_administrativa",
+    cuenta: "rec_catalogos", quienes: CATALOGOS },
 ];
 
 /* Si esta persona abre esta pantalla. Con puesto que dice sus

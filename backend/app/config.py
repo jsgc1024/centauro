@@ -50,6 +50,13 @@ class Settings(BaseSettings):
     # no tiene buzon: sin esto, lo que conteste un cliente no le llega a
     # nadie. Vacio: las respuestas van a `correo_de`.
     correo_responder_a: str = ""   # "Centauro Connect <cecc.notification@centauro.lat>"
+    # El interruptor (seccion 86). Con el servidor y la llave puestos, el
+    # correo del sistema sigue apagado hasta que aqui diga "si". Sin el,
+    # poner la llave era encenderlo con el siguiente reinicio: la llave
+    # equivocada o la cuenta sin aprobar se descubrian con los avisos de
+    # los clientes gastando sus intentos. La prueba de probar_correo.py
+    # sale aunque este apagado.
+    correo_encendido: str = "no"
     # Microsoft 365 (seccion 67). Decision de Salvador, 25 de septiembre:
     # el correo sale del buzon de la empresa. Microsoft apaga la entrada
     # por SMTP con usuario y contrasena el 31 de diciembre de 2026, asi

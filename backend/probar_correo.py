@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Manda un correo de prueba con lo que dice el .env (secciones 67 y 84).
+"""Manda un correo de prueba con lo que dice el .env (secciones 67, 84 y 86).
 
 En el servidor, despues de poner el correo en el .env y reiniciar:
 
@@ -20,7 +20,9 @@ def main() -> int:
         print("Uso: python probar_correo.py destino@correo.com")
         return 2
     destino = sys.argv[1]
-    if not correo.configurado():
+    # La prueba sale con el correo del sistema apagado (seccion 86): se
+    # prueba la llave antes de encenderlo, no despues.
+    if not correo.listo():
         print("El correo no esta configurado: falta CORREO_DE, o los datos "
               "de Microsoft 365 (CORREO_MS_TENANT, CORREO_MS_CLIENTE y "
               "CORREO_MS_SECRETO), o el SMTP.")
@@ -39,6 +41,12 @@ def main() -> int:
           f"{destino}. Revisa esa bandeja, y la de correo no deseado.")
     print("Si alguien lo contesta, la respuesta va a "
           f"{settings.correo_responder_a or settings.correo_de}.")
+    if correo.encendido():
+        print("El correo del sistema esta encendido: los avisos salen solos.")
+    else:
+        print("El correo del sistema sigue apagado (CORREO_ENCENDIDO): esta "
+              "prueba salio, los avisos todavia no. Se enciende con "
+              "python3 despliegue/poner_correo.py --encender")
     return 0
 
 

@@ -26,6 +26,11 @@ for _variable in ("PEGASUS_SITIO", "PEGASUS_USUARIO", "PEGASUS_CLAVE",
                   "PEGASUS_SECRETO_AVISO"):
     os.environ[_variable] = ""
 
+# El interruptor del correo (seccion 86), encendido: las pruebas del
+# correo son sobre lo que pasa cuando sale. Las del interruptor lo apagan
+# ellas.
+os.environ["CORREO_ENCENDIDO"] = "si"
+
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import text  # noqa: E402

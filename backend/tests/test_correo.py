@@ -544,3 +544,20 @@ def test_sin_a_donde_responder_no_se_inventa(monkeypatch):
     correo.entregar("ejecutivo@cliente.com", "Aviso", "Texto")
     _, mensaje = _SmtpFalso.enviados[-1]
     assert mensaje["Reply-To"] is None
+
+
+def test_con_el_interruptor_apagado_no_sale_nada(monkeypatch, db):
+    """Seccion 86: con la llave puesta y CORREO_ENCENDIDO=no, la cola
+    espera y la prueba de probar_correo.py sale igual."""
+    _por_mailersend(monkeypatch, "")
+    monkeypatch.setattr(correo.settings, "correo_encendido", "no")
+    assert correo.listo() and not correo.encendido()
+    assert not correo.configurado()
+    r = correo.despachar(db)
+    assert r["configurado"] is False
+    assert _SmtpFalso.enviados == []
+    estado = correo.estado(db)
+    assert estado["listo"] is True and estado["encendido"] is False
+    for dicho in ("si", "Si", "S\u00ed", "yes", "true", "1"):
+        monkeypatch.setattr(correo.settings, "correo_encendido", dicho)
+        assert correo.configurado(), dicho

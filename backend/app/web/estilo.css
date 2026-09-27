@@ -1348,3 +1348,60 @@ b.folio { white-space: nowrap; }
 .solo-consulta textarea:not(.consulta-si) {
   pointer-events: none; background: #f7f8fa;
 }
+
+/* ---------------------------------------------------------- catalogos
+   La pantalla de Catalogos (seccion 86): a la izquierda la lista, con lo
+   que le falta a cada uno dicho en su renglon; a la derecha el que se
+   eligio, con su historial abajo. */
+.ctl-marco { display: grid; grid-template-columns: 340px 1fr; gap: 14px; align-items: start; }
+.ctl-lista { padding: 12px 0 8px; }
+.ctl-grupo { padding: 0 16px; margin: 6px 0 8px; }
+.ctl-grupo.otro { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--linea); }
+.ctl-nota { margin: -4px 16px 6px; }
+.ctl-item {
+  display: flex; justify-content: space-between; gap: 10px; align-items: flex-start;
+  padding: 9px 16px; border-top: 1px solid #f0f2f4; cursor: pointer;
+}
+.ctl-item:hover { background: #fafbfc; }
+.ctl-item.sel { background: #f4f6fb; box-shadow: inset 3px 0 0 var(--centauro); }
+.ctl-item b { font-size: 13.5px; }
+.ctl-candado { color: var(--gris); margin-right: 5px; }
+.ctl-enlace {
+  display: flex; justify-content: space-between; gap: 10px;
+  padding: 6px 16px; font-size: 12.5px; border-top: 1px solid #f0f2f4;
+}
+.ctl-enlace a { color: var(--centauro); font-weight: 600; text-decoration: none; }
+.ctl-pie { margin: 4px 0 12px; }
+.ctl-quien { margin: 0 0 12px; }
+.ctl-tabla td { padding: 9px 12px; }
+.ctl-celda { cursor: pointer; }
+.ctl-celda:hover { background: #f4f6fb; }
+.ctl-forma {
+  background: #fafbfc; border: 1px solid var(--linea); border-radius: 8px;
+  padding: 12px 14px; margin-top: 12px;
+}
+.ctl-campos { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0 12px; }
+.ctl-casilla { width: auto; }
+.ctl-google { margin-top: 12px; }
+.ctl-hallado {
+  display: flex; justify-content: space-between; gap: 10px; align-items: center;
+  padding: 8px 0; border-bottom: 1px solid #f0f2f4;
+}
+.ctl-fotos { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+.ctl-foto-marco {
+  height: 100px; display: flex; align-items: center; justify-content: center;
+  background: #fff; border: 1px solid var(--linea); border-radius: 6px;
+  margin-bottom: 6px; overflow: hidden;
+}
+.ctl-foto-marco img { max-width: 100%; max-height: 100%; }
+.ctl-historial { margin-top: 4px; }
+.ctl-hist-renglon {
+  display: grid; grid-template-columns: 165px 160px 1fr; gap: 10px;
+  padding: 5px 0; border-bottom: 1px solid #f0f2f4;
+}
+.ctl-hist-renglon > :first-child { white-space: nowrap; }
+.ctl-suma-mal { color: var(--grave); }
+@media (max-width: 900px) {
+  .ctl-marco { grid-template-columns: 1fr; }
+  .ctl-hist-renglon { grid-template-columns: 1fr; gap: 0; }
+}

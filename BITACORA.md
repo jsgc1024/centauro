@@ -5389,9 +5389,15 @@ porque también habla SMTP. Y escogió las direcciones: el correo sale de
   tomaría por una variable y la cambiaría. Si el `.env` trae los datos de
   Microsoft 365, pregunta antes de vaciarlos, porque con ellos mandaría
   Microsoft. Se puede volver a correr.
-- **El bloque de la prueba no reinicia sin usuario y contraseña.** Con el
-  servidor de correo puesto y sin la llave, cada aviso gastaría sus cinco
-  intentos y quedaría en fallido.
+- **Primero se prueba sin encender; se enciende ya aprobada la cuenta.**
+  La prueba corre en un contenedor aparte que lee el `.env` nuevo,
+  mientras la aplicación sigue con el correo apagado. Mientras MailerSend
+  no apruebe la cuenta solo manda a dos destinatarios y cien correos al
+  mes, y con el correo encendido antes de tiempo cada aviso a un cliente
+  gastaría sus cinco intentos y quedaría en fallido. Por lo mismo, el bloque que enciende no
+  reinicia sin usuario y contraseña. La primera prueba contestó 535:
+  quedaron el correo y la contraseña con que se entra a MailerSend, y no
+  el usuario de envío que genera en *SMTP*.
 - `crear_env.py`, la plantilla del `.env` para un servidor nuevo, ya trae
   los renglones de MailerSend. Deja vacío el servidor hasta tener la
   llave.
@@ -5476,14 +5482,118 @@ los pasos que siguen.
   (sección 84); mientras, el enlace lo copia Dirección general desde su
   renglón.
 
+## 86. Catálogos y la bitácora de administración
+
+Tercer paso de lo aprobado el 27 de septiembre (sección 83), con la
+maqueta de la propuesta: la pantalla de Catálogos, con su bitácora.
+Hasta hoy casi todos los catálogos solo se movían desde `/docs`, con la
+llave maestra.
+
+### La pantalla
+
+- **Catálogos**, en *Gestión Administrativa*. La abre quien lleva un
+  catálogo o lee la bitácora (`catalogos.editar`, `catalogos.dinero` o
+  `bitacora.ver`): el puesto de sistema y calidad, Dirección de
+  operaciones y Dirección general.
+- **A la izquierda, la lista**, en tres grupos, y cada renglón dice qué
+  le falta: «Falta Brasil», «Querétaro, ninguno», «5 sin ubicación», «De
+  ejemplo».
+  - *Los lleva Sistema y calidad*: días festivos, hospitales, hoteles,
+    ciudades, combustible, unidades por categoría (rendimiento y fotos
+    por color), perfiles y países.
+  - *Los fija Dirección de operaciones*: el tabulador de viáticos, las
+    horas de cada modalidad, las tarifas de freelance y los pesos del
+    profesionalismo. Sistema y calidad los ve con su candado.
+  - *Tienen su pantalla*: tarifarios, lo que se paga por día, los
+    criterios del bono y el tipo de cambio, con su enlace si quien mira
+    abre esa pantalla.
+- **A la derecha, el catálogo elegido**: su tabla, agregar, editar y
+  quitar —quitar pregunta antes y no borra: apaga—, y abajo su historial,
+  de la bitácora. Si nadie lo ha tocado, lo dice.
+- **El país** arranca en el de quien mira, o en México, y se queda al
+  cambiar de catálogo.
+- **Hospitales y hoteles se buscan en Google**: nombre, dirección y
+  ubicación de un clic. Para eso, sistema y calidad trae ahora
+  `mapas.buscar`.
+- **Las fotos por categoría** se ven antes de cambiarlas: la base y cada
+  color en que hay unidades de esa categoría.
+- Lo que no toca quien mira se ve sin botones; el servidor sigue
+  cuidando cada puerta.
+
+### La bitácora
+
+- **La pestaña Bitácora**, para quien trae `bitacora.ver`: accesos,
+  puestos, catálogos y tipo de cambio, juntos, con filtros —qué, quién,
+  qué mes— y **en Excel**.
+- **Cada renglón se cuenta con nombres, en el idioma de quien lee**:
+  *«Hotel Centro»: ciudad Querétaro → Monterrey*, y no *plaza_id: 3 →
+  5*.
+  Lo arma el servidor (`app/bitacora_admin.py`), así que el Excel dice
+  lo mismo que la pantalla, y a su lado va lo escrito tal cual, para
+  quien audita.
+- **Las lecturas de Odoo de cada hora van aparte**: dejan un renglón
+  aunque no cambie nada y taparían lo que hizo una persona.
+- **Los pesos del profesionalismo** ya dejan su renglón al cambiar, como
+  cualquier catálogo.
+
+### El interruptor del correo
+
+Salió de la primera prueba de MailerSend (sección 84): con la llave en el
+`.env`, el siguiente `up -d` —el de cualquier actualización— encendía el
+correo. Con la llave equivocada, o con la cuenta todavía sin aprobar,
+cada aviso a un cliente gastaba sus cinco intentos y quedaba en fallido.
+
+- **`CORREO_ENCENDIDO`**: nada sale hasta que diga `si`. Sin el renglón,
+  apagado; así llega al servidor, que no lo trae.
+- **`poner_correo.py`** deja el interruptor como estaba —si no estaba,
+  `no`— y dice qué sigue. `--encender` lo prende, y no sin la llave
+  puesta; `--apagar` lo apaga.
+- **`probar_correo.py`** manda la prueba aunque esté apagado, y dice si
+  el correo del sistema ya sale solo.
+- Las actualizaciones se suben en cualquier momento: el `up -d` no
+  enciende nada que no diga `si`. La guía (paso 7c) y la plantilla de
+  `crear_env.py` ya lo traen.
+
+### Lo chico
+
+- El botón de los puestos de la propuesta dice «Crear el puesto que
+  falta» cuando falta uno, y no «Crear los 1 puestos».
+- Dos lecturas ligeras para la pantalla: quién es freelance, sin la foto
+  de toda la plantilla, y los colores de la flota por categoría.
+
+### Las pruebas
+
+- `tests/test_catalogos_pantalla.py`: la pantalla está en el menú de
+  quien lleva catálogos; la bitácora cuenta lo que pasó, en español e
+  inglés, y con nombres; quién la lee y quién no; los filtros; las
+  lecturas de Odoo van aparte; el Excel; los pesos quedan en la
+  bitácora; la foto de una categoría se ve antes de cambiarla; el tipo de
+  cambio se lee como se lee.
+- `tests/test_correo.py` y `tests/test_poner_correo.py`: con el
+  interruptor apagado no sale nada y la prueba sí; poner la llave no lo
+  enciende; `--encender` pide la llave antes.
+- **Humo en la vista previa**: sistema y calidad abrió los once
+  catálogos, agregó un festivo y vio su renglón en el historial y en la
+  bitácora; Dirección de operaciones cambia el tabulador; el consultor
+  no ve la pantalla. Nada contestó 4xx.
+
+### Para subirlo
+
+- Lleva migración (`d4453bd77820`): la pantalla de Catálogos entra al
+  menú de los puestos que ya existen y llevan un catálogo, y el puesto de
+  sistema y calidad trae `mapas.buscar`. Solo agrega.
+- El correo se queda apagado al subirlo, aunque el `.env` ya traiga la
+  llave. Se enciende con `poner_correo.py --encender`, ya aprobada la
+  cuenta de MailerSend y con la prueba hecha.
+
 ## 14. Lo que falta
 
 ### Abierto
 
 - **El puesto de administración del sistema y calidad**: Aridiai
   Morales. Aprobado el 27 de septiembre con sus pantallas. Hechos los
-  candados de Accesos (sección 83) y el puesto con sus puertas (sección
-  85); siguen Catálogos y Calidad.
+  candados de Accesos (sección 83), el puesto con sus puertas (sección
+  85) y Catálogos con su bitácora (sección 86); sigue Calidad.
 - **Puestos y Odoo: el paso 4** (secciones 73 a 75). La factura en
   borrador hacia Odoo, probada primero en una copia de Odoo: hace falta
   la copia y una llave que pueda escribir en ella.
@@ -5521,13 +5631,17 @@ busca, está en las secciones 15 y 16.*
   dirección con HTTPS ya existe (sección 71); mientras no se configure,
   el pánico llega con la lectura de cada dos minutos. De este lado, las
   placas ligan contra la flota leída de Odoo: sin ella, ninguna.
-- **El correo: lo que falta es verificar MailerSend** (sección 84).
-  Desde el 27 de septiembre sale de `connect@mycentauro.lat` por
-  MailerSend, con SMTP, y ya no del buzón de Microsoft 365 (sección
-  67); las respuestas llegan a `cecc.notification@centauro.lat`. La
-  cuenta ya existe. Falta su aprobación, los registros en Cloud DNS
-  —SPF, DKIM, Return-Path y DMARC—, verificar el dominio, y poner el
-  usuario y la contraseña con `poner_correo.py`. El paso 7c de
+- **El correo: lo que falta es encenderlo** (secciones 84 y 86). Sale de
+  `connect@mycentauro.lat` por MailerSend, con SMTP, y ya no del buzón
+  de Microsoft 365 (sección 67); las respuestas llegan a
+  `cecc.notification@centauro.lat`. Hechos, el 27 de septiembre: la
+  cuenta, los registros en Cloud DNS —SPF, DKIM, Return-Path y DMARC— y
+  el dominio verificado; el usuario de envío de su sección *SMTP*,
+  puesto con `poner_correo.py`, y la prueba, que le llegó a Salvador.
+  Falta que MailerSend apruebe la cuenta —mientras, solo manda a dos
+  destinatarios y cien correos al mes— y `--encender`. Si al acabar la
+  prueba de 14 días no hay plan escogido, la cuenta pasa sola al plan
+  gratis: 500 correos al mes, 100 al día. El paso 7c de
   `despliegue/LEEME.md` lo dice en orden. Con eso, la invitación y la
   recuperación de contraseña llegan solas (sección 58).
 

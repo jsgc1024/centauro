@@ -151,7 +151,9 @@ URL_PUBLICA=https://mycentauro.lat
 # pide el usuario y la contrasena de MailerSend sin que se vean. Los
 # tres CORREO_MS_ se dejan vacios: llenos, mandaria Microsoft 365 (paso
 # 7b) y el SMTP no se usaria. Sin ninguno de los dos, no sale nada: los
-# avisos quedan pendientes.
+# avisos quedan pendientes. Y nada sale hasta CORREO_ENCENDIDO=si, que se
+# pone con poner_correo.py --encender despues de la prueba (seccion 86).
+CORREO_ENCENDIDO=no
 CORREO_DE=Centauro Connect <connect@mycentauro.lat>
 CORREO_RESPONDER_A=Centauro Connect <cecc.notification@centauro.lat>
 CORREO_MS_TENANT=
@@ -380,9 +382,12 @@ para no depender de nadie. Abrió la cuenta en MailerSend. Salen de
 que ya sabía: no se programa nada.
 
 1. **La cuenta**, en mailersend.com. MailerSend revisa y aprueba las
-   cuentas nuevas antes de dejarlas mandar. El plan gratis trae 500
-   correos al mes, con tope diario; si no alcanza, el siguiente (Hobby)
-   trae 5,000 (precios de septiembre de 2026).
+   cuentas nuevas antes de dejarlas mandar: mientras tanto solo manda a
+   una dirección, la de quien abrió la cuenta. La prueba de 14 días del
+   plan Professional pasa sola al plan gratis, sin cobrar, y el gratis
+   trae 500 correos al mes, con tope diario; para el volumen de Centauro
+   hay que escoger plan antes de que acabe (Hobby, 5,000 al mes; Starter,
+   50,000; precios de septiembre de 2026).
 2. **El dominio**: `mycentauro.lat`. MailerSend pide cuatro registros
    y aquí se agrega un quinto; ninguno es secreto. En su página, **no**
    se usa *Verify now* —le daría a MailerSend permiso sobre el Google
@@ -410,8 +415,11 @@ que ya sabía: no se programa nada.
    puede haber uno. Después, en MailerSend, el botón de verificar del
    final de la lista.
 3. **El usuario de envío**: en MailerSend, *Domains → mycentauro.lat →
-   SMTP → Generate new user*. Da un usuario y una contraseña. No se
-   mandan por correo ni por chat: se pegan en el servidor, dentro, con
+   SMTP → Generate new user*. Da un usuario —empieza con `MS_` y termina
+   en `@mycentauro.lat`— y una contraseña. No son el correo ni la
+   contraseña con que se entra a MailerSend: con esos, el servidor
+   contesta 535. No se mandan por correo ni por chat: se pegan en el
+   servidor, dentro, con
 
    ```bash
    cd /opt/centauro && python3 despliegue/poner_correo.py
@@ -421,16 +429,29 @@ que ya sabía: no se programa nada.
    la contraseña; la contraseña no se ve al pegarla. Se puede volver a
    correr el día que haya otra contraseña. Google Cloud no deja salir el
    puerto 25; el 587 sí, y es el que se usa.
-4. **Probarlo**. Sin usuario y contraseña, el bloque se detiene antes de
-   reiniciar: con el servidor puesto y sin la llave, cada aviso gastaría
-   sus intentos y quedaría en fallido.
+4. **Probarlo sin encenderlo.** Poner la llave no enciende el correo del
+   sistema: queda `CORREO_ENCENDIDO=no` y los avisos esperan en la cola.
+   La prueba sale igual. Mientras MailerSend no apruebe la cuenta, se
+   manda a la dirección de quien la abrió:
 
    ```bash
-   if grep -q '^CORREO_USUARIO=.\+' .env && grep -q '^CORREO_CLAVE=.\+' .env; then docker compose -f docker-compose.prod.yml up -d api worker beat && docker compose -f docker-compose.prod.yml run --rm api python probar_correo.py tu@correo.com; else echo "Faltan el usuario o la contrasena de MailerSend: corre poner_correo.py"; fi
+   docker compose -f docker-compose.prod.yml run --rm api python probar_correo.py salvador.garcia@centauro.lat
    ```
 
    Dice por dónde salió, desde qué dirección y a dónde irán las
-   respuestas; si no salió, lo que contestó MailerSend.
+   respuestas; si no salió, lo que contestó MailerSend —un 535 es la
+   llave equivocada—.
+5. **Encenderlo, ya aprobada la cuenta.** Antes no: MailerSend rechazaría
+   los avisos a clientes y cada uno gastaría sus cinco intentos y quedaría
+   en fallido. `--encender` no enciende sin la llave puesta:
+
+   ```bash
+   python3 despliegue/poner_correo.py --encender && docker compose -f docker-compose.prod.yml up -d api worker beat && docker compose -f docker-compose.prod.yml run --rm api python probar_correo.py cecc.notification@centauro.lat
+   ```
+
+   Con el interruptor, las actualizaciones se pueden subir en cualquier
+   momento: el `up -d` de cada una no enciende nada que no diga `si`. Se
+   apaga igual, con `--apagar` y el mismo `up -d`.
 
 **8. El respaldo.** En el cron del servidor, no en Celery: si la
 aplicación está caída es justo cuando más falta hace. En Google Cloud,
