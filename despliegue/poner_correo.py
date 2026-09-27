@@ -12,10 +12,10 @@ chat.
 
 MailerSend rechazo la cuenta dos veces (seccion 91) y Postmark no acepto
 el dominio (seccion 93); Salvador escogio Amazon SES. La cuenta es de
-Virginia (us-east-1): Amazon no manda correo desde su region de Mexico.
-Si algun dia es otra region, se dice:
+Ohio (us-east-2), la region en la que abre su consola: Amazon no manda
+correo desde su region de Mexico. Si algun dia es otra region, se dice:
 
-    python3 despliegue/poner_correo.py --region=us-east-2
+    python3 despliegue/poner_correo.py --region=us-east-1
 
 Los otros dos se quedan como la otra forma: Postmark con su sola llave y
 MailerSend con usuario y contrasena:
@@ -70,8 +70,10 @@ PROVEEDORES = {
                    "donde": "Domains -> mycentauro.lat -> SMTP",
                    "una_llave": False},
 }
-# La region de la cuenta de Amazon (seccion 93): Virginia.
-REGION = "us-east-1"
+# La region de la cuenta de Amazon (seccion 93): Ohio, la que abre su
+# consola. Las identidades, la llave SMTP y el acceso a produccion son de
+# esa region y de ninguna otra.
+REGION = "us-east-2"
 FORMA_REGION = re.compile(r"[a-z]{2}(-gov)?-[a-z]+-[0-9]")
 LLAVES = ("CORREO_USUARIO", "CORREO_CLAVE")
 # Llenos, el correo sale por Microsoft 365 y no por el servicio de envio
@@ -229,7 +231,7 @@ def elegir(argv: list) -> dict | None:
             region = arg.split("=", 1)[1].strip().lower()
     if not FORMA_REGION.fullmatch(region):
         print(f"La region «{region}» no tiene forma de region de Amazon "
-              "(como us-east-1). No se toco nada.")
+              "(como us-east-2). No se toco nada.")
         return None
     p["host"] = p["host"].format(region=region)
     return p

@@ -39,7 +39,7 @@ LLAVE = "1a2b3c4d-5e6f-7a8b-9c0d-e1f2a3b4c5d6"
 # contrasena trae + y /.
 USUARIO_SES = "AKIAIOSFODNN7EXAMPLE"
 CLAVE_SES = "BGbWmCq4hq5l/a0+Ex3kS7Yr6o9tUq2Zp8wNcDfLmH1z"
-SES = "email-smtp.us-east-1.amazonaws.com"
+SES = "email-smtp.us-east-2.amazonaws.com"
 
 
 @pytest.fixture
@@ -56,7 +56,7 @@ def _correr(respuestas, clave, argv=()):
 
 
 def test_pone_amazon_y_deja_lo_demas(env, capsys):
-    """Seccion 93: por omision, Amazon SES en Virginia, con su usuario y
+    """Seccion 93: por omision, Amazon SES en Ohio, con su usuario y
     su contrasena SMTP."""
     env.write_text(DEL_SERVIDOR)
     env.chmod(0o600)
@@ -86,11 +86,11 @@ def test_pone_amazon_y_deja_lo_demas(env, capsys):
 
 def test_amazon_en_otra_region(env):
     env.write_text(DEL_SERVIDOR)
-    assert _correr([USUARIO_SES], CLAVE_SES, argv=["--region=us-east-2"]) == 0
-    assert dotenv_values(env)["CORREO_HOST"] == "email-smtp.us-east-2.amazonaws.com"
+    assert _correr([USUARIO_SES], CLAVE_SES, argv=["--region=us-east-1"]) == 0
+    assert dotenv_values(env)["CORREO_HOST"] == "email-smtp.us-east-1.amazonaws.com"
 
 
-@pytest.mark.parametrize("region", ["virginia", "us east 1", "mx-central", ""])
+@pytest.mark.parametrize("region", ["ohio", "us east 2", "mx-central", ""])
 def test_una_region_mal_escrita_no_toca_nada(env, region):
     env.write_text(DEL_SERVIDOR)
     assert _correr([USUARIO_SES], CLAVE_SES, argv=[f"--region={region}"]) == 1

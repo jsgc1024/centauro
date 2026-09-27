@@ -159,7 +159,7 @@ CORREO_RESPONDER_A=Centauro Connect <cecc.notification@centauro.lat>
 CORREO_MS_TENANT=
 CORREO_MS_CLIENTE=
 CORREO_MS_SECRETO=
-CORREO_HOST=email-smtp.us-east-1.amazonaws.com
+CORREO_HOST=email-smtp.us-east-2.amazonaws.com
 CORREO_PUERTO=587
 CORREO_USUARIO=
 CORREO_CLAVE=
@@ -381,8 +381,10 @@ son de Centauro (Google Cloud DNS, zona `mycentauro-lat`), y el sistema
 manda por SMTP, que ya sabía: no se programa nada. MailerSend rechazó la
 cuenta dos veces y Postmark no aceptó el dominio («Public domains are not
 allowed»); se quedó Amazon SES (sección 93). Google Cloud no tiene un
-servicio de correo propio. La cuenta es de Virginia (`us-east-1`): Amazon
-no manda correo desde su región de México.
+servicio de correo propio. La cuenta es de Ohio (`us-east-2`), la región
+en la que abre su consola; Amazon no manda correo desde su región de
+México. Todo lo de SES —el dominio, la llave y la aprobación— es de esa
+región y de ninguna otra.
 
 1. **La cuenta de AWS**, en aws.amazon.com, **con un correo de
    centauro.lat**, a nombre de «Centauro» y en el **plan de pago**: el
@@ -391,9 +393,12 @@ no manda correo desde su región de México.
    septiembre de 2026: la cuenta nueva empieza en el plan Essentials, 0.16
    dólares por cada mil correos y sin cuota; unos 1.60 al mes con 10,000.
    Se puede pasar al cobro por uso, a 0.10.
-2. **El dominio**: arriba a la derecha, la región *N. Virginia*. En SES,
-   *Identities → Create identity → Domain*, `mycentauro.lat`, con *Easy
-   DKIM* (RSA 2048) y sin *custom MAIL FROM*: DMARC pasa con el DKIM.
+2. **El dominio**: arriba a la derecha, la región *Ohio*. En SES, el
+   asistente de la primera vez —o *Identities → Create identity →
+   Domain*—, `mycentauro.lat`, con *Easy DKIM* (RSA 2048) y sin *custom
+   MAIL FROM*: DMARC pasa con el DKIM. En el plan de precios, Essentials;
+   los pasos opcionales se saltan, y el seguimiento de aperturas y clics
+   se queda apagado, porque reescribe las ligas de los correos.
    Amazon da tres `CNAME` que terminan en `._domainkey`; ninguno es
    secreto. Se ponen desde la terminal donde se corre el ssh, **afuera**
    del servidor, con los valores que da Amazon, y de paso se quitan los de

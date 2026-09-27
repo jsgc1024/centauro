@@ -6117,7 +6117,7 @@ Microsoft 365.
 ### Lo que cambió
 
 - **`poner_correo.py` pone Amazon SES por omisión**: el servidor de
-  Virginia (`email-smtp.us-east-1.amazonaws.com`), por el 587, con el
+  Ohio (`email-smtp.us-east-2.amazonaws.com`), por el 587, con el
   usuario y la contraseña SMTP que da Amazon. La contraseña no se ve al
   pegarla y no se imprime; del usuario salen tres letras. `--region=` es
   para otra región; `--postmark` y `--mailersend` se quedan como la otra
@@ -6131,8 +6131,11 @@ Microsoft 365.
 
 ### Lo que hay que saber de Amazon
 
-- **Virginia**: Amazon no manda correo desde su región de México. La
-  llave SMTP sirve solo en la región donde se creó.
+- **Ohio**: Amazon no manda correo desde su región de México. Se
+  pensó en Virginia, pero la consola de la cuenta abre en Ohio y el
+  asistente de SES arrancó ahí: se quedó Ohio, para no andar cambiando de
+  región. El dominio, la llave SMTP y la aprobación son de la región
+  donde se hicieron y de ninguna otra.
 - **El plan de pago** de la cuenta de AWS: el gratis la cierra a los
   seis meses, y con ella el correo.
 - **El precio**, a septiembre de 2026: desde el 21 de julio, una cuenta
@@ -6270,11 +6273,11 @@ busca, está en las secciones 15 y 16.*
   `connect@mycentauro.lat` por SMTP y las respuestas llegan a
   `cecc.notification@centauro.lat`. MailerSend rechazó la cuenta dos
   veces y Postmark no aceptó el dominio; el 27 de septiembre se pasó a
-  Amazon SES, en Virginia. Falta, en ese orden (guía, paso 7c): la cuenta
-  de AWS en el plan de pago, el dominio con sus tres DKIM en Cloud DNS
-  —y quitar los de MailerSend—, la llave con `poner_correo.py`, la
-  prueba, el acceso a producción y `--encender`. Plan B: Microsoft 365,
-  ya programado (sección 67). Con el correo, la invitación y la
+  Amazon SES, en Ohio. La cuenta de AWS ya está abierta, en el plan de
+  pago y con MFA. Falta, en ese orden (guía, paso 7c): el dominio con sus
+  tres DKIM en Cloud DNS —y quitar los de MailerSend—, la llave con
+  `poner_correo.py`, la prueba, el acceso a producción y `--encender`.
+  Plan B: Microsoft 365, ya programado (sección 67). Con el correo, la invitación y la
   recuperación de contraseña llegan solas (sección 58); mientras, cada
   invitación la copia Dirección general, y a quien revisa los reportes de
   fallas no le llega aviso (sección 92).
