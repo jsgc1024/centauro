@@ -38,7 +38,80 @@ const SEGUNDOS = 25;
 const SEGUNDOS_PESADO = 120;
 const PESADO = 200000;
 
+/* La caja negra (seccion 92).
+
+   Lo ultimo que se le pidio al servidor y lo ultimo que se le enseno a
+   quien usa el sistema, para cuando reporta una falla: con eso se
+   encuentra la falla en el codigo sin preguntarle que boton pico. Vive
+   solo en la memoria de esta pestana y no guarda la sesion: la ruta sin
+   lo que va despues del ?, lo que contesto y cuando. Los errores se
+   guardan aparte de lo demas para que las consultas de cada minuto no
+   los saquen. */
+const ERRORES = [];
+const RECIENTES = [];
+const MENSAJES = [];
+
+function empujar(lista, cosa, cuantas) {
+  lista.push(cosa);
+  if (lista.length > cuantas) lista.shift();
+}
+
+function anotarLlamada(metodo, ruta, codigo, mensaje = "") {
+  /* El reporte no se anota a si mismo: ni el envio ni la version que la
+     forma pide al abrirse. */
+  if (/^\/manual\/(fallas|version)/.test(String(ruta))) return;
+  const llamada = { cuando: new Date().toISOString(), metodo,
+                    ruta: String(ruta).split("?")[0], codigo,
+                    mensaje: String(mensaje || "").slice(0, 300) };
+  const lista = codigo === 0 || codigo >= 400 ? ERRORES : RECIENTES;
+  /* La misma llamada con la misma respuesta, otra vez seguida --la app
+     pide su dia al abrir y al repintar--, cuenta una vez con su hora
+     nueva: seis renglones iguales no dicen nada. */
+  const ultima = lista[lista.length - 1];
+  if (ultima && ultima.metodo === metodo && ultima.ruta === llamada.ruta
+      && ultima.codigo === codigo && ultima.mensaje === llamada.mensaje) {
+    ultima.cuando = llamada.cuando;
+    return;
+  }
+  empujar(lista, llamada, 6);
+}
+
+/* El mismo mensaje dos veces seguidas es uno solo, con su hora nueva: la
+   app repinta cada minuto, y un aviso en rojo que se queda en pantalla
+   llenaria la caja con seis copias de lo mismo. */
+export function anotarMensaje(texto, tono = "") {
+  if (!texto) return;
+  const cuando = new Date().toISOString();
+  const recorte = String(texto).slice(0, 300);
+  const ultimo = MENSAJES[MENSAJES.length - 1];
+  if (ultimo && ultimo.texto === recorte) {
+    ultimo.cuando = cuando;
+    return;
+  }
+  empujar(MENSAJES, { cuando, texto: recorte, tono }, 6);
+}
+
+/* Lo que va en el reporte: los mensajes y las llamadas, de la mas nueva
+   a la mas vieja. */
+export function cajaNegra() {
+  const porHora = (a, b) => (a.cuando < b.cuando ? 1 : -1);
+  return { mensajes: [...MENSAJES].sort(porHora),
+           llamadas: [...ERRORES, ...RECIENTES].sort(porHora).slice(0, 10) };
+}
+
 async function pedir(metodo, ruta, cuerpo, opciones = {}) {
+  try {
+    const datos = await pedirAlServidor(metodo, ruta, cuerpo, opciones);
+    anotarLlamada(metodo, ruta, 200);
+    return datos;
+  } catch (err) {
+    anotarLlamada(metodo, ruta, err && typeof err.codigo === "number" ? err.codigo : 0,
+                  err && err.message);
+    throw err;
+  }
+}
+
+async function pedirAlServidor(metodo, ruta, cuerpo, opciones = {}) {
   const cab = {};
   if (sesion.token) cab["Authorization"] = `Bearer ${sesion.token}`;
   if (cuerpo !== undefined) cab["Content-Type"] = "application/json";

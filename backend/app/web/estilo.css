@@ -84,7 +84,19 @@ header.barra nav a { white-space: nowrap; }
    Una pastilla con el nombre, y adentro lo que no cambia nunca: el rol,
    el correo, el idioma y la salida. Antes estaba todo desplegado arriba
    y el encabezado se leia como un solo bloque apretado. */
-header.barra .yo { margin-left: auto; position: relative; }
+header.barra .yo {
+  margin-left: auto; position: relative;
+  display: flex; align-items: center; gap: 10px;
+}
+/* Reportar una falla (seccion 92): a la vista junto al nombre, en blanco
+   y con el filo de la pastilla. Se ve sin gritar: esta en todas las
+   pantallas y casi nunca se usa. */
+.reportar-falla {
+  background: #fff; color: var(--centauro);
+  border: 1px solid var(--linea); border-radius: 999px;
+  padding: 6px 12px; font-size: 12.5px; font-weight: 650; white-space: nowrap;
+}
+.reportar-falla:hover { background: var(--suave); filter: none; }
 .pastilla {
   display: flex; align-items: center; gap: 9px; background: #fff;
   /* El color va dicho: el `button` de la casa es azul con letra blanca,
@@ -1502,12 +1514,63 @@ tr.man-grupo td {
   .man-pdf { margin-left: 0; }
 }
 
+/* Los reportes por revisar (seccion 92): la tarjeta del caso con lo que
+   se mando solo en letra chica, sus botones y, al resolver, la forma
+   dentro de la misma tarjeta. */
+.man-pestanas { margin: 0 0 14px; }
+.man-reportado { margin-top: 2px; }
+.man-solo { color: #3b4450; overflow-wrap: anywhere; }
+.man-resolver { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--linea); }
+.man-resolver h4 { margin: 0 0 10px; }
+.man-copia {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px; margin-top: 10px;
+}
+
+/* La forma de reportar una falla: una tarjeta encima de la pantalla.
+   Solo se cierra con sus botones --o con Escape si no hay nada escrito--:
+   un clic afuera por error no se lleva lo que ya se escribio. */
+.falla-capa {
+  position: fixed; inset: 0; z-index: 55; overflow-y: auto;
+  display: flex; align-items: flex-start; justify-content: center;
+  background: rgba(27, 21, 70, .38); padding: 56px 16px;
+}
+.falla-tarjeta {
+  width: min(680px, 100%);
+  background: #fff; border-radius: 12px; border-top: 5px solid var(--centauro);
+  box-shadow: 0 14px 44px rgba(0, 0, 0, .28); padding: 20px 22px;
+}
+.falla-tarjeta textarea { resize: vertical; }
+.falla-captura {
+  border: 1.5px dashed var(--linea); border-radius: 8px; padding: 14px;
+  text-align: center; color: var(--gris); font-size: 13px; cursor: pointer;
+}
+.falla-captura:focus { outline: 2px solid var(--centauro); outline-offset: -1px; }
+.falla-captura img {
+  display: block; max-width: 100%; max-height: 220px; margin: 0 auto 8px;
+  border-radius: 6px; border: 1px solid var(--linea);
+}
+.falla-solo { background: var(--suave); border-radius: 8px; padding: 12px 14px; margin-top: 14px; }
+.falla-datos {
+  display: grid; grid-template-columns: 150px 1fr; gap: 3px 12px;
+  font-size: 12.5px; overflow-wrap: anywhere;
+}
+.falla-nota .aviso { margin: 12px 0 0; }
+@media (max-width: 600px) {
+  .falla-capa { padding: 12px 8px; }
+  .falla-datos { grid-template-columns: 1fr; gap: 0; }
+  .falla-datos span.gris { margin-top: 6px; }
+  .reportar-falla { padding: 5px 9px; }
+}
+
 /* El PDF del manual sale de la ventana de imprimir del navegador: fuera
    la barra, los botones y lo que solo sirve en pantalla. Cada parte
    empieza en su hoja; lo de adentro corre seguido. */
 @page { margin: 16mm 14mm; }
 @media print {
-  header.barra, #mensajes, .man-no-imprimir, .boton-ayuda { display: none !important; }
+  header.barra, #mensajes, .man-no-imprimir, .boton-ayuda, .falla-capa {
+    display: none !important;
+  }
   body { background: #fff; font-size: 11.5px; }
   main { max-width: none; padding: 0; }
   .man-impreso-parte { break-before: page; }

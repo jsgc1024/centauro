@@ -107,13 +107,16 @@ button.chico { min-height: 42px; padding: 10px 14px; font-size: 14px;
   color: var(--gris); font-weight: 650; display: block; margin-bottom: 2px;
 }
 
-input, select {
+/* La caja de texto larga llego con Reportar una falla (seccion 92): la
+   misma forma que los demas campos, y crece hacia abajo, no de lado. */
+input, select, textarea {
   font: inherit; width: 100%; padding: 14px;
   background: #fff; color: var(--texto);
   border: 1px solid var(--linea); border-radius: 10px;
 }
-input:focus, select:focus { outline: 2px solid var(--centauro);
-                            outline-offset: -2px; }
+textarea { resize: vertical; }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--centauro);
+                                            outline-offset: -2px; }
 label { display: block; font-size: 13px; color: var(--gris);
         margin-bottom: 6px; }
 .campo { margin-bottom: 14px; }

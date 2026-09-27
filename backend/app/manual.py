@@ -595,6 +595,8 @@ AREA_DE_ARCHIVO = {
     "implantado_precios.py": "implantados",
     "gps.py": "gps",
     "main.py": "sistema",
+    # Reportar una falla (seccion 92) y el manual mismo.
+    "fallas.py": "sistema", "routers/manual.py": "sistema",
 }
 
 # Un mensaje hecho solo de datos del caso («…: …») no dice nada fuera de
@@ -767,26 +769,64 @@ LARGOS = {"titulo": 160, "que_se_vio": 4000, "causa": 4000, "solucion": 4000,
 FALLAS = ("no", "si", "no_se")
 
 
-def caso(c: m.CasoResuelto, nombres: dict) -> dict:
+def _iso(momento) -> str | None:
+    return momento.isoformat() if momento else None
+
+
+def caso(c: m.CasoResuelto, nombres: dict, con_captura: set | None = None) -> dict:
+    """Un caso, como lo lee la pantalla. El reportado trae ademas quien
+    lo mando, lo que esperaba y lo que se mando solo (seccion 92); la
+    captura no viaja aqui, se pide aparte."""
+    from app import fallas
+
+    contexto = fallas.contexto_de(c)
+    quien = contexto.get("quien") or {}
     return {"id": c.id, "titulo": c.titulo, "que_se_vio": c.que_se_vio,
             "causa": c.causa, "solucion": c.solucion, "area": c.area,
-            "falla": c.falla,
+            "falla": c.falla, "estado": c.estado or fallas.RESUELTO,
             "escrito_por": nombres.get(c.escrito_por_id),
-            "escrito_en": c.escrito_en.isoformat() if c.escrito_en else None,
+            "escrito_en": _iso(c.escrito_en),
             "editado_por": nombres.get(c.editado_por_id),
-            "editado_en": c.editado_en.isoformat() if c.editado_en else None}
+            "editado_en": _iso(c.editado_en),
+            "reportado_por": (nombres.get(c.reportado_por_id)
+                              or quien.get("nombre") if c.reportado_en else None),
+            "reportado_puesto": (quien.get("puesto")
+                                 or (quien.get("rol") or "").replace("_", " ")
+                                 or None) if c.reportado_en else None,
+            "reportado_en": _iso(c.reportado_en),
+            "esperaba": c.esperaba,
+            "contexto": contexto or None,
+            "donde": fallas.donde(contexto) if c.reportado_en else None,
+            "tiene_captura": c.id in (con_captura or set()),
+            "con_claude_en": _iso(c.con_claude_en),
+            "resuelto_por": nombres.get(c.resuelto_por_id),
+            "resuelto_en": _iso(c.resuelto_en)}
 
 
 def casos(db: Session) -> list[dict]:
-    filas = (db.query(m.CasoResuelto)
-             .order_by(m.CasoResuelto.escrito_en.desc(), m.CasoResuelto.id.desc())
-             .all())
-    ids = ({c.escrito_por_id for c in filas} | {c.editado_por_id for c in filas})
+    """Los abiertos primero --por revisar y con Claude, del mas viejo al
+    mas nuevo: el que lleva mas esperando se atiende antes--, y despues
+    los resueltos, del mas nuevo al mas viejo."""
+    from app import fallas
+
+    filas = db.query(m.CasoResuelto).all()
+    nunca = datetime.min.replace(tzinfo=timezone.utc)
+    abiertos = sorted((c for c in filas if c.estado in fallas.ABIERTOS),
+                      key=lambda c: (c.reportado_en or c.escrito_en or nunca, c.id))
+    cerrados = sorted((c for c in filas if c.estado not in fallas.ABIERTOS),
+                      key=lambda c: (c.resuelto_en or c.escrito_en or nunca, c.id),
+                      reverse=True)
+    ids = set()
+    for c in filas:
+        ids |= {c.escrito_por_id, c.editado_por_id, c.reportado_por_id,
+                c.resuelto_por_id}
     ids.discard(None)
     nombres = ({p.id: p.nombre for p in
                 db.query(m.Persona).filter(m.Persona.id.in_(ids)).all()}
                if ids else {})
-    return [caso(c, nombres) for c in filas]
+    con_captura = {i for (i,) in db.query(m.CasoResuelto.id)
+                   .filter(m.CasoResuelto.captura.isnot(None))}
+    return [caso(c, nombres, con_captura) for c in abiertos + cerrados]
 
 
 def limpiar_caso(datos: dict, parcial: bool = False) -> dict:

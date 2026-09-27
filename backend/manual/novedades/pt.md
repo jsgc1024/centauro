@@ -2,6 +2,9 @@
 
 O que há de novo em cada atualização, escrito para quem usa o sistema. A mais nova fica em cima.
 
+## 92 · 2026-09-27 · Reportar uma falha
+Em cima, ao lado do seu nome, em todas as telas do console, e em **Eu** no app de campo: escreve-se o que aconteceu e, se quiser, cola-se uma captura ou adiciona-se uma foto; o resto —a tela, o serviço, a versão e o último que apareceu em vermelho— vai sozinho, e nunca senhas. Chega a sistema e qualidade em [Manual do sistema → Casos](#/manual/casos), em **Para revisar**, com o aviso por e-mail. Ali se resolve ou se copia para o Claude; já resolvido, quem reportou recebe o aviso com a causa e como se resolveu.
+
 ## 91 · 2026-09-27 · O e-mail sai pelo Postmark, e quatro correções
 O MailerSend não aprovou a conta: os e-mails do sistema saem pelo Postmark, do mesmo connect@mycentauro.lat, e as respostas continuam chegando em cecc.notification@centauro.lat. Além disso: os avisos do dia e da substituição chegam ao principal de cada equipe, como a task sheet; o cabeçalho do serviço mostra o status, o tipo e a situação de cada dia com o seu nome, no idioma de quem vê; no app, «Minha avaliação» mostra o nome de cada parte; e aprovar um serviço de um país sem percentual de comissão avisa antes, sem salvar nada.
 

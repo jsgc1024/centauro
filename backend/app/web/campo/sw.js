@@ -18,7 +18,8 @@
    subirla, el telefono que ya tenia la app instalada seguiria sirviendo
    el armazon viejo del cache. */
 // v12: el icono nuevo de EP Connect, el escudo con la C (seccion 81).
-const CACHE = "centauro-campo-v12";
+// v13: Reportar una falla desde «Yo», y la caja negra (seccion 92).
+const CACHE = "centauro-campo-v13";
 const ARMAZON = [
   "/app/",
   "/app/index.html",

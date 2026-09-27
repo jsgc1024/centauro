@@ -719,6 +719,9 @@ AYUDA_POR_PANTALLA = {
     "recorrido.js": 0,
     # El manual del sistema (seccion 90), por lo mismo: es la ayuda entera.
     "manual.js": 0,
+    # Reportar una falla (seccion 92): la forma dice en su propia tarjeta
+    # a quien le llega y que se manda solo, a la vista antes de mandarlo.
+    "falla.js": 0,
 
     # --- la app de campo no lleva "?", y es a proposito
     #

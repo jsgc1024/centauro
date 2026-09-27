@@ -9,7 +9,7 @@
    - el boton rojo siempre esta, en todas las pantallas
 
    Todo pasa por el mismo backend y la misma sesion que la consola. */
-import { api, sesion } from "/consola/api.js";
+import { anotarMensaje, api, cajaNegra, sesion } from "/consola/api.js";
 import { idioma, ponerIdioma, t } from "/consola/idioma.js";
 import { apartadas, encolar, limpiar, pendientes, retenida, sacar,
          vaciar } from "./cola.js";
@@ -19,6 +19,16 @@ import { reducir } from "./foto.js";
 import { firma } from "/consola/firma.js";
 
 const raiz = () => document.getElementById("app");
+
+/* Lo que la app le dice a quien la usa se queda en la caja negra, para
+   cuando reporte una falla (seccion 92): casi todo se dice con alert(),
+   asi que se anota ahi, en un solo lugar, y no en cada uno de los
+   cuarenta que lo llaman. Lo del propio reporte se dice sin anotarse. */
+const alertaSinAnotar = window.alert.bind(window);
+window.alert = (texto) => {
+  anotarMensaje(texto);
+  alertaSinAnotar(texto);
+};
 
 /* Las tablas de texto se arman al pintar y no al cargar el modulo: el
    idioma se pone cuando ya se sabe de quien es la sesion, y una tabla
@@ -169,6 +179,7 @@ async function pintar() {
   if (vista === "viaticos") return pantallaViaticos();
   if (vista === "pagos") return pantallaPagos();
   if (vista === "yo") return pantallaYo();
+  if (vista === "falla") return pantallaFalla();
   if (vista.startsWith("revision/")) return pantallaRevision();
   return pantallaHoy();
 }
@@ -190,6 +201,8 @@ function h(tag, props, ...hijos) {
 }
 
 function aviso(texto, tono = "") {
+  // Lo que sale en rojo o en ambar, a la caja negra (seccion 92).
+  if (tono === "grave" || tono === "alerta") anotarMensaje(texto, tono);
   return h("div", { clase: `aviso ${tono}`.trim() }, texto);
 }
 
@@ -1513,8 +1526,116 @@ async function pantallaYo() {
   } catch { /* sin capacitacion cargada */ }
 
   cuerpo.push(bloqueAvisos());
+  cuerpo.push(tarjetaFalla());
 
   conBarra(...cuerpo);
+}
+
+/* ------------------------------------------------ reportar una falla
+
+   Seccion 92. Lo mismo que el boton de la consola, hecho para el
+   telefono: que paso y, si quiere, una foto --la captura de la pantalla
+   o una foto de lo que ve--. Lo demas se manda solo: el servicio de hoy,
+   el telefono, la version de la app y los ultimos mensajes que le
+   salieron. Llega a sistema y calidad; lo urgente sigue siendo la
+   central, y por eso la forma lo dice y el boton rojo sigue abajo. */
+function tarjetaFalla() {
+  return h("div", { clase: "caja" },
+    h("span", { clase: "gris chico" }, t("cmp_falla_titulo")),
+    h("p", { clase: "chico gris", style: "margin:8px 0 10px" }, t("cmp_falla_pie")),
+    h("button", { clase: "claro", onclick: () => { location.hash = "#/falla"; } },
+      t("fal_titulo")));
+}
+
+/* Que version de la app corre en este telefono: el nombre del cache del
+   trabajador de fondo, que sube con cada cambio del armazon. Sin
+   trabajador --un navegador que no lo soporta-- no dice nada. */
+async function versionDeLaApp() {
+  try {
+    return (await caches.keys()).find(k => k.startsWith("centauro-campo-")) || "";
+  } catch {
+    return "";
+  }
+}
+
+function pantallaFalla() {
+  let foto = null;
+  const quePaso = h("textarea", { rows: "4", maxlength: "4000",
+                                  placeholder: t("cmp_falla_ej") });
+  /* Sin `capture`: aqui casi siempre se manda una captura de la pantalla,
+     que esta en la galeria; el telefono ofrece la camara de todos modos. */
+  const archivo = h("input", { type: "file", accept: "image/*", hidden: true });
+  const vistaFoto = h("div");
+  const botonFoto = h("button", { clase: "claro", style: "margin-top:10px",
+                                  onclick: () => archivo.click() }, t("cmp_falla_foto"));
+  /* La foto en chico y a su lado quitarla: una captura del telefono es
+     larga, y entera empujaba el boton de Mandar fuera de la pantalla. */
+  const pintarFoto = () => {
+    botonFoto.textContent = t(foto ? "cmp_falla_otra_foto" : "cmp_falla_foto");
+    vistaFoto.replaceChildren(...(foto ? [
+      h("div", { clase: "fila", style: "margin-top:10px;align-items:flex-start" },
+        h("img", { src: foto, alt: "", style: "max-width:110px;max-height:150px;"
+                   + "border-radius:8px;border:1px solid var(--linea)" }),
+        h("button", { clase: "claro chico", onclick: () => {
+          foto = null; archivo.value = ""; pintarFoto(); } }, t("cmp_falla_quitar")))] : []));
+  };
+  archivo.addEventListener("change", async () => {
+    const elegido = archivo.files && archivo.files[0];
+    if (!elegido) return;
+    vistaFoto.replaceChildren(h("div", { clase: "chico gris", style: "margin-top:8px" },
+      t("cmp_preparando_foto")));
+    try {
+      foto = await reducir(elegido);
+    } catch (err) {
+      foto = null;
+      alert(err.message);
+    }
+    pintarFoto();
+  });
+
+  const mandar = h("button", { style: "margin-top:4px" }, t("cmp_falla_mandar"));
+  mandar.addEventListener("click", async () => {
+    if (quePaso.value.trim().length < 3) {
+      quePaso.focus();
+      return alertaSinAnotar(t("cmp_falla_falta"));
+    }
+    mandar.disabled = true;
+    /* El servicio de hoy sale de lo ultimo que se supo del dia, como el
+       boton rojo: sin senal tambien se sabe. */
+    const guardado = recordar("mi-dia");
+    const hoy = ((guardado && guardado.datos) || {}).hoy || [];
+    const ficha = hoy[0] || {};
+    const caja = cajaNegra();
+    try {
+      const r = await api.post("/manual/fallas", {
+        que_paso: quePaso.value, captura: foto,
+        contexto: { desde: "app", app: await versionDeLaApp(),
+                    navegador: navigator.userAgent,
+                    servicio_id: ficha.servicio_id || null,
+                    jornada_id: ficha.jornada_id || null,
+                    mensajes: caja.mensajes, llamadas: caja.llamadas } });
+      // Vacio antes del aviso, para que el refresco no crea que hay algo a medias.
+      quePaso.value = "";
+      foto = null;
+      archivo.value = "";
+      alertaSinAnotar(t("cmp_falla_recibida").replace("{n}", r.id));
+      location.hash = "#/yo";
+    } catch (err) {
+      alert(motivo(err));
+      mandar.disabled = false;
+    }
+  });
+
+  conBarra(
+    h("div", { style: "margin:0 0 10px" },
+      h("a", { href: "#/yo", clase: "chico" }, t("cmp_volver_yo"))),
+    h("h1", {}, t("fal_titulo")),
+    h("p", { clase: "gris chico", style: "margin:2px 0 14px" }, t("cmp_falla_sub")),
+    h("div", { clase: "caja" },
+      h("label", {}, t("fal_que_paso")), quePaso,
+      botonFoto, archivo, vistaFoto,
+      h("p", { clase: "chico gris", style: "margin:12px 0 0" }, t("cmp_falla_solo"))),
+    mandar);
 }
 
 /* Salir vive ARRIBA y chico, en el encabezado, lejos del pulgar.

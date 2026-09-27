@@ -4141,3 +4141,29 @@ class CasoResuelto(Base):
         ForeignKey("persona.id", ondelete="SET NULL"), nullable=True)
     editado_en: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True)
+
+    # Reportar una falla (seccion 92). El caso nace cuando alguien reporta
+    # la falla ahi mismo --en la consola o en la app-- y se queda «por
+    # revisar» hasta que sistema y calidad lo resuelve: «con_claude»
+    # mientras la falla del sistema se arregla, y «resuelto» con su causa
+    # y como se arreglo. El que se anota a mano nace resuelto.
+    estado: Mapped[str] = mapped_column(String(12), default="resuelto",
+                                        server_default="resuelto")
+    reportado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id", ondelete="SET NULL"), nullable=True)
+    reportado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    # Lo que esperaba que pasara, si lo dijo.
+    esperaba: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Lo que se manda solo, en JSON: la pantalla, el servicio, la version,
+    # el navegador o el telefono y lo ultimo que le salio. Nunca la sesion.
+    contexto: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # La captura, como data URL. Diferida: la lista de casos no la carga.
+    captura: Mapped[str | None] = mapped_column(Text, nullable=True,
+                                                deferred=True)
+    con_claude_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    resuelto_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id", ondelete="SET NULL"), nullable=True)
+    resuelto_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)

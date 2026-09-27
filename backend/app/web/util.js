@@ -1,6 +1,7 @@
 /* Ayudas de pintado. Nada de librerias: el objetivo es que esto se
    entienda y se pueda cambiar sin saber de frameworks. */
 
+import { anotarMensaje } from "./api.js";
 import { t } from "./idioma.js";
 
 export function h(etiqueta, atributos = {}, ...hijos) {
@@ -498,6 +499,9 @@ export function vaciar(nodo) {
 /* Una sola forma de contar lo que pasa, para no llenar la pantalla de
    alertas del navegador. */
 export function mensaje(texto, tono = "ok") {
+  /* Lo que salio en rojo o en ambar se queda en la caja negra, para el
+     reporte de una falla (seccion 92). */
+  if (tono === "grave" || tono === "alerta") anotarMensaje(texto, tono);
   const barra = document.getElementById("mensajes");
   const nodo = aviso(texto, tono);
   barra.prepend(nodo);

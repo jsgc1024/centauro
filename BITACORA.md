@@ -5999,6 +5999,109 @@ respuesta.
   `poner_correo.py` cuando el dominio esté verificado, y se enciende ya
   aprobada la cuenta (guía, paso 7c).
 
+## 92. Reportar una falla
+
+Salvador, 27 de septiembre, al ver la propuesta «Para poder operar»: «de
+acuerdo con ello. así cerramos el ciclo». Y después: «termina el
+desarrollo de Reportar una falla dentro del sistema y después vemos el
+tema del correo». Es la pieza 3 de la propuesta.
+
+### El ciclo
+
+1. **Quien ve la falla la reporta ahí mismo.** En la consola, el botón
+   «Reportar una falla» vive arriba, junto a la pastilla del nombre, en
+   todas las pantallas. En la app de campo, en «Yo», con su propia
+   pantalla (`#/falla`).
+2. **Escribe qué pasó**; si quiere, qué esperaba y una captura —en la
+   consola se pega con Ctrl+V o se escoge un archivo; en la app, una
+   foto—. La imagen se reduce antes de salir, como los tickets.
+3. **Lo demás se manda solo, y la consola lo enseña antes de mandarlo**:
+   la pantalla y su ruta, el servicio si estaba en uno, quién, cuándo, la
+   versión (la última novedad del manual), el navegador o el teléfono, y
+   la caja negra. Nunca la sesión ni contraseñas.
+4. **Llega a Manual del sistema → Casos, en «Por revisar»**, y a sistema
+   y calidad le llega el aviso por correo; si todavía no hay nadie con
+   ese rol, a administración. También sale al teléfono, pero hoy solo
+   la app de campo enciende esos avisos: en la consola no llega.
+5. **Si es de datos o de uso, se resuelve ahí.** Si es falla del sistema,
+   «Copiar para Claude» deja el reporte en texto para pegarlo en la
+   conversación, sin la captura —esa se abre con «Ver la captura» y se
+   pega aparte—, y el caso queda «con Claude». Si el navegador no deja
+   copiar solo, el texto sale en la tarjeta, seleccionado.
+6. **Resolver** pide la causa, cómo se arregló y si fue falla del
+   sistema; a quien lo reportó le llega el aviso con las dos cosas —en
+   la app, a «Yo»—. Ya resuelto, es un caso más de los que va a leer el
+   primer agente (sección 90).
+
+### La caja negra
+
+`api.js` guarda, solo en la memoria de la pestaña, las últimas seis
+llamadas con error aparte de las últimas seis que salieron bien —para que
+las consultas de cada minuto no saquen a los errores— y los últimos seis
+mensajes en rojo o en ámbar (`mensaje()` en la consola; `aviso()` y
+`alert()` en la app). La ruta va sin lo que sigue del «?»: ahí viajan las
+búsquedas, que pueden llevar nombres. El mismo mensaje dos veces seguidas
+cuenta una vez, y el propio reporte no se anota.
+
+### El servidor
+
+- El reporte **es un caso resuelto que todavía no se resuelve**: la misma
+  tabla, `caso_resuelto`, con su estado —`por_revisar`, `con_claude`,
+  `resuelto`—, quién lo reportó y cuándo, lo que esperaba, el contexto
+  (JSON) y la captura (texto en base64, que no se lee al listar). Los
+  casos que ya existían quedan resueltos. Migración `4b7d2e9a1c63`.
+- `app/fallas.py`: el contexto se guarda **recortado y de una lista
+  fija** —lo que manda la pantalla es una afirmación, no una verdad: se
+  lee, nunca decide nada—; el servidor le pone quién, su zona, la versión
+  y el folio del servicio. La captura solo si es PNG, JPEG o WebP, y de
+  hasta 4 millones de letras. **Diez por hora** por persona: el que sigue
+  contesta 429 y dice que llame a la central.
+- Endpoints: `POST /manual/fallas` y `GET /manual/version` (cualquiera
+  que entra), y con `manual.ver`: `GET /manual/casos/{id}/captura`,
+  `POST /manual/casos/{id}/para-claude` y
+  `POST /manual/casos/{id}/resolver`. `GET /manual/casos` trae los
+  abiertos primero, del más viejo al más nuevo.
+
+### Lo que cambió de la maqueta
+
+- **«Es de datos o de uso» se volvió «Resolver».** En la maqueta eran dos
+  botones; es una sola forma que pregunta si fue falla del sistema —sí,
+  no o no sé— y sirve para los dos caminos. Lo que se copió para Claude
+  llega con «sí» puesto.
+- **Ya mandado, la misma tarjeta lo dice**: con qué número quedó y que el
+  aviso llega al resolverse. Los errores de la forma se dicen adentro: la
+  barra de mensajes queda debajo de la capa.
+
+### La consola
+
+- La portada del manual cuenta las **fallas reportadas por revisar**
+  aparte de los casos resueltos. Casos tiene dos pestañas y se abre en la
+  que tiene algo que hacer.
+- Un capítulo nuevo, «Reportar una falla y los casos», en español y en
+  portugués, y la parte de «Cada pantalla» que lo dice.
+- El PDF del manual lleva solo los resueltos.
+
+### Las pruebas
+
+- `tests/test_fallas.py`: desde la consola llega por revisar con su
+  contexto recortado y el aviso a administración; desde la app con foto,
+  que solo ve quien revisa; lo que no sirve no se guarda; sin sesión no
+  se reporta; diez por hora; copiar para Claude —el texto, sin la
+  captura—; resolver avisa a quien lo reportó; los abiertos van primero;
+  la versión en el idioma de quien la pide.
+- La migración sube, baja y vuelve a subir.
+
+### Para subirlo
+
+- **Con migración** (`4b7d2e9a1c63`): el bloque de siempre, con
+  `alembic upgrade head`.
+- La app de campo sube su caché a v13: los teléfonos toman la versión
+  nueva al abrirla con señal.
+- **Mientras el correo siga apagado, a quien revisa no le llega ningún
+  aviso**: los reportes se ven en Manual del sistema → Casos, y la
+  portada del manual los cuenta. Al personal de campo sí le llega a su
+  teléfono cuando se resuelve el suyo.
+
 ## 14. Lo que falta
 
 ### Abierto
@@ -6019,13 +6122,16 @@ respuesta.
   hecha en Odoo y el arranque en vivo—, la lista de lo que falta con su
   dueño, el calendario y ocho decisiones. Para Brasil falta además que
   se puedan poner su porcentaje de comisión y los criterios de su bono.
-  Espera su respuesta.
+  La pieza 3, reportar una falla, quedó hecha en la sección 92. Lo demás
+  espera su respuesta.
 - **El primer agente del sistema: los casos resueltos** (sección 90).
   Salvador, 27 de septiembre: «más adelante podemos poner a un agente
   dedicado a ello… será el primer agente que coloquemos en el sistema».
   Lee los casos cuya causa fue una falla del sistema y sigue la regla: la
   falla chica que no cambia cómo se trabaja la arregla directo y avisa; la
-  que pide cambiar un proceso la lleva primero como propuesta.
+  que pide cambiar un proceso la lleva primero como propuesta. Desde la
+  sección 92 los casos también llegan como reportes de quien ve la
+  falla, con su contexto: esos son los que va a leer.
 - **Puestos y Odoo: el paso 4** (secciones 73 a 75). La factura en
   borrador hacia Odoo, probada primero en una copia de Odoo: hace falta
   la copia y una llave que pueda escribir en ella.
@@ -6062,7 +6168,10 @@ busca, está en las secciones 15 y 16.*
   `https://mycentauro.lat/gps/pegasus/aviso/{secreto}`: la
   dirección con HTTPS ya existe (sección 71); mientras no se configure,
   el pánico llega con la lectura de cada dos minutos. De este lado, las
-  placas ligan contra la flota leída de Odoo: sin ella, ninguna.
+  placas ligan contra la flota leída de Odoo: sin ella, ninguna. Al 27
+  de septiembre, en producción todavía no se hace la primera lectura del
+  personal, de la flota ni de los tarifarios, y el estado del sistema
+  dice «sin unidades ligadas».
 - **El correo: por Postmark** (secciones 84, 86 y 91). Sale de
   `connect@mycentauro.lat` por SMTP y las respuestas llegan a
   `cecc.notification@centauro.lat`. MailerSend rechazó la cuenta dos
@@ -6168,9 +6277,11 @@ busca, está en las secciones 15 y 16.*
 - Cargar los montos reales: tarifas, comisiones de los cuatro roles y
   tabuladores de viáticos por acuerdo.
 - HTTPS para probar la app en un teléfono real.
-- **Generar las llaves de push.** `.env` todavía no tiene `VAPID_PUBLIC`
-  ni `VAPID_PRIVATE`, así que los avisos al teléfono no salen:
-  `docker compose exec -T api python generar_llaves_push.py`.
+- ~~**Generar las llaves de push.**~~ **Cerrado**: el 27 de septiembre el
+  estado del sistema en producción dice «Avisos al teléfono: listos».
+  *(Lo de abajo es el texto de entonces.)* `.env` todavía no tiene
+  `VAPID_PUBLIC` ni `VAPID_PRIVATE`, así que los avisos al teléfono no
+  salen: `docker compose exec -T api python generar_llaves_push.py`.
 - **El servidor de producción.** Ver `ARQUITECTURA.md` y
   `despliegue/LEEME.md`. Las tres cosas que frenaban el encendido ya
   quedaron: `docker-compose.prod.yml` solo asoma a internet el proxy con

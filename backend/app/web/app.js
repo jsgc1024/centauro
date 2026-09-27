@@ -17,6 +17,7 @@ import { pantallaOdoo } from "./odoo.js";
 import { pantallaCatalogos } from "./catalogos_pantalla.js";
 import { pantallaCalidad } from "./calidad.js";
 import { pantallaManual } from "./manual.js";
+import { botonReportar } from "./falla.js";
 import { pantallaCodigo } from "./codigo.js";
 import { pantallaEnlace, pantallaOlvide } from "./contrasena.js";
 import { pantallaServicio } from "./servicio.js";
@@ -307,7 +308,10 @@ function quienSoy(rol) {
   // Se cierra al picar en cualquier otro lado, como cualquier menu.
   document.addEventListener("click", () => { menu.hidden = true; });
 
-  return h("div", { clase: "yo" }, pastilla, menu);
+  /* Reportar una falla (seccion 92) va aqui, a la vista en todas las
+     pantallas y no dentro de la pastilla: se usa justo cuando algo salio
+     mal, y en ese momento nadie va a buscar en un menu. */
+  return h("div", { clase: "yo" }, botonReportar(), pastilla, menu);
 }
 
 /* Nombre y apellido, no el nombre completo: "Salvador Garcia Carrasco"

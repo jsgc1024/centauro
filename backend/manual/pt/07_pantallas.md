@@ -8,6 +8,8 @@ buscar: telas menu operacao eventual implantado pessoal unidades desempenho clie
 ---
 O menu de cada um sai do seu cargo. Quase todos os blocos trazem um **«?»**: para que serve, quando você fica sabendo se algo falha e de onde sai o número. Essa ajuda vive colada à sua tela e é a mais atualizada que existe.
 
+Em cima, ao lado do seu nome, fica **Reportar uma falha** em todas as telas: chega a sistema e qualidade com a tela onde você estava e o último que apareceu. Ver [reportar uma falha](#/manual/leer/fallas).
+
 ## Operações EP
 
 ### Operação {#panorama}
@@ -63,7 +65,7 @@ As cinco leituras do Odoo: aqui se fazem o ensaio e a primeira leitura de cada u
 O que o sistema usa para calcular e para montar a folha do serviço: feriados, hospitais, hotéis, cidades, combustível, categorias de unidades, perfis, países, modalidades, a tabela de diárias e as tarifas de freelance. O que decide dinheiro é definido pela direção de operações. Aqui vive também o registro da administração: quem mudou o quê.
 
 ### Manual do sistema {#manual}
-Este manual: como funciona cada peça, o que fazer quando algo trava, o estado do sistema ao vivo e os casos resolvidos.
+Este manual: como funciona cada peça, o que fazer quando algo trava, o estado do sistema ao vivo e os casos: as falhas reportadas para revisar e o que já foi resolvido.
 
 ## O app de campo {#app}
-EP Connect, no telefone do pessoal de segurança: o seu dia e os seguintes, a confirmação da véspera, as suas marcações —chegada, contato e fim—, as suas diárias e comprovantes, a revisão da unidade ao recebê-la e ao entregá-la, e o botão de pânico. Em **Eu** se ligam os avisos do telefone e se manda um aviso de teste.
+EP Connect, no telefone do pessoal de segurança: o seu dia e os seguintes, a confirmação da véspera, as suas marcações —chegada, contato e fim—, as suas diárias e comprovantes, a revisão da unidade ao recebê-la e ao entregá-la, e o botão de pânico. Em **Eu** se ligam os avisos do telefone, se manda um aviso de teste e se reporta uma falha do app, com uma foto se for preciso.

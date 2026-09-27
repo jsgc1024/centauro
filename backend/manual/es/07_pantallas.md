@@ -8,6 +8,8 @@ buscar: pantallas menu operacion eventual implantado personal unidades desempeñ
 ---
 El menú de cada quien sale de su puesto. Casi todos los bloques traen un **«?»**: para qué sirve, cuándo te enteras si falla y de dónde sale el número. Esa ayuda vive pegada a su pantalla y es la más al día que hay.
 
+Arriba, junto a tu nombre, está **Reportar una falla** en todas las pantallas: le llega a sistema y calidad con la pantalla donde estabas y lo último que te salió. Ver [reportar una falla](#/manual/leer/fallas).
+
 ## Operaciones EP
 
 ### Operación {#panorama}
@@ -63,7 +65,7 @@ Las cinco lecturas de Odoo: aquí se hacen el ensayo y la primera lectura de cad
 Lo que el sistema usa para calcular y para armar la hoja del servicio: festivos, hospitales, hoteles, ciudades, combustible, categorías de unidades, perfiles, países, modalidades, el tabulador de viáticos y las tarifas de freelance. Lo que decide dinero lo fija dirección de operaciones. Aquí vive también la bitácora de administración: quién cambió qué.
 
 ### Manual del sistema {#manual}
-Este manual: cómo funciona cada pieza, qué hacer cuando algo se atora, el estado del sistema en vivo y los casos resueltos.
+Este manual: cómo funciona cada pieza, qué hacer cuando algo se atora, el estado del sistema en vivo y los casos: las fallas reportadas por revisar y lo que ya se resolvió.
 
 ## La app de campo {#app}
-EP Connect, en el teléfono del personal de seguridad: su día y los que siguen, la confirmación de la víspera, sus marcas —llegada, contacto y fin—, sus viáticos y comprobantes, la revisión de la unidad al recibirla y al entregarla, y el botón de pánico. En **Yo** se encienden los avisos del teléfono y se manda un aviso de prueba.
+EP Connect, en el teléfono del personal de seguridad: su día y los que siguen, la confirmación de la víspera, sus marcas —llegada, contacto y fin—, sus viáticos y comprobantes, la revisión de la unidad al recibirla y al entregarla, y el botón de pánico. En **Yo** se encienden los avisos del teléfono, se manda un aviso de prueba y se reporta una falla de la app, con una foto si hace falta.

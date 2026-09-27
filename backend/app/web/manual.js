@@ -16,11 +16,13 @@
    nota-- con sus negritas y sus ligas en pedazos, y aqui se pinta con
    h(): nada de HTML armado a mano. Tampoco lleva "?": el manual es la
    ayuda, y un "?" sobre la ayuda seria explicar la explicacion. */
-import { api } from "./api.js";
+import { api, sesion } from "./api.js";
 import { aviso, etiqueta, fecha, h, hora, lista, mensaje,
          sinTildes } from "./util.js";
 import { idioma, t } from "./idioma.js";
 import { nombreDelRol, porFamilia } from "./categorias.js";
+import { CONSULTA, abre } from "./menu.js";
+import { navegadorCorto } from "./falla.js";
 
 /* El manual se pide una vez y se guarda un rato: lo escrito cambia con
    cada actualizacion, no mientras alguien lo lee. Lo que si cambia --el
@@ -144,6 +146,13 @@ export async function pantallaManual(main, resto = "") {
     main.append(aviso(err.message, "grave"));
     return;
   }
+  /* Los casos no esperan a que venza lo guardado: un reporte que llego
+     hace un minuto tiene que contarse en la portada y verse en Casos. */
+  if (!pagina || pagina === "casos") {
+    try {
+      d.casos = await api.get("/manual/casos");
+    } catch { /* se queda con lo guardado */ }
+  }
   if (!pagina) return portada(main, d);
   if (pagina === "atorado") return atorado(main, d);
   if (pagina === "leer") return leer(main, d, demas[0], demas[1]);
@@ -151,7 +160,7 @@ export async function pantallaManual(main, resto = "") {
   if (pagina === "mensajes") return mensajes(main, d);
   if (pagina === "permisos") return permisos(main, d);
   if (pagina === "novedades") return novedades(main, d);
-  if (pagina === "casos") return casos(main, d);
+  if (pagina === "casos") return casos(main, d, demas[0]);
   if (pagina === "imprimir") return imprimir(main, d);
   main.append(volver(), aviso(t("man_no_existe"), "alerta"));
 }
@@ -193,6 +202,7 @@ function tresPartes(d) {
   const sintomas = d.capitulos.filter(c => c.parte === "resolver");
   const roles = new Set(d.permisos.actividades.flatMap(a => a.roles));
   const tareas = d.reloj.filter(x => !x.fuera).length;
+  const reportes = d.casos.filter(abierto).length;
 
   const tarjeta = (numero, titulo, sub, renglones) => h("div", { clase: "tarjeta man-parte" },
     h("h4", {}, numero),
@@ -207,7 +217,8 @@ function tresPartes(d) {
     tarjeta(t("man_p2_num"), t("man_p2_titulo"), t("man_p2_sub"), [
       [t("man_p2_estado"), "#/manual/atorado"],
       [llenar("man_p2_sintomas", { n: sintomas.length }), "#/manual/atorado"],
-      [llenar("man_p2_casos", { n: d.casos.length }), "#/manual/casos"]]),
+      [llenar("man_p2_reportes", { n: reportes }), "#/manual/casos/abiertos"],
+      [llenar("man_p2_casos", { n: d.casos.length - reportes }), "#/manual/casos/resueltos"]]),
     tarjeta(t("man_p3_num"), t("man_p3_titulo"), t("man_p3_sub"), [
       [llenar("man_p3_reloj", { n: tareas }), "#/manual/reloj"],
       [llenar("man_p3_permisos", { a: d.permisos.actividades.length, r: roles.size }),
@@ -332,7 +343,7 @@ function losSintomas(d) {
 
   return h("div", { clase: "tarjeta man-sintomas" }, caja, zona,
     h("p", { clase: "chico gris man-no-esta" }, t("man_no_esta"), " ",
-      h("a", { href: "#/manual/casos" }, t("man_ir_casos"))));
+      h("a", { href: "#/manual/casos/resueltos" }, t("man_ir_casos"))));
 }
 
 /* ------------------------------------------------------------ un capitulo */
@@ -585,13 +596,119 @@ function novedades(main, d) {
   ].filter(Boolean));
 }
 
-/* ------------------------------------------------------ casos resueltos */
+/* ------------------------------------------------------------ los casos
+
+   Dos clases de caso en la misma lista (seccion 92): el que alguien
+   anota a mano ya resuelto, y el que llega como reporte de una falla y
+   espera a que sistema y calidad lo revise. El reporte abierto va en su
+   pestana, con lo que se mando solo y sus botones; ya resuelto, queda
+   como cualquier otro caso, con quien lo reporto. */
 
 const FALLA = { si: ["man_etq_falla", "grave"], no_se: ["man_etq_no_se", "alerta"] };
+const ABIERTOS = ["por_revisar", "con_claude"];
+const ESTADO = { por_revisar: ["man_est_por_revisar", "alerta"],
+                 con_claude: ["man_est_con_claude", "info"] };
+
+function abierto(c) {
+  return ABIERTOS.includes(c.estado);
+}
 
 function nombreDelArea(d, clave) {
   const a = d.areas.find(x => x.clave === clave);
   return a ? a.titulo : clave;
+}
+
+function cuandoFue(iso) {
+  return iso ? `${fecha(iso)}, ${hora(iso)}` : "—";
+}
+
+/* Quien lo reporto, cuando y desde donde. El puesto sale de lo que se
+   guardo al reportarlo --si despues cambia de puesto, el reporte dice el
+   de ese dia--; sin puesto, el nombre de su rol. */
+function renglonReporte(c) {
+  if (!c.reportado_en) return null;
+  const x = c.contexto || {};
+  const q = x.quien || {};
+  const puesto = q.puesto || (q.rol ? nombreDelRol(q.rol) : c.reportado_puesto);
+  const partes = [
+    llenar("man_reporto", { q: [c.reportado_por || "—", puesto].filter(Boolean).join(", ") }),
+    cuandoFue(c.reportado_en),
+    t(x.desde === "app" ? "man_desde_app" : "man_desde_consola"),
+  ];
+  if (c.estado === "con_claude" && c.con_claude_en) {
+    partes.push(llenar("man_con_claude_desde", { f: cuandoFue(c.con_claude_en) }));
+  }
+  return h("div", { clase: "chico gris man-reportado" }, partes.join(" · "));
+}
+
+/* Lo que la pantalla mando sola, en renglones: donde estaba y con que,
+   lo ultimo que le salio y lo ultimo que le contesto el servidor. */
+function loQueSeMando(c) {
+  const x = c.contexto || {};
+  const renglones = [];
+  const folio = x.servicio ? x.servicio.folio : null;
+  const donde = [
+    folio,
+    // En un servicio, el titulo de la pantalla ya es su folio.
+    x.pantalla !== folio ? x.pantalla : null,
+    x.ruta,
+    x.version ? llenar("man_rep_version", { n: x.version.seccion, f: x.version.fecha }) : null,
+    x.app,
+    x.navegador ? navegadorCorto(x.navegador) || x.navegador : null,
+  ].filter(Boolean);
+  if (donde.length) renglones.push(donde.join(" · "));
+  for (const m of x.mensajes || []) {
+    renglones.push(`${hora(m.cuando)} · «${m.texto}»`);
+  }
+  for (const l of x.llamadas || []) {
+    renglones.push([hora(l.cuando), `${l.metodo || ""} ${l.ruta || ""}`.trim(),
+                    l.codigo ? String(l.codigo) : t("man_sin_respuesta"),
+                    l.mensaje].filter(Boolean).join(" · "));
+  }
+  return renglones.join("\n");
+}
+
+/* La captura encima de la pantalla, sin abrir otra ventana: viaja con la
+   sesion, asi que se baja aqui y se ensena como imagen local. */
+async function verCaptura(c) {
+  const cuerpo = h("div", { clase: "visor", style: "width:min(1000px,100%)" },
+    h("p", { clase: "gris" }, t("man_abriendo")));
+  const fondo = h("div", { clase: "visor-fondo" }, cuerpo);
+  let direccion = null;
+  const tecla = (e) => { if (e.key === "Escape") cerrar(); };
+  function cerrar() {
+    fondo.remove();
+    document.removeEventListener("keydown", tecla);
+    if (direccion) URL.revokeObjectURL(direccion);
+  }
+  fondo.addEventListener("click", (e) => { if (e.target === fondo) cerrar(); });
+  document.addEventListener("keydown", tecla);
+  document.body.append(fondo);
+  try {
+    direccion = await api.imagen(`/manual/casos/${c.id}/captura`);
+    cuerpo.replaceChildren(
+      h("div", { clase: "man-caso-cabeza" },
+        h("h3", {}, llenar("man_captura_de", { n: c.id })),
+        h("button", { clase: "claro chico", type: "button", onclick: cerrar }, t("man_cerrar"))),
+      h("img", { src: direccion, alt: "" }));
+  } catch (err) {
+    cuerpo.replaceChildren(aviso(err.message, "grave"),
+      h("button", { clase: "claro chico", type: "button", onclick: cerrar }, t("man_cerrar")));
+  }
+}
+
+function botonCaptura(c) {
+  return h("button", { clase: "claro chico", type: "button",
+                       onclick: () => verCaptura(c) }, t("man_ver_captura"));
+}
+
+async function alPortapapeles(texto) {
+  try {
+    await navigator.clipboard.writeText(texto);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function tarjetaCaso(d, c, alEditar = null) {
@@ -611,9 +728,129 @@ function tarjetaCaso(d, c, alEditar = null) {
       alEditar ? h("button", { clase: "claro chico", type: "button",
                                onclick: () => alEditar(c) }, t("man_editar")) : null),
     h("div", { clase: "chico gris" }, quien),
+    renglonReporte(c),
     ...parte("man_caso_que_se_vio", c.que_se_vio),
     ...parte("man_caso_causa", c.causa),
-    ...parte("man_caso_solucion", c.solucion));
+    ...parte("man_caso_solucion", c.solucion),
+    alEditar && c.tiene_captura
+      ? h("div", { clase: "acciones", style: "margin-top:12px" }, botonCaptura(c)) : null);
+}
+
+/* Un reporte por revisar. «Copiar para Claude» deja el reporte en texto
+   para pegarlo en la conversacion y lo pasa a «con Claude»; «Resolver»
+   abre la forma aqui mismo, con la causa y como se arreglo, y al
+   guardarla a quien lo reporto le llega el aviso. La tarjeta se pinta a
+   si misma: copiar no recarga la lista, para no perder el texto si el
+   navegador no deja copiar solo. */
+function tarjetaReporte(d, c, recargar) {
+  const tarjeta = h("div", { clase: "tarjeta lisa man-caso" });
+
+  const pintar = (abajo = null) => {
+    const estado = ESTADO[c.estado] || ESTADO.por_revisar;
+    const servicio = (c.contexto || {}).servicio;
+    const implantado = servicio && servicio.tipo === "implantado";
+    const irAlServicio = servicio
+      && abre(sesion.usuario, implantado ? "implantados" : "servicios", CONSULTA);
+    const parte = (clave, valor) => (valor ? [h("h4", {}, t(clave)),
+      h("p", { clase: "man-largo" }, valor)] : []);
+    const solo = loQueSeMando(c);
+
+    const copiar = h("button", { clase: "chico", type: "button" }, t("man_copiar_claude"));
+    copiar.addEventListener("click", async () => {
+      copiar.disabled = true;
+      try {
+        const r = await api.post(`/manual/casos/${c.id}/para-claude`);
+        Object.assign(c, r.caso);
+        if (await alPortapapeles(r.texto)) {
+          pintar();
+          mensaje(t("man_copiado"));
+        } else {
+          const texto = h("textarea", { clase: "man-copia", rows: "12", readonly: "readonly" },
+            r.texto);
+          pintar(h("div", {}, aviso(t("man_copia_a_mano"), "alerta"), texto));
+          texto.focus();
+          texto.select();
+        }
+      } catch (err) {
+        mensaje(err.message, "grave");
+        copiar.disabled = false;
+      }
+    });
+    const resolver = h("button", { clase: "claro chico", type: "button",
+      onclick: () => pintar(formularioResolver(d, c, recargar, () => pintar())) },
+      t("man_resolver"));
+
+    tarjeta.replaceChildren(...[
+      h("div", { clase: "man-caso-cabeza" },
+        h("h3", {}, c.titulo), etiqueta(t(estado[0]), estado[1])),
+      renglonReporte(c),
+      ...parte("man_rep_que_paso", c.que_se_vio),
+      ...parte("man_rep_esperaba", c.esperaba),
+      ...(solo ? [h("h4", {}, t("man_rep_solo")),
+                  h("p", { clase: "man-largo chico man-solo" }, solo)] : []),
+      h("div", { clase: "acciones", style: "margin-top:12px" },
+        copiar, resolver,
+        c.tiene_captura ? botonCaptura(c) : null,
+        irAlServicio ? h("button", { clase: "claro chico", type: "button", onclick: () => {
+          location.hash = `#/${implantado ? "implantado" : "servicio"}/${servicio.id}`;
+        } }, t("man_abrir_servicio")) : null),
+      abajo,
+    ].filter(Boolean));
+  };
+
+  pintar();
+  return tarjeta;
+}
+
+/* Resolver un reporte: lo mismo que se anota de un caso --la causa, como
+   se arreglo y si fue falla del sistema--, sin tocar lo que escribio
+   quien lo reporto. El titulo llega armado del reporte y se puede
+   dejar como se leera la proxima vez. */
+function formularioResolver(d, c, alGuardar, alCancelar) {
+  const titulo = h("input", { type: "text", maxlength: "160", "data-crudo": "",
+                              value: c.titulo });
+  const area = lista("area", [{ valor: "", texto: t("man_caso_sin_area") },
+    ...d.areas.map(a => ({ valor: a.clave, texto: a.titulo }))]);
+  area.value = c.area || "";
+  const causa = h("textarea", { rows: "3", maxlength: "4000" });
+  const solucion = h("textarea", { rows: "3", maxlength: "4000" });
+  const falla = lista("falla", [
+    { valor: "no_se", texto: t("man_falla_no_se") },
+    { valor: "si", texto: t("man_falla_si") },
+    { valor: "no", texto: t("man_falla_no") }]);
+  /* Lo que se copio para Claude casi siempre fue del sistema; lo demas
+     se decide al leerlo. */
+  falla.value = c.estado === "con_claude" ? "si" : "no_se";
+  const quien = c.reportado_por || "—";
+
+  const campo = (clave, control) => h("div", { clase: "campo" },
+    h("label", {}, t(clave)), control);
+  const guardar = h("button", { type: "button", onclick: async () => {
+    guardar.disabled = true;
+    try {
+      await api.post(`/manual/casos/${c.id}/resolver`, {
+        titulo: titulo.value, area: area.value, causa: causa.value,
+        solucion: solucion.value, falla: falla.value });
+      mensaje(llenar("man_resuelto_ok", { q: quien }));
+      await alGuardar();
+    } catch (err) {
+      mensaje(err.message, "grave");
+      guardar.disabled = false;
+    }
+  } }, t("man_resolver_guardar"));
+
+  setTimeout(() => causa.focus(), 0);
+  return h("div", { clase: "man-resolver" },
+    h("h4", {}, t("man_resolver_titulo")),
+    campo("man_caso_titulo", titulo),
+    campo("man_caso_area", area),
+    campo("man_caso_causa", causa),
+    campo("man_caso_solucion", solucion),
+    campo("man_caso_falla", falla),
+    h("p", { clase: "chico gris" }, t("man_falla_pie")),
+    h("p", { clase: "chico gris" }, llenar("man_resolver_pie", { q: quien })),
+    h("div", { clase: "acciones" }, guardar,
+      h("button", { clase: "claro", type: "button", onclick: alCancelar }, t("man_cancelar"))));
 }
 
 /* El caso se escribe para quien lo va a leer la proxima vez que pase:
@@ -666,41 +903,62 @@ function formularioCaso(d, caso, alGuardar, alCancelar) {
       h("button", { clase: "claro", type: "button", onclick: alCancelar }, t("man_cancelar"))));
 }
 
-function casos(main, d) {
+/* Dos pestanas: lo que espera revision y lo ya resuelto. Se abre en la
+   que tiene algo que hacer --por revisar, si hay--, salvo que la liga
+   diga cual (#/manual/casos/resueltos). */
+function casos(main, d, cual = "") {
   let todos = d.casos;
+  let pestana = ["abiertos", "resueltos"].includes(cual) ? cual
+    : todos.some(abierto) ? "abiertos" : "resueltos";
+  const pestanas = h("div", { clase: "pestanas man-pestanas" });
+  const abiertos = h("div");
   const formulario = h("div");
   const caja = cajaDeBuscar(t("man_buscar_caso"));
   const cuales = lista("cuales", [], { style: "width:auto" });
   const zona = h("div");
 
+  const losResueltos = () => todos.filter(c => !abierto(c));
+  const losAbiertos = () => todos.filter(abierto);
+
+  const pintarPestanas = () => {
+    const boton = (clave, esta, n) => h("button", {
+      clase: `pestana ${pestana === esta ? "activa" : ""}`.trim(), type: "button",
+      onclick: () => { pestana = esta; pintarTodo(); } }, llenar(clave, { n }));
+    pestanas.replaceChildren(
+      boton("man_tab_abiertos", "abiertos", losAbiertos().length),
+      boton("man_tab_resueltos", "resueltos", losResueltos().length));
+  };
+
+  const pintarAbiertos = () => {
+    const ahora = losAbiertos();
+    abiertos.replaceChildren(...(ahora.length ? ahora.map(c => tarjetaReporte(d, c, recargar))
+      : [h("p", { clase: "gris" }, t("man_sin_reportes"))]));
+  };
+
   const pintarCuales = () => {
     const antes = cuales.value;
-    const fallas = todos.filter(c => c.falla === "si").length;
+    const hechos = losResueltos();
+    const fallas = hechos.filter(c => c.falla === "si").length;
     cuales.replaceChildren(
-      h("option", { value: "" }, llenar("man_todos_casos", { n: todos.length })),
+      h("option", { value: "" }, llenar("man_todos_casos", { n: hechos.length })),
       h("option", { value: "si" }, llenar("man_solo_fallas", { n: fallas })));
     cuales.value = antes || "";
   };
 
   const pintar = () => {
     const q = caja.value.trim();
-    const vistos = todos.filter(c => (!cuales.value || c.falla === cuales.value)
-      && dice([c.titulo, c.que_se_vio, c.causa, c.solucion,
+    const hechos = losResueltos();
+    const vistos = hechos.filter(c => (!cuales.value || c.falla === cuales.value)
+      && dice([c.titulo, c.que_se_vio, c.causa, c.solucion, c.reportado_por,
                c.area ? nombreDelArea(d, c.area) : ""].join(" "), q));
     zona.replaceChildren(...(vistos.length ? vistos.map(c => tarjetaCaso(d, c, abrir))
-      : [h("p", { clase: "gris" }, t(todos.length ? "man_sin_casos_asi" : "man_sin_casos"))]));
+      : [h("p", { clase: "gris" },
+           t(hechos.length ? "man_sin_casos_asi" : "man_sin_casos"))]));
   };
 
   const cerrar = () => {
     formulario.replaceChildren();
     anotar.hidden = false;
-  };
-  const recargar = async () => {
-    todos = await api.get("/manual/casos");
-    d.casos = todos;
-    cerrar();
-    pintarCuales();
-    pintar();
   };
   function abrir(caso = null) {
     anotar.hidden = true;
@@ -708,20 +966,37 @@ function casos(main, d) {
     formulario.scrollIntoView({ block: "start" });
   }
   const anotar = h("button", { type: "button", onclick: () => abrir() }, t("man_anotar"));
+  const resueltos = h("div", {},
+    h("div", { clase: "acciones man-barra" }, anotar, caja, cuales),
+    formulario,
+    zona);
+
+  function pintarTodo() {
+    pintarPestanas();
+    abiertos.hidden = pestana !== "abiertos";
+    resueltos.hidden = pestana !== "resueltos";
+    pintarAbiertos();
+    pintarCuales();
+    pintar();
+  }
+  async function recargar() {
+    todos = await api.get("/manual/casos");
+    d.casos = todos;
+    cerrar();
+    pintarTodo();
+  }
 
   caja.addEventListener("input", pintar);
   cuales.addEventListener("change", pintar);
-  pintarCuales();
-  pintar();
+  pintarTodo();
 
-  main.append(...[
+  main.append(
     volver(),
     h("h1", {}, t("man_casos_titulo")),
     h("p", { clase: "sub" }, t("man_casos_sub")),
-    h("div", { clase: "acciones man-barra" }, anotar, caja, cuales),
-    formulario,
-    zona,
-  ].filter(Boolean));
+    pestanas,
+    abiertos,
+    resueltos);
 }
 
 /* ---------------------------------------------------------- en PDF
@@ -741,6 +1016,9 @@ async function imprimir(main, d) {
   const sintomas = d.capitulos.filter(c => c.parte === "resolver");
   const porNombre = new Map(d.permisos.actividades.map(a => [a.actividad, a]));
   const pareja = lasParejas(d);
+  /* En papel van los resueltos: un reporte abierto todavia no ensena
+     nada a quien lo lea despues. */
+  const resueltos = d.casos.filter(c => !abierto(c));
 
   const capitulo = (c, nivel = "h2") => h("div", { clase: "man-impreso-capitulo" },
     h(nivel, {}, c.titulo), texto(c));
@@ -763,7 +1041,7 @@ async function imprimir(main, d) {
         : null,
       parte(t("man_p1_titulo"), ...entender.map(c => capitulo(c))),
       parte(t("man_p2_titulo"), ...sintomas.map(c => capitulo(c, "h3"))),
-      parte(t("man_casos_titulo"), ...(d.casos.length ? d.casos.map(c => tarjetaCaso(d, c))
+      parte(t("man_casos_resueltos"), ...(resueltos.length ? resueltos.map(c => tarjetaCaso(d, c))
         : [h("p", { clase: "gris" }, t("man_sin_casos"))])),
       parte(t("man_reloj_titulo"), h("p", { clase: "chico gris" }, t("man_reloj_horas")),
         tablaDelReloj(h("tbody", {}, ...filasDelReloj(d.reloj)))),

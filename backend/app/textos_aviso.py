@@ -141,6 +141,20 @@ TEXTOS = {
         "quien": "Who",
         "que_hizo": "What they did",
         "detalle": "Detail",
+        # --- reportar una falla (seccion 92)
+        "falla_asunto": "Problem reported: {titulo}",
+        "falla_cuerpo": ("{quien} reported a problem from {desde}. It is in "
+                         "System manual > Cases, to review."),
+        "falla_desde_consola": "the console",
+        "falla_desde_app": "the field app",
+        "falla_donde": "Where",
+        "falla_que_paso": "What happened",
+        "falla_resuelta_asunto": "The problem you reported is resolved",
+        "falla_resuelta_cuerpo": ("The problem you reported on {dia} is "
+                                  "resolved. Thank you for reporting it."),
+        "falla_lo_que_reportaste": "What you reported",
+        "falla_causa": "The cause",
+        "falla_como": "How it was fixed",
         # --- el acceso: la invitacion y la recuperacion de contrasena
         "acc_inv_asunto": "Your access to Centauro Connect",
         "acc_inv_cuerpo": ("Hi, {nombre}. You now have access to Centauro "
@@ -260,6 +274,20 @@ TEXTOS = {
         "quien": "Quién",
         "que_hizo": "Qué hizo",
         "detalle": "Detalle",
+        # --- reportar una falla (seccion 92)
+        "falla_asunto": "Falla reportada: {titulo}",
+        "falla_cuerpo": ("{quien} reportó una falla desde {desde}. Está en "
+                         "Manual del sistema → Casos, por revisar."),
+        "falla_desde_consola": "la consola",
+        "falla_desde_app": "la app de campo",
+        "falla_donde": "Dónde",
+        "falla_que_paso": "Qué pasó",
+        "falla_resuelta_asunto": "La falla que reportaste quedó resuelta",
+        "falla_resuelta_cuerpo": ("La falla que reportaste el {dia} ya quedó "
+                                  "resuelta. Gracias por reportarla."),
+        "falla_lo_que_reportaste": "Lo que reportaste",
+        "falla_causa": "La causa",
+        "falla_como": "Cómo se arregló",
         # --- el acceso: la invitacion y la recuperacion de contrasena
         "acc_inv_asunto": "Tu acceso a Centauro Connect",
         "acc_inv_cuerpo": ("Hola, {nombre}. Ya tienes acceso a Centauro "
@@ -375,6 +403,20 @@ TEXTOS = {
         "quien": "Quem",
         "que_hizo": "O que fez",
         "detalle": "Detalhe",
+        # --- reportar una falla (seccion 92)
+        "falla_asunto": "Falha reportada: {titulo}",
+        "falla_cuerpo": ("{quien} reportou uma falha pelo {desde}. Está em "
+                         "Manual do sistema → Casos, para revisar."),
+        "falla_desde_consola": "console",
+        "falla_desde_app": "app de campo",
+        "falla_donde": "Onde",
+        "falla_que_paso": "O que aconteceu",
+        "falla_resuelta_asunto": "A falha que você reportou foi resolvida",
+        "falla_resuelta_cuerpo": ("A falha que você reportou em {dia} já foi "
+                                  "resolvida. Obrigado por reportá-la."),
+        "falla_lo_que_reportaste": "O que você reportou",
+        "falla_causa": "A causa",
+        "falla_como": "Como foi resolvida",
         # --- el acceso: la invitacion y la recuperacion de contrasena
         "acc_inv_asunto": "Seu acesso ao Centauro Connect",
         "acc_inv_cuerpo": ("Olá, {nombre}. Você já tem acesso ao Centauro "
