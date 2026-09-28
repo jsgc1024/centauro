@@ -522,6 +522,30 @@ def sembrar_festivos(anios: tuple = (2026, 2027)) -> dict:
         db.close()
 
 
+# Los criterios del bono con que nace el sistema. En el orden en que le
+# importan al cliente, no en el que son faciles de medir: llegar y no
+# callarse son mas de la mitad del bono, porque en proteccion ejecutiva
+# ahi esta el riesgo. MONTOS DE EJEMPLO: se ajustan en la pantalla, por
+# pais. Viven aqui y no dentro de `sembrar_bonos` porque el arranque
+# (seccion 97) los compara para saber si ya se pusieron los de verdad.
+#     codigo, nombre, umbral, monto, minutos de margen, veces
+CRITERIOS_DE_EJEMPLO = [
+    (m.CodigoCriterio.PUNTUALIDAD, "Llegar al punto", "100", "780", 5, 1),
+    (m.CodigoCriterio.SEGUIMIENTO_APP, "No dejar callada a la central",
+     "90", "650", 0, 0),
+    (m.CodigoCriterio.ENTREGA_UNIDAD, "Entregar la unidad documentada",
+     "100", "390", 0, 0),
+    (m.CodigoCriterio.CIERRE_VIATICOS, "Comprobar el dinero a tiempo",
+     "100", "390", 0, 0),
+    (m.CodigoCriterio.CAPACITACION, "Capacitacion del mes",
+     "100", "260", 0, 0),
+    # En veces, no en porcentaje: el umbral es "al menos una". Y no
+    # reparte: es el unico que suma y no resta.
+    (m.CodigoCriterio.RECOMPRA, "Que el cliente lo vuelva a pedir",
+     "1", "130", 0, 0),
+]
+
+
 def sembrar_bonos() -> dict:
     """Criterios de estrella y porcentajes de comision. MONTOS DE EJEMPLO."""
     db = SessionLocal()
@@ -530,27 +554,7 @@ def sembrar_bonos() -> dict:
         if not mx:
             return {"error": "Primero hay que sembrar los catalogos"}
 
-        # En el orden en que le importan al cliente, no en el que son
-        # faciles de medir: llegar y no callarse son mas de la mitad del
-        # bono, porque en proteccion ejecutiva ahi esta el riesgo.
-        # MONTOS DE EJEMPLO: se ajustan en la pantalla, por pais.
-        #     codigo, nombre, umbral, monto, minutos de margen, veces
-        criterios = [
-            (m.CodigoCriterio.PUNTUALIDAD, "Llegar al punto", "100", "780", 5, 1),
-            (m.CodigoCriterio.SEGUIMIENTO_APP, "No dejar callada a la central",
-             "90", "650", 0, 0),
-            (m.CodigoCriterio.ENTREGA_UNIDAD, "Entregar la unidad documentada",
-             "100", "390", 0, 0),
-            (m.CodigoCriterio.CIERRE_VIATICOS, "Comprobar el dinero a tiempo",
-             "100", "390", 0, 0),
-            (m.CodigoCriterio.CAPACITACION, "Capacitacion del mes",
-             "100", "260", 0, 0),
-            # En veces, no en porcentaje: el umbral es "al menos una".
-            # Y no reparte: es el unico que suma y no resta.
-            (m.CodigoCriterio.RECOMPRA, "Que el cliente lo vuelva a pedir",
-             "1", "130", 0, 0),
-        ]
-        for codigo, nombre, umbral, monto, minutos, veces in criterios:
+        for codigo, nombre, umbral, monto, minutos, veces in CRITERIOS_DE_EJEMPLO:
             _obtener_o_crear(db, m.CriterioEstrella,
                              {"pais_id": mx.id, "codigo": codigo},
                              {"nombre": nombre, "umbral_pct": D(umbral),

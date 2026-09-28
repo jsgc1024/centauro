@@ -2,6 +2,9 @@
 
 Lo nuevo de cada actualización, escrito para quien usa el sistema. La más nueva va arriba.
 
+## 97 · 2026-09-28 · El arranque
+En el Manual del sistema, **[El arranque](#/manual/arranque)**: lo que falta para operar todo en Connect y apagar OVH, revisándose solo, como el estado del sistema. Cinco grupos —el servidor, Odoo, el dinero, la gente y la operación—, y cada renglón dice cómo está ahora, de quién es y dónde se arregla; arriba, cuántos están listos, cuántos en camino y cuántos faltan, y cuánto falta para el 2 de noviembre. Lo que el sistema no alcanza —el respaldo y sus alertas— se confirma a mano, con nombre y fecha. Cambiar lo que vale un criterio del bono ahora queda en la bitácora de administración. Además: el icono de la app en Android ya muestra su filo dorado.
+
 ## 96 · 2026-09-28 · Ya se facturó en Odoo
 En Facturación → Por facturar, cada servicio trae **«Ya se facturó en Odoo»**: mientras la factura no está conectada con Odoo, finanzas la hace allá y aquí anota su folio y su fecha. El servicio sale de la lista, su folio se ve en Facturación y en el Historial —con quién lo anotó— y queda en la bitácora; el aprobado queda facturado, y cuando la conexión llegue no se vuelve a mandar. Un folio es de una sola factura. La anotada a mano se corrige en Cerrados del mes o al revisar el servicio; la que llega de Odoo, en Odoo. Además: las cajas de buscar ya no cambian lo que se escribe al salir de ellas, y un «no se puede» ya no repite qué hacer y lo pone en su propio renglón.
 

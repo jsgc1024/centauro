@@ -85,6 +85,9 @@ TABLAS_DE_OPERACION = [
     # del reloj y los casos resueltos. Una vuelta que dejo otra prueba
     # haria ver corriendo un reloj que en esta prueba nunca corrio.
     "vuelta_del_reloj", "caso_resuelto",
+    # Lo que el arranque confirma a mano (seccion 97): cada prueba arranca
+    # sin nada confirmado.
+    "confirmacion_arranque",
 ]
 
 

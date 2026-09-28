@@ -2,6 +2,9 @@
 
 O que há de novo em cada atualização, escrito para quem usa o sistema. A mais nova fica em cima.
 
+## 97 · 2026-09-28 · O arranque
+No Manual do sistema, **[O arranque](#/manual/arranque)**: o que falta para operar tudo no Connect e desligar o OVH, revisando-se sozinho, como o estado do sistema. Cinco grupos —o servidor, o Odoo, o dinheiro, as pessoas e a operação—, e cada linha diz como está agora, de quem é e onde se resolve; em cima, quantos estão prontos, quantos a caminho e quantos faltam, e quanto falta para 2 de novembro. O que o sistema não alcança —o backup e os seus alertas— se confirma à mão, com nome e data. Mudar o que vale um critério do bônus agora fica no registro de administração. Além disso: o ícone do app no Android já mostra a sua borda dourada.
+
 ## 96 · 2026-09-28 · Já faturado no Odoo
 Em Faturamento → A faturar, cada serviço traz **«Já faturado no Odoo»**: enquanto a fatura não está conectada com o Odoo, o financeiro a faz lá e aqui registra o número e a data. O serviço sai da lista, o número aparece em Faturamento e no Histórico —com quem o registrou— e fica no registro; o aprovado fica faturado, e quando a conexão chegar não é reenviado. Um número é de uma só fatura. A registrada à mão se corrige em Fechados do mês ou ao revisar o serviço; a que vem do Odoo, no Odoo. Além disso: as caixas de busca já não mudam o que se escreve ao sair delas, e um «não se pode» já não repete o que fazer e o coloca na sua própria linha.
 

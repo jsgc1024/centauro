@@ -1609,3 +1609,15 @@ tr.man-grupo td {
 input.ctc-cambio, select.ctc-cambio { border-color: var(--centauro);
   background: #f4f3fa; }
 .ctc-antes { margin-top: 4px; }
+
+/* El arranque (seccion 97): un renglon por cosa, con su estado al
+   frente, de quien es y donde se arregla. */
+table.arr-tabla td { vertical-align: top; padding: 9px 10px; }
+.arr-tabla td.arr-chip { width: 112px; white-space: nowrap; }
+.arr-tabla td.arr-que { font-weight: 650; width: 26%; }
+.arr-tabla td.arr-quien { width: 17%; }
+.arr-tabla td.arr-donde { width: 11%; }
+.arr-cifras { margin-bottom: 14px; }
+.arr-tabla td.arr-donde a { color: var(--centauro); font-weight: 600;
+  text-decoration: none; }
+.arr-tabla td.arr-donde a:hover { text-decoration: underline; }

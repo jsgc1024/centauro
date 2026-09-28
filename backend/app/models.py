@@ -4129,6 +4129,22 @@ class VueltaDelReloj(Base):
                                          server_default=text("0"))
 
 
+class ConfirmacionArranque(Base):
+    """Lo que el arranque no puede revisar solo, confirmado a mano
+    (seccion 97): el respaldo y sus alertas viven en el servidor, fuera
+    del alcance del sistema. Quien lo confirma y cuando; sin renglon, no
+    esta confirmado."""
+    __tablename__ = "confirmacion_arranque"
+
+    clave: Mapped[str] = mapped_column(String(40), primary_key=True)
+    confirmado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id", ondelete="SET NULL"), nullable=True)
+    confirmado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+    confirmado_por: Mapped["Persona | None"] = relationship()
+
+
 class CasoResuelto(Base):
     """Lo que se atoro, por que y como se arreglo (seccion 90).
 

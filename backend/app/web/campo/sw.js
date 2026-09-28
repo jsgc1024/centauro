@@ -19,7 +19,9 @@
    el armazon viejo del cache. */
 // v12: el icono nuevo de EP Connect, el escudo con la C (seccion 81).
 // v13: Reportar una falla desde «Yo», y la caja negra (seccion 92).
-const CACHE = "centauro-campo-v13";
+// v14: el icono de Android con su filo dorado, dentro de la zona que
+//      ningun telefono recorta (seccion 97).
+const CACHE = "centauro-campo-v14";
 const ARMAZON = [
   "/app/",
   "/app/index.html",

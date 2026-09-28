@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app import auth, fallas, manual
+from app import arranque, auth, fallas, manual
 from app import models as m
 from app.db import get_db
 
@@ -71,6 +71,38 @@ def estado(idioma: str | None = None, db: Session = Depends(get_db),
            _: m.Usuario = Depends(LEE)):
     return {"ahora": datetime.now(timezone.utc).isoformat(),
             "tarjetas": manual.estado(db, manual.idioma_de(idioma))}
+
+
+# ------------------------------------------------ el arranque (seccion 97)
+#
+# Lo que falta para operar todo en Connect y apagar OVH, revisandose
+# solo. Lo lee quien lee el manual; lo que no se revisa solo --el
+# respaldo-- lo confirma a mano cualquiera de ellos, con su nombre.
+
+@router.get("/arranque", summary="Lo que falta para operar todo en Connect")
+def ver_arranque(idioma: str | None = None, db: Session = Depends(get_db),
+                 _: m.Usuario = Depends(LEE)):
+    return arranque.revisar(db, idioma)
+
+
+@router.put("/arranque/{clave}/confirmacion",
+            summary="Confirmar a mano un renglon del arranque")
+def confirmar_arranque(clave: str, idioma: str | None = None,
+                       db: Session = Depends(get_db),
+                       usuario: m.Usuario = Depends(LEE)):
+    arranque.confirmar(db, clave, usuario)
+    db.commit()
+    return arranque.revisar(db, idioma)
+
+
+@router.delete("/arranque/{clave}/confirmacion",
+               summary="Quitar la confirmacion a mano de un renglon")
+def quitar_confirmacion_arranque(clave: str, idioma: str | None = None,
+                                 db: Session = Depends(get_db),
+                                 usuario: m.Usuario = Depends(LEE)):
+    arranque.quitar(db, clave, usuario)
+    db.commit()
+    return arranque.revisar(db, idioma)
 
 
 @router.get("/casos", summary="Los reportes abiertos primero y despues los casos resueltos")

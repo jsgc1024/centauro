@@ -155,6 +155,7 @@ export async function pantallaManual(main, resto = "") {
   }
   if (!pagina) return portada(main, d);
   if (pagina === "atorado") return atorado(main, d);
+  if (pagina === "arranque") return arranque(main, d);
   if (pagina === "leer") return leer(main, d, demas[0], demas[1]);
   if (pagina === "reloj") return reloj(main, d);
   if (pagina === "mensajes") return mensajes(main, d);
@@ -215,6 +216,8 @@ function tresPartes(d) {
     tarjeta(t("man_p1_num"), t("man_p1_titulo"), t("man_p1_sub"),
             entender.map(c => [c.titulo, `#/manual/leer/${c.id}`])),
     tarjeta(t("man_p2_num"), t("man_p2_titulo"), t("man_p2_sub"), [
+      /* El arranque (seccion 97): arriba de todo mientras exista. */
+      [t("man_p2_arranque"), "#/manual/arranque"],
       [t("man_p2_estado"), "#/manual/atorado"],
       [llenar("man_p2_sintomas", { n: sintomas.length }), "#/manual/atorado"],
       [llenar("man_p2_reportes", { n: reportes }), "#/manual/casos/abiertos"],
@@ -306,6 +309,109 @@ async function atorado(main, d) {
     losSintomas(d),
   ].filter(Boolean));
   await revisar();
+}
+
+/* ------------------------------------------------------------ el arranque
+
+   Lo que falta para operar todo en Connect y apagar OVH (seccion 97,
+   decision 6 de Salvador): se revisa solo, como el estado del sistema.
+   Cada renglon dice como esta ahora, de quien es y donde se arregla. Lo
+   que el sistema no alcanza --el respaldo-- se confirma a mano, con
+   nombre y fecha. Se quita cuando todo este en verde. */
+
+const CHIP = { ok: ["arr_listo", "ok"], alerta: ["arr_en_camino_1", "alerta"],
+               grave: ["arr_falta_1", "grave"] };
+
+async function arranque(main, d) {
+  const zona = h("div", {}, h("p", { clase: "gris" }, t("man_revisando")));
+  const pintar = (a) => zona.replaceChildren(...vistaArranque(a, pintar, revisar));
+  const revisar = async () => {
+    try {
+      pintar(await api.get(`/manual/arranque?idioma=${idioma()}`));
+    } catch (err) {
+      zona.replaceChildren(aviso(err.message, "grave"));
+    }
+  };
+  main.append(...[
+    volver(),
+    h("h1", {}, t("arr_titulo")),
+    h("p", { clase: "sub" }, t("arr_sub")),
+    enOtroIdioma(d),
+    zona,
+  ].filter(Boolean));
+  await revisar();
+}
+
+function vistaArranque(a, pintar, revisar) {
+  const r = a.resumen;
+  const cifra = (rotulo, valor, color, pie) => h("div", {},
+    h("div", { clase: "chico gris" }, rotulo),
+    h("div", { clase: "cifra", style: color ? `color:var(${color})` : null }, valor),
+    pie ? h("div", { clase: "chico gris" }, pie) : "");
+  const nodos = [
+    h("div", { clase: "corte arr-cifras" },
+      cifra(t("arr_listos"), r.listos, null, llenar("arr_de", { n: r.total })),
+      cifra(t("arr_en_camino"), r.en_camino, "--alerta"),
+      cifra(t("arr_faltan"), r.faltan, "--grave"),
+      cifra(t("arr_todo_en_connect"), diaCorto(a.fecha), null,
+            cuentaRegresiva(a.dias))),
+  ];
+  if (!r.faltan && !r.en_camino) nodos.push(aviso(t("arr_todo_verde"), "ok"));
+  for (const g of a.grupos) {
+    nodos.push(h("div", { clase: "tarjeta" },
+      h("h4", {}, g.titulo),
+      h("table", { clase: "arr-tabla" },
+        h("tbody", {}, ...g.renglones.map(x => renglonArranque(x, pintar))))));
+  }
+  nodos.push(h("div", { clase: "man-estado-cabeza" },
+    h("span", { clase: "chico gris" }, llenar("man_revisado", { h: hora(a.ahora) })),
+    h("button", { clase: "claro chico", type: "button", onclick: revisar },
+      t("man_revisar_otra_vez"))));
+  return nodos;
+}
+
+function renglonArranque(x, pintar) {
+  const [clave, tono] = CHIP[x.tono] || CHIP.alerta;
+  return h("tr", {},
+    h("td", { clase: "arr-chip" }, etiqueta(t(clave), tono)),
+    h("td", { clase: "arr-que" }, x.que),
+    h("td", {}, x.como, x.a_mano ? confirmacion(x, pintar) : ""),
+    h("td", { clase: "arr-quien chico gris" }, x.quien || "—"),
+    h("td", { clase: "arr-donde chico" },
+      x.ir ? h("a", { href: x.ir }, x.donde) : h("span", { clase: "gris" }, "—")));
+}
+
+/* Lo que se confirma a mano: con el nombre de quien lo confirma y la
+   fecha. Si algo deja de estar bien --el respaldo fallo--, se quita. */
+function confirmacion(x, pintar) {
+  const boton = h("button", { clase: x.confirmado ? "claro chico" : "chico",
+    type: "button", onclick: async () => {
+      boton.disabled = true;
+      const ruta = `/manual/arranque/${x.clave}/confirmacion?idioma=${idioma()}`;
+      try {
+        const a = x.confirmado ? await api.borrar(ruta) : await api.put(ruta, {});
+        mensaje(t(x.confirmado ? "arr_quitada" : "arr_confirmada"));
+        pintar(a);
+      } catch (err) {
+        boton.disabled = false;
+        mensaje(err.message, "grave");
+      }
+    } }, t(x.confirmado ? "arr_quitar" : "arr_confirmar"));
+  return h("div", { style: "margin-top:6px" }, boton);
+}
+
+/* «2 nov»: el mes con el nombre corto del idioma de la consola. */
+function diaCorto(iso) {
+  const [, mes, dia] = iso.split("-").map(Number);
+  return `${dia} ${t(`bon_mes_${mes}`).slice(0, 3).toLowerCase()}`;
+}
+
+function cuentaRegresiva(dias) {
+  if (dias > 13) return llenar("arr_faltan_semanas", { n: Math.floor(dias / 7) });
+  if (dias > 1) return llenar("arr_faltan_dias", { n: dias });
+  if (dias === 1) return t("arr_falta_un_dia");
+  if (dias === 0) return t("arr_es_hoy");
+  return llenar("arr_hace_dias", { n: -dias });
 }
 
 function sintoma(c, abierto) {

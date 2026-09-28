@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app import auth
+from app import accesos, auth
 from app import bonos as motor
 from app import comisiones as motor_com
 from app import models as m
@@ -285,23 +285,43 @@ def ver_criterios(pais_id: int, db: Session = Depends(get_db),
 
 @router.put("/criterios/{criterio_id}", summary="Cambiar lo que vale un criterio")
 def guardar_criterio(criterio_id: int, datos: CriterioIn,
-                     db: Session = Depends(get_db), _=Depends(CONFIGURA)):
+                     db: Session = Depends(get_db),
+                     usuario: m.Usuario = Depends(CONFIGURA)):
     """Lo que cambie aqui aplica del mes en curso en adelante. Los meses
     ya autorizados no se recalculan --son dinero-- y el motor ni
-    siquiera los mira: `evaluar` se niega sobre una evaluacion pagada."""
+    siquiera los mira: `evaluar` se niega sobre una evaluacion pagada.
+
+    Queda en la bitacora de administracion, como cualquier otro dinero
+    (seccion 97): no se anotaba, y el arranque no podia saber si el bono
+    ya tenia sus montos de verdad."""
     criterio = db.get(m.CriterioEstrella, criterio_id)
     if not criterio:
         raise HTTPException(404, f"No existe el criterio {criterio_id}")
     if datos.monto_mensual < 0:
         raise HTTPException(400, "El monto no puede ser negativo")
+    antes = _como_queda(criterio)
     criterio.monto_mensual = datos.monto_mensual
     criterio.umbral_pct = datos.umbral_pct
     criterio.tolerancia_minutos = datos.tolerancia_minutos
     criterio.tolerancia_ocasiones = datos.tolerancia_ocasiones
     criterio.reparte = datos.reparte
     criterio.activo = datos.activo
+    despues = _como_queda(criterio)
+    if despues != antes:
+        accesos.anotar(db, usuario, "criterio del bono cambiado",
+                       "criterio_estrella", criterio.id, antes=antes,
+                       despues=despues, detalle=criterio.nombre)
     db.commit()
     return {"resultado": "guardado", "criterio_id": criterio.id}
+
+
+def _como_queda(c: m.CriterioEstrella) -> str:
+    """Lo que vale un criterio, en una linea para la bitacora."""
+    return (f"{Decimal(str(c.monto_mensual)):.2f} {c.moneda.value}, umbral "
+            f"{Decimal(str(c.umbral_pct)):.2f}, margen {c.tolerancia_minutos} min "
+            f"x {c.tolerancia_ocasiones}, "
+            f"{'reparte' if c.reparte else 'no reparte'}, "
+            f"{'activo' if c.activo else 'inactivo'}")[:200]
 
 
 # ----------------------------------------------------------- el mes y el pago

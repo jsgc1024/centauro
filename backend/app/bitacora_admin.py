@@ -38,7 +38,10 @@ CATALOGOS = ("paises", "plazas", "perfiles", "categorias-vehiculo",
              "tarifario", "tarifas-recurso", "tarifas-vehiculo",
              "tabulador-viaticos", "comisiones", "personal",
              "tarifas-freelance", "vehiculos", "parametros-combustible",
-             "dias-festivos", "hospitales", "hoteles", "profesionalismo")
+             "dias-festivos", "hospitales", "hoteles", "profesionalismo",
+             # Lo que vale cada criterio del bono y lo que el arranque
+             # confirma a mano (seccion 97).
+             "criterio_estrella", "arranque")
 
 GRUPOS = {
     "accesos": ("usuario",),
@@ -92,6 +95,7 @@ TEXTOS = {
             "parametros-combustible": "Combustible",
             "dias-festivos": "Días festivos", "hospitales": "Hospitales",
             "hoteles": "Hoteles", "profesionalismo": "Pesos del profesionalismo",
+            "criterio_estrella": "Criterios del bono", "arranque": "El arranque",
         },
         "accion": {
             "catalogo creado": "Agregó «{nombre}»",
@@ -102,6 +106,9 @@ TEXTOS = {
             "foto de categoria": "Puso la foto de «{nombre}», {color}",
             "foto de categoria quitada": "Quitó la foto de «{nombre}», {color}",
             "tipo de cambio": "{antes} → {despues} pesos por dólar",
+            "criterio del bono cambiado": "«{detalle}»: {antes} → {despues}",
+            "arranque confirmado": "Confirmó a mano: {detalle}",
+            "arranque sin confirmar": "Quitó la confirmación: {detalle}",
             "acceso creado": "Le dio acceso a {persona}, como {despues}",
             "acceso desactivado": "Cerró el acceso de {persona}: «{detalle}»",
             "acceso cerrado": "Cerró el acceso de {persona}: {detalle}",
@@ -183,6 +190,7 @@ TEXTOS = {
             "parametros-combustible": "Fuel",
             "dias-festivos": "Public holidays", "hospitales": "Hospitals",
             "hoteles": "Hotels", "profesionalismo": "Professionalism weights",
+            "criterio_estrella": "Bonus criteria", "arranque": "The go-live",
         },
         "accion": {
             "catalogo creado": "Added “{nombre}”",
@@ -193,6 +201,9 @@ TEXTOS = {
             "foto de categoria": "Set the photo of “{nombre}”, {color}",
             "foto de categoria quitada": "Removed the photo of “{nombre}”, {color}",
             "tipo de cambio": "{antes} → {despues} pesos per dollar",
+            "criterio del bono cambiado": "«{detalle}»: {antes} → {despues}",
+            "arranque confirmado": "Confirmed by hand: {detalle}",
+            "arranque sin confirmar": "Removed the confirmation: {detalle}",
             "acceso creado": "Gave access to {persona}, as {despues}",
             "acceso desactivado": "Closed {persona}'s access: “{detalle}”",
             "acceso cerrado": "Closed {persona}'s access: {detalle}",
@@ -274,6 +285,7 @@ TEXTOS = {
             "parametros-combustible": "Combustível",
             "dias-festivos": "Feriados", "hospitales": "Hospitais",
             "hoteles": "Hotéis", "profesionalismo": "Pesos do profissionalismo",
+            "criterio_estrella": "Critérios do bônus", "arranque": "O arranque",
         },
         "accion": {
             "catalogo creado": "Adicionou “{nombre}”",
@@ -284,6 +296,9 @@ TEXTOS = {
             "foto de categoria": "Pôs a foto de “{nombre}”, {color}",
             "foto de categoria quitada": "Tirou a foto de “{nombre}”, {color}",
             "tipo de cambio": "{antes} → {despues} pesos por dólar",
+            "criterio del bono cambiado": "«{detalle}»: {antes} → {despues}",
+            "arranque confirmado": "Confirmou à mão: {detalle}",
+            "arranque sin confirmar": "Retirou a confirmação: {detalle}",
             "acceso creado": "Deu acesso a {persona}, como {despues}",
             "acceso desactivado": "Fechou o acesso de {persona}: “{detalle}”",
             "acceso cerrado": "Fechou o acesso de {persona}: {detalle}",

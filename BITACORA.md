@@ -6592,6 +6592,107 @@ nota de la lista dice cómo va mientras no hay conexión.
 - **Con migración** (`9c3e7a1f5b20`): el bloque de siempre, con
   `alembic upgrade head`. Solo la consola cambia; la app de campo no.
 
+## 97. El arranque
+
+Pieza 5 de «Para poder operar», la última. Decisión 6 de Salvador, 28 de
+septiembre: el arranque vive en el sistema y se revisa solo, como el
+estado del sistema —nada escrito a mano que se quede viejo—. Es la lista
+de la propuesta, viva: lo que falta para operar todo en Connect y
+apagar OVH. Con una captura de esta página se sabe cómo está producción
+sin entrar a ella.
+
+### La página
+
+En el Manual del sistema, **«El arranque»**: su liga va primero en
+«Cuando algo se atora», y la página vive en `#/manual/arranque`. La
+leen los mismos que leen el manual —sistema y calidad, administración y
+dirección general—.
+
+- **Arriba, las cuentas**: cuántos renglones están listos, cuántos en
+  camino y cuántos faltan, y cuánto falta para el lunes 2 de noviembre,
+  cuando todo lo nuevo de México pasa a Connect (decisión 7).
+- **Cinco grupos**, y cada renglón dice su estado —Listo, En camino o
+  Falta—, cómo está ahora, de quién es y dónde se arregla, con su liga:
+  - *El servidor*: el reloj, el correo, los avisos al teléfono y la
+    llave de Google Maps —los mismos que el estado del sistema—, y el
+    respaldo con sus alertas.
+  - *Odoo*: el personal de seguridad, la flota, la oficina y los
+    clientes —si ya se aplicó su primera lectura, cuántos hay en Connect
+    y cuántos quedaron pendientes en la última—, y los tarifarios, con
+    los productos sin confirmar y los clientes sin tarifario.
+  - *El dinero*: el tabulador de viáticos, las horas de cada modalidad,
+    lo que se paga por día y el bono del mes —listos en cuanto alguien
+    los cambia, con quién y cuándo; si no, «sigue con los montos de
+    ejemplo»—, y el tipo de cambio.
+  - *La gente*: los puestos; la oficina y el personal de campo con
+    acceso, y cuántos ya entraron; los avisos encendidos en el teléfono;
+    y los implantados con noviembre abierto.
+  - *La operación*: los eventuales de esta semana en Connect y las
+    fallas por revisar.
+- **Lo que el sistema no alcanza se confirma a mano**: el respaldo y sus
+  alertas viven en el servidor. «Confirmar» lo deja listo con el nombre
+  de quien lo confirmó y la fecha; si el respaldo falla, «Quitar la
+  confirmación» lo regresa a lo que falta. Las dos cosas quedan en la
+  bitácora de administración.
+- Cuando todo está en verde, la página lo dice: ya se puede quitar.
+
+### Por dentro
+
+- `arranque.py`, nuevo: revisa cada renglón al abrir la página, en
+  español y en portugués como el resto del manual. Lo del servidor lo
+  toma del estado del sistema; el dinero, de la bitácora de
+  administración; lo demás, de la base.
+- Rutas nuevas: `GET /manual/arranque` y `PUT` / `DELETE
+  /manual/arranque/{clave}/confirmacion`, con `manual.ver`.
+- Lo confirmado a mano va en su tabla, `confirmacion_arranque`
+  (migración `c4a8e2d6f193`).
+- **Cambiar lo que vale un criterio del bono ahora queda en la bitácora
+  de administración**, con lo de antes y lo de después: era el único
+  dinero que se cambiaba sin dejar rastro. Como los cambios de antes no
+  se anotaban, el arranque además compara los criterios con los de
+  ejemplo, que se sembraban dentro de `sembrar_bonos` y ahora viven a la
+  vista en `CRITERIOS_DE_EJEMPLO`.
+- En la bitácora de administración se leen con los catálogos, como
+  «Criterios del bono» y «El arranque», en los tres idiomas.
+
+### El filo dorado del ícono en Android
+
+Salvador, 28 de septiembre: en Android no salía el filo dorado del
+ícono. El ícono que Android recorta (*maskable*) iba sin marco desde la
+sección 81, porque cada teléfono lo recorta a su forma y un marco pegado
+a la orilla quedaba cortado a medias. Ahora lo lleva: el ícono completo
+se reduce para que el marco quede entero dentro de la zona que ningún
+teléfono recorta —un círculo de radio 40 % del ancho—, con el filo un
+poco más grueso para que se lea en el tamaño del teléfono. Van el de
+512 y uno nuevo de 192, el manifiesto los pide con `?v=2` y el armazón
+guardado sube a `centauro-campo-v14`.
+
+- Donde la app ya estaba instalada, Android cambia el ícono por su
+  cuenta al abrirla, pero puede tardar unos días. Para verlo ya, se
+  quita del inicio y se vuelve a instalar desde `appep.mycentauro.lat`.
+
+### Las pruebas
+
+- `tests/test_arranque.py`: los cinco grupos con sus cuentas, cada
+  renglón con su estado y lo que dice, y cada liga lleva a una pantalla
+  que existe; en portugués, y en inglés se lee en español; el respaldo
+  se confirma a mano con nombre, queda en la bitácora y se quita, y lo
+  que se revisa solo no se confirma; el dinero de ejemplo falta y un
+  cambio al tabulador o al bono lo pone listo con quién; las fallas por
+  revisar dicen cuántas; y lo leen los mismos que el manual. Al terminar
+  deja el tabulador y el bono como estaban: son catálogo y no se vacían
+  entre pruebas —la primera vuelta dejó el tabulador cambiado y la
+  prueba de viáticos que corrió después encontró los alimentos en 375,
+  no en 350—.
+- La migración sube, baja y vuelve a subir.
+- La vista previa con los datos de prueba, en español y en inglés.
+
+### Para subirlo
+
+- **Con migración** (`c4a8e2d6f193`): el bloque de siempre, con
+  `alembic upgrade head`. Cambian la consola y la app de campo —su
+  ícono—.
+
 ## 14. Lo que falta
 
 ### Abierto
@@ -6648,9 +6749,10 @@ nota de la lista dice cómo va mientras no hay conexión.
   no se pasan datos, lo nuevo nace en Connect. La pieza 1, la
   cotización autorizada en el servicio, quedó hecha en la sección 94, y
   la 2, corregir los contactos del servicio, en la 95 (que los avisos
-  del día le lleguen al principal de cada equipo ya se hizo en la 91), y
-  la 4, anotar la factura hecha en Odoo, en la 96. Sigue la 5 —el
-  arranque en vivo—.
+  del día le lleguen al principal de cada equipo ya se hizo en la 91),
+  la 4, anotar la factura hecha en Odoo, en la 96, y la 5, el arranque,
+  en la 97. Las cinco piezas quedaron hechas; lo que sigue lo dice el
+  arranque, en vivo.
 - **El primer agente del sistema: los casos resueltos** (sección 90).
   Salvador, 27 de septiembre: «más adelante podemos poner a un agente
   dedicado a ello… será el primer agente que coloquemos en el sistema».
