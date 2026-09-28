@@ -696,6 +696,9 @@ AYUDA_POR_PANTALLA = {
     # dice para que sirve, cuando se nota que falta y de donde salen los
     # precios, que es lo primero que alguien quiere cuadrar.
     "cotizacion.js": 1,
+    # Corregir los contactos del servicio (seccion 95): un "?" que dice
+    # para que sirve y cuando se nota que hace falta.
+    "contactos.js": 1,
 
     # --- las que no, y por que
     "api.js": 0,        # habla con el servidor; no pinta nada

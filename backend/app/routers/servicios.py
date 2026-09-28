@@ -3,11 +3,13 @@ from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app import accesos
 from app import auditoria
 from app import auth
+from app import contactos_servicio
 from app import programacion
 from app import push
 from app import telefonos
@@ -1813,6 +1815,72 @@ def confirmar_asignacion(servicio_id: int, db: Session = Depends(get_db),
             "estatus": servicio.estatus.value,
             "versiones": versiones,
             "sigue": "El TS queda liberado: descargalo y mandalo por correo"}
+
+
+# ------------------------------------------------ corregir los contactos
+#
+# Seccion 95: el correo y el telefono de quien solicita y del principal ya
+# se pueden corregir despues del alta. Los corrigen los mismos que hacen
+# el alta --el consultor, o quien lo cubre, que queda como cobertura--.
+
+class ContactoIn(BaseModel):
+    nombre: str | None = Field(default=None, max_length=300)
+    apellidos: str | None = Field(default=None, max_length=300)
+    correo: str | None = Field(default=None, max_length=300)
+    telefono: str | None = Field(default=None, max_length=80)
+
+
+class SolicitaIn(ContactoIn):
+    # Otro de la lista del cliente, si se cambia a la persona.
+    solicitante_id: int | None = None
+    idioma: str | None = None
+    # Corregirlo tambien en la lista del cliente, para el siguiente servicio.
+    corregir_en_lista: bool = False
+
+
+class PrincipalIn(ContactoIn):
+    idioma: str | None = None
+
+
+class PrincipalDelEquipoIn(ContactoIn):
+    equipo_id: int
+
+
+class ContactosIn(BaseModel):
+    """Lo que no viene no se toca."""
+    solicitante: SolicitaIn | None = None
+    ejecutivo: PrincipalIn | None = None
+    equipos: list[PrincipalDelEquipoIn] = []
+
+
+@router.get("/{servicio_id}/contactos",
+            summary="Los contactos del servicio, para corregirlos")
+def contactos_del_servicio(servicio_id: int, db: Session = Depends(get_db),
+                           usuario: m.Usuario = Depends(
+                               auth.puede("servicios.alta"))):
+    servicio = db.get(m.Servicio, servicio_id)
+    if not servicio:
+        raise HTTPException(404, f"No existe el servicio {servicio_id}")
+    return contactos_servicio.datos(db, servicio, usuario)
+
+
+@router.patch("/{servicio_id}/contactos",
+              summary="Corregir los contactos del servicio")
+def corregir_contactos(servicio_id: int, datos: ContactosIn,
+                       db: Session = Depends(get_db),
+                       usuario: m.Usuario = Depends(auth.puede("servicios.alta"))):
+    """De aqui en adelante: los avisos que no han salido y la encuesta sin
+    contestar se van a los datos nuevos. Queda en la bitacora del servicio
+    con lo de antes."""
+    resultado = contactos_servicio.corregir(
+        db, servicio_id, {
+            "solicitante": (datos.solicitante.model_dump()
+                            if datos.solicitante else None),
+            "ejecutivo": datos.ejecutivo.model_dump() if datos.ejecutivo else None,
+            "equipos": [e.model_dump() for e in datos.equipos]},
+        usuario)
+    db.commit()
+    return resultado
 
 
 @router.put("/{servicio_id}/vestimenta",

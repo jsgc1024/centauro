@@ -2,6 +2,9 @@
 
 Lo nuevo de cada actualización, escrito para quien usa el sistema. La más nueva va arriba.
 
+## 95 · 2026-09-28 · Corregir los contactos del servicio
+En el servicio, arriba junto al estatus, **Corregir los contactos**: el nombre, el correo, el teléfono y el idioma de quien solicita y del principal —y los datos del principal de un equipo que lleva el suyo— se corrigen después del alta, mientras el servicio no esté cerrado ni cancelado. Lo corrige el consultor del servicio o quien lo cubre. Lo que cambia se marca con lo de antes debajo; quien solicita se puede cambiar por otro de la lista del cliente y corregirse también en esa lista. Los avisos que no han salido y la encuesta sin contestar se van a los datos nuevos, el task sheet que se descargue ya los trae, y queda en la bitácora del servicio con lo de antes. Si el correo de antes está en otro servicio abierto del cliente, se dice en cuál. Además, en Unidades, la lectura del GPS dice lo que de verdad pasa: cada 2 minutos con servicios en la calle, y cada 15 sin nadie en la calle; y la cotización de un cliente sin tarifario dice dónde se le pone: Gestión Administrativa → Odoo, en «Clientes sin tarifario».
+
 ## 94 · 2026-09-28 · La cotización autorizada, en el servicio
 Mientras Odoo no manda la cotización, el consultor del servicio —o quien lo cubre— la registra en el eventual, debajo del encabezado, en **La cotización autorizada**: qué lleva cada día, cómo se cobran los gastos —dentro del precio, a monto fijo o por comprobar— y quién la autorizó del lado del cliente, el día y el folio de Odoo si existe. Los precios salen del tarifario del cliente, igual que al cerrar, con el paquete si la lista lo pacta, y «Tomar lo asignado» la llena con quien ya va. Se guarda ya autorizada; si el cliente cambia algo antes del visto bueno se recotiza con su motivo. Con ella el visto bueno ya tiene contra qué comparar.
 

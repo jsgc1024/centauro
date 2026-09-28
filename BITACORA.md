@@ -6409,6 +6409,111 @@ visto bueno ya no se recotiza aquí: finanzas lo regresa, y ahí sí.
 - **Con migración** (`6e1f3b8c2d47`): el bloque de siempre, con
   `alembic upgrade head`. Solo la consola cambia; la app de campo no.
 
+## 95. Corregir los contactos del servicio
+
+Pieza 2 de «Para poder operar». Decisión 3 de Salvador, 28 de
+septiembre: los contactos del servicio los corrigen el consultor y quien
+lo cubre. El correo y el teléfono de quien solicita y del principal se
+capturaban en el alta y ya no se podían corregir: un correo mal escrito
+mandaba a otro lado los avisos del día, el task sheet y la encuesta, y
+la única salida era borrar el servicio y darlo de alta otra vez, que ya
+no se puede en cuanto arranca.
+
+### La pantalla
+
+En el encabezado del servicio, junto al estatus, **«Corregir los
+contactos»**. Lo ve quien hace el alta —el consultor, o quien lo cubre,
+que queda anotado como cobertura— mientras el servicio no esté cerrado
+ni cancelado. Se abre debajo de los contactos, con su «?»:
+
+- **Ejecutivo principal** y **Solicita**, en el orden del encabezado:
+  nombre, apellido, correo, teléfono e idioma de sus correos. Quien
+  solicita se puede cambiar por otro de la lista del cliente —trae sus
+  datos, y se pueden corregir encima— y, con la casilla «Corregirlo
+  también en la lista del cliente», queda bien para el siguiente
+  servicio. La casilla solo la ve quien puede corregir la lista.
+- El **principal de cada equipo que lleva el suyo**, con sus datos. El
+  equipo que hereda el del servicio se corrige con el del servicio.
+- **Lo que cambia se marca, con lo de antes debajo**; si se regresa a lo
+  de antes, se desmarca solo. «Guardar» no se prende hasta que algo
+  cambia, y solo se manda lo que cambió: un principal que nunca se
+  capturó no detiene la corrección del correo de quien solicita.
+- El botón para cerrarla dice «Cerrar sin guardar» y no «Cancelar»:
+  arriba, junto al estatus, «Cancelar» cancela el servicio.
+- Al guardar se recarga la pantalla —el encabezado, los equipos y la
+  cotización ya con los datos nuevos— y debajo de los contactos queda,
+  una sola vez, lo que pasó: cuántos avisos se fueron a los datos
+  nuevos, si la encuesta también, si se corrigió la lista, qué hacer con
+  el task sheet si ya se había liberado y **en qué otros servicios
+  abiertos del cliente sigue el correo de antes**, para corregirlos ahí.
+
+### Lo que pasa al corregir
+
+- El servicio guarda los datos nuevos; el teléfono, con su clave de
+  país. Lo mal escrito no se guarda: un correo sin forma de correo o con
+  un dominio de dedazo —gamil.com—, un nombre vacío o un idioma que no
+  es de los tres.
+- Los **avisos que no han salido** se van a la dirección nueva; los que
+  ya salieron no se tocan.
+- La **encuesta sin contestar**, sin vencer, le llega a quien es ahora,
+  en su idioma.
+- El **task sheet** ya salía con lo último capturado: el que se descargue
+  después de guardar trae los datos nuevos. Si ya se había liberado, la
+  pantalla lo dice antes y después de guardar.
+- Queda en la **bitácora del servicio**: quién lo corrigió, cuándo y,
+  campo por campo, lo de antes y lo de ahora.
+- Si el correo nuevo de quien solicita ya es de otra persona de la lista
+  del cliente, no se duplica: se dice de quién es, para escogerla.
+- Los otros servicios abiertos con el correo de antes **no se corrigen
+  solos**: cada servicio lo corrige quien lo lleva, con su propia
+  bitácora. Se dicen, nada más.
+
+### Por dentro
+
+- `contactos_servicio.py`, nuevo: `datos` —lo que la forma necesita— y
+  `corregir`, que no confirma; la ruta confirma.
+- Rutas nuevas: `GET /servicios/{id}/contactos` y `PATCH
+  /servicios/{id}/contactos`, con la actividad del alta
+  (`servicios.alta`); corregir la lista pide además `solicitantes.editar`.
+- `web/contactos.js`, nuevo, y el botón en el encabezado de
+  `servicio.js`. Sin migración.
+
+### Las pruebas
+
+- `tests/test_contactos_servicio.py`: corrige a quien solicita y al
+  principal, con el teléfono con su clave y lo de antes en la bitácora;
+  el aviso pendiente y la encuesta se van a los datos nuevos y lo que ya
+  salió no se toca; otro de la lista, corregido también en la lista, y
+  el correo de otro contacto no se duplica; lo mal escrito no se guarda;
+  cancelado ya no se corrige; quien cubre queda anotado y finanzas y la
+  central no corrigen; el principal del equipo que lleva el suyo, y el
+  que hereda no; y dice en qué otro servicio abierto sigue el correo de
+  antes, sin contar el cancelado.
+- La vista previa con los datos de prueba: un servicio en curso con el
+  task sheet liberado y tres avisos pendientes, un correo de dedazo que
+  no se guarda, y un servicio de dos equipos con el principal de Beta.
+
+### Dos arreglos chicos
+
+- En Unidades, la línea de la lectura decía «se vuelve a leer solo cada
+  2 minutos», y sin nadie en la calle no es cierto: `gps.leer` corre cada
+  dos minutos, pero sin servicios en ventana solo vuelve a pedir las
+  posiciones cada 15 (`MINUTOS_LECTURA_TRANQUILA`). Salvador lo vio el 28
+  de septiembre: «Leído de Pegasus hace 7 min». Ahora lo dice así, en los
+  tres idiomas, y el manual también.
+- La cotización de un cliente sin tarifario mandaba a finanzas a
+  Facturación → Tarifarios, y ahí no se pone: el tarifario de un cliente
+  lo pone sistema y calidad en Gestión Administrativa → Odoo, en
+  «Clientes sin tarifario» (`odoo.administrar`), como ya decía el manual.
+  Salvador, 28 de septiembre, en el alta de Diageo —«(sin tarifario)»—:
+  «No veo la cotización autorizada». El bloque vive en el servicio ya
+  dado de alta, no en el alta.
+
+### Para subirlo
+
+- **Sin migración**: el bloque de siempre. Solo la consola cambia; la
+  app de campo no.
+
 ## 14. Lo que falta
 
 ### Abierto
@@ -6463,9 +6568,11 @@ visto bueno ya no se recotiza aquí: finanzas lo regresa, y ahí sí.
   **tres** consultores de clientes distintos, no dos (los nombres,
   después); y 8) lo que ya corre en OVH o en la app vieja termina allá:
   no se pasan datos, lo nuevo nace en Connect. La pieza 1, la
-  cotización autorizada en el servicio, quedó hecha en la sección 94.
-  Siguen la 2 (corregir los contactos; que los avisos del día le
-  lleguen al principal de cada equipo ya se hizo en la 91), la 4 y la 5.
+  cotización autorizada en el servicio, quedó hecha en la sección 94, y
+  la 2, corregir los contactos del servicio, en la 95 (que los avisos
+  del día le lleguen al principal de cada equipo ya se hizo en la 91).
+  Siguen la 4 —anotar la factura hecha en Odoo— y la 5 —el arranque en
+  vivo—.
 - **El primer agente del sistema: los casos resueltos** (sección 90).
   Salvador, 27 de septiembre: «más adelante podemos poner a un agente
   dedicado a ello… será el primer agente que coloquemos en el sistema».

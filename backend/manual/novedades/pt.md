@@ -2,6 +2,9 @@
 
 O que há de novo em cada atualização, escrito para quem usa o sistema. A mais nova fica em cima.
 
+## 95 · 2026-09-28 · Corrigir os contatos do serviço
+No serviço, em cima junto ao status, **Corrigir os contatos**: o nome, o e-mail, o telefone e o idioma de quem solicita e do executivo principal —e os dados do executivo principal de uma equipe que leva o seu— se corrigem depois do cadastro, enquanto o serviço não estiver fechado nem cancelado. Quem corrige é o consultor do serviço ou quem o cobre. O que muda fica marcado com o anterior embaixo; quem solicita pode ser trocado por outro da lista do cliente e corrigido também nessa lista. Os avisos que ainda não saíram e a pesquisa sem resposta vão para os dados novos, o task sheet que for baixado já os traz, e fica no registro do serviço com o que havia antes. Se o e-mail anterior estiver em outro serviço aberto do cliente, diz-se em qual. Além disso, em Unidades, a leitura do GPS diz o que de fato acontece: a cada 2 minutos com serviços na rua, e a cada 15 sem ninguém na rua; e a cotação de um cliente sem tabela de preços diz onde ela é colocada: Gestão Administrativa → Odoo, em «Clientes sem tabela de preços».
+
 ## 94 · 2026-09-28 · A cotação autorizada, no serviço
 Enquanto o Odoo não envia a cotação, o consultor do serviço —ou quem o cobre— a registra no eventual, abaixo do cabeçalho, em **A cotação autorizada**: o que leva cada dia, como se cobram as despesas —dentro do preço, a valor fixo ou por comprovar— e quem autorizou do lado do cliente, o dia e o número do Odoo se existir. Os preços saem da tabela do cliente, igual ao fechamento, com o pacote se a lista o pactua, e «Usar o que está atribuído» a preenche com quem já vai. É salva já autorizada; se o cliente mudar algo antes do visto bom, recota-se com o motivo. Com ela o visto bom já tem contra o que comparar.
 

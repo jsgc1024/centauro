@@ -4,7 +4,7 @@ parte: resolver
 orden: 610
 area: Correo y avisos
 titulo: Un correo no le llegó al cliente
-buscar: correo no llego cliente ejecutivo solicitante aviso equipo en el lugar servicio iniciado terminado task sheet encuesta apagado vencido sin correo fallo spam
+buscar: correo no llego cliente ejecutivo solicitante aviso equipo en el lugar servicio iniciado terminado task sheet encuesta apagado vencido sin correo fallo spam corregir contactos mal escrito rebota
 ---
 ### Qué ves
 El ejecutivo o quien pidió el servicio dice que no le llegó el aviso: el equipo en el punto, el servicio iniciado o terminado, el task sheet, un cambio de equipo o la encuesta.
@@ -18,12 +18,12 @@ El ejecutivo o quien pidió el servicio dice que no le llegó el aviso: el equip
 6. **Ese aviso no se manda ese día.** Un cambio de equipo va por correo solo si es del día en curso; el de otro día viaja en el task sheet.
 
 ### Cómo confirmarlo
-El [estado del sistema](#/manual/atorado) dice si el correo está encendido, cuántos avisos esperan y cuántos fallaron. En el servicio se revisa que el correo del ejecutivo y el de quien lo pidió estén bien escritos.
+El [estado del sistema](#/manual/atorado) dice si el correo está encendido, cuántos avisos esperan y cuántos fallaron. En el servicio, **Corregir los contactos** —arriba, junto al estatus— muestra el correo del ejecutivo y el de quien lo pidió, tal como están.
 
 ### Cómo se arregla
 - **Apagado:** lo enciende Salvador en el servidor.
 - **Otra carpeta:** que el cliente marque el correo como seguro.
-- **Sin correo o mal escrito:** hoy no se corrige desde la consola después del alta; se le avisa a Salvador.
+- **Sin correo o mal escrito:** el consultor del servicio —o quien lo cubre— lo corrige en **Corregir los contactos**, mientras el servicio no esté cerrado ni cancelado. Los avisos que no han salido y la encuesta sin contestar se van a la dirección nueva, y queda en la bitácora del servicio con lo de antes. Si el correo de antes está en otro servicio abierto del cliente, al guardar se dice en cuál.
 - Lo que ya venció no se vuelve a mandar: de eso ya pasó el momento.
 
 > **La causa de fondo:** «no se mandó» y «no le llegó» son dos cosas distintas. El sistema dice cuál fue, y nunca manda tarde lo que ya no sirve.

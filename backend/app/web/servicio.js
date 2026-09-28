@@ -12,6 +12,7 @@ import { tarjetaCierre } from "./cierre.js";
 import { soloConsulta, tiene } from "./menu.js";
 import { bloqueTarifario } from "./tarifarios.js";
 import { bloqueCotizacion } from "./cotizacion.js";
+import { avisoDeContactos, botonContactos } from "./contactos.js";
 
 export async function pantallaServicio(main, servicioId) {
   const [servicio, cat] = await Promise.all([
@@ -90,6 +91,9 @@ async function bloqueVistoBueno(servicio, cat) {
 /* ------------------------------------------------------------ encabezado */
 
 function encabezado(servicio, cliente, plaza) {
+  /* Donde se abre «Corregir los contactos» (seccion 95): debajo de los
+     contactos que corrige. */
+  const zonaContactos = h("div", { id: "contactos" });
   return h("div", { clase: "tarjeta" },
     h("div", { style: "display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap" },
       h("div", {},
@@ -106,6 +110,11 @@ function encabezado(servicio, cliente, plaza) {
         etiqueta(estatus(servicio.estatus),
                  servicio.estatus === "cancelado" ? "grave" : ""),
         h("div", { clase: "acciones bajo-sello" },
+          /* Los contactos se corrigen mientras el servicio siga vivo, y
+             los corrige quien hace el alta (seccion 95). */
+          puedeCorregirContactos(servicio)
+            ? botonContactos(servicio, cliente, zonaContactos)
+            : "",
           /* El otro lado del mismo servicio: el contrato del mes, la
              plantilla, los viaticos y el taller. Solo en implantado,
              porque un eventual no tiene contrato mensual. */
@@ -133,8 +142,14 @@ function encabezado(servicio, cliente, plaza) {
         h("div", { clase: "gris num" }, servicio.ejecutivo_telefono || "")),
       h("div", {},
         h("h4", {}, t("srv_solicita")),
-        h("div", {}, servicio.solicitante_completo || h("span", { clase: "gris" }, "—")))));
+        h("div", {}, servicio.solicitante_completo || h("span", { clase: "gris" }, "—")))),
+    avisoDeContactos(servicio),
+    zonaContactos);
 }
+
+const puedeCorregirContactos = (servicio) =>
+  tiene(sesion.usuario, "servicios.alta")
+  && !["cancelado", "cerrado"].includes(servicio.estatus);
 
 /* El tipo del servicio en el idioma de quien mira (seccion 91): el
    encabezado pintaba la clave, «eventual», tambien en ingles. */

@@ -1600,3 +1600,9 @@ tr.man-grupo td {
 .cot-pie { display: flex; justify-content: space-between; align-items: flex-end;
   gap: 16px; flex-wrap: wrap; margin-top: 18px; padding-top: 14px;
   border-top: 1px solid var(--linea); }
+
+/* Corregir los contactos (seccion 95). Lo que cambio se ve de lejos y
+   lleva lo de antes debajo; si se regresa a lo de antes, se desmarca. */
+input.ctc-cambio, select.ctc-cambio { border-color: var(--centauro);
+  background: #f4f3fa; }
+.ctc-antes { margin-top: 4px; }
