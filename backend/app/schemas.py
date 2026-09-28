@@ -655,8 +655,11 @@ class ViaticoOut(Base):
 
 class AdicionalIn(Base):
     concepto: ConceptoViatico
-    monto: Decimal
-    descripcion: str | None = None
+    # Mayor que cero: un adicional negativo perdonaba deuda sin motivo
+    # (seccion 98). Lo que se cobra de menos se resuelve rechazando el
+    # comprobante o con descuento, con su rastro.
+    monto: Decimal = Field(gt=0)
+    descripcion: str | None = Field(default=None, max_length=200)
 
 
 # ------------------------------------------- viaticos por equipo

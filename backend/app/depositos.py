@@ -84,6 +84,20 @@ def por_pagar(db: Session, solicitud_ids: list[int],
                         "equipo"),
             "que_hacer": ("Si esa persona anda en dos servicios, son dos "
                           "depositos.")})
+    # Sobre un viatico ya cerrado no cae dinero nuevo: nadie podria
+    # comprobarlo (seccion 98). Lo cerrado se cerro con lo depositado;
+    # si hace falta mas, el consultor lo abre otra vez.
+    cerrados = [f.id for f in filas
+                if f.asignacion.estatus in (m.EstatusViatico.CERRADO,
+                                            m.EstatusViatico.DEVUELTO)]
+    if cerrados:
+        raise HTTPException(409, {
+            "mensaje": "Ese dinero ya esta cerrado: no se le puede depositar",
+            "que_hacer": ("El consultor ya cerro la comprobacion de esa "
+                          "persona. Si el deposito de verdad salio, hay "
+                          "que registrarlo como devolucion pendiente con "
+                          "el consultor."),
+            "solicitudes": cerrados})
     return filas
 
 
@@ -128,6 +142,13 @@ def registrar(db: Session, solicitud_ids: list[int], referencia: str | None,
     filas = por_pagar(db, solicitud_ids, tardias=sobre_cancelada)
     primera = filas[0]
     jornada = primera.asignacion.jornada
+    # La parte que ya estaba cancelada cuando salio el dinero. Se
+    # escribe aqui porque al confirmar las solicitudes esa huella se
+    # pierde, y es justo lo que el consultor tiene que aplicar o pedir
+    # de vuelta.
+    tardio = sum((_d(f.monto) for f in filas
+                  if f.estatus == m.EstatusTransferencia.CANCELADA),
+                 Decimal("0"))
 
     deposito = m.DepositoBancario(
         persona_id=primera.asignacion.persona_id,
@@ -141,7 +162,8 @@ def registrar(db: Session, solicitud_ids: list[int], referencia: str | None,
         # El dinero salio despues de que alguien cancelo la solicitud.
         # Queda marcado: no es un deposito normal, es dinero que hay que
         # aplicar o pedir de vuelta.
-        sobre_cancelada=sobre_cancelada,
+        sobre_cancelada=sobre_cancelada and tardio > 0,
+        monto_sobre_cancelada=tardio if sobre_cancelada and tardio > 0 else None,
         despachado_por_id=despachado_por_id)
     db.add(deposito)
     db.flush()
@@ -228,6 +250,18 @@ def anular(db: Session, deposito_id: int, motivo: str,
                         f"subio {cuantos} comprobante(s) de gasto."),
             "que_hacer": ("Si el dinero tiene que regresar, se registra "
                           "como devolucion.")})
+    # Tampoco si ya regreso algo de ese dinero: anularlo pondria la
+    # solicitud otra vez por pagar, encima de lo devuelto (seccion 98).
+    regreso = [f.asignacion_id for f in deposito.solicitudes
+               if _d(f.asignacion.monto_devuelto) > 0
+               or any(x.estatus != m.EstatusDevolucion.RECHAZADA
+                      for x in f.asignacion.devoluciones)]
+    if regreso:
+        raise HTTPException(409, {
+            "mensaje": ("Este deposito ya no se puede anular: la persona ya "
+                        "devolvio o declaro una devolucion de ese dinero."),
+            "que_hacer": ("Lo que sobre se resuelve con otra devolucion; "
+                          "lo que falte, con la comprobacion.")})
 
     devueltas = []
     for fila in list(deposito.solicitudes):

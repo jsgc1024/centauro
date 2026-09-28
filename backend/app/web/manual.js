@@ -411,6 +411,7 @@ function cuentaRegresiva(dias) {
   if (dias > 1) return llenar("arr_faltan_dias", { n: dias });
   if (dias === 1) return t("arr_falta_un_dia");
   if (dias === 0) return t("arr_es_hoy");
+  if (dias === -1) return t("arr_fue_ayer");
   return llenar("arr_hace_dias", { n: -dias });
 }
 

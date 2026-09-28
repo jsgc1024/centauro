@@ -25,6 +25,8 @@ Dirección general, que lo alcanza todo, es la única excepción. Por eso un int
 
 Para cerrarlo no puede quedar nada en el camino: ni depósitos autorizados sin depositar, ni una devolución que finanzas todavía no ve entrar, ni comprobantes sin revisar. Lo que falte por comprobar al vencer su plazo se cierra con **descuento a su nómina**; lo comprobado de más se cubre con viáticos adicionales o se rechaza el comprobante que no aplica.
 
+Lo que se cancela se cancela con su depósito: al cancelar el servicio, quitar un día o relevar a alguien por contingencia, el depósito que finanzas todavía no hace se cancela solo, y el que ya está con finanzas queda pedido en su bandeja hasta que finanzas confirme si el dinero salió. Si finanzas fue al banco con lo que vio y algo se canceló mientras tanto, el depósito se registra tal como salió y la parte ya cancelada queda marcada en el servicio, para aplicarla o pedirla de vuelta. Lo que le sobra a alguien del viaje se devuelve junto, no por día; y sobre dinero ya cerrado no cae más.
+
 ## El cierre y la factura
 Al vencer las 24 horas del personal —o antes, si todo el dinero ya cerró— el servicio espera el visto bueno del consultor, que tiene sus propias 24 horas. Para mandarlo a finanzas no puede tener nada por corregir: sin la cotización autorizada, con una desviación sin justificar, sin tipo de cambio, con un día sin su marca de fin o con viáticos sin cerrar, no sale. Finanzas lo factura o se lo regresa con el motivo escrito, y lo regresado tiene 24 horas para volver. Mientras la factura no está conectada con Odoo, se hace allá y se anota en Facturación → Por facturar con «Ya se facturó en Odoo»: su folio y su fecha. La anotada a mano se corrige aquí mismo; la que llega de Odoo, en Odoo.
 

@@ -210,7 +210,13 @@ def test_no_se_libera_la_hoja_con_dias_en_ambar(cliente, sesion, datos):
     """Un fin de semana contratado y sin nadie no se manda al cliente."""
     hoy = date.today()
     # Un mes que empieza hoy y corre los siete dias: los fines de semana
-    # nacen en ambar, sin gente, a proposito.
+    # nacen en ambar, sin gente, a proposito. Si a este mes ya no le
+    # queda fin de semana --un lunes 28--, se arma el que sigue.
+    ultimo = calendar.monthrange(hoy.year, hoy.month)[1]
+    if not any(date(hoy.year, hoy.month, d).weekday() >= 5
+               for d in range(hoy.day, ultimo + 1)):
+        anio, mes = _siguiente(hoy)
+        hoy = date(anio, mes, 1)
     alta, h = _alta(cliente, sesion, datos, inicio=hoy, dias="todos")
     servicio_id = alta["servicio_id"]
 

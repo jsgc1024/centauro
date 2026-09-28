@@ -1352,9 +1352,20 @@ function depositos(servicio) {
               t("cmp_ref").replace("{ref}", d.referencia))
           : null),
       d.tiene_comprobante
-        ? h("a", { clase: "chico", target: "_blank",
-                   href: `/viaticos/depositos/${d.id}/comprobante` },
-            t("cmp_ver_comprobante"))
+        ? h("button", { clase: "claro chico", type: "button",
+            /* Con la sesion puesta: una pestana nueva no lleva el
+               token y salia "no autenticado" (seccion 98). */
+            onclick: async (e) => {
+              e.target.disabled = true;
+              try {
+                const url = await api.imagen(
+                  `/viaticos/depositos/${d.id}/comprobante`);
+                const pestana = window.open("", "_blank");
+                pestana.document.write(
+                  `<img src="${url}" style="max-width:100%">`);
+              } catch (err) { alert(err.message); }
+              e.target.disabled = false;
+            } }, t("cmp_ver_comprobante"))
         : h("span", { clase: "chico gris" }, t("cmp_sin_comprobante")))))];
 }
 
@@ -1972,12 +1983,13 @@ function devolver(servicio) {
     onclick: () => { form.hidden = !form.hidden; } },
     t("cmp_devolver"));
 
-  const dia = document.createElement("select");
-  for (const d of servicio.dias) {
-    if (!(d.por_devolver > 0)) continue;
-    dia.append(h("option", { value: d.viatico_id },
-      `${d.fecha} · $${d.por_devolver.toLocaleString(local())}`));
-  }
+  /* Lo que sobra es del viaje entero, no de un dia: el dinero se
+     deposita junto y se gasta junto (seccion 98). Antes la persona
+     tenia que escoger un dia, y ninguno aceptaba el sobrante de los
+     tres. La devolucion se cuelga del primer dia con dinero y el
+     servidor la topa contra el total. */
+  const conDinero = servicio.dias.filter(d => d.entregado > 0);
+  const viaticoId = (conDinero[0] || servicio.dias[0] || {}).viatico_id;
 
   const monto = h("input", { type: "number", inputmode: "decimal",
                              step: "0.01", min: "0", placeholder: "0.00" });
@@ -2011,7 +2023,7 @@ function devolver(servicio) {
     }
     e.target.disabled = true;
     try {
-      await api.post(`/campo/viaticos/${dia.value}/devolucion`, {
+      await api.post(`/campo/viaticos/${viaticoId}/devolucion`, {
         monto: monto.value,
         referencia: referencia.value || null,
         imagen,
@@ -2025,7 +2037,9 @@ function devolver(servicio) {
   }
 
   form.append(
-    h("div", { clase: "campo" }, h("label", {}, t("cmp_dia")), dia),
+    h("div", { clase: "chico gris", style: "margin-bottom:6px" },
+      t("cmp_sobra").replace("{m}",
+        `$${servicio.por_devolver.toLocaleString(local())}`)),
     h("div", { clase: "campo" }, h("label", {}, t("cmp_cuanto_devuelves")),
       monto),
     h("div", { clase: "campo" }, h("label", {}, t("cmp_referencia")),
@@ -2046,8 +2060,11 @@ function comprobar(servicio) {
     onclick: () => { form.hidden = !form.hidden; } },
     t("cmp_comprobar_gasto"));
 
+  /* Solo los dias que ya tienen dinero: un gasto cargado a un dia sin
+     deposito no tenia contra que comprobarse (seccion 98). */
   const dia = document.createElement("select");
   for (const d of servicio.dias) {
+    if (!(d.entregado > 0)) continue;
     dia.append(h("option", { value: d.viatico_id },
       `${d.fecha} · $${d.entregado.toLocaleString(local())}`));
   }

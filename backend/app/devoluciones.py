@@ -52,17 +52,44 @@ def declarado_pendiente(viatico: m.AsignacionViatico) -> Decimal:
 
 
 def por_devolver(viatico: m.AsignacionViatico) -> Decimal:
-    """Lo que todavia puede regresar.
+    """Lo que todavia puede regresar de ese dia.
 
-    Lo entregado menos lo comprobado, lo ya devuelto y lo declarado a la
-    espera. El descuento no se resta aqui: ese dinero no vuelve como
-    dinero, se cruza en nomina, y restarlo dos veces dejaria el tope
-    corto.
+    Lo depositado de verdad --las rondas que finanzas confirmo, no el
+    total del viatico-- menos lo comprobado, lo ya devuelto, lo
+    declarado a la espera y lo que ya se resolvio de otra forma: el
+    descuento a nomina y lo que absorbio la empresa (seccion 98). Antes
+    el descuento no se restaba, y un viatico cerrado con descuento
+    seguia ofreciendo "devolver" por el mismo dinero: la persona
+    transferia, finanzas confirmaba, y quedaban el descuento y la
+    devolucion sobre los mismos mil pesos.
     """
-    queda = (_d(viatico.monto_total)
+    from app import viaticos as motor_viaticos
+
+    queda = (_d(motor_viaticos.depositado(viatico))
              - _d(viatico.monto_comprobado)
              - _d(viatico.monto_devuelto)
-             - declarado_pendiente(viatico))
+             - declarado_pendiente(viatico)
+             - _d(viatico.monto_descontado)
+             - _d(viatico.monto_absorbido))
+    return queda.quantize(CENTAVOS) if queda > CERO else CERO
+
+
+def por_devolver_del_bolson(db: Session, viatico: m.AsignacionViatico) -> Decimal:
+    """Lo que sobra del viaje entero de esa persona, no de un dia.
+
+    El dinero se deposita junto y se gasta junto: tres dias de 1,000
+    con 900 de tickets cada uno sobran 300, y ningun dia por separado
+    los aceptaba --cada uno decia "quedan 100"--. El tope de una
+    devolucion es el del bolson (seccion 98).
+    """
+    from app import viaticos as motor_viaticos
+
+    suyos = motor_viaticos.bolson_del_servicio(db, viatico)
+    queda = sum((_d(motor_viaticos.depositado(v))
+                 - _d(v.monto_comprobado) - _d(v.monto_devuelto)
+                 - declarado_pendiente(v)
+                 - _d(v.monto_descontado) - _d(v.monto_absorbido)
+                 for v in suyos), CERO)
     return queda.quantize(CENTAVOS) if queda > CERO else CERO
 
 
@@ -86,16 +113,26 @@ def declarar(db: Session, viatico: m.AsignacionViatico, monto: Decimal,
 
     if viatico.estatus == m.EstatusViatico.CANCELADO:
         raise HTTPException(409, "Ese viatico esta cancelado")
+    # Lo cerrado ya se resolvio: lo que falto se fue a nomina como
+    # descuento, o lo absorbio la empresa. Aceptar aqui una devolucion
+    # seria cobrarlo dos veces (seccion 98).
+    if viatico.estatus in (m.EstatusViatico.CERRADO,
+                           m.EstatusViatico.DEVUELTO):
+        raise HTTPException(409, {
+            "mensaje": "Ese dinero ya esta cerrado: no se le puede devolver",
+            "que_hacer": ("Si se cerro con descuento, lo que falto ya va en "
+                          "la nomina. Hablale a tu consultor si no cuadra.")})
 
-    tope = por_devolver(viatico)
+    # El tope es el del viaje entero de esa persona, no el de este dia:
+    # el dinero se deposita junto y se gasta junto (seccion 98).
+    tope = (por_devolver_del_bolson(db, viatico) if db is not None
+            else por_devolver(viatico))
     if monto > tope:
         raise HTTPException(409, {
             "mensaje": "Esa devolucion pasa de lo que queda por devolver",
-            "que_hacer": (f"Se entregaron {_d(viatico.monto_total)}, hay "
-                          f"{_d(viatico.monto_comprobado)} comprobados, "
-                          f"{_d(viatico.monto_devuelto)} ya devueltos y "
-                          f"{declarado_pendiente(viatico)} esperando "
-                          f"confirmacion: quedan {tope}."),
+            "que_hacer": (f"De lo depositado quedan {tope} por devolver, "
+                          f"descontando lo comprobado, lo ya devuelto y lo "
+                          f"que esta esperando confirmacion."),
             "por_devolver": str(tope)})
 
     fila = m.DevolucionViatico(

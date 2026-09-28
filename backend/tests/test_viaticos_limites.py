@@ -8,7 +8,9 @@ dejara de ser posible.
 from ayudas import asignar, configurar_origen, crear_servicio, jornada, manana
 
 
-def _viatico(cliente, sesion, datos, monto="1500"):
+def _viatico(cliente, sesion, datos, monto="1500", depositado=False):
+    """`depositado` lo pasa por finanzas: una devolucion solo cabe sobre
+    dinero que de verdad salio del banco (seccion 98)."""
     h = sesion("consultor")
     servicio = crear_servicio(cliente, h, datos, [jornada(
         manana(0), datos["modalidades"]["full_day"]["id"])])
@@ -24,6 +26,9 @@ def _viatico(cliente, sesion, datos, monto="1500"):
                                           "monto": monto,
                                           "origen": "tabulador"}]})
     assert r.status_code == 201, r.text
+    if depositado:
+        from ayudas import depositar_de_verdad
+        depositar_de_verdad(cliente, sesion, servicio["equipos"][0]["id"], juan)
     return r.json()
 
 
@@ -72,7 +77,7 @@ def test_no_se_devuelve_mas_de_lo_que_queda(cliente, sesion, datos):
     calle —que filtra por pendiente mayor a cero."""
     from ayudas import devolver
 
-    v = _viatico(cliente, sesion, datos, monto="1500")
+    v = _viatico(cliente, sesion, datos, monto="1500", depositado=True)
     hf = sesion("finanzas")
 
     r = devolver(cliente, hf, v["id"], "1500")
@@ -88,9 +93,9 @@ def test_una_devolucion_negativa_no_borra_una_real(cliente, sesion, datos):
     dejar mas rastro que una nota."""
     from ayudas import devolver
 
-    v = _viatico(cliente, sesion, datos, monto="1500")
+    v = _viatico(cliente, sesion, datos, monto="1500", depositado=True)
     hf = sesion("finanzas")
-    devolver(cliente, hf, v["id"], "500")
+    assert devolver(cliente, hf, v["id"], "500").status_code == 200
     r = devolver(cliente, hf, v["id"], "-500")
     assert r.status_code == 400, r.text
 

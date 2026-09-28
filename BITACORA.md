@@ -6693,10 +6693,214 @@ guardado sube a `centauro-campo-v14`.
   `alembic upgrade head`. Cambian la consola y la app de campo —su
   ícono—.
 
+## 98. El dinero y los días trabajados
+
+Salvador, 28 de septiembre: «me gustaría que le des una revisada al
+sistema completo para verificar si hay bugs. Verificar que haya
+continuidad en los procesos. Te pido que lo hagas de manera profunda y
+con calma». La revisión se hizo en diez frentes, cada uno sobre su
+copia del código y con pruebas que reprodujeran lo sospechado: 231
+hallazgos en bruto, 112 consolidados, 24 graves y 14 que necesitan una
+decisión de Salvador. El informe completo vive en
+`REVISION_2026_09_28.md` (y `Claude outputs/Revision_del_sistema.pdf`),
+con los hallazgos por proceso y el orden en que se arreglan.
+
+Esta sección es la **primera tanda**: lo grave del dinero y de los
+días trabajados, que no necesitaba decisión de nadie. Salvador, ese
+mismo día: «empieza a arreglar lo que no necesites de mí».
+
+### Lo que ya se trabajó no se borra
+
+- **Quitar a una persona o una unidad del equipo** solo toca los días
+  que no han arrancado. Antes se quitaba de todos los días, incluido el
+  lunes que ya trabajó: la nómina no le pagaba ese día, el cierre no lo
+  facturaba y sus marcas quedaban huérfanas. Ahora el día trabajado se
+  queda con su asignación, la ficha dice cuántos días quedan pendientes
+  y a quien ya no tiene ninguno no se le ofrece «Quitar»: lo suyo es el
+  cambio por contingencia. Tampoco se quita a quien tiene un depósito
+  pedido a finanzas —primero se cancela la solicitud— ni a quien ya
+  recibió el dinero.
+- **Quitar un día ya trabajado lo cancela, no lo borra.** Un día
+  terminado, con marcas o con un cambio por contingencia queda
+  cancelado con todo lo suyo: las marcas, las horas, el viático y el
+  pago. Si ya se pagó, la diferencia se descuenta en la nómina
+  siguiente. El día que está en la calle no se quita desde el armado:
+  lo termina el equipo o lo cierra la central. La consola pregunta
+  antes de cancelar un día trabajado y repite lo que el servidor hizo
+  con su dinero.
+- **Asignar a alguien «a todo el equipo» a media semana** lo mete solo
+  a los días que faltan, no al día que ya trabajó otro (se le pagaba y
+  se le cobraba al cliente).
+- **Un servicio que ya no se arma no se arma**: al cancelado, cerrado,
+  en facturación, sin visto bueno o terminado no se le agregan días ni
+  gente, ni se le mueven fechas u horas. Los kilómetros o el foráneo de
+  un día terminado sí se corrigen mientras el consultor lo revisa: son
+  datos del cierre. Antes se le agregaban días y gente a un cancelado,
+  el reloj los marcaba próximos y a la persona le llegaba «te acaban de
+  asignar».
+- **Una marca en un día cancelado se rechaza**: la marca que llegaba
+  tarde revivía el día con el servicio cancelado.
+- **El cambio de unidad por contingencia parte solo el día del
+  cambio** —el que ya rodó o el día en que el equipo trae la unidad en
+  las manos, recibida y sin entregar—; los días que siguen solo llevan
+  la nueva. Antes preguntaba por servicio y partía también los días
+  futuros: el día 3 exigía entregar una camioneta que se fue el día 2 y
+  la unidad seguía «ocupada» para otros servicios.
+
+### El dinero se cuenta por lo que finanzas confirmó
+
+- **Lo depositado son las rondas que finanzas confirmó**, no el estatus
+  del viático. Con un segundo depósito pedido el viático ya decía
+  «transferido» y la app, el bolsón y finanzas contaban como entregado
+  lo que seguía en finanzas: alguien salía a trabajar contando con
+  dinero que no tenía, y el consultor cerraba con descuento pesos que
+  nunca salieron del banco. La app, el bolsón, el panel del equipo y
+  «Por comprobar» de finanzas dicen lo mismo, y «Solicitar
+  transferencia» por viático pide solo lo que falta.
+- **Un viático cerrado con descuento** ya no dice «te falta comprobar»
+  ni acepta una devolución por el mismo dinero: quedaban el descuento y
+  la devolución sobre los mismos mil pesos. Lo descontado y lo absorbido
+  se restan de lo que falta, y sobre lo cerrado o devuelto no se
+  declara ni se deposita más.
+- **Lo que sobra se devuelve del viaje entero, no por día.** Tres días
+  de 1,000 con 900 de tickets cada uno sobran 300 y ningún día los
+  aceptaba. La app ya no pide escoger día: dice cuánto sobra del
+  servicio y el servidor lo topa contra el total; comprobar un gasto
+  solo ofrece los días que ya tienen dinero.
+- **Un adicional negativo o de cero se rechaza**: borraba deuda sin
+  motivo.
+
+### Cada camino que cancela un viático cancela su solicitud
+
+- Un solo lugar (`viaticos.cancelar`): la solicitud pendiente se
+  cancela con el viático, y la que ya está enviada —en manos de
+  finanzas, quizá en el banco ahora mismo— queda con la cancelación
+  pedida, como cuando la pide el consultor (sección 41). Antes cada
+  camino cancelaba el viático y dejaba la solicitud viva: finanzas la
+  seguía viendo como dinero por pagar, lo pagaba a quien ya no iba o se
+  quedaba atorada para siempre. Pasan por ahí **cancelar el servicio,
+  quitar un día, el relevo por contingencia y cerrar un día del
+  implantado**; la consola dice cuántos depósitos quedaron pedidos a
+  finanzas.
+- **«Solicitar depósito» ya no pide los días cancelados** de quien
+  salió, ni **fijar un monto sobre un viático cancelado** deja uno
+  cancelado con monto y otro nuevo: lo vuelve a poner en juego. Y el
+  panel del equipo sigue mostrando a quien ya no está en él mientras
+  tenga dinero afuera o un depósito en camino: fuera del panel nadie lo
+  cerraba.
+- **Cancelar una ronda posterior al primer depósito la quita de lo
+  autorizado.** Con dinero ya afuera, «fijar» no entra —reescribe el
+  desglose— y la ronda cancelada se quedaba autorizada para siempre: el
+  bolsón decía «hay 600 por depositar» y no cerraba ni con descuento.
+
+### Finanzas registra lo que vio
+
+- **El depósito registra exactamente las solicitudes que finanzas vio
+  en la bandeja** (la consola las manda). Antes registraba «todo lo
+  pendiente de esa persona» al guardar: si el consultor pedía 500 más
+  mientras finanzas estaba en el banco, el depósito quedaba de 1,500 y
+  la app decía «te depositaron 1,500». Lo que se canceló mientras iba
+  al banco —un día quitado, la solicitud echada atrás— entra tal como
+  salió, marcado por esa parte: el depósito guarda cuánto de él ya
+  estaba cancelado (`monto_sobre_cancelada`) y el aviso rojo del panel
+  dice esa parte, no el depósito completo. Lo que vio y ya se pagó no
+  se registra dos veces: se le pide recargar.
+- **Una referencia del banco es de un solo movimiento**: el mismo
+  formulario dos veces —la respuesta se perdió, un doble clic—
+  registraba dos depósitos con la misma referencia.
+- **Anular un depósito cuyo dinero ya regresó** se niega, y el
+  comprobante del depósito se abre con sesión desde la consola y la app
+  (el enlace directo contestaba 401 y salía el icono roto).
+- **Ver un viático pide permiso, no solo sesión**: con solo tener
+  cuenta, RH o nómina leían el viático de cualquiera. El personal ve los
+  suyos; la oficina, con «ver viáticos». Validar un comprobante deja
+  rastro en la bitácora, como rechazarlo.
+
+### El cierre, la nómina y el implantado
+
+- **El cierre que finanzas regresó se conserva al reabrir el día.**
+  Trae el primer visto bueno con su «en plazo» o «fuera de plazo», la
+  factura anulada que la siguiente tiene que sustituir y las
+  desviaciones justificadas. Borrarlo hacía nacer otro con T0 nuevo: el
+  segundo visto bueno salía «en plazo» —la comisión perdida se pagaba—
+  y la factura nueva no decía a cuál sustituía. Se corrige el día, se
+  vuelve a cerrar y el servicio queda sin visto bueno con el mismo
+  cierre, esperando que el consultor lo mande otra vez. Lo mismo en el
+  implantado (`cierre_mes.deshacer_termino`).
+- **La nómina no sale con horas extra sin tarifa.** La celda vacía de
+  hora extra es un dato que falta, no un cero: el corte se detiene y
+  dice si falta la tarifa del día o solo la hora extra.
+- **Dos clics en «Marcar pagado» no pagan dos veces**: el corte se
+  bloquea mientras se marca, y el segundo ve «ya estaba pagada». Antes
+  el saldo en contra se arrastraba dos veces.
+- **La revisión de diferencias parte de lo pagado**: reclama también lo
+  pagado a quien ya no va en ese día —si por cualquier camino su
+  asignación desapareció— y no solo lo que sigue asignado.
+- En el implantado, cancelar un viático con el depósito ya enviado lo
+  deja pedido a finanzas, y cerrar un día con marcas o con cambios lo
+  cancela en vez de borrarlo.
+
+### Por dentro
+
+- `viaticos.py`: `depositado`, `en_camino` y `cancelar`; el viático
+  tiene sus `solicitudes` como relación. `bolson.py`, `devoluciones.py`
+  (`por_devolver_del_bolson`), `depositos.py` (cerrados y devueltos),
+  `finanzas.py`, `routers/campo.py` y `routers/viaticos.py` cuentan
+  desde ahí. `_recortar_lo_no_pedido` en `routers/viaticos.py`.
+- `routers/servicios.py`: `POR_ARRANCAR`, `_dias_por_arrancar`,
+  `YA_NO_SE_ARMA` y `_que_se_pueda_armar`; `quitar_personal`,
+  `quitar_vehiculo`, `quitar_dia`, `asignar_*_equipo`, `agregar_dia`,
+  `corregir_dia` y `cancelar_servicio` con las reglas de arriba;
+  `asignaciones_equipo` devuelve `dias_pendientes`.
+- `contingencia.py`: `_rodo` por jornada y `_en_manos`;
+  `_mover_viaticos` cancela con su solicitud. `implantado.py` e
+  `viaticos_implantado.py`, igual. `operacion.py`: `registrar_hito` en
+  cancelada, `reabrir` y `terminar_si_cerro_el_ultimo_dia` con el cierre
+  regresado. `nomina.py`: `que_falta_de_tarifa`, `pagar` con la fila
+  bloqueada, `diferencias_del_servicio` desde lo pagado.
+- Consola: «Quitar» con los días pendientes y su confirmación, el día
+  trabajado se cancela con su nota, el depósito manda las solicitudes
+  vistas, el comprobante del depósito con sesión, el aviso de depósitos
+  pedidos a finanzas al cancelar. App de campo: devolver sin escoger
+  día, comprobar solo con dinero, comprobante del depósito con sesión.
+- Migración `e7b3d9a1c5f4`: `deposito_bancario.monto_sobre_cancelada`.
+- Y dos textos del arranque: «1 ya entró» en vez de «1 ya entraron», y
+  «fue ayer» en la cuenta regresiva.
+
+### Las pruebas
+
+- `tests/test_revision_98.py`, 32 pruebas: cada regla de arriba con su
+  escenario, adaptadas de las que reprodujeron los hallazgos en la
+  revisión. Dos pruebas viejas cambiaron con la regla: la misma
+  referencia dos veces ahora contesta 409 y no 404, y una devolución
+  solo cabe sobre dinero que de verdad se depositó.
+- La batería completa en verde.
+
+### Para subirlo
+
+- **Con migración** (`e7b3d9a1c5f4`): el bloque de siempre, con
+  `alembic upgrade head`. Cambian la consola y la app de campo.
+
+### Lo que sigue de la revisión
+
+Las otras tandas, en el orden del informe: la app de campo y el ciclo
+del día; los accesos, el correo, el reloj y el servidor (con el
+subdominio `www` que hoy no existe); la consola, el implantado, la
+nómina y los detalles; y al final las 14 decisiones de Salvador.
+
 ## 14. Lo que falta
 
 ### Abierto
 
+- **La revisión del sistema** (sección 98). Salvador, 28 de
+  septiembre: una revisada completa, profunda y con calma. 112
+  hallazgos en `REVISION_2026_09_28.md`. La primera tanda —el dinero
+  y los días trabajados— quedó en la sección 98. Faltan las otras
+  tres: la app de campo y el ciclo del día; los accesos, el correo,
+  el reloj y el servidor (con el subdominio `www`, que hoy no existe
+  en Cloud DNS ni en Caddy); y la consola, el implantado, la nómina y
+  los detalles. Y las 14 decisiones, que se le llevan juntas al
+  final.
 - **El puesto de administración del sistema y calidad**: Aridiai
   Morales. Aprobado el 27 de septiembre con sus pantallas. Hechos los
   cuatro pasos: los candados de Accesos (sección 83), el puesto con sus

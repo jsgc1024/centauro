@@ -88,10 +88,15 @@ def cuenta(suyos: list) -> dict:
     Negativo quiere decir que comprobo de mas: la empresa le debe.
     """
     vivos = [v for v in suyos if v.estatus != m.EstatusViatico.CANCELADO]
-    depositado = sum((_d(v.monto_total) for v in vivos
-                      if v.estatus in DEPOSITADOS), CERO)
-    por_depositar = sum((_d(v.monto_total) for v in vivos
-                         if v.estatus in POR_DEPOSITAR), CERO)
+    # Lo depositado son las rondas que finanzas confirmo, no el estatus
+    # (seccion 98): con un segundo deposito pedido el viatico ya dice
+    # TRANSFERIDO y su total traia lo que seguia en finanzas. Lo que no
+    # ha llegado --pedido o sin pedir-- es por depositar, mientras el
+    # viatico siga abierto.
+    depositado = sum((motor_viaticos.depositado(v) for v in vivos), CERO)
+    por_depositar = sum((max(_d(v.monto_total) - motor_viaticos.depositado(v),
+                             CERO)
+                         for v in vivos if v.estatus not in RESUELTOS), CERO)
     comprobado = sum((_d(v.monto_comprobado) for v in vivos), CERO)
     devuelto = sum((_d(v.monto_devuelto) for v in vivos), CERO)
     en_revision = sum((devoluciones.declarado_pendiente(v) for v in vivos),
@@ -164,9 +169,10 @@ def que_frena_el_cierre(c: dict, moneda: str | None = None) -> dict | None:
             "codigo": "por_depositar",
             "mensaje": (f"Hay {_dinero(c['por_depositar'], moneda)} "
                         "autorizados que todavia no se depositan"),
-            "que_hacer": ("Si ya no aplican, cancelalos en los viaticos del "
-                          "equipo; si si, espera a que finanzas los "
-                          "deposite.")}
+            "que_hacer": ("Si ya no aplican, en los viaticos del equipo "
+                          "cancela la solicitud y deja el monto en lo que si "
+                          "se deposito; si si aplican, espera a que finanzas "
+                          "los deposite.")}
     if c["devolucion_en_revision"] > 0:
         return {
             "codigo": "devolucion",
@@ -219,8 +225,9 @@ def que_frena_el_descuento(c: dict, ahora: datetime,
             "codigo": "por_depositar",
             "mensaje": (f"Hay {_dinero(c['por_depositar'], moneda)} "
                         "autorizados que todavia no se depositan"),
-            "que_hacer": ("Lo que no se deposito no se descuenta: cancelalo "
-                          "en los viaticos del equipo, o espera el "
+            "que_hacer": ("Lo que no se deposito no se descuenta: en los "
+                          "viaticos del equipo cancela la solicitud y deja el "
+                          "monto en lo que si se deposito, o espera el "
                           "deposito.")}
     if c["devolucion_en_revision"] > 0:
         return {

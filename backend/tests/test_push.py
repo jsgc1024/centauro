@@ -355,14 +355,17 @@ def test_el_comprobante_rechazado_le_avisa_con_el_motivo(cliente, sesion,
                                                          datos, db, salieron):
     """Sin esto se enteraba cuando veía el descuento en su pago. Y casi
     siempre lo que pasó es que el ticket salió borroso."""
-    _, viatico, juan = _viatico_solicitado(cliente, sesion, datos)
+    servicio, viatico, juan = _viatico_solicitado(cliente, sesion, datos)
     _telefono(db, juan, "https://push.example/comprobante")
-    # Depositado: lo que le falta se cuenta de lo que ya salio del banco,
-    # igual que en su tarjeta (seccion 59).
-    from app import models as m
-    db.get(m.AsignacionViatico, viatico["id"]).estatus = (
-        m.EstatusViatico.TRANSFERIDO)
-    db.commit()
+    # Depositado de verdad: lo que le falta se cuenta de lo que finanzas
+    # confirmo, no del estatus del viatico (secciones 59 y 98).
+    r = cliente.post(
+        "/viaticos/finanzas/depositar",
+        data={"equipo_id": str(servicio["equipos"][0]["id"]),
+              "persona_id": str(juan), "referencia": "SPEI-4471002840"},
+        files=_archivo_png(), headers=sesion("finanzas"))
+    assert r.status_code == 200, r.text
+    salieron.clear()
 
     subido = cliente.post(
         f"/viaticos/{viatico['id']}/comprobantes", headers=sesion("juan"),

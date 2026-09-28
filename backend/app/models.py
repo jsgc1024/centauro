@@ -1242,6 +1242,14 @@ class AsignacionViatico(Base):
         back_populates="asignacion", cascade="all, delete-orphan")
     devoluciones: Mapped[list["DevolucionViatico"]] = relationship(
         back_populates="asignacion", cascade="all, delete-orphan")
+    # Las rondas de deposito de este viatico (seccion 98). Lo depositado
+    # de verdad sale de aqui --las confirmadas-- y no del estatus, que
+    # solo cuenta una ronda a la vez: con un segundo deposito pedido, el
+    # estatus decia TRANSFERIDO y la app sumaba lo que seguia en finanzas.
+    # Sin cascade: una solicitud es un hecho con finanzas, y el viatico
+    # que la trae no se borra (ver `routers.servicios.quitar_personal`).
+    solicitudes: Mapped[list["SolicitudTransferencia"]] = relationship(
+        back_populates="asignacion")
 
 
 class ConceptoAsignado(Base):
@@ -1412,7 +1420,8 @@ class SolicitudTransferencia(Base):
         ForeignKey("deposito_bancario.id", ondelete="SET NULL"),
         nullable=True)
 
-    asignacion: Mapped[AsignacionViatico] = relationship()
+    asignacion: Mapped[AsignacionViatico] = relationship(
+        back_populates="solicitudes")
     deposito: Mapped["DepositoBancario | None"] = relationship(
         back_populates="solicitudes")
 
@@ -1462,6 +1471,13 @@ class DepositoBancario(Base):
     # pedir de vuelta, y el consultor tiene que verlo.
     sobre_cancelada: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false"))
+    # Cuanto de ese deposito era de solicitudes ya canceladas (seccion
+    # 98). Finanzas vio tres dias y fue al banco; mientras, el consultor
+    # quito uno: el deposito sale entero y esta es la parte que hay que
+    # aplicar o pedir de vuelta. Vacio en los depositos de antes: ahi
+    # la parte era el deposito completo.
+    monto_sobre_cancelada: Mapped[float | None] = mapped_column(
+        Numeric(12, 2), nullable=True)
     # Subir el archivo correcto es lo mas comun que pasa despues de
     # registrar. Se permite siempre, y queda quien lo cambio y cuando.
     corregido_en: Mapped[datetime | None] = mapped_column(DateTime,

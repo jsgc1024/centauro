@@ -169,6 +169,19 @@ def test_el_dinero_de_ejemplo_falta_y_el_cambio_lo_pone_listo(cliente, sesion):
             db.commit()
 
 
+# ---------------------------------------------------------------- la gente
+
+def test_cuantos_ya_entraron_se_dice_bien():
+    """En produccion salio «6 de 39 · 1 ya entraron»."""
+    from app.arranque import TEXTOS, _acceso
+    es, pt = TEXTOS["es"], TEXTOS["pt"]
+    assert _acceso(es, 6, 39, 1) == "6 de 39 · 1 ya entró."
+    assert _acceso(es, 6, 39, 2) == "6 de 39 · 2 ya entraron."
+    assert _acceso(es, 61, 61, 0) == "61 de 61 · nadie ha entrado todavía."
+    assert _acceso(pt, 6, 39, 1) == "6 de 39 · 1 já entrou."
+    assert _acceso(pt, 61, 61, 0) == "61 de 61 · ninguém entrou ainda."
+
+
 # ---------------------------------------------------------------- la operacion
 
 def test_las_fallas_por_revisar_dicen_cuantas(cliente, sesion):

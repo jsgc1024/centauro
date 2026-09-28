@@ -177,7 +177,13 @@ async function cancelar(servicio) {
       mensaje(t("srv_por_devolver").replace("{p}", v.persona)
                 .replace("{m}", v.monto).replace("{c}", v.moneda), "alerta");
     }
-    setTimeout(() => location.reload(), 1200);
+    /* Lo que ya estaba con finanzas no se cancela solo: queda pedido, y
+       el consultor tiene que saber que ese dinero puede salir igual. */
+    if (r.depositos_pedidos_a_finanzas) {
+      mensaje(t("srv_dep_pedidos_finanzas")
+                .replace("{n}", r.depositos_pedidos_a_finanzas), "alerta");
+    }
+    setTimeout(() => location.reload(), r.depositos_pedidos_a_finanzas ? 3000 : 1200);
   } catch (err) { mensaje(err.message, "grave"); }
 }
 
@@ -290,19 +296,28 @@ async function pintarRecursos(caja, servicio, equipo, cat, zona, zonaCambio) {
   }
 
   /* Asignar sin poder desasignar deja al consultor probando quien cabe
-     sin marcha atras. Se quita de todos los dias, igual que se puso. */
-  const quitar = (ruta, que) => h("button", {
-    clase: "claro chico", type: "button", style: "margin-top:6px",
-    onclick: async (e) => {
-      if (!confirm(t("srv_quitar_a").replace("{q}", que).replace("{n}", datos.dias))) {
-        return;
-      }
-      e.target.disabled = true;
-      try {
-        await api.borrar(ruta);
-        location.reload();
-      } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
-    } }, t("srv_quitar"));
+     sin marcha atras. Se quita de los dias que todavia no arrancan
+     (seccion 98): los que ya trabajo se quedan con sus marcas y su
+     pago, y a quien ya no tiene dias pendientes no se le ofrece el
+     boton --lo suyo es el cambio por contingencia--. */
+  const quitar = (ruta, que, x) => {
+    if (!x.dias_pendientes) return "";
+    const trabajados = x.dias - x.dias_pendientes;
+    const pregunta = t("srv_quitar_a").replace("{q}", que)
+      .replace("{n}", x.dias_pendientes)
+      + (trabajados > 0
+         ? " " + t("srv_quitar_trabajados").replace("{t}", trabajados) : "");
+    return h("button", {
+      clase: "claro chico", type: "button", style: "margin-top:6px",
+      onclick: async (e) => {
+        if (!confirm(pregunta)) return;
+        e.target.disabled = true;
+        try {
+          await api.borrar(ruta);
+          location.reload();
+        } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
+      } }, t("srv_quitar"));
+  };
 
   const ficha = (x, titulo, cuerpo, boton) => h("div", { clase: "persona" },
     x.foto ? h("img", { clase: "foto", src: x.foto, alt: "" })
@@ -396,7 +411,7 @@ async function pintarRecursos(caja, servicio, equipo, cat, zona, zonaCambio) {
           ? ""
           : botonCambiar(servicio, equipo, cat, p, datos),
         quitar(`/servicios/equipos/${equipo.id}/personal/${p.persona_id}`,
-               p.nombre));
+               p.nombre, p));
       gente.append(ficha(p, p.puesto || t("srv_personal"), [
         h("b", {}, p.nombre),
         h("div", { clase: "chico" },
@@ -441,7 +456,7 @@ async function pintarRecursos(caja, servicio, equipo, cat, zona, zonaCambio) {
                 .join(" · "))
           : "",
       ], quitar(`/servicios/equipos/${equipo.id}/vehiculos/${v.vehiculo_id}`,
-                v.placa)));
+                v.placa, v)));
     }
   } else {
     flota.append(h("span", { clase: "gris" }, t("srv_por_asignar")));
@@ -2732,13 +2747,32 @@ function tablaDias(servicio, equipo, cat, cambios = []) {
         }
       } }, nombreDia);
 
-    const quitar = h("button", { clase: "claro chico", type: "button",
+    /* El dia que esta en la calle no se quita desde aqui, y el que ya
+       se trabajo se cancela, no se borra (seccion 98): borrarlo se
+       llevaba las marcas y el pago de quien lo trabajo. La pantalla lo
+       dice antes de preguntar, y despues repite lo que el servidor
+       hizo con el dinero del dia. */
+    const enLaCalle = jornada.estatus === "arribado"
+      || jornada.estatus === "en_curso";
+    const cancelado = jornada.estatus === "cancelada";
+    const trabajado = jornada.estatus === "terminada";
+    const quitar = (enLaCalle || cancelado) ? "" :
+      h("button", { clase: "claro chico", type: "button",
       onclick: async (e) => {
+        if (trabajado && !confirm(t("srv_quitar_dia_trabajado")
+                                  .replace("{f}", fecha(jornada.fecha)))) {
+          return;
+        }
         e.target.disabled = true;
         try {
-          await api.borrar(`/servicios/jornadas/${jornada.id}`);
-          mensaje(t("srv_dia_quitado"));
-          location.reload();
+          const r = await api.borrar(`/servicios/jornadas/${jornada.id}`);
+          if (r && r.resultado === "dia cancelado") {
+            mensaje(r.nota || t("srv_dia_cancelado"), "alerta");
+            setTimeout(() => location.reload(), 2500);
+          } else {
+            mensaje(t("srv_dia_quitado"));
+            location.reload();
+          }
         } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
       } }, t("srv_quitar"));
 

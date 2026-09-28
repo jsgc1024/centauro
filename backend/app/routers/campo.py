@@ -450,8 +450,7 @@ def mis_viaticos(db: Session = Depends(get_db),
         comprobado = Decimal(str(v.monto_comprobado or 0))
 
         # El dinero esta con la persona solo cuando finanzas lo
-        # deposito: eso es lo que marca TRANSFERIDO, y de ahi en
-        # adelante. Mientras esta ASIGNADO o SOLICITADO el monto existe
+        # deposito. Mientras esta ASIGNADO o SOLICITADO el monto existe
         # en el sistema y NO en su cuenta.
         #
         # La app sumaba todo y lo rotulaba "te depositaron". Alguien leia
@@ -459,11 +458,16 @@ def mis_viaticos(db: Session = Depends(get_db),
         # estaba. Y lo que pesaba mas: ese monto entraba a "te falta
         # comprobar" y corria su plazo de 24 horas, asi que podia quedar
         # vencido por un dinero que nunca recibio.
-        llego = v.estatus in (m.EstatusViatico.TRANSFERIDO,
-                              m.EstatusViatico.EN_COMPROBACION,
-                              m.EstatusViatico.CERRADO)
-        if not llego:
-            fila["por_depositar"] += monto
+        #
+        # Y lo que le llego son las rondas que finanzas confirmo, no el
+        # total del viatico (seccion 98): con un segundo deposito pedido
+        # el estatus ya decia TRANSFERIDO y la app volvia a decir "te
+        # depositaron" con lo que seguia en finanzas.
+        entregado = viaticos_motor.depositado(v)
+        if v.estatus not in (m.EstatusViatico.CERRADO,
+                             m.EstatusViatico.DEVUELTO):
+            fila["por_depositar"] += max(monto - entregado, Decimal("0"))
+        if entregado <= 0:
             fila["dias"].append({
                 "viatico_id": v.id,
                 "fecha": jornada.fecha.isoformat(),
@@ -475,7 +479,13 @@ def mis_viaticos(db: Session = Depends(get_db),
             })
             continue
 
-        entregado = monto
+        # Lo que ya se resolvio de otra forma: el descuento a nomina y
+        # lo que absorbio la empresa. Sin restarlo, un viatico cerrado
+        # con descuento seguia diciendo "te falta comprobar" y ofrecia
+        # devolver el mismo dinero (seccion 98).
+        fila["resuelto"] = (fila.get("resuelto", Decimal("0"))
+                            + Decimal(str(v.monto_descontado or 0))
+                            + Decimal(str(v.monto_absorbido or 0)))
         # Lo que todavia no sale como comprobado es lo que se le va a
         # pedir. Se dice por dia para que sepa cual le falta.
         fila["entregado"] += entregado
@@ -536,7 +546,14 @@ def mis_viaticos(db: Session = Depends(get_db),
         # que se cargo el gasto es como el consultor repartio el monto,
         # no un sobre que la persona tenga que respetar.
         f["por_comprobar"] = max(
-            f["entregado"] - f["comprobado"] - f["devuelto"], Decimal("0"))
+            f["entregado"] - f["comprobado"] - f["devuelto"]
+            - f.get("resuelto", Decimal("0")), Decimal("0"))
+        # Lo que puede regresar es del viaje entero, no de un dia: el
+        # dinero se deposita junto y se gasta junto (seccion 98). Un dia
+        # con tickets de mas cubre al que le falto.
+        f["por_devolver"] = max(
+            f["por_comprobar"] - f["devolucion_en_revision"], Decimal("0"))
+        f.pop("resuelto", None)
         # Cuanto le queda (seccion 59). Sin limite, el servicio no ha
         # terminado: el plazo de 24 horas corre al terminar, no antes.
         f["minutos"] = (int((datetime.fromisoformat(f["limite"])
@@ -890,7 +907,8 @@ def devolver_lo_que_sobro(viatico_id: int, datos: DevolucionDeCampoIn,
     db.commit()
     return {"resultado": "declarada", "devolucion_id": fila.id,
             "monto": float(fila.monto),
-            "por_devolver": float(devoluciones_motor.por_devolver(viatico)),
+            "por_devolver": float(
+                devoluciones_motor.por_devolver_del_bolson(db, viatico)),
             "nota": ("Queda anotada. Finanzas la confirma cuando la vea "
                      "entrar a la cuenta.")}
 

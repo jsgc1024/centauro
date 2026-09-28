@@ -310,6 +310,11 @@ def deshacer_termino(db: Session, contrato: m.ContratoImplantado | None,
                         f"{que}"),
             "que_hacer": ("Lo que cambie de ese mes se corrige con finanzas: "
                           "la factura del mes ya salio con esos dias.")})
+    # El mes que finanzas regreso conserva su cierre (seccion 98): el
+    # primer visto bueno con su plazo, la factura anulada y el motivo del
+    # regreso. Se corrige el dia y el consultor lo vuelve a mandar.
+    if cierre.estatus == m.EstatusCierre.DEVUELTO_A_OPERACION:
+        return True
     for viatico in viaticos_del_mes(db, contrato):
         if viatico.limite_comprobacion == cierre.comprobacion_hasta:
             viatico.limite_comprobacion = None

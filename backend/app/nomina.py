@@ -75,17 +75,37 @@ def hay_tarifa(db: Session, asignacion: m.AsignacionPersonal,
     miercoles coordina cobra distinto cada dia, y eso es justo lo que se
     esta pagando.
     """
+    return que_falta_de_tarifa(db, asignacion, modalidad_id, pais_id) is None
+
+
+def que_falta_de_tarifa(db: Session, asignacion: m.AsignacionPersonal,
+                        modalidad_id: int, pais_id: int,
+                        jornada: m.Jornada | None = None) -> str | None:
+    """Que le falta a esa jornada para poder pagarse: "tarifa", "hora
+    extra", o nada. La hora extra solo hace falta si el dia la tuvo
+    (seccion 98)."""
     persona = asignacion.persona
     if persona.es_freelance:
-        return bool(db.query(m.TarifaFreelance)
-                    .filter_by(persona_id=persona.id,
+        tarifa = (db.query(m.TarifaFreelance)
+                  .filter_by(persona_id=persona.id,
+                             modalidad_id=modalidad_id).first())
+        if not tarifa:
+            return "tarifa"
+        extra = tarifa.costo_hora_extra
+    else:
+        if not asignacion.rol_id:
+            return "tarifa"     # sin rol no hay tarifa que buscar
+        comision = (db.query(m.ComisionPersonal)
+                    .filter_by(pais_id=pais_id, perfil_id=asignacion.rol_id,
+                               tipo_servicio=_tipo_de(asignacion),
                                modalidad_id=modalidad_id).first())
-    if not asignacion.rol_id:
-        return False        # sin rol no hay tarifa que buscar
-    return bool(db.query(m.ComisionPersonal)
-                .filter_by(pais_id=pais_id, perfil_id=asignacion.rol_id,
-                           tipo_servicio=_tipo_de(asignacion),
-                           modalidad_id=modalidad_id).first())
+        if not comision:
+            return "tarifa"
+        extra = comision.monto_hora_extra
+    if (jornada is not None and extra is None and not asignacion.relevado_en
+            and _horas_extra(jornada)):
+        return "hora extra"
+    return None
 
 
 def pago_de_jornada(db: Session, jornada: m.Jornada,
@@ -102,8 +122,9 @@ def pago_de_jornada(db: Session, jornada: m.Jornada,
         tarifa = (db.query(m.TarifaFreelance)
                   .filter_by(persona_id=persona.id,
                              modalidad_id=jornada.modalidad_id).first())
-        base, hora_extra = (_d(tarifa.costo),
-                            _d(tarifa.costo_hora_extra)) if tarifa else (None, CERO)
+        base = _d(tarifa.costo) if tarifa else None
+        hora_extra = (None if tarifa is None or tarifa.costo_hora_extra is None
+                      else _d(tarifa.costo_hora_extra))
         fuente = "tarifa freelance"
     else:
         comision = None
@@ -112,8 +133,9 @@ def pago_de_jornada(db: Session, jornada: m.Jornada,
                         .filter_by(pais_id=pais_id, perfil_id=asignacion.rol_id,
                                    tipo_servicio=_tipo_de(asignacion),
                                    modalidad_id=jornada.modalidad_id).first())
-        base, hora_extra = (_d(comision.monto),
-                            _d(comision.monto_hora_extra)) if comision else (None, CERO)
+        base = _d(comision.monto) if comision else None
+        hora_extra = (None if comision is None or comision.monto_hora_extra is None
+                      else _d(comision.monto_hora_extra))
         fuente = "tabulador de comisiones"
 
     if base is None:
@@ -129,7 +151,12 @@ def pago_de_jornada(db: Session, jornada: m.Jornada,
     # el reemplazo no le deja asignacion, porque no trabajo. La regla
     # vive en `contingencia.se_presento`, donde se puede verificar sola.
     extras = 0 if asignacion.relevado_en else _horas_extra(jornada)
-    de_horas_extra = hora_extra * extras * factor
+    # La hora extra vacia es dato que falta, no cero (seccion 98): un
+    # dia con dos horas extra y la celda "h. extra" en blanco decia
+    # "2 h extra" y pagaba cero por ellas. Sin tarifa, el corte no sale.
+    if extras and hora_extra is None:
+        return None
+    de_horas_extra = (hora_extra or CERO) * extras * factor
     monto = base * factor + de_horas_extra
 
     modalidad = jornada.modalidad.codigo.value
@@ -259,20 +286,25 @@ def calcular(db: Session, pais_id: int, fecha_corte: date | None = None,
     # Antes de armar nada: si algo no tiene tarifa, el corte no sale.
     # Pagar de menos a alguien que trabajo es peor que retrasar el corte,
     # y dejarlo fuera en silencio seria justo eso.
-    sin_tarifa = [
-        {"persona": a.persona.nombre,
-         "fecha": jornada.fecha.isoformat(),
-         "modalidad": jornada.modalidad.codigo.value,
-         "rol": a.rol.nombre if a.rol else None,
-         "tipo": "freelance" if a.persona.es_freelance else "de planta"}
-        for jornada, a in pendientes
-        if not hay_tarifa(db, a, jornada.modalidad_id, pais_id)
-    ]
+    sin_tarifa = []
+    for jornada, a in pendientes:
+        falta = que_falta_de_tarifa(db, a, jornada.modalidad_id, pais_id,
+                                    jornada)
+        if falta:
+            sin_tarifa.append({
+                "persona": a.persona.nombre,
+                "fecha": jornada.fecha.isoformat(),
+                "modalidad": jornada.modalidad.codigo.value,
+                "rol": a.rol.nombre if a.rol else None,
+                "tipo": "freelance" if a.persona.es_freelance else "de planta",
+                # Que es lo que falta: la tarifa del dia, o solo la hora
+                # extra de un dia que las tuvo.
+                "falta": falta})
     if sin_tarifa:
         raise HTTPException(409, {
             "mensaje": ("Hay jornadas trabajadas sin tarifa cargada. Carga la "
-                        "comision (o la tarifa del freelance) y vuelve a "
-                        "calcular."),
+                        "comision (o la tarifa del freelance), con su hora "
+                        "extra si el dia las tuvo, y vuelve a calcular."),
             "sin_tarifa": sin_tarifa,
         })
 
@@ -344,7 +376,14 @@ def calcular(db: Session, pais_id: int, fecha_corte: date | None = None,
 
 def pagar(db: Session, nomina_id: int, persona_id: int | None = None) -> dict:
     """Marca el corte como pagado. A partir de aqui solo se corrige por ajuste."""
-    nomina = db.get(m.NominaSemanal, nomina_id)
+    # Con la fila bloqueada (seccion 98): dos "Marcar pagado" al mismo
+    # tiempo --dos pestanas, dos personas de finanzas-- leian los dos
+    # "calculada", pasaban los dos, y el saldo en contra se arrastraba
+    # dos veces. El segundo espera a que el primero termine y entonces
+    # ve "ya estaba pagada".
+    nomina = (db.query(m.NominaSemanal)
+              .filter(m.NominaSemanal.id == nomina_id)
+              .with_for_update().first())
     if not nomina:
         raise HTTPException(404, f"No existe la nomina {nomina_id}")
     if nomina.estatus == m.EstatusNomina.PAGADA:
@@ -512,10 +551,39 @@ def diferencias_del_servicio(db: Session, servicio_id: int,
     }
 
     generados = []
+    # Se parte de lo pagado, no solo de lo asignado (seccion 98): la
+    # persona que ya no esta en el dia --la sacaron despues del pago--
+    # no aparecia en ninguna asignacion y su pago nunca se reclamaba.
+    vistos: set[tuple[int, int]] = set()
+
+    def _corregir(jornada, asignacion, persona, pagado, debido):
+        diferencia = debido - pagado
+        if diferencia == CERO:
+            return
+        if (jornada.id, persona.id) in pendientes:
+            return          # ya hay un ajuste esperando por esa jornada
+        if asignacion is None:
+            por_que = f"ya no va en ese dia y se le habian pagado {pagado:,.2f}"
+        elif jornada.estatus == m.EstatusJornada.CANCELADA:
+            por_que = f"el dia se cancelo y ya se habia pagado {pagado:,.2f}"
+        else:
+            por_que = f"se pagaron {pagado:,.2f} y corresponden {debido:,.2f}"
+        db.add(m.AjusteNomina(
+            persona_id=persona.id, pais_id=servicio.pais_id,
+            servicio_id=servicio_id, jornada_id=jornada.id,
+            concepto=AJUSTE_CORRECCION,
+            monto=diferencia, creado_por_id=creado_por_id,
+            # Dicho como lo va a leer la persona en su recibo.
+            motivo=f"{servicio.folio} {jornada.fecha:%d/%m/%Y}: {por_que}"))
+        generados.append({"persona": persona.nombre,
+                          "fecha": jornada.fecha.isoformat(),
+                          "monto": diferencia})
+
     for equipo in servicio.equipos:
         for jornada in equipo.jornadas:
             for asignacion in jornada.personal:
                 persona = asignacion.persona
+                vistos.add((jornada.id, persona.id))
                 pagado = _pagado_de(db, jornada.id, persona.id)
                 if pagado is None:
                     continue        # todavia no se le paga: se corrige solo
@@ -526,29 +594,25 @@ def diferencias_del_servicio(db: Session, servicio_id: int,
                     pago = pago_de_jornada(db, jornada, asignacion,
                                            servicio.pais_id)
                     debido = pago["monto"] if pago else CERO
+                _corregir(jornada, asignacion, persona, pagado, debido)
 
-                diferencia = debido - pagado
-                if diferencia == CERO:
+            # Lo pagado por ese dia a quien ya no esta asignado.
+            pagados = (db.query(m.RenglonNomina.persona_id)
+                       .join(m.ConceptoNomina,
+                             m.ConceptoNomina.renglon_id == m.RenglonNomina.id)
+                       .join(m.NominaSemanal,
+                             m.RenglonNomina.nomina_id == m.NominaSemanal.id)
+                       .filter(m.ConceptoNomina.jornada_id == jornada.id,
+                               m.NominaSemanal.estatus == m.EstatusNomina.PAGADA)
+                       .distinct().all())
+            for (persona_id,) in pagados:
+                if (jornada.id, persona_id) in vistos:
                     continue
-                if (jornada.id, persona.id) in pendientes:
-                    continue        # ya hay un ajuste esperando por esa jornada
-
-                ajuste = m.AjusteNomina(
-                    persona_id=persona.id, pais_id=servicio.pais_id,
-                    servicio_id=servicio_id, jornada_id=jornada.id,
-                    concepto=AJUSTE_CORRECCION,
-                    monto=diferencia, creado_por_id=creado_por_id,
-                    # Dicho como lo va a leer la persona en su recibo.
-                    motivo=(f"{servicio.folio} {jornada.fecha:%d/%m/%Y}: "
-                            + (f"el dia se cancelo y ya se habia pagado "
-                               f"{pagado:,.2f}"
-                               if jornada.estatus == m.EstatusJornada.CANCELADA
-                               else f"se pagaron {pagado:,.2f} y "
-                                    f"corresponden {debido:,.2f}")))
-                db.add(ajuste)
-                generados.append({"persona": persona.nombre,
-                                  "fecha": jornada.fecha.isoformat(),
-                                  "monto": diferencia})
+                persona = db.get(m.Persona, persona_id)
+                pagado = _pagado_de(db, jornada.id, persona_id)
+                if persona is None or pagado is None:
+                    continue
+                _corregir(jornada, None, persona, pagado, CERO)
     db.flush()
     return {"servicio": servicio.folio, "ajustes_generados": generados}
 

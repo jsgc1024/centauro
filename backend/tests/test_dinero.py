@@ -174,7 +174,9 @@ def test_se_puede_mandar_otro_deposito_encima_del_primero(
     assert float(f["en_camino"]) == 500
     assert f["estatus"] == "solicitado"
 
-    depositar(cliente, finanzas, equipo_id, persona)
+    # Otra transferencia, otra referencia: la misma no entra dos veces
+    # (seccion 98).
+    depositar(cliente, finanzas, equipo_id, persona, "SPEI-000002")
     f = fila()
     assert float(f["depositado"]) == 2900
     assert float(f["por_solicitar"]) == 0

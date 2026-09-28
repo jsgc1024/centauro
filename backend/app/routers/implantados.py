@@ -1605,12 +1605,20 @@ def cancelar_viatico(servicio_id: int, anio: int, mes: int,
                      db: Session = Depends(get_db),
                      usuario: m.Usuario = Depends(DINERO)):
     servicio = _servicio_implantado(db, servicio_id)
-    hecho = viaticos.cancelar(db, servicio, anio, mes, datos.persona_id)
+    hecho = viaticos.cancelar(db, servicio, anio, mes, datos.persona_id,
+                              ahora=reloj.ahora_del_servicio(db, servicio),
+                              por_id=usuario.persona_id)
     auditoria.registrar(db, usuario, servicio, "cancelar solicitud",
                         f"{hecho['monto']} · {mes:02d}/{anio}, "
-                        f"{hecho['depositos']} deposito(s)")
+                        f"{hecho['depositos']} deposito(s)"
+                        + (f"; {hecho['pedidos_a_finanzas']} pedido(s) a "
+                           f"finanzas por {hecho['pedido']}"
+                           if hecho["pedidos_a_finanzas"] else ""))
     db.commit()
-    return viaticos.panel(db, servicio, anio, mes)
+    panel = viaticos.panel(db, servicio, anio, mes)
+    panel["cancelados"] = hecho["depositos"]
+    panel["pedidos_a_finanzas"] = hecho["pedidos_a_finanzas"]
+    return panel
 
 
 class TallerIn(BaseModel):

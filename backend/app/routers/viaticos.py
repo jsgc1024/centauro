@@ -113,17 +113,24 @@ def asignar(datos: s.AsignarViaticoIn, db: Session = Depends(get_db),
 @router.get("/{viatico_id}", response_model=s.ViaticoOut, summary="Ver viaticos")
 def ver(viatico_id: int, db: Session = Depends(get_db),
         usuario: m.Usuario = Depends(auth.usuario_actual)):
-    """El personal de seguridad solo ve los suyos.
+    """El personal de seguridad solo ve los suyos; la oficina, con la
+    actividad de ver viaticos.
 
     Aqui se ve cuanto efectivo trae encima cada quien y a quien le
     descontaron de nomina. Recorriendo los numeros se sacaba de toda la
     plantilla; y saber quien anda en la calle con dinero es justo lo que
-    no debe saberse.
+    no debe saberse. Pedir sesion no es pedir permiso (seccion 98): con
+    solo tener cuenta, RH o nomina leian el viatico de cualquiera.
     """
     viatico = _obtener(db, viatico_id)
-    if (usuario.rol == m.Rol.PERSONAL_SEGURIDAD
-            and viatico.persona_id != usuario.persona_id):
+    if viatico.persona_id == usuario.persona_id:
+        return viatico
+    if usuario.rol == m.Rol.PERSONAL_SEGURIDAD:
         raise HTTPException(403, "Solo puedes ver tus propios viaticos")
+    if not auth.puede_el_usuario(db, usuario, "viaticos.ver"):
+        raise HTTPException(403, {
+            "mensaje": "Tu puesto no ve los viaticos",
+            "que_hacer": "Pide la actividad «ver viaticos» a administracion."})
     return viatico
 
 
@@ -165,13 +172,23 @@ def solicitar_transferencia(viatico_id: int, db: Session = Depends(get_db),
                  .first())
     if pendiente:
         return pendiente
+    if v.estatus in (m.EstatusViatico.CERRADO, m.EstatusViatico.DEVUELTO,
+                     m.EstatusViatico.CANCELADO):
+        raise HTTPException(409, "Ese viatico ya no esta en juego")
 
+    # Se pide el saldo, no el total (seccion 98): con 1,000 ya
+    # depositados y 200 de adicional, esta puerta pedia 1,200 otra vez.
+    saldo = _dinero_de(db, [v])["por_solicitar"]
+    if saldo <= 0:
+        raise HTTPException(409, "No hay nada por solicitar: ya salio o "
+                                 "ya esta pedido")
     solicitud = m.SolicitudTransferencia(
-        asignacion_id=v.id, monto=v.monto_total, moneda=v.moneda)
+        asignacion_id=v.id, monto=saldo, moneda=v.moneda)
     db.add(solicitud)
-    v.estatus = m.EstatusViatico.SOLICITADO
+    if v.estatus == m.EstatusViatico.ASIGNADO:
+        v.estatus = m.EstatusViatico.SOLICITADO
     auditoria.registrar(db, usuario, v.jornada.equipo.servicio,
-                        "solicitar transferencia", f"{v.monto_total} {v.moneda.value}",
+                        "solicitar transferencia", f"{saldo} {v.moneda.value}",
                         jornada_id=v.jornada_id)
     db.commit()
     db.refresh(solicitud)
@@ -496,7 +513,7 @@ def cerrar(viatico_id: int, db: Session = Depends(get_db),
 def validar_comprobante(viatico_id: int, comprobante_id: int,
                         observacion: str | None = None,
                         db: Session = Depends(get_db),
-                        _=Depends(CIERRA)):
+                        usuario: m.Usuario = Depends(CIERRA)):
     v = _obtener(db, viatico_id)
     comprobante = next((c for c in v.comprobantes if c.id == comprobante_id), None)
     if not comprobante:
@@ -508,7 +525,14 @@ def validar_comprobante(viatico_id: int, comprobante_id: int,
             "mensaje": "Ese comprobante ya se rechazo",
             "que_hacer": "Si era bueno, que la persona lo vuelva a subir."})
     comprobante.validado = True
-    comprobante.observacion = observacion
+    comprobante.observacion = (observacion or "")[:200] or None
+    # Queda quien lo dio por bueno: rechazar dejaba rastro y validar no,
+    # y la cobertura de otro consultor no se marcaba (seccion 98).
+    auditoria.registrar(db, usuario, v.jornada.equipo.servicio,
+                        "validar comprobante",
+                        f"{v.persona.nombre if v.persona else v.persona_id}: "
+                        f"{comprobante.monto} {comprobante.concepto.value}",
+                        jornada_id=v.jornada_id)
     db.commit()
     return {"resultado": "validado", "comprobante_id": comprobante_id}
 
@@ -760,7 +784,13 @@ def _dinero_de(db: Session, viaticos: list[m.AsignacionViatico]) -> dict:
     cuentas salen de las solicitudes y no del estatus del viatico, que
     solo puede contar una ronda a la vez.
     """
-    asignado = sum((Decimal(str(v.monto_total)) for v in viaticos),
+    # Lo cancelado o devuelto ya no es dinero por pedir: conservaba su
+    # monto y el semaforo decia "falta pedir" por alguien que ya no va
+    # (seccion 98). Sus solicitudes si cuentan: una enviada puede estar
+    # en el banco ahora mismo.
+    asignado = sum((Decimal(str(v.monto_total)) for v in viaticos
+                    if v.estatus not in (m.EstatusViatico.CANCELADO,
+                                         m.EstatusViatico.DEVUELTO)),
                    Decimal("0"))
     solicitudes = _solicitudes(db, viaticos)
     depositado = sum((Decimal(str(s_.monto)) for s_ in solicitudes
@@ -815,6 +845,28 @@ def panel_de_equipo(equipo_id: int, db: Session = Depends(get_db),
     for jornada in dias:
         for a in jornada.personal:
             personas.setdefault(a.persona_id, a.persona)
+    # Quien ya no esta en el equipo pero tiene dinero afuera --salio por
+    # contingencia con el deposito hecho, o su dia se cancelo con la
+    # solicitud enviada-- sigue en el panel hasta que ese dinero cuadre
+    # (seccion 98): fuera del panel nadie lo cerraba.
+    todos = [j.id for j in equipo.jornadas]
+    con_dinero = (db.query(m.AsignacionViatico)
+                  .filter(m.AsignacionViatico.jornada_id.in_(todos),
+                          m.AsignacionViatico.estatus.in_(ADELANTADOS))
+                  .all()) if todos else []
+    for v in con_dinero:
+        if v.persona_id not in personas and v.persona:
+            personas[v.persona_id] = v.persona
+    for solicitud in (db.query(m.SolicitudTransferencia)
+                      .join(m.AsignacionViatico,
+                            m.SolicitudTransferencia.asignacion_id
+                            == m.AsignacionViatico.id)
+                      .filter(m.AsignacionViatico.jornada_id.in_(todos),
+                              m.SolicitudTransferencia.estatus.in_(EN_CAMINO))
+                      .all()) if todos else []:
+        v = solicitud.asignacion
+        if v.persona_id not in personas and v.persona:
+            personas[v.persona_id] = v.persona
 
     # El dinero que salio del banco despues de que alguien cancelo la
     # solicitud. Es lo unico de este panel que no se resuelve solo: hay
@@ -825,18 +877,25 @@ def panel_de_equipo(equipo_id: int, db: Session = Depends(get_db),
                      .filter(m.DepositoBancario.equipo_id == equipo.id,
                              m.DepositoBancario.sobre_cancelada.is_(True))
                      .all()):
+        # Solo la parte que ya estaba cancelada (seccion 98); los
+        # depositos de antes no la traen y ahi era el deposito entero.
+        parte = (deposito.monto_sobre_cancelada
+                 if deposito.monto_sobre_cancelada is not None
+                 else deposito.monto)
         tardios[deposito.persona_id] = (tardios.get(deposito.persona_id,
                                                     Decimal("0"))
-                                        + Decimal(str(deposito.monto)))
+                                        + Decimal(str(parte)))
 
     filas = []
     for persona_id, persona in personas.items():
         suyos = _dias_de(persona_id, dias)
+        # Sus viaticos de todos los dias del equipo, cancelados
+        # incluidos: el dinero de un dia cancelado no desaparece con el
+        # dia, y `_dinero_de` ya sabe que no contar.
         viaticos = (db.query(m.AsignacionViatico)
                     .filter(m.AsignacionViatico.persona_id == persona_id,
-                            m.AsignacionViatico.jornada_id.in_(
-                                [j.id for j in suyos]))
-                    .all()) if suyos else []
+                            m.AsignacionViatico.jornada_id.in_(todos))
+                    .all()) if todos else []
         dinero = _dinero_de(db, viaticos)
         filas.append({
             "persona_id": persona_id,
@@ -906,6 +965,45 @@ def _repartir(monto: Decimal, pesos: list[Decimal]) -> list[Decimal]:
     return partes
 
 
+def _recortar_lo_no_pedido(db: Session, viatico: m.AsignacionViatico) -> Decimal:
+    """Tras cancelar una ronda posterior al primer deposito, lo autorizado
+    vuelve a ser lo que ya salio o sigue pedido.
+
+    La primera ronda se cancela con su monto intacto: el consultor la
+    corrige con `fijar`. Pero con dinero ya afuera `fijar` no entra
+    --reescribe el desglose desde cero-- y la ronda cancelada se quedaba
+    autorizada para siempre: el bolson decia "hay 600 por depositar" y no
+    se podia cerrar ni con descuento (seccion 98). Se quitan los
+    adicionales que la formaban, del ultimo hacia atras; si el consultor
+    la quiere otra vez, la agrega otra vez.
+    """
+    objetivo = motor.depositado(viatico) + motor.en_camino(viatico)
+    if objetivo <= 0:
+        return Decimal("0")
+    exceso = Decimal(str(viatico.monto_total or 0)) - objetivo
+    if exceso <= 0:
+        return Decimal("0")
+    quitado = Decimal("0")
+    extras = sorted((c for c in viatico.conceptos if c.es_adicional),
+                    key=lambda c: c.id, reverse=True)
+    for concepto in extras:
+        if exceso <= 0:
+            break
+        monto = Decimal(str(concepto.monto))
+        if monto <= exceso:
+            db.delete(concepto)
+            exceso -= monto
+            quitado += monto
+        else:
+            concepto.monto = monto - exceso
+            quitado += exceso
+            exceso = Decimal("0")
+    db.flush()
+    db.refresh(viatico)
+    _recalcular_total(viatico)
+    return quitado
+
+
 @router.post("/equipos/{equipo_id}/persona",
              summary="Fijar cuanto se le deposita a una persona")
 def fijar_monto(equipo_id: int, datos: s.ViaticoDeEquipoIn,
@@ -953,6 +1051,14 @@ def fijar_monto(equipo_id: int, datos: s.ViaticoDeEquipoIn,
                 asignado_por_id=usuario.persona_id)
             db.add(viatico)
             db.flush()
+        # Fijarle monto a un viatico cancelado --la persona volvio al
+        # dia-- lo vuelve a poner en juego: cancelado se pedia y se
+        # pagaba sin que la app lo enseñara (seccion 98). Y el escenario
+        # sigue a la modalidad del dia, que pudo cambiar.
+        if viatico.estatus in (m.EstatusViatico.CANCELADO,
+                               m.EstatusViatico.DEVUELTO):
+            viatico.estatus = m.EstatusViatico.ASIGNADO
+        viatico.escenario = motor.escenario_de(jornada)
 
         # Se vuelve a escribir el desglose completo: el consultor puede
         # subir y bajar el numero varias veces antes de pedirlo, y
@@ -1071,6 +1177,13 @@ def solicitar_deposito(equipo_id: int, datos: s.SolicitarDepositoIn,
 
     pedidos, monto = 0, Decimal("0")
     for viatico in consulta.all():
+        # El de quien salio por contingencia queda cancelado con su
+        # monto: "Solicitar" del equipo lo pedia tambien, y finanzas le
+        # depositaba dias que ya no trabaja (seccion 98).
+        if viatico.estatus in (m.EstatusViatico.CANCELADO,
+                               m.EstatusViatico.DEVUELTO,
+                               m.EstatusViatico.CERRADO):
+            continue
         saldo = _dinero_de(db, [viatico])["por_solicitar"]
         if saldo <= 0:
             continue          # nada que pedir: ya salio o ya esta pedido
@@ -1119,6 +1232,7 @@ def cancelar_solicitud(equipo_id: int, datos: s.SolicitarDepositoIn,
 
     ahora = datetime.now()
     cancelados, pedidos, monto, pedido = 0, 0, Decimal("0"), Decimal("0")
+    recortado = Decimal("0")
     for viatico in consulta.all():
         vueltas = (db.query(m.SolicitudTransferencia)
                    .filter(m.SolicitudTransferencia.asignacion_id == viatico.id,
@@ -1152,6 +1266,10 @@ def cancelar_solicitud(equipo_id: int, datos: s.SolicitarDepositoIn,
         # ese dinero salio y su comprobacion sigue corriendo.
         if viatico.estatus == m.EstatusViatico.SOLICITADO:
             viatico.estatus = m.EstatusViatico.ASIGNADO
+        else:
+            # Una ronda posterior al deposito: lo que se cancela se quita
+            # de lo autorizado, porque ya no hay como corregirlo.
+            recortado += _recortar_lo_no_pedido(db, viatico)
         cancelados += 1
 
     if not cancelados and not pedidos:
@@ -1161,7 +1279,8 @@ def cancelar_solicitud(equipo_id: int, datos: s.SolicitarDepositoIn,
     auditoria.registrar(
         db, usuario, equipo.servicio, "cancelar solicitud",
         f"{monto} · {equipo.alias}, {cancelados} deposito(s)"
-        + (f"; {pedidos} pedido(s) a finanzas por {pedido}" if pedidos else ""))
+        + (f"; {pedidos} pedido(s) a finanzas por {pedido}" if pedidos else "")
+        + (f"; {recortado} quitados de lo autorizado" if recortado else ""))
     db.commit()
     panel = panel_de_equipo(equipo_id, db)
     # Lo que quedo pedido no esta cancelado todavia. Decirlo aqui es lo
@@ -1676,7 +1795,10 @@ def cancelar_desde_finanzas(equipo_id: int, persona_id: int,
     y el sistema lo marca como llegado tarde.
     """
     equipo = _equipo(db, equipo_id)
-    dias = _dias_vivos(equipo)
+    # Sobre todos los dias del equipo, cancelados incluidos: la solicitud
+    # del dia que se cancelo es justo la que llega aqui pedida (seccion
+    # 98), y filtrar por "dias vivos" contestaba "nadie pidio cancelar".
+    dias = list(equipo.jornadas)
     solicitudes = (db.query(m.SolicitudTransferencia)
                    .join(m.AsignacionViatico,
                          m.SolicitudTransferencia.asignacion_id
@@ -1685,7 +1807,7 @@ def cancelar_desde_finanzas(equipo_id: int, persona_id: int,
                            m.AsignacionViatico.jornada_id.in_(
                                [j.id for j in dias]),
                            m.SolicitudTransferencia.estatus.in_(EN_CAMINO))
-                   .all())
+                   .all()) if dias else []
     pedidas = [x for x in solicitudes if x.cancelacion_pedida_en]
     if not pedidas:
         raise HTTPException(409, {
@@ -1699,8 +1821,13 @@ def cancelar_desde_finanzas(equipo_id: int, persona_id: int,
         solicitud.estatus = m.EstatusTransferencia.CANCELADA
         monto += Decimal(str(solicitud.monto))
         viatico = solicitud.asignacion
+        # Si el viatico sigue vivo vuelve al consultor; si ya se cancelo
+        # (el dia se quito, la persona salio) se queda cancelado.
         if viatico.estatus == m.EstatusViatico.SOLICITADO:
             viatico.estatus = m.EstatusViatico.ASIGNADO
+        elif viatico.estatus != m.EstatusViatico.CANCELADO:
+            # Una ronda posterior al deposito: se quita de lo autorizado.
+            _recortar_lo_no_pedido(db, viatico)
 
     auditoria.registrar(db, usuario, equipo.servicio, "cancelar deposito",
                         f"{monto} · {equipo.alias}, {len(pedidas)} "
@@ -1716,6 +1843,7 @@ async def depositar(equipo_id: int = Form(...), persona_id: int = Form(...),
                     referencia: str = Form(...),
                     archivo: UploadFile = File(...),
                     anio: int | None = Form(None), mes: int | None = Form(None),
+                    solicitudes_ids: str | None = Form(None),
                     db: Session = Depends(get_db),
                     usuario: m.Usuario = Depends(FINANZAS)):
     """Un solo movimiento por persona, aunque por dentro sean varios dias.
@@ -1723,9 +1851,21 @@ async def depositar(equipo_id: int = Form(...), persona_id: int = Form(...),
     La referencia y el comprobante son obligatorios: es lo que contesta
     "¿ya me depositaron?" sin tener que creerle a nadie, y lo que sirve
     para rastrear el dinero en el banco si no llego.
+
+    `solicitudes_ids` (seccion 98) son las solicitudes que finanzas vio
+    en su bandeja, separadas por coma. Sin ellas se registraba "todo lo
+    pendiente de esa persona" al momento de guardar: si el consultor
+    pedia 500 mas mientras finanzas estaba en el banco, el deposito
+    quedaba de 1,500 y la app decia "te depositaron 1,500". Con ellas
+    se registra exactamente lo que se transfirio; lo que llego despues
+    sigue en la bandeja.
     """
     equipo = _equipo(db, equipo_id)
-    dias = _dias_vivos(equipo)
+    # Todos los dias del equipo, cancelados incluidos: la solicitud de
+    # un dia que se cancelo con el dinero ya en el banco tiene que poder
+    # registrarse (seccion 98). Antes contestaba 404 y ese deposito se
+    # quedaba fuera del sistema.
+    dias = list(equipo.jornadas)
     # Acotado al mes cuando viene: asi es como la bandeja del implantado
     # presenta cada renglon, y confirmar de mas seria dar por depositado
     # un mes que nadie reviso.
@@ -1745,11 +1885,27 @@ async def depositar(equipo_id: int = Form(...), persona_id: int = Form(...),
                         m.AsignacionViatico.jornada_id.in_(
                             [j.id for j in dias]),
                         m.SolicitudTransferencia.estatus.in_(estatus))
-                .all())
+                .all()) if dias else []
+
+    # Una referencia del banco es de un solo movimiento: el mismo
+    # formulario mandado dos veces --la respuesta se perdio, un doble
+    # clic-- registraba un segundo deposito con la misma referencia
+    # (seccion 98).
+    referencia = (referencia or "").strip()
+    repetido = (db.query(m.DepositoBancario)
+                .filter(m.DepositoBancario.persona_id == persona_id,
+                        m.DepositoBancario.referencia == referencia)
+                .first()) if referencia else None
+    if repetido:
+        raise HTTPException(409, {
+            "mensaje": ("Esa referencia ya esta registrada para esa persona "
+                        f"({repetido.monto} {repetido.moneda.value})"),
+            "que_hacer": ("Recarga la bandeja: ese deposito ya quedo. Si es "
+                          "otra transferencia, trae otra referencia."),
+            "deposito_id": repetido.id})
 
     solicitudes = _suyas((m.EstatusTransferencia.PENDIENTE,
                           m.EstatusTransferencia.ENVIADA))
-
     # La puerta de atras. El consultor cancelo el deposito mientras
     # finanzas estaba en el banco, y finanzas vuelve con la referencia y
     # el comprobante de una transferencia que ya se hizo. Antes esto era
@@ -1759,11 +1915,40 @@ async def depositar(equipo_id: int = Form(...), persona_id: int = Form(...),
     #
     # Se acepta y queda marcado, para que el consultor lo vea y decida
     # si lo aplica o lo pide de vuelta.
-    tardio = False
-    if not solicitudes:
-        solicitudes = [x for x in _suyas((m.EstatusTransferencia.CANCELADA,))
-                       if not x.deposito_id]
-        tardio = bool(solicitudes)
+    canceladas = [x for x in _suyas((m.EstatusTransferencia.CANCELADA,))
+                  if not x.deposito_id]
+    tardias: list = []
+    if solicitudes_ids:
+        try:
+            vistas = {int(x) for x in solicitudes_ids.split(",") if x.strip()}
+        except ValueError:
+            raise HTTPException(400, "Las solicitudes vienen mal escritas")
+        en_bandeja = [x for x in solicitudes if x.id in vistas]
+        faltan = vistas - {x.id for x in solicitudes}
+        # Lo que vio y se cancelo mientras transferia --un dia quitado,
+        # la solicitud echada atras-- entra por la puerta de atras,
+        # marcado: el dinero salio tal como lo vio.
+        tardias = [x for x in canceladas if x.id in faltan]
+        raras = faltan - {x.id for x in tardias}
+        if raras:
+            # Lo que vio y ya se pago, o ya no existe: no se registra
+            # dos veces.
+            raise HTTPException(409, {
+                "mensaje": ("Parte de lo que viste en la bandeja ya se "
+                            "registro o ya no existe"),
+                "que_hacer": ("Recarga la bandeja: ese deposito puede haber "
+                              "quedado registrado ya. Si transferiste otra "
+                              "vez, registra lo que quede con su propia "
+                              "referencia."),
+                "solicitudes": sorted(raras)})
+        if not en_bandeja and not tardias:
+            raise HTTPException(409, {
+                "mensaje": "No viste ninguna solicitud de esa persona",
+                "que_hacer": "Recarga la bandeja y vuelve a registrar."})
+        solicitudes = en_bandeja + tardias
+    elif not solicitudes:
+        solicitudes = tardias = canceladas
+    tardio = bool(tardias)
 
     if not solicitudes:
         raise HTTPException(404, {
@@ -1778,20 +1963,31 @@ async def depositar(equipo_id: int = Form(...), persona_id: int = Form(...),
         db, [x.id for x in solicitudes], referencia, comprobante,
         despachado_por_id=usuario.persona_id, sobre_cancelada=tardio)
 
+    monto_tardio = Decimal(str(deposito.monto_sobre_cancelada or 0))
+    tardio = deposito.sobre_cancelada
     auditoria.registrar(db, usuario, equipo.servicio, "deposito bancario",
                         f"{deposito.monto} {deposito.moneda.value} a "
                         f"{deposito.persona.nombre}, ref {deposito.referencia}"
-                        + (" · SOBRE SOLICITUD CANCELADA" if tardio else ""))
+                        + (f" · {monto_tardio} SOBRE SOLICITUD CANCELADA"
+                           if tardio else ""))
     db.commit()
     db.refresh(deposito)
     _avisar_sin_tumbar(push.avisar_deposito, db, deposito)
     db.commit()
+    if not tardio:
+        nota = "Ya aparece en la app del personal como saldo disponible"
+    elif monto_tardio == Decimal(str(deposito.monto)):
+        nota = ("El consultor ya habia cancelado este deposito. Queda "
+                "registrado y marcado: el consultor tiene que aplicarlo "
+                "o pedir la devolucion.")
+    else:
+        nota = (f"De este deposito, {monto_tardio} eran de dias que el "
+                f"consultor ya habia cancelado. Queda registrado y marcado: "
+                f"el consultor tiene que aplicar esa parte o pedir su "
+                f"devolucion.")
     return {"resultado": "depositado", "monto": deposito.monto,
             "deposito_id": deposito.id,
             "depositos": len(deposito.solicitudes),
             "sobre_cancelada": tardio,
-            "nota": ("El consultor ya habia cancelado este deposito. Queda "
-                     "registrado y marcado: el consultor tiene que aplicarlo "
-                     "o pedir la devolucion."
-                     if tardio else
-                     "Ya aparece en la app del personal como saldo disponible")}
+            "monto_sobre_cancelada": monto_tardio,
+            "nota": nota}

@@ -27,6 +27,72 @@ TOLERANCIA_COMPROBADO = Decimal("1.20")
 MINUTOS_DOBLE_TOQUE = 3
 
 
+# ---------------------------------------------------- lo que de verdad salio
+#
+# Seccion 98. El estatus del viatico cuenta una ronda a la vez: con un
+# primer deposito hecho y un segundo pedido, dice TRANSFERIDO, y todo lo
+# que sumaba `monto_total` --el segundo incluido-- se leia como dinero en
+# la cuenta de la persona: la app decia "te depositaron 1,600" con 600
+# todavia en finanzas, el consultor podia cerrar con descuento sobre
+# esos 600, y el deposito que llegaba despues caia sobre un viatico ya
+# cerrado. Lo depositado son las solicitudes que finanzas confirmo; lo
+# demas esta en camino o sin pedir.
+
+def depositado(viatico) -> Decimal:
+    """Lo que finanzas confirmo de este viatico, ronda por ronda."""
+    return sum((Decimal(str(s.monto)) for s in viatico.solicitudes
+                if s.estatus == m.EstatusTransferencia.CONFIRMADA),
+               Decimal("0"))
+
+
+def en_camino(viatico) -> Decimal:
+    """Lo pedido que finanzas todavia no deposita."""
+    return sum((Decimal(str(s.monto)) for s in viatico.solicitudes
+                if s.estatus in (m.EstatusTransferencia.PENDIENTE,
+                                 m.EstatusTransferencia.ENVIADA)),
+               Decimal("0"))
+
+
+# Ya salio del banco, o se resolvio despues de haber salido.
+CON_DINERO_AFUERA = (m.EstatusViatico.TRANSFERIDO,
+                     m.EstatusViatico.EN_COMPROBACION,
+                     m.EstatusViatico.CERRADO, m.EstatusViatico.DEVUELTO)
+
+
+def cancelar(db: Session, viatico, ahora: datetime | None = None,
+             por_id: int | None = None) -> dict:
+    """Ese viatico ya no va a salir: la persona no trabaja ese dia.
+
+    Solo lo que no ha salido del banco (asignado o solicitado). Sus
+    solicitudes se resuelven con el: la pendiente se cancela, y la que
+    ya esta enviada --en manos de finanzas, quiza en el banco ahora
+    mismo-- queda con la cancelacion pedida, como cuando la pide el
+    consultor (seccion 41): la cierra finanzas, que es quien sabe si el
+    dinero salio.
+
+    Antes cada camino cancelaba el viatico y dejaba la solicitud viva:
+    finanzas la seguia viendo en su bandeja como dinero por pagar --y lo
+    pagaba a alguien que ya no iba, o se quedaba atorada para siempre--.
+    Un servicio cancelado, un dia quitado y un reemplazo por contingencia
+    pasaban por aqui sin pasar por aqui.
+    """
+    if viatico.estatus not in (m.EstatusViatico.ASIGNADO,
+                               m.EstatusViatico.SOLICITADO):
+        return {"cancelado": False, "canceladas": 0, "pedidas": 0}
+    viatico.estatus = m.EstatusViatico.CANCELADO
+    canceladas = pedidas = 0
+    for solicitud in viatico.solicitudes:
+        if solicitud.estatus == m.EstatusTransferencia.PENDIENTE:
+            solicitud.estatus = m.EstatusTransferencia.CANCELADA
+            canceladas += 1
+        elif (solicitud.estatus == m.EstatusTransferencia.ENVIADA
+              and not solicitud.cancelacion_pedida_en):
+            solicitud.cancelacion_pedida_en = ahora or datetime.now()
+            solicitud.cancelacion_pedida_por_id = por_id
+            pedidas += 1
+    return {"cancelado": True, "canceladas": canceladas, "pedidas": pedidas}
+
+
 def bolson_del_servicio(db: Session, viatico) -> list:
     """Todos los viaticos de esa persona en ese servicio.
 

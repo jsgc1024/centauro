@@ -25,6 +25,8 @@ A direção geral, que alcança tudo, é a única exceção. Por isso uma tentat
 
 Para fechá-la não pode ficar nada no caminho: nem depósitos autorizados sem depositar, nem uma devolução que o financeiro ainda não viu entrar, nem comprovantes sem revisar. O que faltar comprovar ao vencer o prazo é fechado com **desconto na folha**; o comprovado a mais é coberto com diárias adicionais, ou se rejeita o comprovante que não se aplica.
 
+O que se cancela, cancela-se com o seu depósito: ao cancelar o serviço, tirar um dia ou substituir alguém por contingência, o depósito que o financeiro ainda não fez se cancela sozinho, e o que já está com o financeiro fica pedido na sua bandeja até que o financeiro confirme se o dinheiro saiu. Se o financeiro foi ao banco com o que viu e algo se cancelou nesse meio-tempo, o depósito é registrado tal como saiu e a parte já cancelada fica marcada no serviço, para aplicá-la ou pedi-la de volta. O que sobra a alguém da viagem se devolve junto, não por dia; e sobre dinheiro já fechado não cai mais.
+
 ## O fechamento e a fatura
 Ao vencerem as 24 horas do pessoal —ou antes, se todo o dinheiro já fechou— o serviço espera o aval do consultor, que tem as suas próprias 24 horas. Para mandá-lo ao financeiro não pode ter nada a corrigir: sem a cotação autorizada, com um desvio sem justificar, sem taxa de câmbio, com um dia sem a sua marcação de fim ou com diárias sem fechar, não sai. O financeiro o fatura ou o devolve com o motivo escrito, e o devolvido tem 24 horas para voltar. Enquanto a fatura não está conectada com o Odoo, ela é feita lá e registrada em Faturamento → A faturar com «Já faturado no Odoo»: o número e a data. A registrada à mão se corrige aqui mesmo; a que vem do Odoo, no Odoo.
 

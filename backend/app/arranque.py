@@ -115,6 +115,8 @@ TEXTOS = {
         "puestos_ok": "Puestos creados: {n}.",
         "puestos_no": "Ninguno todavía: cada quien entra con lo de su rol.",
         "acceso": "{a} de {n} · {e} ya entraron.",
+        "acceso_1": "{a} de {n} · 1 ya entró.",
+        "acceso_0": "{a} de {n} · nadie ha entrado todavía.",
         "acceso_oficina_sin": "Todavía no se lee la oficina de Odoo.",
         "acceso_campo_sin": "Todavía no hay personal de campo.",
         "de": "{a} de {n}.",
@@ -183,6 +185,8 @@ TEXTOS = {
         "puestos_ok": "Cargos criados: {n}.",
         "puestos_no": "Nenhum ainda: cada um entra com o do seu papel.",
         "acceso": "{a} de {n} · {e} já entraram.",
+        "acceso_1": "{a} de {n} · 1 já entrou.",
+        "acceso_0": "{a} de {n} · ninguém entrou ainda.",
         "acceso_oficina_sin": "O escritório ainda não foi lido do Odoo.",
         "acceso_campo_sin": "Ainda não há pessoal de campo.",
         "de": "{a} de {n}.",
@@ -401,6 +405,13 @@ def _dinero(db: Session, T: dict, idioma: str) -> list:
 
 # ---------------------------------------------------------------- la gente
 
+def _acceso(T: dict, a: int, n: int, e: int) -> str:
+    """Cuantos tienen acceso y cuantos ya entraron: «1 ya entró», no
+    «1 ya entraron»; y con nadie, que lo diga."""
+    clave = "acceso_0" if e == 0 else "acceso_1" if e == 1 else "acceso"
+    return T[clave].format(a=a, n=n, e=e)
+
+
 def _gente(db: Session, T: dict, idioma: str) -> list:
     P, U = m.Persona, m.Usuario
     ir, donde = "#/accesos", T["d_accesos"]
@@ -422,7 +433,7 @@ def _gente(db: Session, T: dict, idioma: str) -> list:
     renglones.append(_renglon(
         "acceso_oficina", _tono_de_avance(a, n) if n else FALTA,
         T["acceso_oficina"],
-        T["acceso"].format(a=a, n=n, e=e) if n else T["acceso_oficina_sin"],
+        _acceso(T, a, n, e) if n else T["acceso_oficina_sin"],
         T["q_rh"], ir, donde))
 
     # El personal de campo: quien va a la calle. No cuenta a quien tiene
@@ -438,7 +449,7 @@ def _gente(db: Session, T: dict, idioma: str) -> list:
     renglones.append(_renglon(
         "acceso_campo", _tono_de_avance(a, n) if n else FALTA,
         T["acceso_campo"],
-        T["acceso"].format(a=a, n=n, e=e) if n else T["acceso_campo_sin"],
+        _acceso(T, a, n, e) if n else T["acceso_campo_sin"],
         T["q_rh"], ir, donde))
 
     S = m.SuscripcionPush

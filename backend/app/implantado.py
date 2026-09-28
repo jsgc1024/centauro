@@ -18,6 +18,7 @@ from app import contingencia
 from app import disponibilidad
 from app import models as m
 from app import reloj
+from app import viaticos as motor_viaticos
 
 
 # Hasta que dia de la semana llega cada esquema. weekday(): lunes es 0.
@@ -821,7 +822,18 @@ def cerrar_dia(db: Session, servicio: m.Servicio, fecha: date) -> dict:
                  .first())
         if fuera or v.estatus != m.EstatusViatico.ASIGNADO:
             con_dinero.append(v)
-    if con_dinero:
+    # Lo que apunta al dia --un cambio de vacaciones que empieza o
+    # termina ahi, una alerta, una marca-- tambien lo cancela en vez de
+    # borrarlo (seccion 98): borrarlo reventaba con "el registro hace
+    # referencia a algo que no existe".
+    from app.routers.servicios import _limpiar_jornadas, _movimientos
+    con_rastro = bool(_movimientos(db, [jornada.id])) or bool(
+        db.query(m.ReemplazoRecurso).filter(
+            (m.ReemplazoRecurso.desde_jornada_id == jornada.id)
+            | (m.ReemplazoRecurso.hasta_jornada_id == jornada.id)).count()
+        or db.query(m.Alerta).filter_by(jornada_id=jornada.id).count()
+        or db.query(m.Reemplazo).filter_by(jornada_id=jornada.id).count())
+    if con_dinero or con_rastro:
         # El dia se cancela, no se borra. Decision de Salvador, 21 sep.
         #
         # Borrarlo se llevaria por delante el viatico y con el la prueba
@@ -832,24 +844,39 @@ def cerrar_dia(db: Session, servicio: m.Servicio, fecha: date) -> dict:
         #
         # Cancelado sale de la app del personal y del calendario, y su
         # viatico sigue vivo para resolverse por devolucion.
-        total = sum((Decimal(str(v.monto_total or 0)) for v in con_dinero),
+        # Lo que no ha salido se cancela con su solicitud (seccion 98):
+        # la pendiente se cancela y la enviada queda pedida a finanzas.
+        ahora = reloj.ahora_del_servicio(db, servicio)
+        pedidas = 0
+        for v in viaticos:
+            pedidas += motor_viaticos.cancelar(db, v, ahora)["pedidas"]
+        salio = [v for v in con_dinero
+                 if v.estatus in motor_viaticos.CON_DINERO_AFUERA]
+        total = sum((Decimal(str(v.monto_total or 0)) for v in salio),
                     Decimal("0"))
         quienes = ", ".join(sorted(
-            v.persona.nombre for v in con_dinero if v.persona))
+            v.persona.nombre for v in salio if v.persona))
         jornada.estatus = m.EstatusJornada.CANCELADA
         cierre_mes.terminar_si_cerro_el_mes(
             db, contrato, registrado=reloj.ahora_del_servicio(db, servicio))
         db.commit()
+        if salio:
+            nota = (f"El dia queda cancelado: trae {total} de {quienes} "
+                    f"que ya salio del banco. Ese dinero se resuelve "
+                    f"con la devolucion, no borrando el dia.")
+        else:
+            nota = "El dia queda cancelado, no borrado: ya tenia rastro."
+        if pedidas:
+            nota += (f" Finanzas tiene {pedidas} deposito(s) de ese dia en "
+                     f"camino: se le pidio cancelarlos.")
         return {"cancelado": fecha.isoformat(), "borrado": False,
-                "viaticos_vivos": len(con_dinero), "monto": str(total),
-                "nota": (f"El dia queda cancelado: trae {total} de {quienes} "
-                         f"que ya salio del banco. Ese dinero se resuelve "
-                         f"con la devolucion, no borrando el dia.")}
+                "viaticos_vivos": len(salio), "monto": str(total),
+                "pedidas_a_finanzas": pedidas, "nota": nota}
 
     # Lo que solo estaba asignado se va con el dia: ese dinero no existe
-    # todavia fuera del sistema.
-    for v in viaticos:
-        db.delete(v)
+    # todavia fuera del sistema. Y lo que cuelga del dia --su trayecto,
+    # sus asignaciones-- con el, con la misma limpieza del eventual.
+    _limpiar_jornadas(db, [jornada.id])
     db.flush()
 
     db.delete(jornada)

@@ -292,7 +292,11 @@ def reemplazar_vehiculo(db: Session, desde_jornada_id: int, sale_vehiculo_id: in
             choques.append(j.fecha.isoformat())
             continue
 
-        if _rodo(db, j, sale_vehiculo_id):
+        # Se parte el dia en que la unidad ya rodo y, si el equipo la
+        # trae en las manos --recibida y sin entregar--, el dia del
+        # cambio: es donde hay que devolverla con su revision.
+        if _rodo(db, j, sale_vehiculo_id) or (
+                j.id == desde.id and _en_manos(db, j, sale_vehiculo_id)):
             asignacion.relevado_en = momento
             asignacion.relevado_por_vehiculo_id = entra_vehiculo_id
             db.add(m.AsignacionVehiculo(jornada_id=j.id,
@@ -345,18 +349,43 @@ def reemplazar_vehiculo(db: Session, desde_jornada_id: int, sale_vehiculo_id: in
 
 
 def _rodo(db: Session, jornada: m.Jornada, vehiculo_id: int) -> bool:
-    """Si la unidad alcanzo a salir ese dia.
+    """Si la unidad alcanzo a salir ESE dia.
 
-    Se sabe por la revision de recepcion: si alguien la recibio, la
-    camioneta ya cambio de manos una vez y tiene que cambiar otra al
-    salir. Si nadie la recibio, no rodo y cambiarla es corregir un
-    nombre en una lista.
+    Se parte solo el dia en que ya rodo: el que ya arranco, o el que
+    todavia no arranca pero en el que alguien ya recibio la unidad (la
+    recogio esa manana y se descompuso antes de la llegada). Los dias
+    que siguen se mutan: la unidad que sale ya no va en ellos.
+
+    Antes preguntaba por servicio --"¿alguien la recibio alguna vez?"--
+    y partia tambien los dias futuros (seccion 98): el dia 3 exigia
+    entregar una camioneta que se fue el dia 2 y ya no se podia
+    fotografiar, el fin se atoraba, y la unidad seguia "ocupada" el dia
+    3 para otros servicios.
     """
+    if jornada.estatus in (*m.ARRANCADAS, m.EstatusJornada.TERMINADA):
+        return True
+    inicio = datetime.combine(jornada.fecha, datetime.min.time())
+    fin = inicio + timedelta(days=1)
     return (db.query(m.RevisionUnidad.id)
-            .filter_by(servicio_id=jornada.equipo.servicio_id,
-                       vehiculo_id=vehiculo_id,
-                       tipo=m.TipoRevision.RECIBE)
+            .filter(m.RevisionUnidad.servicio_id == jornada.equipo.servicio_id,
+                    m.RevisionUnidad.vehiculo_id == vehiculo_id,
+                    m.RevisionUnidad.tipo == m.TipoRevision.RECIBE,
+                    m.RevisionUnidad.momento >= inicio,
+                    m.RevisionUnidad.momento < fin)
             .first()) is not None
+
+
+def _en_manos(db: Session, jornada: m.Jornada, vehiculo_id: int) -> bool:
+    """Si el equipo trae la unidad: la recibio en este servicio y no la
+    ha entregado. Es la que hay que devolver el dia del cambio aunque
+    ese dia todavia no arranque."""
+    ultima = (db.query(m.RevisionUnidad)
+              .filter_by(servicio_id=jornada.equipo.servicio_id,
+                         vehiculo_id=vehiculo_id)
+              .order_by(m.RevisionUnidad.momento.desc(),
+                        m.RevisionUnidad.id.desc())
+              .first())
+    return ultima is not None and ultima.tipo == m.TipoRevision.RECIBE
 
 
 def _revision_pendiente(db: Session, jornada: m.Jornada, sale_vehiculo_id: int,
@@ -409,9 +438,14 @@ def _mover_viaticos(db: Session, jornadas: list[m.Jornada],
                     "monto": float(viejo.monto_total),
                     "limite": viejo.limite_comprobacion.isoformat()})
             elif viejo.estatus in SIN_DINERO:
-                viejo.estatus = m.EstatusViatico.CANCELADO
+                # Con su solicitud (seccion 98): la pendiente se cancela y
+                # la enviada queda pedida a finanzas. Antes la solicitud
+                # sobrevivia al relevo y finanzas le depositaba a quien
+                # salio los dias que ya no trabaja.
+                resultado = motor_viaticos.cancelar(db, viejo, ahora)
                 cancelados.append({"viatico_id": viejo.id,
-                                   "fecha": j.fecha.isoformat()})
+                                   "fecha": j.fecha.isoformat(),
+                                   "pedida_a_finanzas": resultado["pedidas"] > 0})
 
         ya_tiene = (db.query(m.AsignacionViatico)
                     .filter_by(jornada_id=j.id, persona_id=entra_persona_id)

@@ -358,6 +358,14 @@ def registrar_hito(db: Session, jornada_id: int, persona_id: int,
                        if a.persona_id == persona_id), None)
     if asignacion is None:
         raise HTTPException(403, "Esa persona no esta asignada a la jornada")
+    # Un dia cancelado no se marca (seccion 98): una llegada que se quedo
+    # en la cola del telefono lo ponia en "arribado" con el servicio ya
+    # cancelado, y entraba al pulso y al standby de la central.
+    if jornada.estatus == m.EstatusJornada.CANCELADA:
+        raise HTTPException(409, {
+            "mensaje": "Ese dia esta cancelado: ya no se marca",
+            "que_hacer": "Si de verdad estas en el servicio, hablale a tu "
+                         "consultor."})
 
     # Marcar con tu propio usuario dice mas que confirmar. Si no se
     # apagara aqui, la central podria ver "le falta confirmar al equipo"
@@ -1286,7 +1294,12 @@ def terminar_si_cerro_el_ultimo_dia(db: Session, servicio: m.Servicio,
     from app import encuestas as motor_encuestas
 
     abrir_plazo_del_servicio(db, servicio, t0)
-    motor_cierre.abrir(db, servicio.id, abierto_en=t0)
+    cierre = motor_cierre.abrir(db, servicio.id, abierto_en=t0)
+    # El servicio que finanzas regreso y se volvio a cerrar no vuelve a
+    # empezar sus relojes: sigue con su cierre, esperando que el
+    # consultor lo mande otra vez (seccion 98).
+    if cierre.estatus == m.EstatusCierre.DEVUELTO_A_OPERACION:
+        servicio.estatus = m.EstatusServicio.SIN_VISTO_BUENO
     try:
         motor_encuestas.generar(db, servicio.id)
     except Exception:                     # noqa: BLE001
@@ -1614,7 +1627,14 @@ def reabrir(db: Session, jornada_id: int, quien_id: int,
                 "mensaje": "El servicio ya tiene visto bueno: no se puede reabrir",
                 "que_hacer": "Lo que cambie de este dia se corrige con "
                              "finanzas, no reabriendo el dia."})
-        if cierre:
+        # El cierre que finanzas regreso se queda (seccion 98): trae el
+        # primer visto bueno con su "en plazo" o "fuera de plazo", la
+        # factura anulada que la siguiente tiene que sustituir y las
+        # desviaciones ya justificadas. Borrarlo hacia nacer otro con T0
+        # nuevo: el segundo visto bueno salia "en plazo" --la comision
+        # perdida se pagaba-- y la factura nueva no decia a cual
+        # sustituia. Se corrige el dia y el consultor lo vuelve a mandar.
+        if cierre and cierre.estatus != m.EstatusCierre.DEVUELTO_A_OPERACION:
             for viatico in _viaticos_del_servicio(db, servicio.id):
                 if viatico.limite_comprobacion == cierre.comprobacion_hasta:
                     viatico.limite_comprobacion = None

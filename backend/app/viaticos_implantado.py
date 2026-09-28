@@ -16,6 +16,7 @@ Por eso aqui todo lleva anio y mes, y por eso no se comparte el camino
 con el eventual: un parametro suelto en el otro lado terminaria
 moviendole el corte a quien no lo pidio.
 """
+from datetime import datetime
 from decimal import Decimal, ROUND_FLOOR
 
 from fastapi import HTTPException
@@ -67,7 +68,10 @@ def _dinero(db: Session, viaticos: list[m.AsignacionViatico]) -> dict:
     otro. Por eso las cuentas salen de las solicitudes y no del estatus
     del viatico, que solo puede contar una ronda a la vez.
     """
-    asignado = sum((Decimal(str(v.monto_total)) for v in viaticos),
+    # Lo cancelado o devuelto ya no es dinero por pedir (seccion 98).
+    asignado = sum((Decimal(str(v.monto_total)) for v in viaticos
+                    if v.estatus not in (m.EstatusViatico.CANCELADO,
+                                         m.EstatusViatico.DEVUELTO)),
                    Decimal("0"))
     solicitudes = []
     if viaticos:
@@ -311,6 +315,12 @@ def solicitar(db: Session, servicio: m.Servicio, anio: int, mes: int,
     deposito o ya esta pedido no se vuelve a pedir."""
     pedidos, monto = 0, Decimal("0")
     for viatico in _del_mes(db, servicio, anio, mes, persona_id):
+        # El de quien salio queda cancelado con su monto: no se pide
+        # (seccion 98).
+        if viatico.estatus in (m.EstatusViatico.CANCELADO,
+                               m.EstatusViatico.DEVUELTO,
+                               m.EstatusViatico.CERRADO):
+            continue
         saldo = _dinero(db, [viatico])["por_solicitar"]
         if saldo <= 0:
             continue
@@ -329,10 +339,18 @@ def solicitar(db: Session, servicio: m.Servicio, anio: int, mes: int,
 
 
 def cancelar(db: Session, servicio: m.Servicio, anio: int, mes: int,
-             persona_id: int | None = None) -> dict:
+             persona_id: int | None = None,
+             ahora: datetime | None = None,
+             por_id: int | None = None) -> dict:
     """Mientras el dinero no salga, el consultor puede echarse para atras.
-    Lo ya depositado no entra aqui: eso se devuelve, no se cancela."""
-    cancelados, monto = 0, Decimal("0")
+    Lo ya depositado no entra aqui: eso se devuelve, no se cancela.
+
+    La solicitud que ya salio en el barrido esta en manos de finanzas y
+    puede estar transfiriendose ahora mismo: queda pedida y la cierra
+    finanzas, como en el eventual (seccion 41). Aqui se cancelaba de
+    una vez y el dinero salia igual (seccion 98).
+    """
+    cancelados, pedidos, monto, pedido = 0, 0, Decimal("0"), Decimal("0")
     for viatico in _del_mes(db, servicio, anio, mes, persona_id):
         vueltas = (db.query(m.SolicitudTransferencia)
                    .filter(m.SolicitudTransferencia.asignacion_id == viatico.id,
@@ -340,18 +358,30 @@ def cancelar(db: Session, servicio: m.Servicio, anio: int, mes: int,
                    .all())
         if not vueltas:
             continue
+        suyas = 0
         for solicitud in vueltas:
+            if solicitud.estatus == m.EstatusTransferencia.ENVIADA:
+                if not solicitud.cancelacion_pedida_en:
+                    solicitud.cancelacion_pedida_en = ahora or datetime.now()
+                    solicitud.cancelacion_pedida_por_id = por_id
+                    pedidos += 1
+                    pedido += Decimal(str(solicitud.monto))
+                continue
             solicitud.estatus = m.EstatusTransferencia.CANCELADA
             monto += Decimal(str(solicitud.monto))
+            suyas += 1
+        if not suyas:
+            continue
         if viatico.estatus == m.EstatusViatico.SOLICITADO:
             viatico.estatus = m.EstatusViatico.ASIGNADO
         cancelados += 1
 
-    if not cancelados:
+    if not cancelados and not pedidos:
         raise HTTPException(409, "No hay depositos por cancelar. Si el "
                                  "dinero ya salio, se devuelve.")
     db.flush()
-    return {"depositos": cancelados, "monto": str(monto)}
+    return {"depositos": cancelados, "monto": str(monto),
+            "pedidos_a_finanzas": pedidos, "pedido": str(pedido)}
 
 
 # --------------------------------------------------------------------

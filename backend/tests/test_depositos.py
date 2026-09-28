@@ -140,12 +140,17 @@ def test_sin_comprobante_no_se_registra(cliente, sesion, datos):
 
 
 def test_no_se_paga_dos_veces_lo_mismo(cliente, sesion, datos):
+    """El mismo formulario dos veces --la respuesta se perdio, un doble
+    clic-- trae la misma referencia del banco, y una referencia es de
+    un solo movimiento (seccion 98)."""
     servicio, _ = _servicio_con_viaticos(cliente, sesion, datos)
     fila = _bandeja(cliente, sesion, servicio["folio"])
-    assert _depositar(cliente, sesion, fila).status_code == 200
+    primero = _depositar(cliente, sesion, fila)
+    assert primero.status_code == 200
 
     r = _depositar(cliente, sesion, fila)
-    assert r.status_code == 404, r.text
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["deposito_id"] == primero.json()["deposito_id"]
 
 
 def test_la_evidencia_se_puede_ver_despues(cliente, sesion, datos):

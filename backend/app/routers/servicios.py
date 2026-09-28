@@ -12,6 +12,8 @@ from app import auth
 from app import contactos_servicio
 from app import programacion
 from app import push
+from app import reloj
+from app import viaticos as motor_viaticos
 from app import telefonos
 from app.routers import solicitantes as contactos
 from app import disponibilidad as disp
@@ -371,6 +373,9 @@ def asignar_personal(jornada_id: int, datos: s.AsignarPersonalIn,
     """Bloqueo duro si hay empalme real. Si solo hay holgura insuficiente
     se devuelve alerta de riesgo y el consultor decide con forzar=true."""
     jornada = _obtener_jornada(db, jornada_id)
+    _que_se_pueda_armar(jornada.equipo.servicio)
+    if jornada.estatus == m.EstatusJornada.CANCELADA:
+        raise HTTPException(409, "Ese dia esta cancelado")
     persona = db.get(m.Persona, datos.persona_id)
     if not persona:
         raise HTTPException(404, f"No existe la persona {datos.persona_id}")
@@ -425,6 +430,9 @@ def asignar_vehiculo(jornada_id: int, datos: s.AsignarVehiculoIn,
                      usuario: m.Usuario = Depends(
                          auth.puede("asignaciones.mover"))):
     jornada = _obtener_jornada(db, jornada_id)
+    _que_se_pueda_armar(jornada.equipo.servicio)
+    if jornada.estatus == m.EstatusJornada.CANCELADA:
+        raise HTTPException(409, "Ese dia esta cancelado")
     vehiculo = db.get(m.Vehiculo, datos.vehiculo_id)
     if not vehiculo:
         raise HTTPException(404, f"No existe el vehiculo {datos.vehiculo_id}")
@@ -471,6 +479,7 @@ def agregar_dia(equipo_id: int, datos: s.JornadaIn,
     equipo = db.get(m.Equipo, equipo_id)
     if not equipo:
         raise HTTPException(404, f"No existe el equipo {equipo_id}")
+    _que_se_pueda_armar(equipo.servicio)
     if any(j.fecha == datos.fecha for j in equipo.jornadas):
         raise HTTPException(409, {
             "mensaje": "Ese equipo ya tiene ese dia",
@@ -524,7 +533,17 @@ def corregir_dia(jornada_id: int, datos: s.DiaIn, db: Session = Depends(get_db),
              or (hora_nueva and hora_nueva
                  != jornada.inicio_programado.time()))
     if mueve:
+        # Y tampoco en un servicio que ya no se arma (seccion 98). Los
+        # km o el foraneo de un dia terminado si se corrigen mientras el
+        # consultor lo revisa: son datos del cierre, no del armado.
+        _que_se_pueda_armar(jornada.equipo.servicio)
+        if jornada.estatus == m.EstatusJornada.CANCELADA:
+            raise HTTPException(409, "Ese dia esta cancelado: no se mueve")
         horas_extra.candado_del_arranque(db, jornada)
+    elif jornada.equipo.servicio.estatus in (
+            m.EstatusServicio.CANCELADO, m.EstatusServicio.CERRADO,
+            m.EstatusServicio.EN_FACTURACION):
+        _que_se_pueda_armar(jornada.equipo.servicio)
 
     if "fecha" in cambios and cambios["fecha"]:
         repetida = any(j.fecha == cambios["fecha"] and j.id != jornada.id
@@ -587,11 +606,28 @@ def quitar_dia(jornada_id: int, db: Session = Depends(get_db),
     if len(equipo.jornadas) == 1:
         raise HTTPException(409, "El equipo se quedaria sin dias. "
                                  "Cancela el servicio en vez de quitarlo.")
+    if jornada.estatus == m.EstatusJornada.CANCELADA:
+        raise HTTPException(409, "Ese dia ya esta cancelado")
+    # El dia que esta en la calle no se quita ni se cancela desde aqui:
+    # el equipo esta con el principal. Se termina, o la central lo
+    # cierra (seccion 98).
+    if jornada.estatus in m.ARRANCADAS:
+        raise HTTPException(409, {
+            "mensaje": "Ese dia esta en la calle: no se puede quitar",
+            "que_hacer": ("Cuando termine, o si hay que cerrarlo, la central "
+                          "lo cierra desde la bitacora del dia."),
+        })
 
     fecha = jornada.fecha.isoformat()
     servicio = equipo.servicio
+    _que_se_pueda_armar(servicio)
 
-    # El dinero de ese dia decide si el dia se borra o se cancela.
+    # El dinero de ese dia decide si el dia se borra o se cancela. Y lo
+    # que ya paso en el dia tambien (seccion 98): un dia terminado, con
+    # marcas o con un cambio por contingencia se cancela, no se borra.
+    # Borrarlo se llevaba las marcas, las horas y el pago: la nomina no
+    # le pagaba el dia a quien lo trabajo, o el dia ya pagado quedaba
+    # sin renglon que lo reclamara.
     viaticos = (db.query(m.AsignacionViatico)
                 .filter_by(jornada_id=jornada.id).all())
     con_dinero = []
@@ -603,29 +639,63 @@ def quitar_dia(jornada_id: int, db: Session = Depends(get_db),
                  .first())
         if fuera or v.estatus != m.EstatusViatico.ASIGNADO:
             con_dinero.append(v)
+    con_rastro = (
+        jornada.estatus == m.EstatusJornada.TERMINADA
+        or db.query(m.Hito).filter_by(jornada_id=jornada.id).count() > 0
+        or db.query(m.ReemplazoRecurso).filter(
+            m.ReemplazoRecurso.desde_jornada_id == jornada.id).count() > 0)
 
-    if con_dinero:
+    if con_dinero or con_rastro:
         # Se cancela, no se borra. Borrarlo se llevaria por delante el
         # viatico y con el la prueba de que ese dinero salio del banco.
         # El bolson del eventual es el servicio entero, asi que lo
         # comprobado y lo devuelto siguen cuadrando contra el mismo
         # total aunque el dia ya no se trabaje.
-        total = sum((Decimal(str(v.monto_total or 0)) for v in con_dinero),
+        #
+        # Lo que no ha salido se cancela con su solicitud: la pendiente
+        # se cancela y la enviada queda pedida a finanzas (seccion 98).
+        # Antes la solicitud seguia viva en la bandeja y finanzas
+        # transferia 3,000 por tres dias de los que uno ya no iba.
+        ahora = reloj.ahora_de_la_jornada(db, jornada)
+        salio = [v for v in con_dinero if v.estatus in DINERO_AFUERA]
+        pedidas = 0
+        for v in viaticos:
+            pedidas += motor_viaticos.cancelar(
+                db, v, ahora, usuario.persona_id)["pedidas"]
+        total = sum((Decimal(str(v.monto_total or 0)) for v in salio),
                     Decimal("0"))
         quienes = ", ".join(sorted(
-            v.persona.nombre for v in con_dinero if v.persona))
+            v.persona.nombre for v in salio if v.persona))
+        trabajado = jornada.estatus == m.EstatusJornada.TERMINADA
         jornada.estatus = m.EstatusJornada.CANCELADA
         programacion.evaluar(servicio)
         auditoria.registrar(db, usuario, servicio, "cancelar dia",
-                            f"{equipo.alias}: {fecha} · {total} de {quienes}")
+                            f"{equipo.alias}: {fecha}"
+                            + (f" · {total} de {quienes}" if salio else "")
+                            + (" · ya trabajado" if trabajado else ""))
         db.commit()
+        partes = []
+        if trabajado:
+            partes.append("El dia ya se habia trabajado: queda cancelado "
+                          "con sus marcas. Si ya se pago, la diferencia se "
+                          "descuenta en la nomina siguiente.")
+        if salio:
+            partes.append(f"Trae {total} de {quienes} que ya salio del "
+                          f"banco: ese dinero se resuelve con la "
+                          f"comprobacion o la devolucion, no borrando el "
+                          f"dia.")
+        if not partes:
+            partes.append("El dia queda cancelado, no borrado: ya tenia "
+                          "marcas o dinero pedido.")
+        if pedidas:
+            partes.append(f"Finanzas tiene {pedidas} deposito(s) de ese dia "
+                          f"en camino: se le pidio cancelarlos.")
+        nota = " ".join(partes)
         return {"resultado": "dia cancelado", "fecha": fecha,
                 "borrado": False, "monto": str(total),
                 "estatus_servicio": servicio.estatus.value,
-                "nota": (f"El dia queda cancelado: trae {total} de {quienes} "
-                         f"que ya salio del banco. Ese dinero se resuelve "
-                         f"con la comprobacion o la devolucion, no borrando "
-                         f"el dia.")}
+                "pedidas_a_finanzas": pedidas,
+                "nota": nota}
 
     # Lo que solo estaba asignado se va con el dia.
     for v in viaticos:
@@ -697,6 +767,42 @@ def _dias_vivos(equipo: m.Equipo) -> list[m.Jornada]:
     return sorted([j for j in equipo.jornadas
                    if j.estatus != m.EstatusJornada.CANCELADA],
                   key=lambda j: j.fecha)
+
+
+# Los dias que todavia no salen a la calle: los unicos donde se pone y
+# se quita gente y unidades "al equipo" (seccion 98). Un dia que ya
+# arranco o ya se trabajo tiene marcas, horas y un pago detras: ahi lo
+# que hay es un cambio por contingencia, no una lista que se edita.
+POR_ARRANCAR = (m.EstatusJornada.PLANEADA, m.EstatusJornada.CONFIRMADA,
+                m.EstatusJornada.PROXIMA_A_INICIAR)
+
+
+def _dias_por_arrancar(equipo: m.Equipo) -> list[m.Jornada]:
+    return sorted([j for j in equipo.jornadas if j.estatus in POR_ARRANCAR],
+                  key=lambda j: j.fecha)
+
+
+# Un servicio que ya termino su camino no se sigue armando (seccion 98):
+# se le agregaban dias y gente a un cancelado, el reloj los marcaba
+# proximos y a la persona le llegaba "te acaban de asignar".
+YA_NO_SE_ARMA = (m.EstatusServicio.CANCELADO, m.EstatusServicio.CERRADO,
+                 m.EstatusServicio.EN_FACTURACION,
+                 m.EstatusServicio.SIN_VISTO_BUENO,
+                 m.EstatusServicio.TERMINADO)
+
+
+def _que_se_pueda_armar(servicio: m.Servicio) -> None:
+    if servicio.estatus in YA_NO_SE_ARMA:
+        raise HTTPException(409, {
+            "mensaje": f"El servicio ya esta {servicio.estatus.value}: no se "
+                       "le agregan dias ni recursos",
+            "que_hacer": ("Si el cliente lo alarga, se da de alta otro "
+                          "servicio; si un dia terminado esta mal, se corrige "
+                          "desde la central."
+                          if servicio.estatus == m.EstatusServicio.TERMINADO
+                          else "Lo que haya que corregir se resuelve en su "
+                               "cierre, no armandolo otra vez."),
+        })
 
 
 @router.get("/equipos/{equipo_id}/recomendaciones",
@@ -803,13 +909,17 @@ def asignar_personal_equipo(equipo_id: int, datos: s.AsignarPersonalIn,
     cualquier dia no se asigna ninguno: dejar el servicio a medias es
     peor que no empezarlo."""
     equipo = _equipo(db, equipo_id)
+    _que_se_pueda_armar(equipo.servicio)
     persona = db.get(m.Persona, datos.persona_id)
     if not persona:
         raise HTTPException(404, f"No existe la persona {datos.persona_id}")
     rol = _rol(db, datos.rol_id)
-    dias = _dias_vivos(equipo)
+    # Solo a los dias que no han arrancado (seccion 98): "a todos los
+    # dias" a media semana metia a la persona en el dia ya terminado, y
+    # ese dia se le pagaba y se le cobraba al cliente.
+    dias = _dias_por_arrancar(equipo)
     if not dias:
-        raise HTTPException(409, "El equipo no tiene dias que cubrir")
+        raise HTTPException(409, "El equipo no tiene dias pendientes que cubrir")
 
     bloqueos, riesgos = [], []
     for jornada in dias:
@@ -870,12 +980,13 @@ def asignar_vehiculo_equipo(equipo_id: int, datos: s.AsignarVehiculoIn,
                             usuario: m.Usuario = Depends(
                                 auth.puede("asignaciones.mover"))):
     equipo = _equipo(db, equipo_id)
+    _que_se_pueda_armar(equipo.servicio)
     vehiculo = db.get(m.Vehiculo, datos.vehiculo_id)
     if not vehiculo:
         raise HTTPException(404, f"No existe el vehiculo {datos.vehiculo_id}")
-    dias = _dias_vivos(equipo)
+    dias = _dias_por_arrancar(equipo)
     if not dias:
-        raise HTTPException(409, "El equipo no tiene dias que cubrir")
+        raise HTTPException(409, "El equipo no tiene dias pendientes que cubrir")
 
     bloqueos, riesgos = [], []
     for jornada in dias:
@@ -936,9 +1047,10 @@ def vehiculo_rentado(equipo_id: int, datos: s.VehiculoRentadoIn,
     """
     equipo = _equipo(db, equipo_id)
     servicio = equipo.servicio
-    dias = _dias_vivos(equipo)
+    _que_se_pueda_armar(servicio)
+    dias = _dias_por_arrancar(equipo)
     if not dias:
-        raise HTTPException(409, "El equipo no tiene dias que cubrir")
+        raise HTTPException(409, "El equipo no tiene dias pendientes que cubrir")
 
     placa = datos.placa.strip()
 
@@ -1071,15 +1183,39 @@ def quitar_personal(equipo_id: int, persona_id: int,
                     db: Session = Depends(get_db),
                     usuario: m.Usuario = Depends(
                         auth.puede("asignaciones.mover"))):
-    """Se va de todos los dias del equipo, como se asigno."""
+    """Se va de los dias del equipo que todavia no arrancan.
+
+    Los que ya trabajo se quedan (seccion 98): quitarla de todos los
+    dias borraba la asignacion del lunes que ya trabajo, la nomina no
+    le pagaba ese dia, el cierre no lo facturaba y sus marcas quedaban
+    huerfanas. Si ya esta en la calle o ya trabajo, lo que hay es un
+    cambio por contingencia.
+    """
     equipo = _equipo(db, equipo_id)
-    ids = [j.id for j in equipo.jornadas]
+    pendientes = _dias_por_arrancar(equipo)
+    ids = [j.id for j in pendientes]
     asignaciones = (db.query(m.AsignacionPersonal)
                     .filter(m.AsignacionPersonal.persona_id == persona_id,
                             m.AsignacionPersonal.jornada_id.in_(ids))
                     .all()) if ids else []
+    trabajados = (db.query(m.AsignacionPersonal)
+                  .join(m.Jornada, m.AsignacionPersonal.jornada_id == m.Jornada.id)
+                  .filter(m.AsignacionPersonal.persona_id == persona_id,
+                          m.Jornada.equipo_id == equipo.id,
+                          m.Jornada.estatus.in_([*m.ARRANCADAS,
+                                                 m.EstatusJornada.TERMINADA]))
+                  .count())
     if not asignaciones:
-        raise HTTPException(404, "Esa persona no esta asignada al equipo")
+        if trabajados:
+            raise HTTPException(409, {
+                "mensaje": ("Esa persona ya trabajo o esta en la calle: no "
+                            "se quita del equipo"),
+                "que_hacer": ("Para sacarla de lo que sigue usa el cambio "
+                              "por contingencia, que sabe que hacer con su "
+                              "dinero y sus marcas."),
+            })
+        raise HTTPException(404, "Esa persona no esta asignada a ningun dia "
+                                 "pendiente del equipo")
 
     viaticos = (db.query(m.AsignacionViatico)
                 .filter(m.AsignacionViatico.persona_id == persona_id,
@@ -1093,10 +1229,28 @@ def quitar_personal(equipo_id: int, persona_id: int,
                        "resuelve que pasa con ese dinero.",
             "estatus": salio[0].estatus.value,
         })
+    # Un deposito pedido esta en manos de finanzas, quiza en el banco
+    # ahora mismo (seccion 41). Borrarlo con la persona dejaba a
+    # finanzas volviendo con el comprobante y un "no existe".
+    en_camino = (db.query(m.SolicitudTransferencia)
+                 .filter(m.SolicitudTransferencia.asignacion_id.in_(
+                     [v.id for v in viaticos]),
+                     m.SolicitudTransferencia.estatus.in_(
+                         [m.EstatusTransferencia.PENDIENTE,
+                          m.EstatusTransferencia.ENVIADA]))
+                 .count()) if viaticos else 0
+    if en_camino:
+        raise HTTPException(409, {
+            "mensaje": ("Esa persona tiene un deposito pedido a finanzas: "
+                        "primero cancela la solicitud"),
+            "que_hacer": ("En los viaticos del equipo, «Cancelar solicitud». "
+                          "Lo que ya este con finanzas lo cierra finanzas; "
+                          "despues se puede quitar."),
+        })
 
     persona = db.get(m.Persona, persona_id)
-    # El dinero que nunca salio se va con ella, sin dejar rastro que
-    # cuadrar despues.
+    # El dinero que nunca salio ni se pidio se va con ella, sin dejar
+    # rastro que cuadrar despues.
     for viatico in viaticos:
         for solicitud in db.query(m.SolicitudTransferencia).filter_by(
                 asignacion_id=viatico.id).all():
@@ -1112,9 +1266,12 @@ def quitar_personal(equipo_id: int, persona_id: int,
     programacion.evaluar(servicio)
     auditoria.registrar(db, usuario, servicio, "quitar personal",
                         f"{persona.nombre if persona else persona_id} · "
-                        f"{equipo.alias}, {len(asignaciones)} dia(s)")
+                        f"{equipo.alias}, {len(asignaciones)} dia(s)"
+                        + (f"; se queda en {trabajados} ya trabajado(s)"
+                           if trabajados else ""))
     db.commit()
     return {"resultado": "quitado", "dias": len(asignaciones),
+            "dias_trabajados": trabajados,
             "estatus_servicio": servicio.estatus.value,
             "faltantes_de_recursos": programacion.faltantes_de_recursos(servicio)}
 
@@ -1126,13 +1283,32 @@ def quitar_vehiculo(equipo_id: int, vehiculo_id: int,
                     usuario: m.Usuario = Depends(
                         auth.puede("asignaciones.mover"))):
     equipo = _equipo(db, equipo_id)
-    ids = [j.id for j in equipo.jornadas]
+    # Solo de los dias que no han arrancado (seccion 98): la unidad que
+    # ya rodo se queda en su dia, con su revision y sus kilometros.
+    pendientes = _dias_por_arrancar(equipo)
+    ids = [j.id for j in pendientes]
     asignaciones = (db.query(m.AsignacionVehiculo)
                     .filter(m.AsignacionVehiculo.vehiculo_id == vehiculo_id,
                             m.AsignacionVehiculo.jornada_id.in_(ids))
                     .all()) if ids else []
+    rodados = (db.query(m.AsignacionVehiculo)
+               .join(m.Jornada, m.AsignacionVehiculo.jornada_id == m.Jornada.id)
+               .filter(m.AsignacionVehiculo.vehiculo_id == vehiculo_id,
+                       m.Jornada.equipo_id == equipo.id,
+                       m.Jornada.estatus.in_([*m.ARRANCADAS,
+                                              m.EstatusJornada.TERMINADA]))
+               .count())
     if not asignaciones:
-        raise HTTPException(404, "Esa unidad no esta asignada al equipo")
+        if rodados:
+            raise HTTPException(409, {
+                "mensaje": "Esa unidad ya rodo o esta en la calle: no se "
+                           "quita del equipo",
+                "que_hacer": ("Para cambiarla en lo que sigue usa el cambio "
+                              "de unidad por contingencia, que encarga su "
+                              "entrega."),
+            })
+        raise HTTPException(404, "Esa unidad no esta asignada a ningun dia "
+                                 "pendiente del equipo")
 
     # Quien iba a bordo de ella se queda sin unidad, no colgado de una
     # que ya no va.
@@ -1158,9 +1334,12 @@ def quitar_vehiculo(equipo_id: int, vehiculo_id: int,
     programacion.evaluar(servicio)
     auditoria.registrar(db, usuario, servicio, "quitar unidad",
                         f"{vehiculo.placa if vehiculo else vehiculo_id} · "
-                        f"{equipo.alias}, {len(asignaciones)} dia(s)")
+                        f"{equipo.alias}, {len(asignaciones)} dia(s)"
+                        + (f"; se queda en {rodados} ya rodado(s)"
+                           if rodados else ""))
     db.commit()
     return {"resultado": "quitada", "dias": len(asignaciones),
+            "dias_trabajados": rodados,
             "estatus_servicio": servicio.estatus.value,
             "faltantes_de_recursos": programacion.faltantes_de_recursos(servicio)}
 
@@ -1218,6 +1397,9 @@ def asignaciones_equipo(equipo_id: int, db: Session = Depends(get_db),
     dias = _dias_vivos(equipo)
     total = len(dias)
     ids = [j.id for j in dias]
+    # Los dias que todavia se pueden editar, para que la pantalla sepa a
+    # quien se puede quitar y de cuantos dias (seccion 98).
+    por_arrancar = {j.id for j in _dias_por_arrancar(equipo)}
 
     gente: dict = {}
     for a in (db.query(m.AsignacionPersonal)
@@ -1248,8 +1430,10 @@ def asignaciones_equipo(equipo_id: int, db: Session = Depends(get_db),
             # por telefono. Vacio con todo confirmado quiere decir que
             # lo dijo la persona desde su app, que no es la misma cosa.
             "confirmados": 0, "confirmado_por": [],
-            "dias": 0})
+            "dias": 0, "dias_pendientes": 0})
         ficha["dias"] += 1
+        if a.jornada_id in por_arrancar:
+            ficha["dias_pendientes"] += 1
         if a.confirmado:
             ficha["confirmados"] += 1
         quien = a.confirmado_por.nombre if a.confirmado_por else None
@@ -1274,10 +1458,13 @@ def asignaciones_equipo(equipo_id: int, db: Session = Depends(get_db),
             "rentado": a.vehiculo.rentado,
             "arrendadora": a.vehiculo.arrendadora,
             "arrendadora_telefono": a.vehiculo.arrendadora_telefono,
-            "foto": a.vehiculo.foto, "dias": 0})
+            "foto": a.vehiculo.foto, "dias": 0, "dias_pendientes": 0})
         ficha["dias"] += 1
+        if a.jornada_id in por_arrancar:
+            ficha["dias_pendientes"] += 1
 
     return {"equipo": equipo.alias, "dias": total,
+            "dias_pendientes": len(por_arrancar),
             "personal": sorted(gente.values(), key=lambda x: -x["dias"]),
             "vehiculos": sorted(unidades.values(), key=lambda x: -x["dias"])}
 
@@ -1946,9 +2133,15 @@ def cancelar_servicio(servicio_id: int, datos: s.CancelarIn,
     viaticos = (db.query(m.AsignacionViatico)
                 .filter(m.AsignacionViatico.jornada_id.in_([j.id for j in jornadas]))
                 .all()) if jornadas else []
+    momento_mx = reloj.ahora_del_servicio(db, servicio)
+    pedidas = 0
     for viatico in viaticos:
         if viatico.estatus in VIATICOS_SIN_SALIR:
-            viatico.estatus = m.EstatusViatico.CANCELADO
+            # Con su solicitud (seccion 98): la pendiente se cancela y la
+            # enviada queda pedida a finanzas. Antes seguia en la bandeja
+            # como dinero por pagar de un servicio que ya no existia.
+            pedidas += motor_viaticos.cancelar(
+                db, viatico, momento_mx, usuario.persona_id)["pedidas"]
         elif viatico.estatus not in (m.EstatusViatico.CERRADO,
                                      m.EstatusViatico.DEVUELTO,
                                      m.EstatusViatico.CANCELADO):
@@ -1991,7 +2184,6 @@ def cancelar_servicio(servicio_id: int, datos: s.CancelarIn,
                 if v.estatus != m.EstatusViatico.CANCELADO]
     if servicio.tipo == m.TipoServicio.EVENTUAL and (trabajados or salieron):
         from app import cierre as motor_cierre
-        from app import reloj
         from app.operacion import abrir_plazo_del_servicio
 
         momento = reloj.ahora_del_servicio(db, servicio)
@@ -2025,9 +2217,12 @@ def cancelar_servicio(servicio_id: int, datos: s.CancelarIn,
             "dias_cancelados": dias_cancelados,
             "autos_rentados_por_devolver": [v.placa for v in rentados],
             "viaticos_por_devolver": por_devolver,
+            "depositos_pedidos_a_finanzas": pedidas,
             "nota": ("Hay viaticos entregados que tienen que regresar"
                      if por_devolver else
-                     "La gente y las unidades quedan libres para ese dia")}
+                     "La gente y las unidades quedan libres para ese dia")
+                    + (f". Finanzas tiene {pedidas} deposito(s) en camino: "
+                       f"se le pidio cancelarlos." if pedidas else "")}
 
 
 @router.get("/{servicio_id}/revisiones",

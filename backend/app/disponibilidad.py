@@ -69,10 +69,11 @@ def _jornadas_de_persona(db: Session, persona_id: int, desde: datetime, hasta: d
 
 
 def _jornadas_de_vehiculo(db: Session, vehiculo_id: int, desde: datetime, hasta: datetime):
-    """Igual que las de la persona, pero la unidad no se releva a media
-    jornada: si cambia, cambia el dia entero."""
-    return [(j, None) for j in (
-        db.query(m.Jornada)
+    """Igual que las de la persona: la unidad que salio a media jornada
+    por contingencia queda libre desde la hora en que salio (seccion
+    98). Antes se contaba ocupada el dia entero."""
+    filas = (
+        db.query(m.Jornada, m.AsignacionVehiculo.relevado_en)
         .join(m.AsignacionVehiculo, m.AsignacionVehiculo.jornada_id == m.Jornada.id)
         .filter(
             m.AsignacionVehiculo.vehiculo_id == vehiculo_id,
@@ -80,7 +81,9 @@ def _jornadas_de_vehiculo(db: Session, vehiculo_id: int, desde: datetime, hasta:
             m.Jornada.fecha >= (desde - timedelta(days=1)).date(),
             m.Jornada.fecha <= (hasta + timedelta(days=1)).date(),
         )
-        .all())]
+        .all()
+    )
+    return [(j, relevado) for j, relevado in filas]
 
 
 def _evaluar(

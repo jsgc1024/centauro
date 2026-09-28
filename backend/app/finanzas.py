@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app import models as m
 from app import reloj
+from app import viaticos as motor_viaticos
 
 CERO = Decimal("0")
 
@@ -197,10 +198,16 @@ def por_comprobar(db: Session, ahora: datetime | None = None) -> dict:
     for grupo in grupos.values():
         suyos = grupo["viaticos"]
         origen = grupo["origen"]
-        entregado = sum((_d(v.monto_total) for v in suyos), CERO)
+        # Lo entregado son las rondas que finanzas confirmo, y lo que ya
+        # se descontó o absorbio esta resuelto (seccion 98): finanzas
+        # perseguia dinero que seguia en su propia bandeja, o que ya iba
+        # en la nomina.
+        entregado = sum((motor_viaticos.depositado(v) for v in suyos), CERO)
         comprobado = sum((_d(v.monto_comprobado) for v in suyos), CERO)
         devuelto = sum((_d(v.monto_devuelto) for v in suyos), CERO)
-        pendiente = entregado - comprobado - devuelto
+        resuelto = sum((_d(v.monto_descontado) + _d(v.monto_absorbido)
+                        for v in suyos), CERO)
+        pendiente = entregado - comprobado - devuelto - resuelto
         if pendiente <= CERO:
             continue
 

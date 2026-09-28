@@ -285,6 +285,21 @@ function desglose(f, moneda) {
       t("fin_leyenda_origen")));
 }
 
+/* La captura del banco se baja con la sesion puesta: una pestana nueva
+   no lleva el token y contestaba "no autenticado" (seccion 98). */
+function botonComprobanteDeposito(depositoId) {
+  return h("button", { clase: "claro chico", type: "button",
+    onclick: async (e) => {
+      e.target.disabled = true;
+      try {
+        const url = await api.imagen(`/viaticos/depositos/${depositoId}/comprobante`);
+        const pestana = window.open("", "_blank");
+        pestana.document.write(`<img src="${url}" style="max-width:100%">`);
+      } catch (err) { mensaje(err.message, "grave"); }
+      e.target.disabled = false;
+    } }, t("fin_ver_comprobante"));
+}
+
 function marcaOrigen(origen) {
   if (origen === "estimado") return t("fin_o_estimado");
   if (origen === "manual") return t("fin_o_manual");
@@ -317,6 +332,10 @@ function ventanaDeposito(f, moneda, repintar) {
           // El mes, cuando el renglon es de un implantado: ese deposito
           // es de ese mes y de ningun otro.
           ...(f.anio && f.mes ? { anio: f.anio, mes: f.mes } : {}),
+          /* Exactamente las solicitudes que se vieron en el renglon: lo
+             que el consultor pida mientras finanzas esta en el banco no
+             se cuelga de esta transferencia (seccion 98). */
+          solicitudes_ids: (f.solicitudes || []).join(","),
           referencia: referencia.value.trim(), archivo: imagen,
         });
         mensaje(t("fin_confirmado").replace("{p}", f.persona));
@@ -578,9 +597,7 @@ async function pintarDepositado(zona) {
                de esconderlo, porque es algo que alguien tiene que
                completar. */
             h("td", {}, d.tiene_comprobante
-              ? h("a", { clase: "chico", target: "_blank",
-                         href: `/viaticos/depositos/${d.deposito_id}/comprobante` },
-                  t("fin_ver_comprobante"))
+              ? botonComprobanteDeposito(d.deposito_id)
               : h("span", { clase: "chico", style: "color:#b8860b" },
                   t("fin_sin_comprobante"))))))))))].filter(Boolean));
   };
