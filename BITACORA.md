@@ -6361,8 +6361,23 @@ en el servidor y probar; el acceso a producción; encender.
   hecha en Odoo y el arranque en vivo—, la lista de lo que falta con su
   dueño, el calendario y ocho decisiones. Para Brasil falta además que
   se puedan poner su porcentaje de comisión y los criterios de su bono.
-  La pieza 3, reportar una falla, quedó hecha en la sección 92. Lo demás
-  espera su respuesta.
+  La pieza 3, reportar una falla, quedó hecha en la sección 92. Las
+  decisiones, 28 de septiembre, todas como se recomendaron: 1) la
+  cotización autorizada se registra en Connect mientras Odoo no la
+  manda, con los precios del tarifario del cliente; 2) para marcarla
+  autorizada, quién, el día y el folio de Odoo si existe; 3) los
+  contactos del servicio los corrigen el consultor y quien lo cubre; 4)
+  reportar una falla también desde la app —hecho en la sección 92—; 5)
+  finanzas anota el folio de la factura que hace en Odoo mientras no
+  esté conectada; 6) el arranque vive en el sistema y se revisa solo; 7)
+  el calendario, así —construir y encender del 28 de septiembre al 2 de
+  octubre, datos y gente del 5 al 16, piloto en México del 19 al 30,
+  todo lo nuevo de México en Connect el lunes 2 de noviembre, Brasil en
+  noviembre y OVH apagado el lunes 7 de diciembre—, con el piloto de
+  **tres** consultores de clientes distintos, no dos (los nombres,
+  después); y 8) lo que ya corre en OVH o en la app vieja termina allá:
+  no se pasan datos, lo nuevo nace en Connect. Sigue construir las
+  piezas 1, 2, 4 y 5, en ese orden.
 - **El primer agente del sistema: los casos resueltos** (sección 90).
   Salvador, 27 de septiembre: «más adelante podemos poner a un agente
   dedicado a ello… será el primer agente que coloquemos en el sistema».
