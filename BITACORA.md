@@ -6334,6 +6334,24 @@ en el servidor y probar; el acceso a producción; encender.
   con su reporte (sección 89). Su manual vive en la consola desde la
   sección 90, y la lista de lo que falta en Odoo, por área, ya está hecha
   para que la limpie con cada área.
+- **Odoo: lo que dejó la primera lectura** (28 de septiembre). Salvador
+  hizo los ensayos y aplicó el personal de seguridad (61 altas) y la
+  flota (12 unidades); la oficina y los clientes ya se leían solos desde
+  el 26. Lo que quedó pendiente se corrige en Odoo y se lo pasó a Ari
+  —así le dice a Aridiai— en un solo mensaje; trabajan en ello esta
+  semana: 5 personas de seguridad sin su ciudad (4 con la ubicación
+  «Office» de fábrica y una sin ubicación); un correo de trabajo mal
+  escrito y 59 personas de oficina sin correo de trabajo; 9 unidades sin
+  ubicación y una entrada de taller sin fecha; las unidades de Pegasus
+  que no están en Odoo con la etiqueta de Protección Ejecutiva; la
+  etiqueta «Protección ejecutiva» en los clientes —solo uno la trae; los
+  otros 51 entraron el 26 con la regla de antes, toda empresa con
+  ventas, y siguen disponibles como pendientes—; y en las listas de
+  precios, la General con su país y la regla «todo lo demás, de la
+  General» en la de cada cliente. **Los tarifarios no se aplicaron**: el
+  ensayo lee 13 listas y ningún precio, porque además finanzas tiene que
+  confirmar los productos en Facturación → Tarifarios. Cuando esté todo,
+  se repite el ensayo.
 - **Para poder operar** (secciones 90 y 91). Salvador, 27 de
   septiembre: «terminando iniciamos: Para poder operar». La propuesta,
   con pantallas, se entregó el mismo día
@@ -6389,10 +6407,14 @@ busca, está en las secciones 15 y 16.*
   `https://mycentauro.lat/gps/pegasus/aviso/{secreto}`: la
   dirección con HTTPS ya existe (sección 71); mientras no se configure,
   el pánico llega con la lectura de cada dos minutos. De este lado, las
-  placas ligan contra la flota leída de Odoo: sin ella, ninguna. Al 27
-  de septiembre, en producción todavía no se hace la primera lectura del
-  personal, de la flota ni de los tarifarios, y el estado del sistema
-  dice «sin unidades ligadas».
+  placas ligan contra la flota leída de Odoo. El 28 de septiembre se
+  leyó la flota por primera vez y sus 12 unidades quedaron ligadas por
+  placa. El grupo «2025 P.E.» de Pegasus trae 71: 59 sin unidad en
+  Centauro —9 son las de Odoo sin ubicación; las demás no traen en Odoo
+  la etiqueta de Protección Ejecutiva o traen otra placa— y 13 con más de
+  un día sin reportar; lo revisa Ari con Centauro Satelital. Y un texto
+  que corregir en la próxima actualización: la pantalla de Unidades dice
+  que Pegasus se lee cada 2 minutos, y sin nadie en la calle es cada 15.
 - **El correo: por Amazon SES** (secciones 84, 86, 91 y 93). Sale de
   `connect@mycentauro.lat` por SMTP y las respuestas llegan a
   `cecc.notification@centauro.lat`. MailerSend rechazó la cuenta dos
