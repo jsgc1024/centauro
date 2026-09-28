@@ -2,6 +2,9 @@
 
 Lo nuevo de cada actualización, escrito para quien usa el sistema. La más nueva va arriba.
 
+## 94 · 2026-09-28 · La cotización autorizada, en el servicio
+Mientras Odoo no manda la cotización, el consultor del servicio —o quien lo cubre— la registra en el eventual, debajo del encabezado, en **La cotización autorizada**: qué lleva cada día, cómo se cobran los gastos —dentro del precio, a monto fijo o por comprobar— y quién la autorizó del lado del cliente, el día y el folio de Odoo si existe. Los precios salen del tarifario del cliente, igual que al cerrar, con el paquete si la lista lo pacta, y «Tomar lo asignado» la llena con quien ya va. Se guarda ya autorizada; si el cliente cambia algo antes del visto bueno se recotiza con su motivo. Con ella el visto bueno ya tiene contra qué comparar.
+
 ## 93 · 2026-09-27 · El correo sale por Amazon
 Postmark no aceptó el dominio mycentauro.lat: los correos del sistema salen por Amazon SES, desde la misma connect@mycentauro.lat, y las respuestas siguen llegando a cecc.notification@centauro.lat. Primero se prueba con el correo apagado; se enciende cuando Amazon apruebe la cuenta.
 

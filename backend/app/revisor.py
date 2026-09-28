@@ -52,9 +52,13 @@ def revisar(db: Session, servicio_id: int, ahora: datetime | None = None) -> dic
             "resumen": "1 punto(s) por corregir antes de enviar a finanzas",
             "observaciones": [{
                 "nivel": GRAVE, "asunto": "Sin cotizacion autorizada",
+                # En clave para que la pantalla lo diga en su idioma y
+                # apunte al bloque donde se registra (seccion 94).
+                "clave": "sin_cotizacion",
                 "mensaje": SIN_COTIZACION,
-                "accion": "Captura la propuesta y marcala autorizada por el "
-                          "cliente: sin ella no hay comparativo ni factura."}],
+                "accion": "Registrala en «La cotizacion autorizada», arriba "
+                          "en el servicio: sin ella no hay comparativo ni "
+                          "factura."}],
             "comparativo": None,
         }
 

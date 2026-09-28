@@ -137,14 +137,33 @@ def generar(db: Session, servicio_id: int, lineas: list[dict],
     tarifario = _tarifario_de(db, servicio)
 
     # Version nueva si ya habia cotizacion: la anterior queda sustituida.
-    anteriores = (db.query(m.Cotizacion)
-                  .filter_by(servicio_id=servicio_id)
-                  .order_by(m.Cotizacion.version.desc()).all())
+    anteriores = _versiones(db, servicio_id)
     version = (anteriores[0].version + 1) if anteriores else 1
     for vieja in anteriores:
         if vieja.estatus != m.EstatusCotizacion.SUSTITUIDA:
             vieja.estatus = m.EstatusCotizacion.SUSTITUIDA
 
+    cotizacion = _armar(db, servicio, tarifario, lineas, viaticos_incluidos,
+                        creada_por_id, motivo, version)
+    db.commit()
+    db.refresh(cotizacion)
+    return cotizacion
+
+
+def _versiones(db: Session, servicio_id: int) -> list[m.Cotizacion]:
+    return (db.query(m.Cotizacion)
+            .filter_by(servicio_id=servicio_id)
+            .order_by(m.Cotizacion.version.desc()).all())
+
+
+def _armar(db: Session, servicio: m.Servicio, tarifario: m.Tarifario,
+           lineas: list[dict], viaticos_incluidos: bool,
+           creada_por_id: int | None, motivo: str | None,
+           version: int) -> m.Cotizacion:
+    """La cotizacion con sus renglones y su total, sin guardar nada: ni
+    confirma ni toca las versiones de antes. La usan `generar`, la vista
+    previa --que la deshace-- y la que se registra ya autorizada."""
+    servicio_id = servicio.id
     cotizacion = m.Cotizacion(
         servicio_id=servicio_id, version=version, tarifario_id=tarifario.id,
         moneda=tarifario.moneda, viaticos_incluidos=viaticos_incluidos,
@@ -258,19 +277,27 @@ def generar(db: Session, servicio_id: int, lineas: list[dict],
                          categoria_id, cantidad, unitario, descripcion)
 
     cotizacion.total = total
-    db.commit()
-    db.refresh(cotizacion)
+    db.flush()
     return cotizacion
 
 
 def autorizar(db: Session, cotizacion_id: int, autorizada_por: str) -> m.Cotizacion:
-    from datetime import datetime
-
     cotizacion = db.get(m.Cotizacion, cotizacion_id)
     if not cotizacion:
         raise HTTPException(404, f"No existe la cotizacion {cotizacion_id}")
     if cotizacion.estatus == m.EstatusCotizacion.SUSTITUIDA:
         raise HTTPException(409, "Esa cotizacion fue sustituida por una version posterior")
+    _autorizar(db, cotizacion, autorizada_por)
+    db.commit()
+    db.refresh(cotizacion)
+    return cotizacion
+
+
+def _autorizar(db: Session, cotizacion: m.Cotizacion, autorizada_por: str,
+               autorizada_el=None, folio_odoo: str | None = None) -> None:
+    """La marca de autorizada, sin confirmar: el tipo de cambio que queda
+    fijo, quien, cuando y el estatus del servicio."""
+    from datetime import datetime
 
     # En otra moneda que la del pais --Amazon, en dolares--, la cotizacion
     # se queda con el tipo de cambio que esta puesto al autorizarla, y ya
@@ -289,6 +316,8 @@ def autorizar(db: Session, cotizacion_id: int, autorizada_por: str) -> m.Cotizac
     cotizacion.estatus = m.EstatusCotizacion.AUTORIZADA
     cotizacion.autorizada_en = datetime.now()
     cotizacion.autorizada_por = autorizada_por
+    cotizacion.autorizada_el = autorizada_el
+    cotizacion.folio_odoo = folio_odoo
 
     # El estatus del servicio no camina hacia atras.
     #
@@ -301,9 +330,6 @@ def autorizar(db: Session, cotizacion_id: int, autorizada_por: str) -> m.Cotizac
                                        m.EstatusServicio.SOLICITADO,
                                        m.EstatusServicio.COTIZADO):
         cotizacion.servicio.estatus = m.EstatusServicio.AUTORIZADO
-    db.commit()
-    db.refresh(cotizacion)
-    return cotizacion
 
 
 def sin_tipo_de_cambio(db: Session, moneda, local) -> dict:
@@ -349,3 +375,348 @@ def vigente(db: Session, servicio_id: int) -> m.Cotizacion | None:
                        estatus=m.EstatusCotizacion.AUTORIZADA)
             .order_by(m.Cotizacion.version.desc())
             .first())
+
+
+# ---------------------------------------------------------------- en el servicio
+#
+# Seccion 94, pieza 1 de «Para poder operar» (decisiones de Salvador, 28
+# de septiembre): mientras Odoo no manda la cotizacion, el consultor --o
+# quien lo cubre-- la registra en el servicio con los precios del
+# tarifario del cliente. Solo dice que se cotizo, como se cobran los
+# gastos y quien la autorizo del lado del cliente, que dia y, si se hizo
+# en Odoo, con que folio. Se guarda ya autorizada: una recotizacion no
+# deja nunca al servicio sin cotizacion vigente --la nueva nace
+# autorizada, con su motivo, y la de antes queda sustituida--, y si algo
+# falla no se guarda nada y la de antes sigue valiendo.
+
+GASTOS_DENTRO = "dentro"        # van dentro del precio
+GASTOS_FIJOS = "fijo"           # un monto fijo, se gaste mas o menos
+GASTOS_COMPROBAR = "comprobar"  # se factura lo comprobado, con desglose
+MODOS_DE_GASTOS = (GASTOS_DENTRO, GASTOS_FIJOS, GASTOS_COMPROBAR)
+
+# Despues del visto bueno un cambio lo regresa finanzas, y ahi se recotiza.
+YA_CON_VISTO_BUENO = (m.EstatusServicio.EN_FACTURACION,
+                      m.EstatusServicio.CERRADO)
+LARGO_QUIEN = 160
+LARGO_FOLIO = 40
+LARGO_MOTIVO = 400
+
+
+def _servicio_que_se_cotiza(db: Session, servicio_id: int) -> m.Servicio:
+    servicio = db.get(m.Servicio, servicio_id)
+    if not servicio:
+        raise HTTPException(404, f"No existe el servicio {servicio_id}")
+    if servicio.tipo != m.TipoServicio.EVENTUAL:
+        raise HTTPException(400, "El implantado no lleva esta cotizacion: sus "
+                                 "precios van en el contrato del mes.")
+    if servicio.estatus == m.EstatusServicio.CANCELADO:
+        raise HTTPException(409, "El servicio esta cancelado.")
+    if servicio.estatus in YA_CON_VISTO_BUENO:
+        raise HTTPException(409, "Ya tiene visto bueno: si el cliente cambio "
+                                 "algo, finanzas lo regresa y ahi se recotiza.")
+    return servicio
+
+
+def _dias(servicio: m.Servicio) -> list:
+    """(equipo, jornada) de los dias que se cotizan: los que no estan
+    cancelados, en el orden de cada equipo."""
+    return [(e, j) for e in servicio.equipos
+            for j in sorted(e.jornadas, key=lambda x: x.fecha)
+            if j.estatus != m.EstatusJornada.CANCELADA]
+
+
+def _renglones_de_lo_que_lleva(servicio: m.Servicio, lineas: list[dict]) -> list[dict]:
+    """Lo que manda la pantalla: roles y unidades por dia. Los gastos van
+    aparte (su modo) y el paquete lo arma la lista del cliente."""
+    dias = {(e.alias, j.fecha) for e, j in _dias(servicio)}
+    limpias = []
+    for linea in lineas:
+        tipo = m.TipoLinea(linea["tipo"])
+        if tipo not in (m.TipoLinea.RECURSO, m.TipoLinea.VEHICULO):
+            raise HTTPException(400, "Aqui solo se cotizan roles y unidades: "
+                                     "los gastos van en su modo.")
+        cantidad = int(linea.get("cantidad", 1) or 0)
+        if cantidad <= 0:
+            continue
+        clave = linea.get("equipo_clave") or "Alfa"
+        if (clave, linea["fecha"]) not in dias:
+            raise HTTPException(400, f"El equipo {clave} no tiene dia el "
+                                     f"{linea['fecha']}")
+        limpias.append({**linea, "equipo_clave": clave, "cantidad": cantidad})
+    if not limpias:
+        raise HTTPException(400, "La cotizacion no lleva nada: di con que rol y "
+                                 "que unidad va cada dia.")
+    return limpias
+
+
+def con_gastos(servicio: m.Servicio, lineas: list[dict], modo: str,
+               monto=None) -> tuple[list[dict], bool]:
+    """(renglones, viaticos_incluidos) segun como se cobran los gastos. El
+    monto fijo es un renglon de gastos el primer dia del primer equipo:
+    asi lo lee el cierre (seccion 59)."""
+    if modo not in MODOS_DE_GASTOS:
+        raise HTTPException(400, "Di como se cobran los gastos.")
+    if modo == GASTOS_COMPROBAR:
+        return lineas, False
+    if modo == GASTOS_DENTRO:
+        return lineas, True
+    try:
+        importe = Decimal(str(monto or 0)).quantize(Decimal("0.01"))
+    except Exception:                                   # noqa: BLE001
+        raise HTTPException(400, "El monto fijo de gastos no es un numero.")
+    if importe <= 0:
+        raise HTTPException(400, "El monto fijo de gastos tiene que ser mayor "
+                                 "que cero.")
+    equipo, jornada = _dias(servicio)[0]
+    return lineas + [{"fecha": jornada.fecha, "equipo_clave": equipo.alias,
+                      "tipo": m.TipoLinea.VIATICOS.value, "cantidad": 1,
+                      "precio_unitario": importe, "descripcion": "Gastos"}], True
+
+
+def modo_de_gastos(cotizacion: m.Cotizacion) -> str:
+    if not cotizacion.viaticos_incluidos:
+        return GASTOS_COMPROBAR
+    fijos = sum((Decimal(str(l.subtotal)) for l in cotizacion.lineas
+                 if l.tipo == m.TipoLinea.VIATICOS), Decimal("0"))
+    return GASTOS_FIJOS if fijos > 0 else GASTOS_DENTRO
+
+
+def resumen(db: Session, cotizacion: m.Cotizacion) -> dict:
+    """Lo que la pantalla dice de una cotizacion, con sus renglones."""
+    lineas = sorted(cotizacion.lineas,
+                    key=lambda l: (l.fecha, l.equipo_clave,
+                                   ORDEN_DE_TIPO.get(l.tipo, 9), l.id))
+    fijos = sum((Decimal(str(l.subtotal)) for l in lineas
+                 if l.tipo == m.TipoLinea.VIATICOS), Decimal("0"))
+    trabajo = [l for l in lineas if l.tipo != m.TipoLinea.VIATICOS]
+    tc = None
+    if cotizacion.estatus == m.EstatusCotizacion.AUTORIZADA:
+        tc = tipo_de_cambio(db, cotizacion)
+    return {
+        "id": cotizacion.id, "version": cotizacion.version,
+        "estatus": cotizacion.estatus.value,
+        "total": cotizacion.total, "moneda": cotizacion.moneda.value,
+        "gastos": modo_de_gastos(cotizacion), "gastos_fijos": fijos,
+        "autorizada_por": cotizacion.autorizada_por,
+        "autorizada_el": (cotizacion.autorizada_el.isoformat()
+                          if cotizacion.autorizada_el else None),
+        "autorizada_en": (cotizacion.autorizada_en.isoformat()
+                          if cotizacion.autorizada_en else None),
+        "folio_odoo": cotizacion.folio_odoo,
+        "motivo": cotizacion.motivo_recotizacion,
+        "registrada_por": (cotizacion.creada_por.nombre
+                           if cotizacion.creada_por else None),
+        "registrada_en": (cotizacion.creada_en.isoformat()
+                          if cotizacion.creada_en else None),
+        # El dia en el pais del servicio: registrada de noche en Mexico
+        # es otro dia en el reloj del servidor.
+        "registrada_el": _dia_en_el_pais(db, cotizacion),
+        "tipo_cambio": ({"tasa": tc.get("tasa"), "fecha": (
+                            tc["fecha"].isoformat() if hasattr(tc.get("fecha"), "isoformat")
+                            else tc.get("fecha"))} if tc else None),
+        "dias": len({(l.equipo_clave, l.fecha) for l in trabajo}),
+        "equipos": len({l.equipo_clave for l in trabajo}),
+        "lineas": [{
+            "fecha": l.fecha.isoformat(), "equipo": l.equipo_clave,
+            "modalidad": (l.modalidad.codigo.value if l.modalidad else None),
+            "tipo": l.tipo.value, "perfil_id": l.perfil_id,
+            "categoria_id": l.categoria_id, "descripcion": l.descripcion,
+            "cantidad": l.cantidad, "precio": l.precio_unitario,
+            "importe": l.subtotal} for l in lineas],
+    }
+
+
+def _dia_en_el_pais(db: Session, cotizacion: m.Cotizacion) -> str | None:
+    from app import reloj
+    if not cotizacion.creada_en:
+        return None
+    pais = (db.get(m.Pais, cotizacion.servicio.pais_id)
+            if cotizacion.servicio else None)
+    return reloj.ahora_en(pais, cotizacion.creada_en).date().isoformat()
+
+
+# El paquete va antes que sus sueltos, como en el cierre.
+ORDEN_DE_TIPO = {m.TipoLinea.PAQUETE: 0, m.TipoLinea.RECURSO: 1,
+                 m.TipoLinea.VEHICULO: 2, m.TipoLinea.VIATICOS: 3}
+
+
+def vista_previa(db: Session, servicio_id: int, lineas: list[dict],
+                 gastos: str, monto=None) -> dict:
+    """Los precios de lo que se va a cotizar, sin guardar nada: se arma
+    igual que al guardarla --con los paquetes que la lista pacta-- y se
+    deshace."""
+    servicio = _servicio_que_se_cotiza(db, servicio_id)
+    tarifario = _tarifario_de(db, servicio)
+    renglones, incluidos = con_gastos(
+        servicio, _renglones_de_lo_que_lleva(servicio, lineas), gastos, monto)
+    punto = db.begin_nested()
+    try:
+        cotizacion = _armar(db, servicio, tarifario, renglones, incluidos,
+                            None, None, 0)
+        db.refresh(cotizacion)
+        salida = resumen(db, cotizacion)
+    finally:
+        punto.rollback()
+    return salida
+
+
+def registrar_autorizada(db: Session, servicio_id: int, lineas: list[dict],
+                         gastos: str, monto, autorizada_por: str,
+                         autorizada_el, folio_odoo: str | None,
+                         motivo: str | None,
+                         creada_por_id: int | None) -> m.Cotizacion:
+    """La cotizacion nueva, ya autorizada por el cliente, en un solo paso.
+
+    No confirma: quien la llama anota en la bitacora y confirma. Si algo
+    falla --un precio que la lista no tiene, el tipo de cambio que falta--
+    no queda nada y la version de antes sigue vigente."""
+    servicio = _servicio_que_se_cotiza(db, servicio_id)
+    tarifario = _tarifario_de(db, servicio)
+
+    quien = " ".join((autorizada_por or "").split())
+    if not quien:
+        raise HTTPException(400, "Di quien la autorizo del lado del cliente.")
+    if len(quien) > LARGO_QUIEN:
+        raise HTTPException(400, "El nombre de quien la autorizo es demasiado "
+                                 "largo.")
+    if autorizada_el is None:
+        raise HTTPException(400, "Falta el dia en que el cliente la autorizo.")
+    from app import reloj
+    if autorizada_el > reloj.Relojes(db).hoy(servicio.pais_id):
+        raise HTTPException(400, "El dia en que el cliente la autorizo no puede "
+                                 "ser despues de hoy.")
+    folio = " ".join((folio_odoo or "").split()) or None
+    if folio and len(folio) > LARGO_FOLIO:
+        raise HTTPException(400, "El folio de Odoo es demasiado largo.")
+    motivo = " ".join((motivo or "").split()) or None
+    if motivo and len(motivo) > LARGO_MOTIVO:
+        raise HTTPException(400, "El motivo es demasiado largo.")
+    if vigente(db, servicio_id) is not None and not motivo:
+        raise HTTPException(400, "Di por que se recotiza: queda escrito en la "
+                                 "version nueva.")
+
+    renglones, incluidos = con_gastos(
+        servicio, _renglones_de_lo_que_lleva(servicio, lineas), gastos, monto)
+    anteriores = _versiones(db, servicio_id)
+    version = (anteriores[0].version + 1) if anteriores else 1
+
+    punto = db.begin_nested()
+    try:
+        cotizacion = _armar(db, servicio, tarifario, renglones, incluidos,
+                            creada_por_id, motivo, version)
+        _autorizar(db, cotizacion, quien, autorizada_el, folio)
+        for vieja in anteriores:
+            if vieja.estatus != m.EstatusCotizacion.SUSTITUIDA:
+                vieja.estatus = m.EstatusCotizacion.SUSTITUIDA
+        punto.commit()
+    except Exception:
+        punto.rollback()
+        raise
+    db.refresh(cotizacion)
+    return cotizacion
+
+
+def lo_asignado(servicio: m.Servicio) -> dict:
+    """{equipo: {fecha: {"roles": {rol: n}, "unidades": {categoria: n}}}}:
+    con quien va cada dia hoy, para «Tomar lo asignado». La asignacion
+    relevada no cuenta: el cliente tuvo un conductor, no dos."""
+    salida = {}
+    for equipo, jornada in _dias(servicio):
+        roles, unidades = {}, {}
+        for a in jornada.personal:
+            if not a.relevado_en and a.rol_id:
+                roles[a.rol_id] = roles.get(a.rol_id, 0) + 1
+        for a in jornada.vehiculos:
+            if not a.relevado_en and a.vehiculo and a.vehiculo.categoria_id:
+                cat = a.vehiculo.categoria_id
+                unidades[cat] = unidades.get(cat, 0) + 1
+        salida.setdefault(equipo.alias, {})[jornada.fecha.isoformat()] = {
+            "roles": roles, "unidades": unidades}
+    return salida
+
+
+def lo_que_tiene_precio(db: Session, tarifario_id: int) -> tuple[list, list]:
+    """(roles, unidades) que la lista del cliente cobra: sueltos o dentro de
+    un paquete que pacta. Lo demas no se puede cotizar."""
+    roles = {r.perfil_id for r in db.query(m.TarifaRecurso)
+             .filter_by(tarifario_id=tarifario_id).all()}
+    unidades = {v.categoria_id for v in db.query(m.TarifaVehiculo)
+                .filter_by(tarifario_id=tarifario_id).all()}
+    for p in _pactados(db).filter_by(tarifario_id=tarifario_id).all():
+        roles.add(p.perfil_id)
+        unidades.add(p.categoria_id)
+    perfiles = (db.query(m.PerfilPersonal)
+                .filter(m.PerfilPersonal.id.in_(roles or {0})).all())
+    categorias = (db.query(m.CategoriaVehiculo)
+                  .filter(m.CategoriaVehiculo.id.in_(unidades or {0})).all())
+    return ([{"id": p.id, "nombre": p.nombre} for p in
+             sorted(perfiles, key=lambda x: x.nombre)],
+            [{"id": c.id, "nombre": c.nombre} for c in
+             sorted(categorias, key=lambda x: x.nombre)])
+
+
+def bloque(db: Session, servicio_id: int) -> dict:
+    """Todo lo que el bloque del servicio necesita para decir como esta la
+    cotizacion y para armar una: la vigente, los dias con su modalidad,
+    lo asignado, lo que la lista cobra y quien pudo autorizarla."""
+    from app import reloj
+
+    servicio = db.get(m.Servicio, servicio_id)
+    if not servicio:
+        raise HTTPException(404, f"No existe el servicio {servicio_id}")
+    cliente = db.get(m.Cliente, servicio.cliente_id)
+    tarifario = (db.get(m.Tarifario, cliente.tarifario_id)
+                 if cliente and cliente.tarifario_id else None)
+    vig = vigente(db, servicio_id)
+    versiones = _versiones(db, servicio_id)
+    roles, unidades = (lo_que_tiene_precio(db, tarifario.id)
+                       if tarifario else ([], []))
+
+    # Quien pudo autorizarla: quien solicita primero, y los demas de la
+    # lista del cliente. Otra persona se escribe a mano.
+    quienes = []
+    if servicio.solicitante_completo:
+        quienes.append({"nombre": servicio.solicitante_completo,
+                        "solicita": True})
+    for s in (db.query(m.Solicitante)
+              .filter_by(cliente_id=servicio.cliente_id, activo=True)
+              .order_by(m.Solicitante.nombre).all()):
+        nombre = s.completo
+        if nombre and all(q["nombre"] != nombre for q in quienes):
+            quienes.append({"nombre": nombre, "solicita": False})
+
+    return {
+        "servicio_id": servicio.id,
+        "se_cotiza": servicio.tipo == m.TipoServicio.EVENTUAL,
+        "se_puede": (servicio.tipo == m.TipoServicio.EVENTUAL
+                     and servicio.estatus != m.EstatusServicio.CANCELADO
+                     and servicio.estatus not in YA_CON_VISTO_BUENO),
+        "con_visto_bueno": servicio.estatus in YA_CON_VISTO_BUENO,
+        "tarifario": ({"id": tarifario.id, "nombre": tarifario.nombre,
+                       "moneda": tarifario.moneda.value} if tarifario else None),
+        "vigente": resumen(db, vig) if vig else None,
+        "versiones": [{
+            "version": c.version, "estatus": c.estatus.value,
+            "total": c.total, "moneda": c.moneda.value,
+            "motivo": c.motivo_recotizacion,
+            "autorizada_por": c.autorizada_por,
+            "autorizada_el": (c.autorizada_el.isoformat()
+                              if c.autorizada_el else None)} for c in versiones],
+        "siguiente_version": (versiones[0].version + 1) if versiones else 1,
+        "dias": [{"equipo": e.alias, "fecha": j.fecha.isoformat(),
+                  "modalidad": j.modalidad.codigo.value if j.modalidad else None,
+                  "horas": (float(j.modalidad.horas) if j.modalidad else None)}
+                 for e, j in _dias(servicio)],
+        "asignado": lo_asignado(servicio),
+        "roles": roles, "unidades": unidades,
+        "quienes": quienes,
+        "hoy": reloj.Relojes(db).hoy(servicio.pais_id).isoformat(),
+        # La moneda del pais: una cotizacion en otra se autoriza con el
+        # tipo de cambio que este puesto (seccion 82).
+        "moneda_local": _moneda_local(db, servicio),
+    }
+
+
+def _moneda_local(db: Session, servicio: m.Servicio) -> str | None:
+    local = tipo_cambio.local_del_pais(db, servicio.pais_id)
+    return local.value if local else None

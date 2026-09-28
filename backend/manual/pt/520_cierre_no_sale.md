@@ -19,15 +19,15 @@ No cartão **Aval e faturamento** do serviço, «Antes de enviar» diz que há p
 - **Jornada sin término.** Um dia sem a sua marcação de fim.
 - **Um desvio contra o orçado.** Dias a mais ou a menos, um recurso que não foi orçado, diárias excedidas, uma cobrança menor.
 - **Sin tipo de cambio.** As despesas foram comprovadas em pesos e são faturadas em dólares.
-- **Sin cotización autorizada.** Sem ela não há contra o que comparar o executado. Hoje o console não tem onde registrá-la.
+- **Sem cotação autorizada.** Sem ela não há contra o que comparar o executado.
 
 ### Como se resolve
 Cada ponto diz a sua ação:
 - As diárias se fecham mais abaixo, em Adiantamentos da equipe. Se o prazo já venceu, o que não foi comprovado é fechado com desconto na folha.
 - O dia sem fim é registrado pela central, com a sua justificativa.
-- O desvio é recotado com o cliente ou justificado.
+- O desvio é recotado com o cliente —«Recotar», em A cotação autorizada— ou justificado.
 - A taxa de câmbio é definida pelo financeiro em Faturamento → Tabelas de preços.
-- Se falta a cotação autorizada, avisa-se o Salvador.
+- A cotação autorizada é registrada pelo consultor do serviço, ou por quem o cobre, no alto do mesmo serviço: em **A cotação autorizada**.
 
 ### E depois do aval
 - **O financeiro o devolve** com o seu motivo: há 24 horas desde a devolução para corrigir e mandar de novo. O «no prazo» do primeiro aval fica como estava.

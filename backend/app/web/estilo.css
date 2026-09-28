@@ -1582,3 +1582,21 @@ tr.man-grupo td {
   .man-mensaje { break-inside: avoid; }
   .man-impreso .man-tile a { display: none; }
 }
+
+/* La cotizacion autorizada (seccion 94). Lo que lleva cada dia: un
+   numero y su rol o su unidad, en una sola pieza que no se parte al
+   angostarse la pantalla. */
+.cot-fila-lleva { display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+  margin: 0 0 10px; }
+.cot-lleva { display: inline-flex; gap: 6px; align-items: center;
+  background: var(--suave); border-radius: 8px; padding: 4px 6px; }
+.cot-lleva input { width: 64px; margin: 0; }
+.cot-lleva select { width: auto; min-width: 190px; margin: 0; }
+.cot-lleva button { padding: 2px 8px; }
+/* Mas fuerte que `.opcion input`, que lo dejaria del ancho de siempre. */
+.opcion input.cot-monto { width: 130px; margin: 0 0 0 6px; }
+/* El dia que va distinto se ve distinto. */
+.cot-dia-otro td { background: var(--suave); }
+.cot-pie { display: flex; justify-content: space-between; align-items: flex-end;
+  gap: 16px; flex-wrap: wrap; margin-top: 18px; padding-top: 14px;
+  border-top: 1px solid var(--linea); }

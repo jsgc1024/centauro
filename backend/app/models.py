@@ -2439,11 +2439,20 @@ class Cotizacion(Base):
         Enum(EstatusCotizacion), default=EstatusCotizacion.BORRADOR)
     motivo_recotizacion: Mapped[str | None] = mapped_column(String(400), nullable=True)
     creada_por_id: Mapped[int | None] = mapped_column(ForeignKey("persona.id"), nullable=True)
+    # Cuando se registro en Centauro que el cliente la autorizo.
     autorizada_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Quien la autorizo del lado del cliente --casi siempre quien
+    # solicita-- y el dia en que lo hizo, que no tiene por que ser el dia
+    # en que se registra (seccion 94, decision 2 de «Para poder operar»).
     autorizada_por: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    autorizada_el: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # El folio de la cotizacion en Odoo, si se hizo alla: amarra las dos
+    # el dia que Odoo la mande o que Centauro la lea.
+    folio_odoo: Mapped[str | None] = mapped_column(String(40), nullable=True)
     creada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     servicio: Mapped[Servicio] = relationship()
+    creada_por: Mapped["Persona | None"] = relationship(foreign_keys=[creada_por_id])
     lineas: Mapped[list["LineaCotizacion"]] = relationship(
         back_populates="cotizacion", cascade="all, delete-orphan")
 

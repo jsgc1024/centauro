@@ -6323,6 +6323,92 @@ en el servidor y probar; el acceso a producción; encender.
 - Sin migración. `poner_correo.py` corre fuera de los contenedores,
   desde `/opt/centauro`: basta el `git pull` del bloque de siempre.
 
+## 94. La cotización autorizada, en el servicio
+
+Salvador, 28 de septiembre, contestó las ocho decisiones de «Para poder
+operar», todas como se recomendaron (ver «Lo que falta»). Las de esta
+pieza: la cotización autorizada se registra en Connect mientras Odoo no
+la manda, con los precios del tarifario del cliente (decisión 1); para
+marcarla autorizada, quién, el día y el folio de Odoo si existe (decisión
+2). Es la pieza 1, la que más frenaba: sin cotización no había visto
+bueno, y sin visto bueno no se facturaba, no entraba a la nómina del
+lunes y el consultor no cobraba su comisión.
+
+### El bloque
+
+Debajo del encabezado del eventual, **«La cotización autorizada»**, con
+su «?». Lo ve quien ve el cierre; lo arma quien cotiza —el consultor, o
+quien lo cubre, que queda anotado como cobertura y le llega el aviso al
+titular—. Tres estados:
+
+1. **Falta**: en rojo lo que frena —sin ella no hay visto bueno, factura,
+   nómina ni comisión— y el botón «Armar la cotización». Si el cliente no
+   tiene tarifario, lo dice en vez del botón.
+2. **Armando la versión N**, en tres pasos:
+   - *Lo que lleva cada día*, por equipo: cuántos de qué rol y cuántas de
+     qué unidad. Solo se ofrecen los que la lista del cliente cobra,
+     sueltos o en paquete. «Tomar lo asignado» la llena con quien ya va:
+     lo que más se repite queda de base y el día distinto, como día
+     distinto. Cada día puede ir distinto desde su renglón. Los precios
+     los pone el servidor en una vista previa —la misma cuenta que al
+     guardar, con el paquete si la lista lo pacta— sin guardar nada.
+   - *Cómo se cobran los gastos*: dentro del precio, monto fijo —lo único
+     que se escribe; va como renglón de gastos el primer día del primer
+     equipo, que es como lo lee el cierre— o por comprobar.
+   - *La autorización del cliente*: quién —quien solicita primero y la
+     lista de solicitantes del cliente, u otra persona escrita a mano—,
+     el día —no después de hoy— y el folio de Odoo si existe.
+3. **Autorizada · versión N**: el total, quién y cuándo la autorizó, el
+   folio, los gastos, qué lleva en una línea y quién la registró. «Ver
+   renglones» y «Recotizar».
+
+### Recotizar
+
+Pide su motivo, que queda escrito en la versión nueva. **La nueva nace
+autorizada y la de antes queda sustituida en el mismo paso**: el
+servicio nunca se queda sin cotización vigente. Si algo falla —un precio
+que la lista no tiene, el tipo de cambio que falta en una cotización en
+dólares— no se guarda nada y la de antes sigue vigente. Después del
+visto bueno ya no se recotiza aquí: finanzas lo regresa, y ahí sí.
+
+### Por dentro
+
+- `cotizacion.py`: `generar` se partió en `_armar` —la cotización con sus
+  renglones, sin confirmar— y `_autorizar`, para que la vista previa y
+  la autorizada usen la misma cuenta. La vista previa arma dentro de un
+  savepoint y lo deshace; la autorizada arma, autoriza y sustituye dentro
+  de otro, y si algo truena lo deshace entero. Las rutas de antes
+  (`POST /cotizaciones` y `/autorizar`) siguen igual.
+- Rutas nuevas: `GET /cotizaciones/servicio/{id}/bloque`, `POST
+  /cotizaciones/vista-previa` y `POST /cotizaciones/autorizada`.
+- La cotización guarda además **el día en que el cliente la autorizó** y
+  **el folio de Odoo** (migración `6e1f3b8c2d47`).
+- La revisión del cierre, cuando falta la cotización, la dice en clave y
+  la pantalla apunta al bloque, en los tres idiomas; antes el texto
+  llegaba en español a cualquier idioma.
+- El estatus del servicio no camina hacia atrás al autorizar: uno ya
+  asignado se queda asignado.
+
+### Las pruebas
+
+- `tests/test_cotizacion_servicio.py`: la vista previa pone precios sin
+  guardar nada; se guarda ya autorizada con quién, el día y el folio, y
+  lo anota en la bitácora; sin quién, con un día de mañana, con un día
+  que el servicio no tiene o sin nada, no se guarda; recotizar pide
+  motivo y deja la anterior sustituida; si algo falla no queda nada y la
+  de antes sigue; los tres modos de gastos; el bloque ofrece lo asignado
+  y quién pudo autorizar; después del visto bueno ya no; quien cubre
+  queda anotado y finanzas no cotiza; la revisión apunta al bloque.
+- La migración sube, baja y vuelve a subir.
+- La vista previa con los datos de prueba: Hasbro con su paquete
+  conductor + unidad, y un servicio de dos días recotizado con el
+  segundo día sin unidad y gastos a monto fijo.
+
+### Para subirlo
+
+- **Con migración** (`6e1f3b8c2d47`): el bloque de siempre, con
+  `alembic upgrade head`. Solo la consola cambia; la app de campo no.
+
 ## 14. Lo que falta
 
 ### Abierto
@@ -6376,8 +6462,10 @@ en el servidor y probar; el acceso a producción; encender.
   noviembre y OVH apagado el lunes 7 de diciembre—, con el piloto de
   **tres** consultores de clientes distintos, no dos (los nombres,
   después); y 8) lo que ya corre en OVH o en la app vieja termina allá:
-  no se pasan datos, lo nuevo nace en Connect. Sigue construir las
-  piezas 1, 2, 4 y 5, en ese orden.
+  no se pasan datos, lo nuevo nace en Connect. La pieza 1, la
+  cotización autorizada en el servicio, quedó hecha en la sección 94.
+  Siguen la 2 (corregir los contactos; que los avisos del día le
+  lleguen al principal de cada equipo ya se hizo en la 91), la 4 y la 5.
 - **El primer agente del sistema: los casos resueltos** (sección 90).
   Salvador, 27 de septiembre: «más adelante podemos poner a un agente
   dedicado a ello… será el primer agente que coloquemos en el sistema».

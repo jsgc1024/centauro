@@ -11,6 +11,7 @@ import { IDIOMAS, idioma, t } from "./idioma.js";
 import { tarjetaCierre } from "./cierre.js";
 import { soloConsulta, tiene } from "./menu.js";
 import { bloqueTarifario } from "./tarifarios.js";
+import { bloqueCotizacion } from "./cotizacion.js";
 
 export async function pantallaServicio(main, servicioId) {
   const [servicio, cat] = await Promise.all([
@@ -25,6 +26,12 @@ export async function pantallaServicio(main, servicioId) {
     main.append(aviso(t("srv_consulta"), "alerta"));
   }
   main.append(encabezado(servicio, cliente, plaza));
+  /* La cotizacion autorizada (seccion 94), debajo del encabezado: sin
+     ella el eventual no recibe el visto bueno. La ve quien ve el cierre;
+     la arma quien cotiza. */
+  if (servicio.tipo === "eventual" && tiene(sesion.usuario, "cierre.ver")) {
+    main.append(await bloqueCotizacion(servicio));
+  }
   /* Con que precios se le cobra a este cliente (seccion 77): lo ve quien
      cotiza y cierra, plegado debajo del encabezado. */
   if (tiene(sesion.usuario, "cierre.ver")) {

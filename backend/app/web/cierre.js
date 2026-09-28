@@ -623,6 +623,11 @@ function paraRevisar(o) {
                      en(d.moneda_mes || d.moneda), en(d.moneda))).join("; ") + ".",
                accion: t("cie_pl_accion") };
     }
+    /* Sin cotizacion no hay contra que comparar: se registra arriba, en
+       el mismo servicio (seccion 94). */
+    case "sin_cotizacion":
+      return { asunto: t("cie_asu_sin_cotizacion"),
+               mensaje: t("cot_obs_mensaje"), accion: t("cot_obs_accion") };
     /* Sin tipo de cambio no hay cifra en la otra moneda (seccion 82). */
     case "sin_tipo_de_cambio":
       return { asunto: t("cie_asu_sin_tc"),

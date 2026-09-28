@@ -692,6 +692,10 @@ AYUDA_POR_PANTALLA = {
     # productos y el tarifario del cliente. Dentro del servicio va el mismo
     # tarifario, plegado y sin "?": ahi lo explica su propia leyenda.
     "tarifarios.js": 3,
+    # La cotizacion autorizada, en el servicio (seccion 94): un "?" que
+    # dice para que sirve, cuando se nota que falta y de donde salen los
+    # precios, que es lo primero que alguien quiere cuadrar.
+    "cotizacion.js": 1,
 
     # --- las que no, y por que
     "api.js": 0,        # habla con el servidor; no pinta nada

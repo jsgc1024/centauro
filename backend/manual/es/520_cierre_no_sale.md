@@ -19,15 +19,15 @@ En la tarjeta **Visto bueno y facturación** del servicio, «Antes de mandarlo»
 - **Jornada sin término.** Un día sin su marca de fin.
 - **Una desviación contra lo cotizado.** Días de más o de menos, un recurso que no se cotizó, viáticos excedidos, un cobro menor.
 - **Sin tipo de cambio.** Los gastos se comprobaron en pesos y se facturan en dólares.
-- **Sin cotización autorizada.** Sin ella no hay contra qué comparar lo ejecutado. Hoy la consola no tiene dónde capturarla.
+- **Sin cotización autorizada.** Sin ella no hay contra qué comparar lo ejecutado.
 
 ### Cómo se arregla
 Cada punto dice su acción:
 - Los viáticos se cierran abajo, en Viáticos del personal. Si su plazo ya venció, lo que no comprobó se cierra con descuento a su nómina.
 - El día sin fin lo registra la central, con su justificación.
-- La desviación se recotiza con el cliente o se justifica.
+- La desviación se recotiza con el cliente —«Recotizar», en La cotización autorizada— o se justifica.
 - El tipo de cambio lo pone finanzas en Facturación → Tarifarios.
-- Si falta la cotización autorizada, se le avisa a Salvador.
+- La cotización autorizada la registra el consultor del servicio, o quien lo cubre, arriba en el mismo servicio: en **La cotización autorizada**.
 
 ### Y después del visto bueno
 - **Finanzas lo regresa** con su motivo: hay 24 horas desde el regreso para corregir y volver a mandarlo. Lo en plazo del primer visto bueno se queda como estaba.

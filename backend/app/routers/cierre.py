@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app import auditoria, auth
@@ -67,6 +67,34 @@ class AutorizarIn(BaseModel):
     autorizada_por: str
 
 
+class LoQueLlevaIn(BaseModel):
+    """Un rol o una unidad de un dia de un equipo (seccion 94)."""
+    fecha: date
+    tipo: m.TipoLinea
+    equipo_clave: str = "Alfa"
+    perfil_id: int | None = None
+    categoria_id: int | None = None
+    cantidad: int = 1
+
+
+class VistaPreviaIn(BaseModel):
+    servicio_id: int
+    lineas: list[LoQueLlevaIn]
+    # dentro | fijo | comprobar
+    gastos: str
+    monto_gastos: Decimal | None = None
+
+
+class CotizacionAutorizadaIn(VistaPreviaIn):
+    """La cotizacion nueva, ya autorizada: quien la autorizo del lado del
+    cliente, el dia y, si se hizo en Odoo, su folio. Al recotizar, el
+    motivo."""
+    autorizada_por: str = Field(max_length=200)
+    autorizada_el: date
+    folio_odoo: str | None = Field(default=None, max_length=80)
+    motivo: str | None = Field(default=None, max_length=600)
+
+
 class RespaldoIn(BaseModel):
     justificacion: str
 
@@ -122,11 +150,66 @@ def ver_cotizaciones(servicio_id: int, db: Session = Depends(get_db),
         "viaticos_incluidos": c.viaticos_incluidos,
         "motivo_recotizacion": c.motivo_recotizacion,
         "autorizada_por": c.autorizada_por,
+        "autorizada_el": c.autorizada_el.isoformat() if c.autorizada_el else None,
+        "folio_odoo": c.folio_odoo,
         "lineas": [{"fecha": l.fecha.isoformat(), "equipo": l.equipo_clave,
                     "tipo": l.tipo.value, "descripcion": l.descripcion,
                     "cantidad": l.cantidad, "precio": l.precio_unitario,
                     "subtotal": l.subtotal} for l in c.lineas],
     } for c in cotizaciones]
+
+
+# ------------------------------------------------ la cotizacion en el servicio
+#
+# Seccion 94: mientras Odoo no la manda, el consultor --o quien lo
+# cubre, que queda anotado como cobertura-- la registra en el servicio,
+# con los precios del tarifario del cliente y ya autorizada.
+
+@router.get("/cotizaciones/servicio/{servicio_id}/bloque",
+            summary="La cotizacion del servicio y lo que hace falta para armarla")
+def bloque_de_cotizacion(servicio_id: int, db: Session = Depends(get_db),
+                         usuario: m.Usuario = Depends(LECTURA)):
+    datos = cotmotor.bloque(db, servicio_id)
+    datos["puede_cotizar"] = auth.puede_el_usuario(db, usuario, "cierre.cotizar")
+    return datos
+
+
+@router.post("/cotizaciones/vista-previa",
+             summary="Los precios de lo que se va a cotizar, sin guardar nada")
+def vista_previa_de_cotizacion(datos: VistaPreviaIn, db: Session = Depends(get_db),
+                               _=Depends(COTIZA)):
+    return cotmotor.vista_previa(
+        db, datos.servicio_id, [l.model_dump() for l in datos.lineas],
+        datos.gastos, datos.monto_gastos)
+
+
+@router.post("/cotizaciones/autorizada", status_code=201,
+             summary="Registrar la cotizacion que el cliente autorizo")
+def registrar_cotizacion_autorizada(datos: CotizacionAutorizadaIn,
+                                    db: Session = Depends(get_db),
+                                    usuario: m.Usuario = Depends(COTIZA)):
+    """Se guarda ya autorizada. Al recotizar, la nueva nace autorizada con
+    su motivo y la de antes queda sustituida: el servicio nunca se queda
+    sin cotizacion vigente. Si algo falla no se guarda nada."""
+    cotizacion = cotmotor.registrar_autorizada(
+        db, datos.servicio_id, [l.model_dump() for l in datos.lineas],
+        datos.gastos, datos.monto_gastos, datos.autorizada_por,
+        datos.autorizada_el, datos.folio_odoo, datos.motivo,
+        usuario.persona_id)
+    detalle = (f"version {cotizacion.version}, total {cotizacion.total} "
+               f"{cotizacion.moneda.value}; la autorizo "
+               f"{cotizacion.autorizada_por} el "
+               f"{cotizacion.autorizada_el:%d/%m/%Y}")
+    if cotizacion.folio_odoo:
+        detalle += f"; folio de Odoo {cotizacion.folio_odoo}"
+    if cotizacion.motivo_recotizacion:
+        detalle += f"; motivo: {cotizacion.motivo_recotizacion}"
+    auditoria.registrar(db, usuario, cotizacion.servicio,
+                        "cotizar y autorizar" if cotizacion.version == 1
+                        else "recotizar", detalle)
+    db.commit()
+    db.refresh(cotizacion)
+    return cotmotor.resumen(db, cotizacion)
 
 
 # ---------------------------------------------------------------- cierre
