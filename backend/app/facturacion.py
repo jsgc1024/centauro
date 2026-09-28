@@ -24,11 +24,12 @@ bandeja de "por facturar" con el error a la vista y se reintenta. Un
 envio que falla en silencio deja un servicio aprobado que nadie cobra.
 """
 import logging
-from datetime import datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 
 import httpx
 from fastapi import HTTPException
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app import cierre as motor_cierre
@@ -229,6 +230,112 @@ def enviar(db: Session, cierre: m.Cierre) -> dict:
     return {"resultado": "facturado", "factura": cierre.factura_odoo}
 
 
+# ---------------------------------------------------------------- a mano
+
+LARGO_FOLIO = 60
+SE_FACTURA = (m.EstatusCierre.ENVIADO_FINANZAS, m.EstatusCierre.APROBADO)
+
+
+def anotar(db: Session, cierre: m.Cierre, folio: str | None,
+           fecha: date | None, usuario: m.Usuario) -> dict:
+    """La factura que finanzas hizo en Odoo, anotada aqui (seccion 96).
+
+    Decision 5 de Salvador (28 sep): mientras la factura no se conecta
+    con Odoo, finanzas la hace alla y aqui anota su folio y su fecha. El
+    cierre queda como si Odoo la hubiera devuelto: sale de por facturar,
+    su folio se ve en facturacion y en el historial, el aprobado pasa a
+    facturado, y cuando la conexion llegue no se vuelve a mandar --`enviar`
+    ve que ya esta--.
+
+    La anotada a mano se corrige aqui mismo, con lo de antes en la
+    bitacora; la que llego de Odoo se corrige en Odoo. No confirma.
+    """
+    from app import auditoria, reloj
+
+    folio = " ".join((folio or "").split())
+    if not folio:
+        raise HTTPException(400, "Escribe el folio de la factura.")
+    if len(folio) > LARGO_FOLIO:
+        raise HTTPException(400, f"El folio de la factura es demasiado "
+                                 f"largo: hasta {LARGO_FOLIO} caracteres.")
+    if fecha is None:
+        raise HTTPException(400, "Pon la fecha de la factura.")
+    if fecha > reloj.Relojes(db).hoy(cierre.servicio.pais_id):
+        raise HTTPException(400, "La fecha de la factura no puede ser "
+                                 "despues de hoy.")
+
+    corrige = bool(cierre.facturado_en or cierre.factura_odoo)
+    if corrige and not cierre.factura_anotada_por_id:
+        raise HTTPException(409, {
+            "mensaje": "Esta factura llego de Odoo: se corrige en Odoo.",
+            "que_hacer": "Aqui solo se corrige la que se anoto a mano.",
+        })
+    if not corrige and cierre.estatus not in SE_FACTURA:
+        raise HTTPException(409, {
+            "mensaje": (f"Este cierre todavia no se factura: esta en "
+                        f"{motor_cierre.nombre_estatus(cierre.estatus)}"),
+            "que_hacer": ("Se factura cuando el consultor da el visto "
+                          "bueno y lo manda a finanzas."),
+        })
+
+    # Una factura es de un solo servicio --o de un solo mes del
+    # implantado--, y la anulada no se vuelve a usar: en Odoo sigue
+    # siendo la anulada.
+    bajo = folio.lower()
+    otro = (db.query(m.Cierre)
+            .filter(m.Cierre.id != cierre.id,
+                    or_(func.lower(m.Cierre.factura_odoo) == bajo,
+                        func.lower(m.Cierre.factura_anulada) == bajo))
+            .first())
+    if otro:
+        raise HTTPException(409, {
+            "mensaje": (f"El folio {folio} ya es de la factura de "
+                        f"{_de_que(otro)}"),
+            "que_hacer": "Revisa el folio en Odoo: cada factura es de un "
+                         "solo servicio.",
+        })
+    if cierre.factura_anulada and cierre.factura_anulada.lower() == bajo:
+        raise HTTPException(409, {
+            "mensaje": (f"El folio {folio} es de la factura que se anulo "
+                        f"al regresar este servicio"),
+            "que_hacer": "La factura nueva lleva otro folio en Odoo.",
+        })
+
+    antes = (cierre.factura_odoo,
+             cierre.facturado_en.date() if cierre.facturado_en else None)
+    cierre.factura_odoo = folio
+    cierre.facturado_en = datetime.combine(fecha, time())
+    cierre.factura_error = None
+    cierre.factura_anotada_por_id = usuario.persona_id
+    # Facturado es el ultimo eslabon: solo cuando finanzas ya aprobo. Si
+    # todavia no, el cierre sigue por aprobar, ya con su folio, y al
+    # aprobarlo pasa a facturado.
+    if cierre.estatus == m.EstatusCierre.APROBADO:
+        cierre.estatus = m.EstatusCierre.FACTURADO
+
+    ahora = f"{folio} del {fecha:%d/%m/%Y}"
+    if corrige:
+        de_antes = (f"{antes[0] or 'sin folio'} del {antes[1]:%d/%m/%Y}"
+                    if antes[1] else (antes[0] or "sin folio"))
+        auditoria.registrar(db, usuario, cierre.servicio, "corregir factura",
+                            f"{_de_que(cierre)}: {de_antes} -> {ahora}, "
+                            f"anotada a mano")
+    else:
+        auditoria.registrar(db, usuario, cierre.servicio, "anotar factura",
+                            f"{_de_que(cierre)}: {ahora}, hecha en Odoo y "
+                            f"anotada a mano")
+    db.flush()
+    return {**renglon(db, cierre), "corregida": corrige}
+
+
+def _de_que(cierre: m.Cierre) -> str:
+    """El folio del servicio, y el mes si es de un implantado."""
+    if cierre.contrato_id:
+        return (f"{cierre.servicio.folio} {cierre.contrato.mes:02d}/"
+                f"{cierre.contrato.anio}")
+    return cierre.servicio.folio
+
+
 def por_facturar(db: Session) -> list[dict]:
     """Lo que ya tiene visto bueno y todavia no tiene factura.
 
@@ -252,6 +359,8 @@ def renglon(db: Session, c: m.Cierre) -> dict:
     servicio = c.servicio
     consultor = (db.get(m.Persona, servicio.consultor_id)
                  if servicio.consultor_id else None)
+    anoto = (db.get(m.Persona, c.factura_anotada_por_id)
+             if c.factura_anotada_por_id else None)
     # En que moneda se factura: la de la cotizacion en el eventual, la
     # de los precios del mes en el implantado (seccion 82).
     moneda = motor_cierre.moneda_del_cierre(db, c)
@@ -278,6 +387,11 @@ def renglon(db: Session, c: m.Cierre) -> dict:
         "moneda": moneda,
         "aprobado_en": iso(c.aprobado_en),
         "factura": c.factura_odoo,
+        "facturado_en": iso(c.facturado_en),
+        # La que se hizo en Odoo y se anoto aqui (seccion 96): se corrige
+        # aqui. La que llega de Odoo, en Odoo.
+        "factura_a_mano": bool(c.factura_anotada_por_id),
+        "factura_anotada_por": (anoto.nombre if anoto else None),
         "factura_anulada": c.factura_anulada,
         "error": c.factura_error,
         "que_paso": que_paso(c.factura_error),

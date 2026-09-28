@@ -191,9 +191,9 @@ async function borrar(ruta, advertencia, listo, destino = null) {
     mensaje(listo);
     if (destino) location.hash = destino; else location.reload();
   } catch (err) {
-    const d = err.detalle;
-    mensaje(d && d.que_hacer ? `${err.message}. ${d.que_hacer}` : err.message,
-            "grave");
+    /* El mensaje ya trae el que hacer (api.js): pegarlo otra vez lo
+       decia dos veces. */
+    mensaje(err.message, "grave");
   }
 }
 

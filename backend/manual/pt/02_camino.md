@@ -30,7 +30,7 @@ Um serviço eventual passa sempre pelos mesmos passos. Saber em que passo ele es
 
 13. **As diárias.** O pessoal tem 24 horas desde que o serviço termina para comprovar o que recebeu.
 14. **O aval.** Ao vencerem essas 24 horas —ou antes, se todo o dinheiro já fechou— o relógio passa o serviço a esperar o aval do consultor, que tem as suas próprias 24 horas. Esse prazo decide a sua comissão.
-15. **O financeiro.** O consultor o manda ao financeiro, que o fatura ou o devolve com o motivo escrito. O que é devolvido tem 24 horas para voltar.
+15. **O financeiro.** O consultor o manda ao financeiro, que o fatura ou o devolve com o motivo escrito. Enquanto a fatura não está conectada com o Odoo, o financeiro a faz lá e a registra aqui com o número e a data. O que é devolvido tem 24 horas para voltar.
 16. **A pesquisa.** Ao fechar o serviço saem duas pesquisas: ao executivo e a quem o solicitou. O relógio lembra quem não responde aos 5 dias, e a pesquisa vence aos 15.
 
 ## O dinheiro da equipe

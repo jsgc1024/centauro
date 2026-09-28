@@ -582,7 +582,7 @@ AREA_DE_ARCHIVO = {
     "implantado.py": "implantados", "routers/implantados.py": "implantados",
     "hoja_implantado.py": "implantados", "cierre_mes.py": "implantados",
     "cierre.py": "cierre", "revision.py": "cierre", "revisor.py": "cierre",
-    "historial.py": "cierre",
+    "historial.py": "cierre", "facturacion.py": "cierre",
     "comisiones.py": "nomina", "nomina.py": "nomina",
     "routers/nomina.py": "nomina",
     "cotizacion.py": "cotizacion", "tipo_cambio.py": "cotizacion",

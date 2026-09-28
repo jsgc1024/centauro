@@ -1124,6 +1124,9 @@ def regresar(db: Session, cierre: m.Cierre, motivo: str, usuario: m.Usuario,
         cierre.factura_anulada = cierre.factura_odoo
         cierre.factura_odoo = None
         cierre.facturado_en = None
+    # La que se anoto a mano se anula igual (seccion 96): la que sigue
+    # puede llegar de Odoo o anotarse otra vez.
+    cierre.factura_anotada_por_id = None
     cierre.factura_error = None
     # La factura que sigue sale con el tipo de cambio de su visto bueno
     # (seccion 82): mientras tanto se ve el que este puesto.

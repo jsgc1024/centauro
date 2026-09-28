@@ -50,7 +50,7 @@ O código de quatro dígitos que se dita por telefone ao pessoal de campo que n�
 A caixa de entrada do financeiro: os depósitos a confirmar, as compras, os aluguéis, as devoluções e os descontos.
 
 ### Faturamento {#facturacion}
-O que já tem o aval do consultor: aprová-lo e faturá-lo, devolvê-lo à operação com o seu motivo, ou mandar a sua fatura de novo. Aqui vivem também as tabelas de preços e a tabela de produtos do Odoo que o financeiro confirma.
+O que já tem o aval do consultor: aprová-lo e faturá-lo, devolvê-lo à operação com o seu motivo, ou mandar a sua fatura de novo. Enquanto a fatura não está conectada com o Odoo, aqui se registra a que foi feita lá, com «Já faturado no Odoo». Aqui vivem também as tabelas de preços e a tabela de produtos do Odoo que o financeiro confirma.
 
 ### Folha {#nomina}
 O fechamento do pessoal de cada segunda-feira e a comissão dos consultores de cada mês: o que entra, o que ainda não e por quê.

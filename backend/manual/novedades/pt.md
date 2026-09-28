@@ -2,6 +2,9 @@
 
 O que há de novo em cada atualização, escrito para quem usa o sistema. A mais nova fica em cima.
 
+## 96 · 2026-09-28 · Já faturado no Odoo
+Em Faturamento → A faturar, cada serviço traz **«Já faturado no Odoo»**: enquanto a fatura não está conectada com o Odoo, o financeiro a faz lá e aqui registra o número e a data. O serviço sai da lista, o número aparece em Faturamento e no Histórico —com quem o registrou— e fica no registro; o aprovado fica faturado, e quando a conexão chegar não é reenviado. Um número é de uma só fatura. A registrada à mão se corrige em Fechados do mês ou ao revisar o serviço; a que vem do Odoo, no Odoo. Além disso: as caixas de busca já não mudam o que se escreve ao sair delas, e um «não se pode» já não repete o que fazer e o coloca na sua própria linha.
+
 ## 95 · 2026-09-28 · Corrigir os contatos do serviço
 No serviço, em cima junto ao status, **Corrigir os contatos**: o nome, o e-mail, o telefone e o idioma de quem solicita e do executivo principal —e os dados do executivo principal de uma equipe que leva o seu— se corrigem depois do cadastro, enquanto o serviço não estiver fechado nem cancelado. Quem corrige é o consultor do serviço ou quem o cobre. O que muda fica marcado com o anterior embaixo; quem solicita pode ser trocado por outro da lista do cliente e corrigido também nessa lista. Os avisos que ainda não saíram e a pesquisa sem resposta vão para os dados novos, o task sheet que for baixado já os traz, e fica no registro do serviço com o que havia antes. Se o e-mail anterior estiver em outro serviço aberto do cliente, diz-se em qual. Além disso, em Unidades, a leitura do GPS diz o que de fato acontece: a cada 2 minutos com serviços na rua, e a cada 15 sem ninguém na rua; e a cotação de um cliente sem tabela de preços diz onde ela é colocada: Gestão Administrativa → Odoo, em «Clientes sem tabela de preços».
 

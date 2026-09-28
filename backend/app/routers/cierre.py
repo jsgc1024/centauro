@@ -95,6 +95,13 @@ class CotizacionAutorizadaIn(VistaPreviaIn):
     motivo: str | None = Field(default=None, max_length=600)
 
 
+class FacturaDeOdooIn(BaseModel):
+    """La factura que finanzas hizo en Odoo (seccion 96): su folio y su
+    fecha."""
+    folio: str = Field(max_length=200)
+    fecha: date
+
+
 class RespaldoIn(BaseModel):
     justificacion: str
 
@@ -638,6 +645,22 @@ def pendientes_de_factura(db: Session = Depends(get_db), _=Depends(LECTURA)):
     paga."""
     return {"por_facturar": facturacion.por_facturar(db),
             "odoo_configurado": facturacion.hay_conexion()}
+
+
+@router.put("/cierre/{cierre_id}/factura-de-odoo",
+            summary="Anotar la factura que se hizo en Odoo")
+def anotar_factura(cierre_id: int, datos: FacturaDeOdooIn,
+                   db: Session = Depends(get_db),
+                   usuario: m.Usuario = Depends(FINANZAS)):
+    """Mientras la factura no se conecta con Odoo, finanzas la hace alla
+    y aqui anota su folio y su fecha (seccion 96). La misma ruta corrige
+    la que se anoto a mano; la que llego de Odoo se corrige en Odoo."""
+    cierre = db.get(m.Cierre, cierre_id)
+    if not cierre:
+        raise HTTPException(404, f"No existe el cierre {cierre_id}")
+    fila = facturacion.anotar(db, cierre, datos.folio, datos.fecha, usuario)
+    db.commit()
+    return fila
 
 
 @router.post("/cierre/{cierre_id}/facturar",

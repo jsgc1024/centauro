@@ -2576,6 +2576,13 @@ class Cierre(Base):
     # sepa cual sustituye.
     factura_anulada: Mapped[str | None] = mapped_column(String(60),
                                                         nullable=True)
+    # Quien anoto a mano la factura que se hizo en Odoo (seccion 96).
+    # Mientras la factura no se conecta, finanzas la hace alla y anota
+    # aqui su folio y su fecha --en `factura_odoo` y `facturado_en`, como
+    # si Odoo la hubiera devuelto--. Vacio cuando el folio llego de Odoo:
+    # esa se corrige en Odoo; la anotada a mano, aqui.
+    factura_anotada_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id", ondelete="SET NULL"), nullable=True)
     # Los gastos netos de un cliente que paga en otra moneda (seccion
     # 82): se comprueban en pesos y se le facturan en dolares, al tipo de
     # cambio que esta puesto en el visto bueno, que es cuando sale la

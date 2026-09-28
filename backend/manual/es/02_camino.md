@@ -30,7 +30,7 @@ Un servicio eventual pasa por los mismos pasos siempre. Saber en qué paso está
 
 13. **Los viáticos.** El personal tiene 24 horas desde que termina el servicio para comprobar lo que recibió.
 14. **El visto bueno.** Al vencer esas 24 horas —o antes, si todo el dinero ya cerró— el reloj pasa el servicio a esperar el visto bueno del consultor, que tiene sus propias 24 horas. Ese plazo decide su comisión.
-15. **Finanzas.** El consultor lo manda a finanzas, que lo factura o se lo regresa con el motivo escrito. Lo regresado tiene 24 horas para volver.
+15. **Finanzas.** El consultor lo manda a finanzas, que lo factura o se lo regresa con el motivo escrito. Mientras la factura no está conectada con Odoo, finanzas la hace allá y la anota aquí con su folio y su fecha. Lo regresado tiene 24 horas para volver.
 16. **La encuesta.** Al cerrar el servicio salen dos encuestas: al ejecutivo y a quien lo solicitó. El reloj le recuerda a quien no contesta a los 5 días, y la encuesta vence a los 15.
 
 ## El dinero de la gente

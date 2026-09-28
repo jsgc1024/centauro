@@ -331,6 +331,9 @@ button.peligro { background: var(--grave); }
 .aviso.ok { background: #e6f4ec; border-color: #c2e2d0; color: #14603a; }
 .aviso.alerta { background: #fdf6e3; border-color: #f0e2bd; color: #7a5c07; }
 .aviso.grave { background: #fdecea; border-color: #f5cdc8; color: #8f2b20; }
+/* Lo que contesta el servidor trae que paso y que hacer en dos parrafos
+   (api.js): arriba se leian pegados, sin punto entre los dos. */
+#mensajes .aviso { white-space: pre-line; }
 .vacio { color: var(--gris); padding: 26px; text-align: center; }
 
 /* ---------------------------------------------------------- entrada */

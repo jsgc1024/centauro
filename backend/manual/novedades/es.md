@@ -2,6 +2,9 @@
 
 Lo nuevo de cada actualización, escrito para quien usa el sistema. La más nueva va arriba.
 
+## 96 · 2026-09-28 · Ya se facturó en Odoo
+En Facturación → Por facturar, cada servicio trae **«Ya se facturó en Odoo»**: mientras la factura no está conectada con Odoo, finanzas la hace allá y aquí anota su folio y su fecha. El servicio sale de la lista, su folio se ve en Facturación y en el Historial —con quién lo anotó— y queda en la bitácora; el aprobado queda facturado, y cuando la conexión llegue no se vuelve a mandar. Un folio es de una sola factura. La anotada a mano se corrige en Cerrados del mes o al revisar el servicio; la que llega de Odoo, en Odoo. Además: las cajas de buscar ya no cambian lo que se escribe al salir de ellas, y un «no se puede» ya no repite qué hacer y lo pone en su propio renglón.
+
 ## 95 · 2026-09-28 · Corregir los contactos del servicio
 En el servicio, arriba junto al estatus, **Corregir los contactos**: el nombre, el correo, el teléfono y el idioma de quien solicita y del principal —y los datos del principal de un equipo que lleva el suyo— se corrigen después del alta, mientras el servicio no esté cerrado ni cancelado. Lo corrige el consultor del servicio o quien lo cubre. Lo que cambia se marca con lo de antes debajo; quien solicita se puede cambiar por otro de la lista del cliente y corregirse también en esa lista. Los avisos que no han salido y la encuesta sin contestar se van a los datos nuevos, el task sheet que se descargue ya los trae, y queda en la bitácora del servicio con lo de antes. Si el correo de antes está en otro servicio abierto del cliente, se dice en cuál. Además, en Unidades, la lectura del GPS dice lo que de verdad pasa: cada 2 minutos con servicios en la calle, y cada 15 sin nadie en la calle; y la cotización de un cliente sin tarifario dice dónde se le pone: Gestión Administrativa → Odoo, en «Clientes sin tarifario».
 

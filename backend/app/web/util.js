@@ -542,10 +542,14 @@ export function titulo(texto) {
 /* Se aplica al salir del campo, no mientras se escribe: corregir letra
    por letra le mueve el cursor a quien captura. El correo, la clave y
    los campos marcados crudos se quedan como se escribieron; el numero
-   de vuelo va todo en mayuscula porque asi lo imprime la aerolinea. */
+   de vuelo va todo en mayuscula porque asi lo imprime la aerolinea.
+
+   Las cajas de buscar tampoco se tocan (seccion 96): lo que se escribe
+   ahi es para buscar, no un nombre que se guarda, y un «ep/e-001» se
+   volvia «Ep/e-001» al salir de la caja. */
 const SIN_TOCAR = new Set(["email", "password", "date", "time",
                            "datetime-local", "number", "tel", "hidden",
-                           "checkbox", "radio", "file"]);
+                           "checkbox", "radio", "file", "search"]);
 
 export function vigilarCapturas(raiz = document) {
   raiz.addEventListener("focusout", (e) => {

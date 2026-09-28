@@ -203,8 +203,10 @@ export function pestanaHistorial() {
     return control;
   };
 
+  /* El folio va en mayusculas, como se imprime: en formato de nombre
+     «EP/E-008» se volvia «Ep/e-008» al salir de la caja. */
   const folio = entrada("folio", { placeholder: t("fac_his_buscar_folio"),
-                                   autocomplete: "off" });
+                                   autocomplete: "off", "data-mayusculas": "" });
   let espera = null;
   folio.addEventListener("input", () => {
     clearTimeout(espera);

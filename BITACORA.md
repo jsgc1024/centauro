@@ -6514,6 +6514,84 @@ ni cancelado. Se abre debajo de los contactos, con su «?»:
 - **Sin migración**: el bloque de siempre. Solo la consola cambia; la
   app de campo no.
 
+## 96. Ya se facturó en Odoo
+
+Pieza 4 de «Para poder operar». Decisión 5 de Salvador, 28 de
+septiembre: finanzas anota el folio de la factura que hace en Odoo
+mientras la factura no esté conectada. Hasta hoy, sin la conexión, todo
+lo que tenía visto bueno se quedaba en «Por facturar» para siempre —la
+factura existía en Odoo y Connect no lo sabía—, y el aprobado nunca
+llegaba a facturado.
+
+### La pantalla
+
+En Facturación → Por facturar, cada servicio trae **«Ya se facturó en
+Odoo»**. Abre debajo de su renglón «La factura que se hizo en Odoo»: el
+folio, la fecha —hoy, de entrada; no se acepta una de mañana— y
+Guardar. Con Odoo conectado sigue además «Mandar otra vez»; sin
+conexión ya no se ofrece, porque el intento siempre diría lo mismo. La
+nota de la lista dice cómo va mientras no hay conexión.
+
+- **Al guardar**, el servicio sale de la lista y su folio se ve en
+  Facturación y en el Historial, con «Anotada a mano por …».
+- **La anotada a mano se corrige** con «Corregir», en Cerrados del mes,
+  o con «Corregir la factura» al revisar un servicio que falta aprobar:
+  la misma forma, con lo de antes a la vista. La que llega de Odoo se
+  corrige en Odoo.
+- El folio se queda **como se escribe**: la consola ponía en formato de
+  nombre lo que se capturaba al salir de la caja, y «INV/2026/01842» se
+  volvía «Inv/2026/01842».
+
+### Lo que pasa al anotarla
+
+- El cierre queda como si Odoo la hubiera devuelto: su folio y su fecha
+  en `factura_odoo` y `facturado_en`, y quién la anotó en
+  `factura_anotada_por_id` (migración `9c3e7a1f5b20`).
+- El aprobado pasa a **facturado**. El que falta aprobar sigue por
+  aprobar, ya con su folio, y al aprobarlo pasa a facturado sin volver a
+  mandarse.
+- Cuando la conexión con Odoo llegue, lo que ya tiene folio **no se
+  vuelve a mandar**: `enviar` ve que ya está.
+- **Un folio es de una sola factura**: si ya es de otro servicio —o de
+  la factura que se anuló al regresar uno—, no se guarda y se dice de
+  cuál es.
+- Queda en la **bitácora del servicio**: «anotar factura», y al
+  corregirla «corregir factura» con lo de antes.
+- **Regresar el servicio la anula** como a la de Odoo: su folio queda
+  como la anulada, y la que sigue puede llegar de Odoo o anotarse otra
+  vez.
+- Solo la anota finanzas (`cierre.facturar`), y solo lo que ya tiene el
+  visto bueno del consultor.
+
+### Tres arreglos chicos
+
+- Un «no se puede» del servidor trae qué pasó y qué hacer; la consola
+  los pegaba en un solo renglón, sin punto entre los dos. Ahora el qué
+  hacer va en su propio renglón. Y al borrar un servicio, el qué hacer
+  salía dos veces.
+- Las cajas de buscar ya no cambian lo que se escribe al salir de ellas:
+  un «ep/e-001» se volvía «Ep/e-001».
+- El folio del Historial va en mayúsculas, como se imprime.
+
+### Las pruebas
+
+- `tests/test_factura_de_odoo.py`: anotada sale de por facturar, y al
+  aprobarla queda facturada sin mandarse otra vez; el aprobado pasa a
+  facturado y se ve con quién la anotó; sin folio, con uno demasiado
+  largo, sin fecha o con una de pasado mañana no se guarda; un folio es
+  de una sola factura; la anotada a mano se corrige con lo de antes en
+  la bitácora y la que llegó de Odoo no; regresarlo la anula; solo
+  finanzas la anota.
+- La migración sube, baja y vuelve a subir.
+- La vista previa con los datos de prueba: la lista de por facturar, la
+  forma, el folio repetido, los cerrados del mes con su corrección, el
+  Historial y la pantalla en inglés.
+
+### Para subirlo
+
+- **Con migración** (`9c3e7a1f5b20`): el bloque de siempre, con
+  `alembic upgrade head`. Solo la consola cambia; la app de campo no.
+
 ## 14. Lo que falta
 
 ### Abierto
@@ -6570,9 +6648,9 @@ ni cancelado. Se abre debajo de los contactos, con su «?»:
   no se pasan datos, lo nuevo nace en Connect. La pieza 1, la
   cotización autorizada en el servicio, quedó hecha en la sección 94, y
   la 2, corregir los contactos del servicio, en la 95 (que los avisos
-  del día le lleguen al principal de cada equipo ya se hizo en la 91).
-  Siguen la 4 —anotar la factura hecha en Odoo— y la 5 —el arranque en
-  vivo—.
+  del día le lleguen al principal de cada equipo ya se hizo en la 91), y
+  la 4, anotar la factura hecha en Odoo, en la 96. Sigue la 5 —el
+  arranque en vivo—.
 - **El primer agente del sistema: los casos resueltos** (sección 90).
   Salvador, 27 de septiembre: «más adelante podemos poner a un agente
   dedicado a ello… será el primer agente que coloquemos en el sistema».

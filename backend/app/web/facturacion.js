@@ -12,6 +12,11 @@
    reintenta desde "Por facturar". Nunca sale dos veces: la que ya tiene
    folio de Odoo no se vuelve a mandar.
 
+   Mientras la factura no se conecta con Odoo (seccion 96, decision 5 de
+   Salvador del 28 sep), finanzas la hace alla y aqui la anota: «Ya se
+   facturo en Odoo», con su folio y su fecha. La anotada a mano se corrige
+   aqui; la que llega de Odoo, en Odoo.
+
    La cuarta pestana es el historial (seccion 69): todo lo cerrado desde
    el primer servicio, con filtros, en Excel, y con lo que pasa con las
    fotos de sus comprobantes. Vive en historial.js.
@@ -97,7 +102,7 @@ function aFacturar(f, moneda) {
 }
 
 function factura(f) {
-  if (f.factura) return h("td", {}, f.factura);
+  if (f.factura) return h("td", {}, folioDe(f));
   return h("td", {}, etiqueta(t("fac_sin_factura"), "alerta"),
     f.que_paso ? h("div", { clase: "chico gris", style: "margin-top:4px" },
                    t(QUE_PASO[f.que_paso] || "fac_paso_falta_dato")) : "");
@@ -154,10 +159,11 @@ export async function pantallaFacturacion(main) {
         ? boton("tarifarios", t("fac_tab_tarifarios")) : "");
 
     const cuerpo = pestana === "aprobar" ? porAprobar(b.por_aprobar, moneda, pintar)
-      : pestana === "facturar" ? porFacturar(b.por_facturar, moneda, pintar)
+      : pestana === "facturar" ? porFacturar(b.por_facturar, moneda, pintar,
+                                             b.odoo_configurado)
       : pestana === "historial" ? pestanaHistorial()
       : pestana === "tarifarios" ? pestanaTarifarios()
-      : cerrados(b.cerrados, moneda);
+      : cerrados(b.cerrados, moneda, pintar);
     zona.replaceChildren(corte, pestanas, cuerpo);
   };
   await pintar();
@@ -242,6 +248,12 @@ async function detalle(f, moneda, repintar) {
     !puedeFacturar() ? "" : h("button", { clase: "chico claro", type: "button",
       onclick: () => regreso.replaceChildren(formularioRegreso(f, repintar)) },
       t("fac_regresar")),
+    f.factura_a_mano && puedeFacturar()
+      ? h("button", { clase: "chico claro", type: "button",
+          onclick: () => regreso.replaceChildren(formaFactura(
+            f, repintar, () => regreso.replaceChildren())) },
+          t("fac_corregir_factura"))
+      : "",
     abreElServicio(f)
       ? h("button", { clase: "chico claro", type: "button", onclick: () => {
           location.hash = f.contrato_id ? `#/implantado/${f.servicio_id}`
@@ -319,23 +331,30 @@ function formularioRegreso(f, repintar) {
 
 /* ------------------------------------------------------------ por facturar */
 
-function porFacturar(filas, moneda, repintar) {
+function porFacturar(filas, moneda, repintar, conectado) {
   if (!filas.length) {
     return h("div", { clase: "tarjeta" }, h("div", { clase: "vacio" },
       t("fac_nada_por_facturar")));
   }
-  const cuerpo = h("tbody", {}, ...filas.map(f => h("tr", {},
-    h("td", {}, servicio(f)),
-    h("td", { clase: "der num" }, h("b", {}, dinero(f.total, f.moneda || moneda))),
-    h("td", {},
-      h("span", { style: "color:var(--alerta);font-weight:650" },
-        t(QUE_PASO[f.que_paso] || "fac_paso_falta_dato")),
-      h("div", { clase: "chico gris" }, [
-        f.que_paso === "sin_conexion" ? null : f.error,
-        reemplazar(t("fac_intentos"), { n: f.intentos,
-                                        f: f.ultimo_intento ? dia(f.ultimo_intento) : "—" }),
-      ].filter(Boolean).join(" · "))),
-    h("td", { clase: "der" }, !puedeFacturar() ? "" : h("button", { clase: "chico", type: "button",
+  const cuerpo = h("tbody");
+  for (const f of filas) {
+    /* La forma de la factura se abre debajo de su renglon. */
+    const extra = h("tr", { clase: "fila-extra", hidden: true },
+      h("td", { colspan: "4", style: "padding:2px 14px 16px" }));
+    const cerrar = () => {
+      extra.hidden = true;
+      extra.firstChild.replaceChildren();
+    };
+    const anotar = h("button", { clase: "chico", type: "button",
+      onclick: () => {
+        if (!extra.hidden) return cerrar();
+        extra.firstChild.replaceChildren(formaFactura(f, repintar, cerrar));
+        extra.hidden = false;
+        extra.querySelector("input").focus();
+      } }, t("fac_ya_en_odoo"));
+    /* Volver a mandarla solo sirve con Odoo conectado: sin conexion el
+       intento siempre dice lo mismo. */
+    const otraVez = !conectado ? "" : h("button", { clase: "chico claro", type: "button",
       onclick: async (e) => {
         e.target.disabled = true;
         try {
@@ -346,7 +365,27 @@ function porFacturar(filas, moneda, repintar) {
             r.resultado === "facturado" ? "ok" : "alerta");
           await repintar();
         } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
-      } }, t("fac_mandar_otra_vez"))))));
+      } }, t("fac_mandar_otra_vez"));
+    /* Sin conexion, el error siempre dice lo mismo: basta con los
+       intentos. */
+    const intentos = [
+      f.que_paso === "sin_conexion" ? "" : f.error,
+      reemplazar(t("fac_intentos"), { n: f.intentos,
+                                      f: f.ultimo_intento ? dia(f.ultimo_intento) : "—" }),
+    ].filter(Boolean).join(" · ");
+    cuerpo.append(
+      h("tr", {},
+        h("td", {}, servicio(f)),
+        h("td", { clase: "der num" }, h("b", {}, dinero(f.total, f.moneda || moneda))),
+        h("td", {},
+          h("span", { style: "color:var(--alerta);font-weight:650" },
+            t(QUE_PASO[f.que_paso] || "fac_paso_falta_dato")),
+          h("div", { clase: "chico gris" }, intentos)),
+        h("td", { clase: "der" }, !puedeFacturar() ? ""
+          : h("div", { clase: "acciones", style: "justify-content:flex-end" },
+              anotar, otraVez))),
+      extra);
+  }
   return h("div", {},
     h("table", { clase: "lista" },
       h("thead", {}, h("tr", {},
@@ -354,12 +393,93 @@ function porFacturar(filas, moneda, repintar) {
         h("th", { clase: "der" }, t("cie_col_a_facturar")),
         h("th", {}, t("fac_col_que_paso")), h("th"))),
       cuerpo),
-    h("p", { clase: "chico gris", style: "margin:10px 0 0" }, t("fac_por_facturar_pie")));
+    h("p", { clase: "chico gris", style: "margin:10px 0 0" },
+      t(conectado ? "fac_por_facturar_pie" : "fac_por_facturar_pie_sin_odoo")));
+}
+
+/* La factura que finanzas hizo en Odoo (seccion 96): su folio y su
+   fecha. La misma forma corrige la que se anoto a mano, con lo de antes
+   a la vista. */
+function formaFactura(f, repintar, cerrar) {
+  const corrige = !!f.factura;
+  const hoy = hoyAqui();
+  /* El folio se queda como lo da Odoo: sin `data-crudo`, la consola lo
+     ponia en formato de nombre al salir de la caja --«Inv/2026/01842»--. */
+  const folio = h("input", { maxlength: "60", "data-crudo": "" });
+  folio.value = f.factura || "";
+  const fecha = h("input", { type: "date", max: hoy });
+  fecha.value = f.facturado_en ? f.facturado_en.slice(0, 10) : hoy;
+  const guardar = h("button", { clase: "chico", type: "button",
+    onclick: async () => {
+      const escrito = folio.value.trim();
+      if (!escrito) {
+        folio.focus();
+        return mensaje(t("fac_falta_folio"), "alerta");
+      }
+      if (!fecha.value) {
+        fecha.focus();
+        return mensaje(t("fac_falta_fecha"), "alerta");
+      }
+      if (fecha.value > hoy) {
+        fecha.focus();
+        return mensaje(t("fac_fecha_futura"), "alerta");
+      }
+      guardar.disabled = true;
+      try {
+        const r = await api.put(`/cierre/${f.cierre_id}/factura-de-odoo`,
+                                { folio: escrito, fecha: fecha.value });
+        mensaje(reemplazar(t(r.corregida ? "fac_corregida" : "fac_anotada"),
+                           { f: r.factura }));
+        await repintar();
+      } catch (err) {
+        guardar.disabled = false;
+        mensaje(err.message, "grave");
+      }
+    } }, t("fac_anotar"));
+  return h("div", { clase: "tarjeta lisa", style: "margin:6px 0 0" },
+    h("h4", {}, t(corrige ? "fac_corregir_la_de_odoo" : "fac_la_de_odoo")),
+    h("div", { clase: "rejilla tres", style: "align-items:end" },
+      h("div", {}, h("label", {}, t("fac_folio_factura")), folio),
+      h("div", {}, h("label", {}, t("fac_fecha_factura")), fecha),
+      h("div", { clase: "acciones" }, guardar,
+        h("button", { clase: "chico claro", type: "button", onclick: cerrar },
+          t("cancelar")))),
+    corrige
+      ? h("p", { clase: "chico gris", style: "margin:8px 0 0" },
+          reemplazar(t("fac_antes_folio"),
+                     { f: f.factura, d: f.facturado_en ? fechaCorta(f.facturado_en) : "—" }))
+      : "",
+    h("p", { clase: "chico gris", style: "margin:8px 0 0" },
+      t(corrige ? "fac_corregir_pie" : "fac_anotar_pie")));
+}
+
+/* El folio, y si se anoto a mano, quien lo anoto. */
+function folioDe(f) {
+  return h("div", {}, f.factura,
+    f.factura_a_mano
+      ? h("div", { clase: "chico gris" },
+          f.factura_anotada_por
+            ? reemplazar(t("fac_a_mano_por"), { p: f.factura_anotada_por })
+            : t("fac_a_mano"))
+      : "");
+}
+
+/* Hoy, en la computadora de quien anota: la fecha de la factura no
+   puede ser de mañana. El servidor lo revisa con el dia del pais. */
+function hoyAqui() {
+  const d = new Date();
+  const dos = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${dos(d.getMonth() + 1)}-${dos(d.getDate())}`;
+}
+
+function fechaCorta(iso) {
+  const [a, m, d] = iso.slice(0, 10).split("-");
+  return `${d}/${m}/${a}`;
 }
 
 /* ------------------------------------------------------------ cerrados */
 
-function cerrados(filas, moneda) {
+function cerrados(filas, moneda, repintar) {
   if (!filas.length) {
     return h("div", { clase: "tarjeta" }, h("div", { clase: "vacio" },
       t("fac_nada_cerrado")));
@@ -370,16 +490,39 @@ function cerrados(filas, moneda) {
     if (c.estatus === "retenida") return t("fac_comision_retenida");
     return dinero(c.monto, c.moneda || moneda);
   };
+  const cuerpo = h("tbody");
+  for (const f of filas) {
+    const extra = h("tr", { clase: "fila-extra", hidden: true },
+      h("td", { colspan: "5", style: "padding:2px 14px 16px" }));
+    const cerrar = () => {
+      extra.hidden = true;
+      extra.firstChild.replaceChildren();
+    };
+    /* La que se anoto a mano se corrige aqui; la de Odoo, en Odoo. */
+    const corregir = f.factura_a_mano && puedeFacturar()
+      ? h("button", { clase: "chico claro", type: "button",
+          style: "margin-top:4px",
+          onclick: () => {
+            if (!extra.hidden) return cerrar();
+            extra.firstChild.replaceChildren(formaFactura(f, repintar, cerrar));
+            extra.hidden = false;
+          } }, t("fac_corregir"))
+      : "";
+    cuerpo.append(
+      h("tr", {},
+        h("td", {}, servicio(f)),
+        h("td", {}, dia(f.aprobado_en)),
+        h("td", { clase: "der num" }, dinero(f.total, f.moneda || moneda)),
+        h("td", {}, f.factura ? folioDe(f) : etiqueta(t("fac_sin_factura"), "alerta"),
+          corregir),
+        h("td", { clase: "der num" }, comision(f.comision))),
+      extra);
+  }
   return h("table", { clase: "lista" },
     h("thead", {}, h("tr", {},
       h("th", {}, t("fac_col_servicio")), h("th", {}, t("fac_col_cerrado")),
       h("th", { clase: "der" }, t("fac_col_total")),
       h("th", {}, t("fac_col_factura")),
       h("th", { clase: "der" }, t("fac_col_comision")))),
-    h("tbody", {}, ...filas.map(f => h("tr", {},
-      h("td", {}, servicio(f)),
-      h("td", {}, dia(f.aprobado_en)),
-      h("td", { clase: "der num" }, dinero(f.total, f.moneda || moneda)),
-      h("td", {}, f.factura || etiqueta(t("fac_sin_factura"), "alerta")),
-      h("td", { clase: "der num" }, comision(f.comision))))));
+    cuerpo);
 }
