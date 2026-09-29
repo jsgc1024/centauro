@@ -1326,10 +1326,10 @@ def profesionalismo_promedio(db: Session, pais_id: int,
              .filter(m.Persona.id.in_(trabajaron), m.Persona.activo.is_(True),
                      m.Persona.oficina.is_(False)).all())
     valores, pocos = [], 0
-    for (persona_id,) in gente:
-        f = profesionalismo.ficha(db, persona_id)
-        if not f:
-            continue
+    # Las fichas de todos de un golpe (seccion 101): una por una eran
+    # una docena de consultas por persona.
+    fichas = profesionalismo.fichas(db, [persona_id for (persona_id,) in gente])
+    for f in fichas.values():
         if f["confianza"] == "baja":
             pocos += 1
             continue

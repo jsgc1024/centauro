@@ -31,7 +31,10 @@ def _marca(alto: int) -> str:
 
 # ---------------------------------------------------------------- correo
 
-def correo(encuesta, enlace: str, recordatorio: str = "") -> str:
+ENLACE_TAPADO = "[enlace de la encuesta]"
+
+
+def correo(encuesta, enlace: str | None, recordatorio: str = "") -> str:
     """El correo que recibe el ejecutivo o el solicitante.
 
     Una sola llamada a la accion. Nada de parrafos: quien lo abre en el
@@ -43,6 +46,11 @@ def correo(encuesta, enlace: str, recordatorio: str = "") -> str:
     del aviso-- y quien lo recibia no podia distinguir un segundo
     intento de un correo repetido. Ahi tambien va la fecha en que se
     cierra, que es lo que convierte "ahi luego contesto" en hoy.
+
+    Sin `enlace` es la vista previa de la consola para quien solo ve
+    encuestas (seccion 101): el boton se ve igual pero no lleva a nada,
+    y debajo se dice que ahi va el enlace. Con el token se contesta la
+    encuesta, y ese no sale para quien no puede sacarlo.
     """
     t = _textos(encuesta.idioma)
     tipo = t[encuesta.tipo.value]
@@ -82,9 +90,14 @@ def correo(encuesta, enlace: str, recordatorio: str = "") -> str:
                  color:#5d6670">{_esc(recordatorio)}</td></tr>'''
     if recordatorio else ""}
   <tr><td style="padding:20px 26px 8px">
-    <a href="{_esc(enlace)}" style="display:inline-block;background:{CENTAURO};
+    {f'''<a href="{_esc(enlace)}" style="display:inline-block;background:{CENTAURO};
        color:#fff;text-decoration:none;padding:12px 22px;border-radius:6px;
-       font-weight:650;font-size:14px">{boton}</a></td></tr>
+       font-weight:650;font-size:14px">{boton}</a>'''
+     if enlace else
+     f'''<span style="display:inline-block;background:{CENTAURO};
+       color:#fff;padding:12px 22px;border-radius:6px;
+       font-weight:650;font-size:14px">{boton}</span>
+    <div style="padding-top:8px;font-size:12px;color:#78828c">{_esc(ENLACE_TAPADO)}</div>'''}</td></tr>
   <tr><td style="padding:14px 26px 24px;font-size:11.5px;color:#78828c;
                  border-top:1px solid #eef0f2;margin-top:10px">{pie}</td></tr>
 </table>
@@ -112,6 +125,8 @@ def pagina(encuesta, formulario: dict) -> str:
         "abierta": formulario.get("abierta"),
         "gracias": t["gracias"],
         "enviar": enviar,
+        # El error de la pagina, en el idioma de la encuesta (seccion 101).
+        "no_se_pudo": t["no_se_pudo"],
     }
     import json
     return f"""<!doctype html>
@@ -259,7 +274,7 @@ async function mandar(boton, caja) {{
     }});
     const d = await r.json();
     if (!r.ok) throw new Error(
-      (d.detail && (d.detail.mensaje || d.detail)) || "No se pudo enviar");
+      (d.detail && (d.detail.mensaje || d.detail)) || DATOS.no_se_pudo);
     contenido.className = "gracias";
     contenido.innerHTML = "";
     const p = document.createElement("div");
@@ -272,7 +287,7 @@ async function mandar(boton, caja) {{
     const error = document.createElement("div");
     error.className = "error";
     error.textContent = typeof e.message === "string"
-      ? e.message : "No se pudo enviar";
+      ? e.message : DATOS.no_se_pudo;
     caja.append(error);
   }}
 }}
@@ -282,9 +297,11 @@ pintar();
 </body></html>"""
 
 
-def pagina_cerrada(mensaje: str) -> str:
+def pagina_cerrada(mensaje: str, idioma: str | None = None) -> str:
+    """La contestada, la vencida, la que no existe. Con el idioma de la
+    encuesta cuando se sabe (seccion 101)."""
     return f"""<!doctype html>
-<html><head><meta charset="utf-8">
+<html{f' lang="{_esc(idioma)}"' if idioma else ""}><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Centauro</title></head>
 <body style="margin:0;padding:60px 20px;background:{SUAVE};text-align:center;

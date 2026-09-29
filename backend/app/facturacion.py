@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session
 
 from app import cierre as motor_cierre
 from app import models as m
+from app import reloj
 from app import tipo_cambio
 from app.config import settings
 
@@ -176,9 +177,11 @@ def enviar(db: Session, cierre: m.Cierre) -> dict:
 
     # Cada intento se cuenta: la bandeja dice "3 intentos, el ultimo a
     # las 09:40", que es lo que decide si se reintenta o se llama a
-    # sistemas.
+    # sistemas. En hora del pais del servicio, como los demas sellos del
+    # cierre (seccion 101): la de la maquina no es la de quien lo lee.
+    ahora = reloj.ahora_del_servicio(db, cierre.servicio)
     cierre.factura_intentos = (cierre.factura_intentos or 0) + 1
-    cierre.factura_intento_en = datetime.now()
+    cierre.factura_intento_en = ahora
 
     if not hay_conexion():
         cierre.factura_error = SIN_CONEXION
@@ -213,19 +216,30 @@ def enviar(db: Session, cierre: m.Cierre) -> dict:
                          cierre.servicio.folio, error)
         return {"resultado": "fallo", "motivo": cierre.factura_error}
 
-    # Odoo contesta con el folio de su factura. Si no lo manda, se
-    # guarda igual como facturado --el documento existe alla-- pero se
-    # dice que llego sin folio: es lo que habria que ir a buscar a mano.
+    # Odoo contesta con el folio de su factura. Sin folio no hay factura
+    # que anotar (seccion 101): el cierre se queda por facturar con el
+    # error a la vista, y desde la bandeja se reintenta o se anota a
+    # mano el folio que se vaya a buscar a Odoo. Antes quedaba
+    # "facturado" sin factura, fuera de la bandeja, y ni "Mandar otra
+    # vez" ni "Ya se facturo en Odoo" lo aceptaban.
     folio = (datos.get("factura") or datos.get("numero")
              or datos.get("name") or datos.get("id"))
+    if not folio:
+        cierre.factura_error = "Odoo contesto sin folio"
+        db.flush()
+        registro.warning("Odoo contesto sin folio para %s",
+                         cierre.servicio.folio)
+        return {"resultado": "fallo", "motivo": cierre.factura_error}
     # Facturado es el ultimo eslabon: solo cuando finanzas ya aprobo. Si
     # la factura sale con el visto bueno del consultor, el cierre sigue
     # enviado a finanzas, con su folio ya puesto.
     if cierre.estatus == m.EstatusCierre.APROBADO:
         cierre.estatus = m.EstatusCierre.FACTURADO
-    cierre.facturado_en = datetime.now()
-    cierre.factura_odoo = str(folio)[:60] if folio else None
-    cierre.factura_error = None if folio else "Odoo contesto sin folio"
+    # En hora del pais del servicio: de esta fecha salen el mes del
+    # historial y el reloj del archivo de comprobantes.
+    cierre.facturado_en = ahora
+    cierre.factura_odoo = str(folio)[:60]
+    cierre.factura_error = None
     db.flush()
     return {"resultado": "facturado", "factura": cierre.factura_odoo}
 

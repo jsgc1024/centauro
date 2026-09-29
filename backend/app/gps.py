@@ -1205,37 +1205,78 @@ def manejo_de(db: Session, persona_id: int, desde: tuple[int, int],
     """Los excesos y los arrancones o frenadas bruscas por cada mil km
     al volante en servicio (tablero 6). Solo los dias en que manejo
     esa persona; al escolta no le aplica."""
-    asignaciones = (db.query(m.AsignacionPersonal)
-                    .join(m.Jornada,
-                          m.AsignacionPersonal.jornada_id == m.Jornada.id)
-                    .filter(m.AsignacionPersonal.persona_id == persona_id,
-                            m.Jornada.estatus == m.EstatusJornada.TERMINADA)
-                    .all())
-    km = Decimal("0")
-    excesos = bruscos = 0
-    for asignacion in asignaciones:
-        jornada = asignacion.jornada
-        if (jornada.fecha.year, jornada.fecha.month) < desde:
-            continue
+    return manejo_de_varios(db, {persona_id: desde},
+                            {persona_id: puntos_por_evento})[persona_id]
+
+
+def manejo_de_varios(db: Session, ventana: dict[int, tuple[int, int]],
+                     puntos: dict) -> dict[int, dict]:
+    """Lo mismo para varias personas de un golpe: persona -> manejo.
+
+    Las jornadas terminadas de todas se traen en una consulta, con su
+    gente y sus unidades (seccion 101): persona por persona era una
+    consulta por asignacion mas las de cada jornada. `ventana` dice
+    desde que (anio, mes) cuenta cada quien y `puntos` cuanto castiga
+    cada evento en su pais; los dos vienen de la ficha.
+    """
+    from sqlalchemy.orm import joinedload, selectinload
+
+    if not ventana:
+        return {}
+    ids = list(ventana)
+    piso = min(ventana.values())
+    jornadas = (db.query(m.Jornada)
+                .join(m.AsignacionPersonal,
+                      m.AsignacionPersonal.jornada_id == m.Jornada.id)
+                .filter(m.AsignacionPersonal.persona_id.in_(ids),
+                        m.Jornada.estatus == m.EstatusJornada.TERMINADA,
+                        m.Jornada.fecha >= date(piso[0], piso[1], 1))
+                .options(selectinload(m.Jornada.vehiculos),
+                         selectinload(m.Jornada.personal)
+                         .joinedload(m.AsignacionPersonal.rol))
+                .distinct().all())
+
+    km = {persona_id: Decimal("0") for persona_id in ids}
+    excesos = {persona_id: 0 for persona_id in ids}
+    bruscos = {persona_id: 0 for persona_id in ids}
+    for jornada in jornadas:
+        mes = (jornada.fecha.year, jornada.fecha.month)
         for a in jornada.vehiculos:
             if a.km_gps is None or not a.km_gps:
                 continue
-            if quien_maneja(jornada, a.vehiculo_id) != persona_id:
+            quien = quien_maneja(jornada, a.vehiculo_id)
+            if quien not in km or mes < ventana[quien]:
                 continue
-            km += Decimal(str(a.km_gps))
-            excesos += a.excesos_gps or 0
-            bruscos += a.bruscos_gps or 0
-    if km < 50:
-        return {"aplica": False,
-                "detalle": "Sin kilometros al volante con GPS en la ventana"}
-    valor, por_mil = reglas.valor_manejo(km, excesos + bruscos,
-                                         puntos_por_evento)
-    return {"aplica": True, "valor": valor, "km": float(km),
-            "excesos": excesos, "bruscos": bruscos,
-            "detalle": (f"{km:,.0f} km al volante en servicio: {excesos} "
-                        f"excesos de velocidad y {bruscos} frenadas o "
-                        f"arrancones bruscos, {por_mil:.1f} por cada "
-                        "1,000 km")}
+            km[quien] += Decimal(str(a.km_gps))
+            excesos[quien] += a.excesos_gps or 0
+            bruscos[quien] += a.bruscos_gps or 0
+
+    salida = {}
+    for persona_id in ids:
+        if km[persona_id] < 50:
+            salida[persona_id] = {
+                "aplica": False,
+                "detalle": "Sin kilometros al volante con GPS en la ventana",
+                "frase": {"clave": "sin_km", "datos": {}}}
+            continue
+        valor, por_mil = reglas.valor_manejo(
+            km[persona_id], excesos[persona_id] + bruscos[persona_id],
+            puntos[persona_id])
+        salida[persona_id] = {
+            "aplica": True, "valor": valor, "km": float(km[persona_id]),
+            "excesos": excesos[persona_id], "bruscos": bruscos[persona_id],
+            "detalle": (f"{km[persona_id]:,.0f} km al volante en servicio: "
+                        f"{excesos[persona_id]} excesos de velocidad y "
+                        f"{bruscos[persona_id]} frenadas o arrancones "
+                        f"bruscos, {por_mil:.1f} por cada 1,000 km"),
+            # La misma frase en piezas, para el idioma de la consola
+            # (seccion 101).
+            "frase": {"clave": "manejo",
+                      "datos": {"km": f"{km[persona_id]:,.0f}",
+                                "e": excesos[persona_id],
+                                "b": bruscos[persona_id],
+                                "x": f"{por_mil:.1f}"}}}
+    return salida
 
 
 # ================================================================ la pantalla
@@ -1252,12 +1293,19 @@ def unidades(db: Session, pais_id: int, ahora: datetime | None = None) -> dict:
     gps = (db.query(m.UnidadGps)
            .filter_by(grupo_id=grupo.id, en_el_grupo=True).all()
            if grupo else [])
-    vehiculos = (db.query(m.Vehiculo)
-                 .join(m.Plaza, m.Vehiculo.plaza_id == m.Plaza.id)
-                 .filter(m.Plaza.pais_id == pais_id,
-                         m.Vehiculo.rentado.is_(False),
-                         m.Vehiculo.activo.is_(True))
-                 .order_by(m.Vehiculo.placa).all())
+    # Las activas, y ademas la que Odoo dio de baja pero sigue ligada a
+    # un GPS (seccion 101): la cifra de "ligadas" la contaba y no salia
+    # en ningun renglon, asi que las placas no cuadraban con la tabla. Se
+    # ensena en su renglon, dicha como de baja, para que alguien la quite
+    # del grupo de Pegasus o la reactive en Odoo.
+    ligadas = {u.vehiculo_id for u in gps if u.vehiculo_id}
+    vehiculos = [
+        v for v in (db.query(m.Vehiculo)
+                    .join(m.Plaza, m.Vehiculo.plaza_id == m.Plaza.id)
+                    .filter(m.Plaza.pais_id == pais_id,
+                            m.Vehiculo.rentado.is_(False))
+                    .order_by(m.Vehiculo.placa).all())
+        if v.activo or v.id in ligadas]
     hoy = reloj.hoy_en(pais) if pais else date.today()
     manana = hoy + timedelta(days=1)
     ids = [v.id for v in vehiculos]
@@ -1326,6 +1374,8 @@ def unidades(db: Session, pais_id: int, ahora: datetime | None = None) -> dict:
             "gps": estado_gps(u) if u else "sin_gps",
             "hoy": hoy_,
             "manana": suyo.get(manana),
+            # Archivada en Odoo y todavia en Pegasus (seccion 101).
+            "de_baja": not v.activo,
         }
         if u:
             fila.update({

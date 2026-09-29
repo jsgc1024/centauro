@@ -20,10 +20,11 @@ hecho, y no puede bajarle la calificacion a nadie.
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, case, func, or_
+from sqlalchemy.orm import Session, joinedload
 
 from app import models as m
-from app.experiencia import horas_acumuladas
+from app.experiencia import horas_por_persona
 
 CERO = Decimal("0")
 CIEN = Decimal("100")
@@ -95,155 +96,280 @@ def pesos(db: Session, pais_id: int) -> dict:
 
 
 # ---------------------------------------------------------------- dimensiones
+#
+# Cada dimension se calcula para VARIAS personas de un golpe (seccion
+# 101): una consulta por dimension, no una por persona. "Asignar
+# recursos" pedia la ficha de cada persona del pais por cada dia del
+# equipo --930 consultas con 16 personas y tres dias en la base de
+# pruebas-- y con 200 personas y el historial de un mes eran decenas de
+# segundos por clic, creciendo cada mes. Las cifras son las mismas que
+# antes: solo cambia cuantas veces se le pregunta a la base.
 
 def _en_ventana(anio: int, mes: int, desde: tuple[int, int]) -> bool:
     return (anio, mes) >= desde
 
 
-def _estrellas(db: Session, persona_id: int, desde: tuple[int, int]) -> dict:
-    evaluaciones = [e for e in db.query(m.EvaluacionMensual)
-                    .filter_by(persona_id=persona_id).all()
-                    if _en_ventana(e.anio, e.mes, desde)]
+def _evaluaciones_de(db: Session, ids: list[int],
+                     ventana: dict[int, tuple[int, int]]) -> dict[int, list]:
+    """persona -> sus evaluaciones mensuales dentro de su ventana."""
+    piso = min(ventana.values())
+    filas = (db.query(m.EvaluacionMensual)
+             .filter(m.EvaluacionMensual.persona_id.in_(ids),
+                     or_(m.EvaluacionMensual.anio > piso[0],
+                         and_(m.EvaluacionMensual.anio == piso[0],
+                              m.EvaluacionMensual.mes >= piso[1])))
+             .all())
+    salida: dict[int, list] = {}
+    for e in filas:
+        if _en_ventana(e.anio, e.mes, ventana[e.persona_id]):
+            salida.setdefault(e.persona_id, []).append(e)
+    return salida
+
+
+def _criterios_de(db: Session, evaluaciones: dict[int, list]) -> dict:
+    """evaluacion -> (criterios que le aplicaron, cumplidos)."""
+    ids = [e.id for lista in evaluaciones.values() for e in lista]
+    if not ids:
+        return {}
+    RC = m.ResultadoCriterio
+    filas = (db.query(RC.evaluacion_id, func.count(RC.id),
+                      func.coalesce(func.sum(case((RC.cumplido.is_(True), 1),
+                                                  else_=0)), 0))
+             .filter(RC.evaluacion_id.in_(ids), RC.aplica.is_(True))
+             .group_by(RC.evaluacion_id).all())
+    return {evaluacion_id: (int(aplicables), int(obtenidas))
+            for evaluacion_id, aplicables, obtenidas in filas}
+
+
+def _frase(clave: str, **datos) -> dict:
+    """La frase que explica una dimension, en piezas: la consola la arma
+    en el idioma de quien mira (seccion 101). Antes viajaba solo en
+    espanol y salia asi en la consola en ingles o portugues."""
+    return {"clave": clave, "datos": datos}
+
+
+def _estrellas(evaluaciones: list, criterios: dict) -> dict:
     if not evaluaciones:
-        return {"aplica": False, "detalle": "Sin evaluaciones en la ventana"}
+        return {"aplica": False, "detalle": "Sin evaluaciones en la ventana",
+                "frase": _frase("sin_evaluaciones")}
 
     obtenidas = aplicables = 0
     for e in evaluaciones:
-        criterios = db.query(m.ResultadoCriterio).filter_by(
-            evaluacion_id=e.id, aplica=True).all()
-        aplicables += len(criterios)
-        obtenidas += len([c for c in criterios if c.cumplido])
+        cuantos, cumplidos = criterios.get(e.id, (0, 0))
+        aplicables += cuantos
+        obtenidas += cumplidos
 
     if not aplicables:
-        return {"aplica": False, "detalle": "Ningun criterio le aplico"}
+        return {"aplica": False, "detalle": "Ningun criterio le aplico",
+                "frase": _frase("sin_criterios")}
     valor = _d(obtenidas) / _d(aplicables) * CIEN
     return {"aplica": True, "valor": valor,
             "detalle": f"{obtenidas} de {aplicables} estrellas posibles en "
-                       f"{len(evaluaciones)} meses"}
+                       f"{len(evaluaciones)} meses",
+            "frase": _frase("estrellas", n=obtenidas, t=aplicables,
+                            m=len(evaluaciones))}
 
 
-def _satisfaccion(db: Session, persona_id: int) -> dict:
-    servicios = {a.jornada.equipo.servicio_id
-                 for a in db.query(m.AsignacionPersonal)
-                 .filter_by(persona_id=persona_id).all()}
+def _satisfaccion_de(db: Session, ids: list[int]) -> dict[int, tuple]:
+    """persona -> (servicios atendidos, calificaciones, suma).
+
+    Las calificaciones del ejecutivo de los servicios en que ha ido, de
+    siempre --como estaba--, sumadas en la base en vez de cargar cada
+    asignacion con su jornada y su equipo.
+    """
+    pares = (db.query(m.AsignacionPersonal.persona_id.label("persona_id"),
+                      m.Equipo.servicio_id.label("servicio_id"))
+             .join(m.Jornada, m.AsignacionPersonal.jornada_id == m.Jornada.id)
+             .join(m.Equipo, m.Jornada.equipo_id == m.Equipo.id)
+             .filter(m.AsignacionPersonal.persona_id.in_(ids))
+             .distinct().subquery())
+    filas = (db.query(pares.c.persona_id,
+                      func.count(pares.c.servicio_id.distinct()),
+                      func.count(m.Encuesta.id),
+                      func.coalesce(func.sum(m.Encuesta.calificacion), 0))
+             .outerjoin(m.Encuesta, and_(
+                 m.Encuesta.servicio_id == pares.c.servicio_id,
+                 m.Encuesta.tipo == m.TipoEncuesta.EJECUTIVO,
+                 m.Encuesta.calificacion.isnot(None)))
+             .group_by(pares.c.persona_id).all())
+    return {persona_id: (int(servicios), int(notas), int(suma))
+            for persona_id, servicios, notas, suma in filas}
+
+
+def _satisfaccion(cuenta: tuple | None) -> dict:
+    servicios, notas, suma = cuenta or (0, 0, 0)
     if not servicios:
-        return {"aplica": False, "detalle": "Sin servicios atendidos"}
-
-    notas = [e.calificacion for e in db.query(m.Encuesta)
-             .filter(m.Encuesta.servicio_id.in_(servicios),
-                     m.Encuesta.tipo == m.TipoEncuesta.EJECUTIVO,
-                     m.Encuesta.calificacion.isnot(None)).all()]
+        return {"aplica": False, "detalle": "Sin servicios atendidos",
+                "frase": _frase("sin_servicios")}
     if not notas:
-        return {"aplica": False, "detalle": "Ningun ejecutivo lo ha calificado"}
+        return {"aplica": False, "detalle": "Ningun ejecutivo lo ha calificado",
+                "frase": _frase("sin_calificacion")}
 
-    promedio = _d(sum(notas)) / _d(len(notas))
+    promedio = _d(suma) / _d(notas)
     # Del 1 al 5 a una escala de 0 a 100: un 1 es cero, un 5 es cien.
     valor = (promedio - 1) / 4 * CIEN
     return {"aplica": True, "valor": valor,
             "promedio_1_a_5": round(float(promedio), 2),
-            "detalle": f"{len(notas)} calificaciones, promedio "
-                       f"{round(float(promedio), 2)} de 5"}
+            "detalle": f"{notas} calificaciones, promedio "
+                       f"{round(float(promedio), 2)} de 5",
+            "frase": _frase("calificaciones", n=notas,
+                            p=round(float(promedio), 2))}
 
 
-def _incidencias(db: Session, persona_id: int, desde: tuple[int, int],
-                 p: "_Parametros") -> dict:
+def _incidencias_de(db: Session, ids: list[int],
+                    ventana: dict[int, tuple[int, int]]) -> dict[int, list]:
+    """persona -> sus incidencias autorizadas dentro de su ventana."""
+    piso = min(ventana.values())
+    filas = (db.query(m.Incidencia)
+             .filter(m.Incidencia.persona_id.in_(ids),
+                     m.Incidencia.autorizada.is_(True),
+                     m.Incidencia.fecha >= date(piso[0], piso[1], 1))
+             .all())
+    salida: dict[int, list] = {}
+    for i in filas:
+        if _en_ventana(i.fecha.year, i.fecha.month, ventana[i.persona_id]):
+            salida.setdefault(i.persona_id, []).append(i)
+    return salida
+
+
+def _incidencias(filas: list, p: "_Parametros") -> dict:
     """Arranca en 100 y baja con cada incidencia ya autorizada."""
     castigo = {
         m.GravedadIncidencia.ERROR_MENOR: _d(p.castigo_error_menor),
         m.GravedadIncidencia.LEVE: _d(p.castigo_leve),
         m.GravedadIncidencia.GRAVE: _d(p.castigo_grave),
     }
-    filas = [i for i in db.query(m.Incidencia)
-             .filter_by(persona_id=persona_id, autorizada=True).all()
-             if _en_ventana(i.fecha.year, i.fecha.month, desde)]
-
     total = sum((castigo.get(i.gravedad, CERO) for i in filas), CERO)
     valor = max(CERO, CIEN - total)
     if not filas:
         detalle = "Sin incidencias autorizadas en la ventana"
+        frase = _frase("sin_incidencias")
     else:
         por_gravedad = {}
         for i in filas:
             por_gravedad[i.gravedad.value] = por_gravedad.get(i.gravedad.value, 0) + 1
         detalle = ", ".join(f"{n} {g}" for g, n in sorted(por_gravedad.items()))
+        frase = _frase("incidencias", por_gravedad=[
+            {"n": n, "g": g} for g, n in sorted(por_gravedad.items())])
     # Esta dimension siempre aplica: no tener incidencias es informacion,
     # no ausencia de informacion.
-    return {"aplica": True, "valor": valor, "detalle": detalle,
+    return {"aplica": True, "valor": valor, "detalle": detalle, "frase": frase,
             "incidencias": len(filas)}
 
 
-def _capacitacion(db: Session, persona_id: int, desde: tuple[int, int]) -> dict:
-    evaluaciones = [e for e in db.query(m.EvaluacionMensual)
-                    .filter_by(persona_id=persona_id).all()
-                    if _en_ventana(e.anio, e.mes, desde)]
+def _capacitacion(evaluaciones: list) -> dict:
     if not evaluaciones:
-        return {"aplica": False, "detalle": "Sin evaluaciones en la ventana"}
+        return {"aplica": False, "detalle": "Sin evaluaciones en la ventana",
+                "frase": _frase("sin_evaluaciones")}
     cumplidos = len([e for e in evaluaciones if e.capacitacion_cumplida])
     valor = _d(cumplidos) / _d(len(evaluaciones)) * CIEN
     return {"aplica": True, "valor": valor,
-            "detalle": f"{cumplidos} de {len(evaluaciones)} meses al corriente"}
+            "detalle": f"{cumplidos} de {len(evaluaciones)} meses al corriente",
+            "frase": _frase("capacitacion", n=cumplidos, t=len(evaluaciones))}
 
 
-def _manejo(db: Session, persona_id: int, desde: tuple[int, int],
-            p: "_Parametros") -> dict:
+def _manejo_de(db: Session, ventana: dict[int, tuple[int, int]],
+               puntos: dict[int, Decimal]) -> dict[int, dict]:
     """Los excesos y los arrancones o frenadas bruscas que conto el GPS,
     por cada mil km al volante en servicio (seccion 60). Solo los dias en
     que esa persona iba al volante: al escolta no le aplica, y su peso se
     reparte entre lo demas, como con cualquier dimension sin datos."""
     from app import gps
-    return gps.manejo_de(db, persona_id, desde, p.puntos_por_evento_manejo)
+    return gps.manejo_de_varios(db, ventana, puntos)
 
 
-def _experiencia(db: Session, persona_id: int,
-                 p: "_Parametros") -> dict:
-    horas = horas_acumuladas(db, persona_id)
+def _experiencia(horas: int, p: "_Parametros") -> dict:
     referencia = p.horas_referencia or 2000
     valor = min(CIEN, _d(horas) / _d(referencia) * CIEN)
     return {"aplica": True, "valor": valor, "horas": horas,
-            "detalle": f"{horas:,} h acumuladas en Centauro"}
+            "detalle": f"{horas:,} h acumuladas en Centauro",
+            "frase": _frase("experiencia", h=horas)}
 
 
 # ---------------------------------------------------------------- ficha
 
-def _usuario(db: Session, persona_id: int) -> dict | None:
-    """Con que correo entra al sistema, o nada si no tiene cuenta.
+def _usuarios_de(db: Session, ids: list[int]) -> dict[int, dict]:
+    """Con que correo entra al sistema cada quien, o nada si no tiene
+    cuenta.
 
     Va pegado a la ficha porque la pregunta se hace mirando esta
     pantalla --"y este, ya puede abrir la app?"--: sin esto hay que
     salir a Accesos y volver a buscar a la misma persona.
 
-    La contrasena no se puede enseñar aqui ni en ningun lado: se guarda
+    La contrasena no se puede ensenar aqui ni en ningun lado: se guarda
     un hash, no la contrasena. Lo unico que se puede decir es si ya puso
     una; quien no, entra con el codigo que le dicta su consultor.
     """
-    u = (db.query(m.Usuario)
-         .filter(m.Usuario.persona_id == persona_id).first())
-    if not u:
-        return None
-    return {"correo": u.correo, "activo": u.activo,
-            "ya_puso_contrasena": u.hash_contrasena is not None}
+    filas = (db.query(m.Usuario)
+             .filter(m.Usuario.persona_id.in_(ids)).all())
+    return {u.persona_id: {"correo": u.correo, "activo": u.activo,
+                           "ya_puso_contrasena": u.hash_contrasena is not None}
+            for u in filas}
 
 
 def ficha(db: Session, persona_id: int, hoy: date | None = None) -> dict:
-    persona = db.get(m.Persona, persona_id)
-    if not persona:
+    """La ficha de una persona: la de `fichas`, de una."""
+    return fichas(db, [persona_id], hoy).get(persona_id, {})
+
+
+def fichas(db: Session, persona_ids, hoy: date | None = None) -> dict[int, dict]:
+    """Las fichas de varias personas, por lote: persona -> ficha.
+
+    Quien no existe no sale. Los parametros y los pesos se leen una vez
+    por pais; cada dimension se trae con una sola consulta para todas.
+    """
+    ids = sorted({int(i) for i in persona_ids if i})
+    if not ids:
         return {}
-    pais_id = persona.plaza.pais_id
-    p = parametros(db, pais_id)
-    tabla_pesos = pesos(db, pais_id)
-    desde = _desde(p.meses_ventana, hoy)
+    personas = (db.query(m.Persona)
+                .options(joinedload(m.Persona.plaza))
+                .filter(m.Persona.id.in_(ids)).all())
+    if not personas:
+        return {}
+    ids = [persona.id for persona in personas]
+
+    por_pais: dict[int, tuple] = {}
+    for persona in personas:
+        pais_id = persona.plaza.pais_id
+        if pais_id not in por_pais:
+            p = parametros(db, pais_id)
+            por_pais[pais_id] = (p, pesos(db, pais_id), _desde(p.meses_ventana, hoy))
+    ventana = {persona.id: por_pais[persona.plaza.pais_id][2]
+               for persona in personas}
+    puntos = {persona.id: por_pais[persona.plaza.pais_id][0].puntos_por_evento_manejo
+              for persona in personas}
+
+    evaluaciones = _evaluaciones_de(db, ids, ventana)
+    criterios = _criterios_de(db, evaluaciones)
+    satisfaccion = _satisfaccion_de(db, ids)
+    incidencias = _incidencias_de(db, ids, ventana)
+    horas = horas_por_persona(db, ids)
+    manejo = _manejo_de(db, ventana, puntos)
+    usuarios = _usuarios_de(db, ids)
 
     D = m.DimensionProfesionalismo
-    medidas = {
-        D.ESTRELLAS: _estrellas(db, persona_id, desde),
-        D.SATISFACCION: _satisfaccion(db, persona_id),
-        D.INCIDENCIAS: _incidencias(db, persona_id, desde, p),
-        D.CAPACITACION: _capacitacion(db, persona_id, desde),
-        D.EXPERIENCIA: _experiencia(db, persona_id, p),
-        D.MANEJO: _manejo(db, persona_id, desde, p),
-    }
+    salida = {}
+    for persona in personas:
+        p, tabla_pesos, _ = por_pais[persona.plaza.pais_id]
+        suyas = evaluaciones.get(persona.id, [])
+        medidas = {
+            D.ESTRELLAS: _estrellas(suyas, criterios),
+            D.SATISFACCION: _satisfaccion(satisfaccion.get(persona.id)),
+            D.INCIDENCIAS: _incidencias(incidencias.get(persona.id, []), p),
+            D.CAPACITACION: _capacitacion(suyas),
+            D.EXPERIENCIA: _experiencia(horas.get(persona.id, 0), p),
+            D.MANEJO: manejo[persona.id],
+        }
+        salida[persona.id] = _armar(persona, p, tabla_pesos, medidas,
+                                    usuarios.get(persona.id),
+                                    horas.get(persona.id, 0))
+    return salida
 
-    # El peso de lo que no se puede medir se reparte entre lo que si.
+
+def _armar(persona: m.Persona, p: "_Parametros", tabla_pesos: dict,
+           medidas: dict, usuario: dict | None, horas: int) -> dict:
+    """La ficha a partir de sus seis medidas: la calificacion de 0 a 100
+    con el peso de lo que no se puede medir repartido entre lo que si."""
     peso_util = sum((tabla_pesos.get(d, CERO) for d, v in medidas.items()
                      if v["aplica"]), CERO)
 
@@ -252,7 +378,10 @@ def ficha(db: Session, persona_id: int, hoy: date | None = None) -> dict:
     for dimension, medida in medidas.items():
         peso = tabla_pesos.get(dimension, CERO)
         fila = {"dimension": dimension.value, "peso_base": float(peso),
-                "aplica": medida["aplica"], "detalle": medida["detalle"]}
+                "aplica": medida["aplica"], "detalle": medida["detalle"],
+                # La misma frase, en piezas, para que la consola la diga
+                # en su idioma (seccion 101): `detalle` es el espanol.
+                "frase": medida.get("frase")}
         if medida["aplica"] and peso_util > 0:
             peso_real = peso / peso_util * CIEN
             aporte = medida["valor"] * peso_real / CIEN
@@ -272,13 +401,13 @@ def ficha(db: Session, persona_id: int, hoy: date | None = None) -> dict:
     return {
         "persona_id": persona.id,
         "persona": persona.nombre,
-        "usuario": _usuario(db, persona.id),
+        "usuario": usuario,
         # Sin puesto: el rol es de la tarea, no de la persona.
         "plaza": persona.plaza.nombre,
         "es_freelance": persona.es_freelance,
         "calificacion": round(float(calificacion), 1),
         "ventana_meses": p.meses_ventana,
-        "horas_en_centauro": horas_acumuladas(db, persona_id),
+        "horas_en_centauro": horas,
         "dimensiones": dimensiones,
         "sin_datos_para_medir": sin_medir,
         "confianza": ("alta" if not sin_medir else
@@ -301,13 +430,11 @@ def tabla(db: Session, pais_id: int, plaza_id: int | None = None,
     # El filtro por puesto se fue con el puesto: una persona ya no es de
     # un rol, va con el rol que le toco ese dia.
 
-    fichas = []
-    for persona in consulta.all():
-        f = ficha(db, persona.id, hoy)
-        if not f:
-            continue
-        fichas.append(_renglon(db, f, hoy))
-    return sorted(fichas, key=lambda x: x["calificacion"], reverse=True)
+    # Las fichas de todos de un golpe (seccion 101): una por una eran
+    # una docena de consultas por persona.
+    todas = fichas(db, [persona.id for persona in consulta.all()], hoy)
+    renglones = [_renglon(db, f, hoy) for f in todas.values()]
+    return sorted(renglones, key=lambda x: x["calificacion"], reverse=True)
 
 
 def _dimension(f: dict, cual) -> dict:
@@ -356,6 +483,7 @@ def _renglon(db: Session, f: dict, hoy: date | None) -> dict:
                           "detalle": satisfaccion.get("detalle")}
                          if satisfaccion.get("aplica") else None),
         "incidencias": incidencias.get("detalle"),
+        "incidencias_frase": incidencias.get("frase"),
         "capacitacion": capacitaciones.por_vencer(db, f["persona_id"], hoy),
         "bono": ({"periodo": f"{mes:02d}/{anio}",
                   "estrellas": evaluacion.estrellas,

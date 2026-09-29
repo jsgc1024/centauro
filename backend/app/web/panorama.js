@@ -99,7 +99,7 @@ function renglonAtender(c) {
   if (pie) linea.append(h("div", { clase: "chico gris" }, pie));
   if (c.servicio_id) {
     linea.append(h("a", { clase: "boton chico",
-                          href: `#/servicios/${c.servicio_id}` }, t("pan_abrir")));
+                          href: `#/servicio/${c.servicio_id}` }, t("pan_abrir")));
   }
   return linea;
 }
@@ -283,22 +283,33 @@ function cifra(titulo, valor, pie, tono = "") {
 
 function dineroBloque(d) {
   const cuerpo = h("tbody");
+  /* Un monto por moneda (seccion 101): los reales no se suman con los
+     pesos. Si el servidor todavia no manda la lista, el total de antes. */
+  const conMoneda = (lista, total) => (lista && lista.length) ? montos(lista) : dinero(total);
   cuerpo.append(cifra(t("pan_por_depositar_c"),
-    dinero(d.por_depositar.monto),
+    conMoneda(d.por_depositar.montos, d.por_depositar.monto),
     Number(d.por_depositar.cuantos) === 1 ? t("pan_solicitud_uno")
       : t("pan_solicitudes").replace("{n}", d.por_depositar.cuantos)));
 
   const a = d.afuera_sin_comprobar;
-  cuerpo.append(cifra(t("fin_afuera"), dinero(a.monto),
+  cuerpo.append(cifra(t("fin_afuera"), conMoneda(a.montos, a.monto),
     (Number(a.personas) === 1 ? t("pan_persona_uno")
       : t("pan_personas_n").replace("{n}", a.personas))
-    + (Number(a.vencido) ? ` · ${dinero(a.vencido)} ${t("pan_vencido_suelto")}` : ""),
+    + (Number(a.vencido) ? ` · ${conMoneda(a.vencidos, a.vencido)} ${t("pan_vencido_suelto")}` : ""),
     Number(a.vencido) ? "rojo" : ""));
 
+  /* La nomina, un renglon por pais: con dos paises el renglon unico
+     ensenaba la de uno cualquiera. */
   const n = d.nomina_de_la_semana;
-  cuerpo.append(cifra(t("pan_nomina_semana"), dinero(n.total),
-    `${t("pan_corte")} ${fecha(n.fecha_corte)} · `
-    + t(ESTATUS_NOMINA[n.estatus] || "pan_n_sin_calcular")));
+  const porPais = (n.por_pais && n.por_pais.length) ? n.por_pais
+    : [{ pais: "", moneda: "MXN", estatus: n.estatus, total: n.total }];
+  for (const x of porPais) {
+    cuerpo.append(cifra(
+      porPais.length > 1 ? `${t("pan_nomina_semana")} · ${x.pais}` : t("pan_nomina_semana"),
+      dinero(x.total, x.moneda),
+      `${t("pan_corte")} ${fecha(n.fecha_corte)} · `
+      + t(ESTATUS_NOMINA[x.estatus] || "pan_n_sin_calcular")));
+  }
 
   const c = d.cierres;
   const caja = h("div", { clase: "tarjeta" },

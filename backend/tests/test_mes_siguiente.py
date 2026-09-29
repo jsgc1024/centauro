@@ -207,24 +207,27 @@ def test_el_mes_nuevo_arranca_el_dia_uno(cliente, sesion, datos):
 # ------------------------------------------------- la traba de la hoja
 
 def test_no_se_libera_la_hoja_con_dias_en_ambar(cliente, sesion, datos):
-    """Un fin de semana contratado y sin nadie no se manda al cliente."""
-    hoy = date.today()
-    # Un mes que empieza hoy y corre los siete dias: los fines de semana
-    # nacen en ambar, sin gente, a proposito. Si a este mes ya no le
-    # queda fin de semana --un lunes 28--, se arma el que sigue.
-    ultimo = calendar.monthrange(hoy.year, hoy.month)[1]
-    if not any(date(hoy.year, hoy.month, d).weekday() >= 5
-               for d in range(hoy.day, ultimo + 1)):
-        anio, mes = _siguiente(hoy)
-        hoy = date(anio, mes, 1)
+    """Un fin de semana contratado y sin nadie no se manda al cliente.
+
+    Un mes fijo --marzo de 2030, desde el lunes 4-- que corre los siete
+    dias: los fines de semana nacen en ambar, sin gente, a proposito. El
+    "hoy" desde el que se buscan se le dice al servidor con el reloj de
+    prueba (seccion 101): la prueba arrancaba el mes el dia de hoy y
+    fallaba los ultimos dias de un mes que acaba entre semana, cuando
+    ya no quedaba fin de semana que cubrir.
+    """
+    hoy = date(2030, 3, 4)
+    reloj = {"ahora": "2030-03-04T08:00:00"}
     alta, h = _alta(cliente, sesion, datos, inicio=hoy, dias="todos")
     servicio_id = alta["servicio_id"]
 
-    r = cliente.post(f"/task-sheets/implantado/{servicio_id}/liberar", headers=h)
+    r = cliente.post(f"/task-sheets/implantado/{servicio_id}/liberar",
+                     headers=h, params=reloj)
     assert r.status_code == 409, r.text
     detalle = r.json()["detail"]
     assert detalle["dias"], detalle
     assert all(date.fromisoformat(d).weekday() >= 5 for d in detalle["dias"])
+    assert all(date.fromisoformat(d) >= hoy for d in detalle["dias"])
 
     # Cubiertos todos, la hoja sale.
     for dia in list(detalle["dias"]):
@@ -233,7 +236,8 @@ def test_no_se_libera_la_hoja_con_dias_en_ambar(cliente, sesion, datos):
                           "vehiculo_id": datos["suburban"]["id"]}],
         }, headers=h)
 
-    r = cliente.post(f"/task-sheets/implantado/{servicio_id}/liberar", headers=h)
+    r = cliente.post(f"/task-sheets/implantado/{servicio_id}/liberar",
+                     headers=h, params=reloj)
     assert r.status_code == 200, r.text
     assert r.json()["estatus"] == "asignado"
 

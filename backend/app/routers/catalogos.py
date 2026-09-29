@@ -41,11 +41,15 @@ def listar_ciudades(db: Session = Depends(get_db), todas: bool = False,
     servicios y regresa a la lista en cuanto se vuelva a usar. Con
     todas=true salen tambien las dormidas, para la pantalla de catalogos.
     """
+    if todas:
+        # Con todas: tambien las quitadas, en gris y con "Reactivar" en
+        # la pantalla de catalogos (seccion 101). Antes una ciudad
+        # quitada por error no tenia vuelta: la lista no la traia y
+        # volver a darla de alta chocaba con "ya existe".
+        return (db.query(m.Plaza).order_by(m.Plaza.nombre).all())
     ciudades = (db.query(m.Plaza)
                 .filter(m.Plaza.activo.is_(True))
                 .order_by(m.Plaza.nombre).all())
-    if todas:
-        return ciudades
 
     desde = date.today() - timedelta(days=DIAS_SIN_USAR)
     vivas = set()
@@ -91,7 +95,11 @@ def listar_hoteles(db: Session = Depends(get_db), plaza_id: int | None = None,
     cuatro que de verdad usa. Con todos=true salen tambien los dormidos,
     para la pantalla de catalogos.
     """
-    consulta = db.query(m.Hotel).filter(m.Hotel.activo.is_(True))
+    consulta = db.query(m.Hotel)
+    # Con todos: tambien los quitados, para reactivarlos desde la
+    # pantalla de catalogos (seccion 101).
+    if not todos:
+        consulta = consulta.filter(m.Hotel.activo.is_(True))
     # La ciudad es la del equipo: en Monterrey no se ofrecen los de
     # Ciudad de Mexico. Los que no tienen ciudad salen siempre, porque
     # nadie sabe donde ponerlos.

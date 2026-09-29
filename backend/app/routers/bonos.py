@@ -3,13 +3,14 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app import accesos, auth
 from app import bonos as motor
 from app import comisiones as motor_com
 from app import models as m
+from app import reloj
 from app.db import get_db
 
 router = APIRouter(tags=["Bonos y comisiones"])
@@ -25,34 +26,40 @@ LECTURA = auth.puede("bonos.ver")
 CERO = Decimal("0")
 
 
+# Los topes de lo que se teclea (seccion 101): un texto mas largo que su
+# columna reventaba en la base, un umbral de 150 por ciento o una
+# tolerancia negativa se guardaban y el bono se calculaba con eso.
+
 class IncidenciaIn(BaseModel):
     persona_id: int
     fecha: date
     gravedad: m.GravedadIncidencia
-    descripcion: str
+    descripcion: str = Field(max_length=600)
     servicio_id: int | None = None
     jornada_id: int | None = None
 
 
 class VistoBuenoIn(BaseModel):
     autorizar: bool
-    resolucion: str
+    resolucion: str = Field(max_length=600)
 
 
 class EvaluarIn(BaseModel):
     persona_id: int
-    anio: int
-    mes: int
+    # Con rango: un mes 13 o un ano de tres cifras reventaban al armar
+    # la fecha del mes, con error del servidor en vez de 422.
+    anio: int = Field(ge=2000, le=2100)
+    mes: int = Field(ge=1, le=12)
     # Vacio no es reprobado: sin dato el criterio no aplica y su monto
     # se reparte. Mandar false es decir que NO la cumplio.
     capacitacion_cumplida: bool | None = None
 
 
 class CriterioIn(BaseModel):
-    monto_mensual: Decimal
-    umbral_pct: Decimal
-    tolerancia_minutos: int = 0
-    tolerancia_ocasiones: int = 0
+    monto_mensual: Decimal = Field(ge=0)
+    umbral_pct: Decimal = Field(ge=0, le=100)
+    tolerancia_minutos: int = Field(default=0, ge=0)
+    tolerancia_ocasiones: int = Field(default=0, ge=0)
     reparte: bool = True
     activo: bool = True
 
@@ -72,9 +79,9 @@ class ResolucionIn(BaseModel):
 
 
 class NoCobroIn(BaseModel):
-    anio: int
-    mes: int
-    motivo: str
+    # Sin anio ni mes: el mes del descuento lo pone el sistema --el que
+    # siga abierto--, como en la diferencia a mano (seccion 101).
+    motivo: str = Field(max_length=400)
 
 
 # ---------------------------------------------------------------- incidencias
@@ -90,6 +97,12 @@ def crear_incidencia(datos: IncidenciaIn, db: Session = Depends(get_db),
         raise HTTPException(404, f"No existe la persona {datos.persona_id}")
     if len(datos.descripcion.strip()) < 15:
         raise HTTPException(400, "Describe la incidencia con mas detalle")
+    # El servicio y el dia que no existen se dicen (seccion 101): antes
+    # reventaban en la llave foranea, con un error que no decia cual.
+    if datos.servicio_id is not None and not db.get(m.Servicio, datos.servicio_id):
+        raise HTTPException(404, f"No existe el servicio {datos.servicio_id}")
+    if datos.jornada_id is not None and not db.get(m.Jornada, datos.jornada_id):
+        raise HTTPException(404, f"No existe la jornada {datos.jornada_id}")
 
     incidencia = m.Incidencia(**datos.model_dump(),
                               clasificada_por_id=usuario.persona_id)
@@ -179,13 +192,38 @@ def listar_incidencias(db: Session = Depends(get_db), persona_id: int | None = N
 
 # ---------------------------------------------------------------- estrellas
 
+def _si_o_no(valor) -> str | None:
+    """Como se escribe un bool en la bitacora de administracion: la
+    frase lo traduce ("si"/"no") al leerlo."""
+    return None if valor is None else ("true" if valor else "false")
+
+
 @router.post("/evaluaciones", summary="Calcular las estrellas del mes")
 def evaluar(datos: EvaluarIn, db: Session = Depends(get_db),
-            _=Depends(CONSULTOR)):
+            usuario: m.Usuario = Depends(CONSULTOR)):
     """Mensual y por persona: agrega todas sus jornadas del mes,
-    de servicios eventuales e implantados."""
+    de servicios eventuales e implantados.
+
+    Una autorizada o pagada ya no se recalcula: el motor contesta 409.
+    Y la capacitacion dicha a mano deja rastro en la bitacora de
+    administracion con quien lo dijo (seccion 101): un bool que decide
+    dinero entraba sin que quedara de quien fue.
+    """
+    antes = None
+    if datos.capacitacion_cumplida is not None:
+        previa = (db.query(m.EvaluacionMensual)
+                  .filter_by(persona_id=datos.persona_id, anio=datos.anio,
+                             mes=datos.mes).first())
+        antes = previa.capacitacion_cumplida if previa else None
     evaluacion = motor.evaluar(db, datos.persona_id, datos.anio, datos.mes,
                                datos.capacitacion_cumplida)
+    if datos.capacitacion_cumplida is not None:
+        accesos.anotar(
+            db, usuario, "capacitacion del bono a mano", "evaluacion_mensual",
+            evaluacion.id, antes=_si_o_no(antes),
+            despues=_si_o_no(datos.capacitacion_cumplida),
+            detalle=f"{evaluacion.persona.nombre} {datos.mes:02d}/{datos.anio}")
+        db.commit()
     return motor.ficha(db, evaluacion)
 
 
@@ -303,8 +341,6 @@ def guardar_criterio(criterio_id: int, datos: CriterioIn,
     criterio = db.get(m.CriterioEstrella, criterio_id)
     if not criterio:
         raise HTTPException(404, f"No existe el criterio {criterio_id}")
-    if datos.monto_mensual < 0:
-        raise HTTPException(400, "El monto no puede ser negativo")
     antes = _como_queda(criterio)
     criterio.monto_mensual = datos.monto_mensual
     criterio.umbral_pct = datos.umbral_pct
@@ -478,11 +514,14 @@ def resolver(comision_id: int, datos: ResolucionIn, db: Session = Depends(get_db
 
 @router.post("/comisiones/{comision_id}/factura-no-cobrada",
              summary="Ajuste por factura no cobrada")
-def no_cobrada(comision_id: int, datos: NoCobroIn, db: Session = Depends(get_db),
-               _=Depends(auth.puede("comisiones.ajustar"))):
-    """Nota de credito o cancelacion: resta en el corte siguiente."""
-    return motor_com.cancelar_por_no_cobro(db, comision_id, datos.anio,
-                                           datos.mes, datos.motivo)
+def no_cobrada(comision_id: int, datos: NoCobroIn,
+               ahora: datetime | None = None, db: Session = Depends(get_db),
+               usuario: m.Usuario = Depends(auth.puede("comisiones.ajustar"))):
+    """Nota de credito o cancelacion: resta en el mes que siga abierto.
+    Solo sobre una comision que se paga o ya se pago (seccion 101).
+    `ahora` solo mueve el reloj en las pruebas."""
+    return motor_com.cancelar_por_no_cobro(db, comision_id, datos.motivo,
+                                           usuario, reloj.de_prueba(ahora))
 
 
 @router.get("/comisiones/corte/{consultor_id}/{anio}/{mes}",

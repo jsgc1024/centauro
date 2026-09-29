@@ -12,7 +12,6 @@ from app import bolson
 from app import desglose
 from app import facturacion
 from app import historial
-from app import encuestas as motor_encuestas
 from app import nomina
 from app import cierre as motor
 from app import cierre_mes
@@ -103,7 +102,8 @@ class FacturaDeOdooIn(BaseModel):
 
 
 class RespaldoIn(BaseModel):
-    justificacion: str
+    # Cabe en la columna (seccion 101): mas largo tronaba en la base.
+    justificacion: str = Field(max_length=500)
 
 
 class DevolucionIn(BaseModel):
@@ -224,23 +224,34 @@ def registrar_cotizacion_autorizada(datos: CotizacionAutorizadaIn,
 @router.post("/cierre/servicio/{servicio_id}/abrir",
              summary="Arrancar las 24 horas del consultor")
 def abrir(servicio_id: int, db: Session = Depends(get_db),
-          abierto_en: datetime | None = None,
+          ahora: datetime | None = None,
           usuario: m.Usuario = Depends(CONSULTOR)):
     """Devuelve el cierre del servicio, abriendolo si hiciera falta.
 
     Desde que el cierre se abre solo al terminar el ultimo dia, esto casi
-    siempre devuelve el que ya existe. Se deja porque hay dos casos que
-    no pasan por ahi: el dia que se cierra a mano y el servicio que
-    quedo abierto de antes.
+    siempre devuelve el que ya existe. Se deja por el servicio que quedo
+    abierto de antes, y solo con el servicio ya terminado (seccion 101):
+    abierto sobre uno en curso, nacia un cierre con el T0 que mandara
+    quien llamaba --una ruta para regalar o quitar comisiones-- y al
+    cerrar de verdad el ultimo dia ese cierre se respetaba, con el plazo
+    del consultor ya vencido. El T0 lo pone el sistema: la hora del pais
+    en que se abre; `ahora` solo cuenta fuera de produccion.
 
-    Ya no recibe `idioma`. Las encuestas salen al terminar el servicio,
-    cada una en el idioma de quien la va a contestar --el principal en
-    el suyo, el solicitante en el del pais--, y cuando esto corre ya
-    estan creadas: el parametro no cambiaba nada y decia que si.
+    Ya no recibe `idioma` ni manda encuestas: salen al terminar el
+    servicio, cada una en el idioma de quien la va a contestar, y la que
+    no nacio se manda desde la tarjeta del servicio.
     """
-    c = motor.abrir(db, servicio_id, abierto_en)
-    # Por si el servicio se cerro a mano y nunca paso por el motor.
-    motor_encuestas.generar(db, servicio_id)
+    servicio = db.get(m.Servicio, servicio_id)
+    if not servicio:
+        raise HTTPException(404, f"No existe el servicio {servicio_id}")
+    if servicio.estatus not in motor.YA_TERMINO:
+        raise HTTPException(409, {
+            "mensaje": "El servicio no ha terminado: su cierre arranca solo "
+                       "al cerrar el último día.",
+            "que_hacer": "Cierra el último día desde la app, o a mano en la "
+                         "central, y el cierre nace con la hora del término.",
+        })
+    c = motor.abrir(db, servicio_id, reloj.de_prueba(ahora))
     db.commit()
     # Las del servicio, no solo las que se acaban de crear: quien abre
     # esta pantalla quiere saber si el cliente ya tiene su encuesta, no
@@ -436,21 +447,70 @@ def historial_de_un_servicio(cierre_id: int, db: Session = Depends(get_db),
 def respaldar(cierre_id: int, descripcion: str, datos: RespaldoIn,
               db: Session = Depends(get_db),
               usuario: m.Usuario = Depends(CONSULTOR)):
-    """Solo las desviaciones sin respaldo detonan el escalamiento."""
+    """Solo las desviaciones sin respaldo detonan el escalamiento.
+
+    Se justifica una desviacion viva del comparativo, tal como la dice
+    la revision, y solo mientras el servicio espera el visto bueno
+    (seccion 101). Antes entraba cualquier texto, sobre un cierre ya
+    aprobado o facturado, y siempre como "recurso no cotizado": la
+    justificacion se guarda con el tipo y el monto de la desviacion que
+    de verdad tapa.
+    """
     cierre = db.get(m.Cierre, cierre_id)
     if not cierre:
         raise HTTPException(404, f"No existe el cierre {cierre_id}")
-    if len(datos.justificacion.strip()) < 15:
+    if cierre.estatus not in (m.EstatusCierre.SIN_VISTO_BUENO,
+                              m.EstatusCierre.DEVUELTO_A_OPERACION):
+        raise HTTPException(409, {
+            "mensaje": ("Una desviación se justifica mientras el servicio "
+                        "espera el visto bueno; este está en "
+                        f"{motor.nombre_estatus(cierre.estatus)}."),
+            "que_hacer": "Lo que ya se mandó a finanzas se corrige con una "
+                         "nota de crédito o regresándolo desde facturación.",
+        })
+    justificacion = " ".join(datos.justificacion.split())
+    if len(justificacion) < 15:
         raise HTTPException(400, "Explica la desviacion con mas detalle")
+    descripcion = " ".join((descripcion or "").split())
+    if not descripcion:
+        raise HTTPException(400, "Di cuál desviación justificas")
 
-    db.add(m.Desviacion(cierre_id=cierre.id, tipo=m.TipoDesviacion.RECURSO_NO_COTIZADO,
-                        descripcion=descripcion, respaldada=True,
-                        justificacion=datos.justificacion,
+    # La desviacion tiene que estar en el comparativo de hoy, con su
+    # texto: el dinero del personal no se justifica, se cierra.
+    del_dinero = {m.TipoDesviacion.VIATICO_SIN_COMPROBAR.value,
+                  m.TipoDesviacion.VIATICO_NO_CERRADO.value,
+                  m.TipoDesviacion.VIATICO_EXCEDIDO.value}
+    viva = next((d for d in motor.comparar(db, cierre.servicio_id)["desviaciones"]
+                 if d["descripcion"] == descripcion and not d.get("respaldada")),
+                None)
+    if viva is None:
+        raise HTTPException(409, {
+            "mensaje": "Esa desviación no está en el comparativo de hoy.",
+            "que_hacer": "Justifica una de las desviaciones que enseña la "
+                         "revisión, tal como la dice.",
+        })
+    if viva["tipo"] in del_dinero:
+        raise HTTPException(409, {
+            "mensaje": "El dinero del personal no se justifica: se cierra.",
+            "que_hacer": "Ciérralo en «Viáticos del personal», con descuento "
+                         "si ya venció su plazo.",
+        })
+    if any(d.descripcion == descripcion and d.respaldada
+           for d in cierre.desviaciones):
+        raise HTTPException(409, {
+            "mensaje": "Esa desviación ya tiene justificación.",
+            "que_hacer": "La revisión ya la enseña como respaldada.",
+        })
+
+    db.add(m.Desviacion(cierre_id=cierre.id, tipo=m.TipoDesviacion(viva["tipo"]),
+                        descripcion=descripcion, monto=viva["monto"],
+                        respaldada=True, justificacion=justificacion,
                         detectada_por="consultor"))
     auditoria.registrar(db, usuario, cierre.servicio, "respaldar desviacion",
-                        descripcion[:200])
+                        f"{viva['tipo']}: {descripcion}"[:200])
     db.commit()
-    return {"resultado": "respaldada", "descripcion": descripcion}
+    return {"resultado": "respaldada", "descripcion": descripcion,
+            "tipo": viva["tipo"], "monto": viva["monto"]}
 
 
 @router.post("/cierre/{cierre_id}/enviar-finanzas",
@@ -479,6 +539,16 @@ def enviar_finanzas(cierre_id: int, db: Session = Depends(get_db),
     # pase lo que pase con la revision de abajo.
     if motor.avanzar(db, cierre, momento):
         db.commit()
+
+    # Con la fila del cierre bloqueada hasta guardar (seccion 101): dos
+    # "Dar visto bueno" en el mismo segundo --dos pestanas, o el
+    # consultor y quien lo cubre-- leian los dos "sin visto bueno",
+    # corrian los dos las diferencias de nomina y nacian dos ajustes por
+    # la misma jornada y persona: la nomina siguiente pagaba la
+    # correccion dos veces. El segundo espera a que el primero termine
+    # y entonces ve "ya tiene visto bueno". Va despues de avanzar, que
+    # guarda por su cuenta y soltaria el candado.
+    cierre = motor.tomar(db, cierre_id)
 
     # Mientras corren las 24 h del personal, el visto bueno ni se abre:
     # no se le va a pedir al consultor que cierre con descuento un
@@ -604,7 +674,12 @@ def aprobar(cierre_id: int, db: Session = Depends(get_db),
         return cierre_mes.aprobar(db, cierre, usuario)
 
     cierre.estatus = m.EstatusCierre.APROBADO
-    cierre.aprobado_en = datetime.now()
+    # En hora del pais del servicio, como el resto del cierre (seccion
+    # 101): de esta fecha salen el mes de la comision, el del historial
+    # y "Cerrados del mes". Con la del servidor, una aprobacion de Brasil
+    # entre las 21:00 y las 23:59 de Mexico del ultimo dia del mes caia
+    # en el mes anterior.
+    cierre.aprobado_en = reloj.ahora_del_servicio(db, cierre.servicio)
     cierre.aprobado_por_id = usuario.persona_id
     # El cancelado se queda cancelado: cierra su expediente, no cambia
     # de estatus.

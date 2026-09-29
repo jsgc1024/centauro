@@ -20,6 +20,7 @@ from datetime import date, datetime, time, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
+from app import contingencia
 from app import gps
 from app import horas_extra
 from app import implantado as imp
@@ -179,6 +180,22 @@ def _hoja_publicada(db: Session, jornada: m.Jornada) -> bool:
                            estatus=m.EstatusTaskSheet.PUBLICADO).first())
 
 
+def _hoja_vieja(db: Session, jornada: m.Jornada) -> bool:
+    """Si la hoja se publico ANTES del ultimo cambio de recurso del equipo.
+
+    El lunes el consultor cambia al conductor del jueves. No sale correo
+    --el cambio "viaja en el task sheet"-- pero la hoja publicada es una
+    foto de antes, con el nombre viejo, y la vispera decia "hoja: lista"
+    (seccion 101). La regla vive en el motor de contingencia, que es el
+    mismo que la pinta en la tarjeta del cambio.
+    """
+    cambios = (db.query(m.ReemplazoRecurso)
+               .join(m.Jornada,
+                     m.ReemplazoRecurso.desde_jornada_id == m.Jornada.id)
+               .filter(m.Jornada.equipo_id == jornada.equipo_id).all())
+    return any(contingencia.hoja_anterior_al_cambio(db, r) for r in cambios)
+
+
 def _unidad_en_taller(db: Session, jornada: m.Jornada) -> list[str]:
     ids = [a.vehiculo_id for a in jornada.vehiculos if a.vehiculo_id]
     if not ids:
@@ -243,9 +260,15 @@ def revision_del_dia(db: Session, jornada: m.Jornada) -> list[dict]:
           ", ".join(a.vehiculo.placa for a in jornada.vehiculos if a.vehiculo)
           or None)
 
-    # La hoja, que es lo que el ejecutivo lee.
-    punto("hoja", _hoja_publicada(db, jornada),
-          "Libere la hoja. El ejecutivo no sabe quien llega por el.")
+    # La hoja, que es lo que el ejecutivo lee. Publicada antes del ultimo
+    # cambio de recurso ya no sirve: trae el nombre de quien ya no va.
+    publicada = _hoja_publicada(db, jornada)
+    vieja = publicada and _hoja_vieja(db, jornada)
+    punto("hoja", publicada and not vieja,
+          ("Vuelva a publicar la hoja: el equipo cambio despues de "
+           "publicarla y el ejecutivo tiene el nombre de quien ya no va."
+           if vieja else
+           "Libere la hoja. El ejecutivo no sabe quien llega por el."))
 
     # El vuelo, cuando el encuentro es contra vuelo.
     if jornada.origen_aeropuerto or jornada.vuelo_tipo:
@@ -669,11 +692,42 @@ def _a_bordo(db: Session, jornada: m.Jornada | None,
             for a in gps.a_bordo(jornada, vehiculo_id)]
 
 
+def _pais_de_la_alerta(db: Session, a) -> m.Pais | None:
+    """El pais cuya hora de pared lleva la ficha: el de la jornada, el
+    del servicio o, sin servicio, el de la plaza de quien la disparo."""
+    pais_id = reloj.pais_de_la_jornada(a.jornada) if a.jornada else None
+    if not pais_id and a.servicio_id:
+        servicio = db.get(m.Servicio, a.servicio_id)
+        pais_id = servicio.pais_id if servicio else None
+    if not pais_id:
+        pais_id = reloj.pais_de_la_persona(a.reporta)
+    return db.get(m.Pais, pais_id) if pais_id else None
+
+
+def _cambio_de_la_alerta(db: Session, a) -> str | None:
+    """«Luis entra por Juan»: el cambio que el consultor formalizo a raiz
+    de esta alerta, para ahorrarle a la central la llamada de "oye, ya
+    lo cambiaste?" (seccion 11). Se calculaba solo en la lista de alertas
+    que ninguna pantalla pedia (seccion 101): el tablero sale de aqui.
+
+    Primero por el enlace que deja el panel del cambio; a falta de
+    enlace, el ultimo cambio del mismo servicio hecho despues de que
+    sono la alerta.
+    """
+    r = (db.query(m.ReemplazoRecurso).filter_by(alerta_id=a.id)
+         .order_by(m.ReemplazoRecurso.creado_en.desc()).first())
+    if not r and a.servicio_id and a.reportada_en:
+        r = (db.query(m.ReemplazoRecurso)
+             .filter(m.ReemplazoRecurso.servicio_id == a.servicio_id,
+                     m.ReemplazoRecurso.creado_en >= a.reportada_en)
+             .order_by(m.ReemplazoRecurso.creado_en.desc()).first())
+    return contingencia.quien_entra_por_quien(db, r) if r else None
+
+
 def _ficha_de_panico(db: Session, a, ahora: datetime | None = None) -> dict:
     """Una alerta de panico, con lo que hay que saber antes de llamar."""
     folio, equipo = _folio_de_la_alerta(db, a)
-    pais = db.get(m.Pais, reloj.pais_de_la_jornada(a.jornada)) \
-        if a.jornada else None
+    pais = _pais_de_la_alerta(db, a)
     return {
         "id": a.id,
         "canal": a.canal.value,
@@ -708,8 +762,16 @@ def _ficha_de_panico(db: Session, a, ahora: datetime | None = None) -> dict:
         "descripcion": a.descripcion,
         "lat": float(a.lat) if a.lat is not None else None,
         "lon": float(a.lon) if a.lon is not None else None,
-        "reportada_en": (a.reportada_en.isoformat()
+        # En hora de pared del pais del servicio, como las demas de la
+        # tarjeta (seccion 101). Salia como instante con zona y la
+        # pantalla la pintaba en la hora del navegador: para un servicio
+        # de Brasil decia "reportada 11:00" y "segun su ultima marca
+        # 14:00" en la misma tarjeta.
+        "reportada_en": (reloj.ahora_en(pais, a.reportada_en).isoformat()
                          if a.reportada_en else None),
+        # La central estabiliza y el consultor formaliza: si ya lo hizo,
+        # se ve aqui.
+        "cambio": _cambio_de_la_alerta(db, a),
         # El boton de la camioneta (seccion 60): de que unidad, quien va
         # a bordo, y lo que dice ahora la unidad.
         "placa": a.vehiculo.placa if a.vehiculo_id and a.vehiculo else None,

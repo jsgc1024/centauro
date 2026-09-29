@@ -26,6 +26,9 @@ INFO = "informativo"
 
 SIN_COTIZACION = ("El servicio no tiene una cotizacion autorizada, y sin "
                   "ella no hay contra que comparar lo ejecutado")
+# El asunto de la observacion cuando la lista del cliente no cotiza lo
+# que fue, o alguien fue sin rol (seccion 101). La pantalla lo traduce.
+SIN_PRECIO = "Sin precio en la lista"
 
 
 def revisar(db: Session, servicio_id: int, ahora: datetime | None = None) -> dict:
@@ -62,7 +65,32 @@ def revisar(db: Session, servicio_id: int, ahora: datetime | None = None) -> dic
             "comparativo": None,
         }
 
-    comparativo = motor.comparar(db, servicio_id)
+    # Alguien fue sin rol, o con un rol o una unidad que la lista del
+    # cliente no cotiza: el comparativo no se puede armar, y eso tambien
+    # se REPORTA (seccion 101). Antes reventaba con 400 y la tarjeta
+    # pintaba el texto crudo sin decir que hacer, con el boton de visto
+    # bueno vivo contestando el mismo 400.
+    try:
+        comparativo = motor.comparar(db, servicio_id)
+    except HTTPException as error:
+        detalle = error.detail if isinstance(error.detail, dict) else {}
+        if error.status_code != 400 or "clave" not in detalle:
+            raise
+        return {
+            "servicio": servicio.folio,
+            "revisado_en": ahora.isoformat(),
+            "cierre": motor.estado(db, servicio_id, ahora),
+            "listo_para_finanzas": False,
+            "resumen": "1 punto(s) por corregir antes de enviar a finanzas",
+            "observaciones": [{
+                "nivel": GRAVE, "asunto": SIN_PRECIO,
+                "clave": detalle["clave"],
+                "datos": {"que": detalle.get("que"),
+                          "modalidad": detalle.get("modalidad")},
+                "mensaje": detalle["mensaje"],
+                "accion": detalle.get("que_hacer", "")}],
+            "comparativo": None,
+        }
     observaciones = []
 
     # --- desviaciones del comparativo

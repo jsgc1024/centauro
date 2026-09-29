@@ -3439,7 +3439,11 @@ class TaskSheet(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
     estatus: Mapped[EstatusTaskSheet] = mapped_column(
         Enum(EstatusTaskSheet), default=EstatusTaskSheet.BORRADOR)
-    contenido: Mapped[str] = mapped_column(String(20000))   # JSON congelado
+    # El JSON congelado de la hoja. Sin tope (seccion 101): trae las fotos
+    # de la gente y de las unidades incrustadas, y con las de 512 px de
+    # Odoo una hoja pasaba de los 20,000 caracteres del tope viejo y
+    # publicar contestaba "un texto es mas largo de lo que cabe".
+    contenido: Mapped[str] = mapped_column(Text)
     motivo_cambio: Mapped[str | None] = mapped_column(String(300), nullable=True)
     publicado_por_id: Mapped[int | None] = mapped_column(
         ForeignKey("persona.id"), nullable=True)

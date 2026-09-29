@@ -34,12 +34,16 @@ export function buscadorDeLugar({
   // Al pintarse todavia no esta en el documento y scrollHeight da cero.
   setTimeout(crecer, 0);
 
+  /* Al teclear la latitud o la longitud a mano se espera a que deje de
+     escribir (seccion 101): cada imagen del mapa se paga, y "-99.0719"
+     pedia ocho, de las que ganaba la que llegara al ultimo, aunque
+     fuera la de un valor a medias. */
   const lat = h("input", { name: "origen_lat", placeholder: "19.4361",
                            value: valores.lat || "",
-                           oninput: () => repintarMapa() });
+                           oninput: () => repintarSinPrisa() });
   const lon = h("input", { name: "origen_lon", placeholder: "-99.0719",
                            value: valores.lon || "",
-                           oninput: () => repintarMapa() });
+                           oninput: () => repintarSinPrisa() });
   /* El radio de la geocerca, alrededor del mismo pin del punto de
      encuentro. Un kilometro por defecto: un aeropuerto no cabe en menos. */
   /* Dos kilometros en aeropuerto, uno en cualquier otro lado: un
@@ -54,7 +58,7 @@ export function buscadorDeLugar({
                               value: valores.metros || GEOCERCA_NORMAL,
                               oninput: () => {
                                 metros.dataset.suyo = "1";
-                                repintarMapa();
+                                repintarSinPrisa();
                               } });
 
   function proponerRadio(aeropuerto) {
@@ -75,11 +79,21 @@ export function buscadorDeLugar({
   // La imagen anterior se suelta al pedir otra: si no, se van juntando
   // en la memoria del navegador conforme se mueve el pin.
   let direccionImagen = null;
+  // Cada imagen pedida lleva su numero: solo se pinta la ultima.
+  let peticion = 0;
+  let esperaMapa = null;
+  const ESPERA_MS = 400;
+
+  function repintarSinPrisa() {
+    clearTimeout(esperaMapa);
+    esperaMapa = setTimeout(repintarMapa, ESPERA_MS);
+  }
 
   async function repintarMapa() {
+    clearTimeout(esperaMapa);
     const conPin = lat.value.trim() && lon.value.trim();
     vaciar(cajaMapa);
-    if (!conPin) { cajaMapa.append(mapaVacio); alCambiar(); return; }
+    if (!conPin) { peticion += 1; cajaMapa.append(mapaVacio); alCambiar(); return; }
 
     const radio = Number(metros.value) || GEOCERCA_NORMAL;
     mapaEnlace.href = "https://www.google.com/maps/search/?api=1&query="
@@ -87,14 +101,17 @@ export function buscadorDeLugar({
     cajaMapa.append(mapaImagen, mapaPie);
     alCambiar();
 
+    const mia = ++peticion;
     try {
       const nueva = await api.imagen(
         `/mapas/imagen?lat=${lat.value.trim()}`
         + `&lon=${lon.value.trim()}&metros=${radio}`);
+      if (mia !== peticion) { URL.revokeObjectURL(nueva); return; }
       if (direccionImagen) URL.revokeObjectURL(direccionImagen);
       direccionImagen = nueva;
       mapaImagen.src = nueva;
     } catch (err) {
+      if (mia !== peticion) return;
       vaciar(cajaMapa);
       cajaMapa.append(h("div", { clase: "mapa-vacio" }, err.message));
     }

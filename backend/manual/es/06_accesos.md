@@ -32,6 +32,7 @@ Dan y cierran accesos administración, dirección general, recursos humanos y si
 - **La oficina** recibe una **invitación por correo** para crear su contraseña. El enlace vale **72 horas** y sirve una sola vez. Reenviarla manda uno nuevo y apaga el anterior. Si el correo no le llega, dirección general o administración pueden **copiar el enlace** y dárselo en mano; queda escrito quién lo copió.
 - **Quien olvidó su contraseña** la recupera desde la entrada, con «¿Olvidaste tu contraseña?». Ese enlace vale **2 horas**. Las dos cosas necesitan el correo encendido.
 - **El personal de seguridad** no recibe invitación: pone su contraseña con un **código de cuatro dígitos** que le dicta su consultor —solo a quien trabaja en sus servicios— o la central, desde la pantalla Código. El código vale **10 minutos**. Lo que protege ese camino es que quien lo dicta reconozca la voz de quien llama.
-- **La sesión** dura 12 horas, salvo que el puesto diga otra cosa.
+- **La sesión** dura 12 horas, salvo que el puesto diga otra cosa. Si vence a media pantalla, al volver a entrar se regresa a esa pantalla.
+- **Cambiar la propia contraseña** se hace desde adentro, en el menú del nombre: pide la actual, y al guardar la nueva se cierran todas las sesiones, también esa.
 
 > Casi todo atorón de accesos es uno de estos candados haciendo su trabajo. El mensaje dice cuál y qué hacer; si no es claro, está en [cuando el sistema dice que no](#/manual/mensajes), en Accesos y contraseñas.

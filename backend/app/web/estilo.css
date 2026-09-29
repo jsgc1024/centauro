@@ -1621,3 +1621,7 @@ table.arr-tabla td { vertical-align: top; padding: 9px 10px; }
 .arr-tabla td.arr-donde a { color: var(--centauro); font-weight: 600;
   text-decoration: none; }
 .arr-tabla td.arr-donde a:hover { text-decoration: underline; }
+
+/* Lo quitado de un catalogo, en gris y con su boton de reactivar (seccion 101). */
+.ctl-tabla tr.apagado td { opacity: .55; }
+.ctl-tabla tr.apagado td:last-child { opacity: 1; }

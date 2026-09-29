@@ -120,8 +120,11 @@ def _hospitales(lista: list, t: dict) -> str:
            if x.get("direccion") else "")
         + (f'<br><span class="tel">{_esc(x["telefono"])}</span>'
            if x.get("telefono") else "")
-        + (f' <span class="gris">· {x["distancia_km"]} km</span>'
-           if x.get("distancia_km") is not None else "")
+        # La llave es `km`, como la escribe `tasksheet.hospitales_cercanos`
+        # y la lee la hoja del eventual: con `distancia_km` la distancia
+        # nunca se imprimia (seccion 101).
+        + (f' <span class="gris">· {x["km"]} km</span>'
+           if x.get("km") is not None else "")
         + "</li>" for x in lista)
     return f"<ul class='hospitales'>{filas}</ul>"
 

@@ -187,6 +187,25 @@ TEXTOS = {
         "rol_recursos_humanos": "Human Resources",
         "rol_sistema_calidad": "Systems and quality",
         "rol_admin": "Administration (master key)",
+        # --- el cierre: los dos plazos del consultor, por correo (seccion 101)
+        "cie_vb_asunto": "{de_que}: you have 24 h for the sign-off",
+        "cie_vb_cuerpo": ("The team's expense verification for {de_que} is "
+                          "over. Your 24 hours to sign off and send it to "
+                          "finance run until {fecha} at {hora}; your "
+                          "commission depends on making it in time."),
+        "cie_vb_que_hacer": ("Open the service in the console, review the "
+                             "comparison and the team's expenses, and give "
+                             "your sign-off."),
+        "cie_reg_asunto": "{de_que}: finance sent it back",
+        "cie_reg_cuerpo": ("Finance sent {de_que} back to operations. You "
+                           "have until {fecha} at {hora} to correct it and "
+                           "send it again; your first sign-off keeps its "
+                           "'in time' as it was."),
+        "cie_reg_que_hacer": ("Correct what finance asked for and send it to "
+                              "finance again from the service screen."),
+        "cie_vence": "Deadline",
+        "cie_motivo": "Reason",
+        "cie_que_hacer": "What to do",
     },
     "es": {
         "equipo": "Equipo",
@@ -322,6 +341,25 @@ TEXTOS = {
         "rol_recursos_humanos": "Recursos Humanos",
         "rol_sistema_calidad": "Sistema y calidad",
         "rol_admin": "Administración (llave maestra)",
+        "cie_vb_asunto": "{de_que}: tienes 24 h para el visto bueno",
+        "cie_vb_cuerpo": ("La comprobación de viáticos del personal de {de_que} "
+                          "terminó. Tus 24 horas para dar el visto bueno y "
+                          "mandarlo a finanzas corren hasta el {fecha} a las "
+                          "{hora}; de llegar a tiempo depende tu comisión."),
+        "cie_vb_que_hacer": ("Abre el servicio en la consola, revisa el "
+                             "comparativo y el dinero del personal, y da el "
+                             "visto bueno."),
+        "cie_reg_asunto": "{de_que}: finanzas lo regresó",
+        "cie_reg_cuerpo": ("Finanzas regresó {de_que} a operación. Tienes "
+                           "hasta el {fecha} a las {hora} para corregirlo y "
+                           "volver a mandarlo; lo en plazo de tu primer visto "
+                           "bueno se queda como estaba."),
+        "cie_reg_que_hacer": ("Corrige lo que pidió finanzas y vuelve a "
+                              "mandarlo a finanzas desde la pantalla del "
+                              "servicio."),
+        "cie_vence": "Vence",
+        "cie_motivo": "Motivo",
+        "cie_que_hacer": "Qué hacer",
     },
     "pt": {
         "equipo": "Equipe",
@@ -455,6 +493,23 @@ TEXTOS = {
         "rol_recursos_humanos": "Recursos Humanos",
         "rol_sistema_calidad": "Sistema e qualidade",
         "rol_admin": "Administração (chave mestra)",
+        "cie_vb_asunto": "{de_que}: você tem 24 h para o visto",
+        "cie_vb_cuerpo": ("A comprovação de despesas da equipe de {de_que} "
+                          "terminou. Suas 24 horas para dar o visto e mandar "
+                          "para finanças correm até {fecha} às {hora}; sua "
+                          "comissão depende de chegar a tempo."),
+        "cie_vb_que_hacer": ("Abra o serviço no console, revise o comparativo "
+                             "e o dinheiro da equipe, e dê o visto."),
+        "cie_reg_asunto": "{de_que}: finanças devolveu",
+        "cie_reg_cuerpo": ("Finanças devolveu {de_que} para a operação. Você "
+                           "tem até {fecha} às {hora} para corrigir e mandar "
+                           "de novo; o 'no prazo' do seu primeiro visto fica "
+                           "como estava."),
+        "cie_reg_que_hacer": ("Corrija o que finanças pediu e mande de novo "
+                              "para finanças a partir da tela do serviço."),
+        "cie_vence": "Vence",
+        "cie_motivo": "Motivo",
+        "cie_que_hacer": "O que fazer",
     },
 }
 

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from sqlalchemy import or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app import models as m
 from app import profesionalismo
@@ -66,6 +66,74 @@ def _jornadas_de_persona(db: Session, persona_id: int, desde: datetime, hasta: d
         .all()
     )
     return [(j, relevado) for j, relevado in filas]
+
+
+# Lo que `_evaluar` lee de cada jornada, cargado de una vez (seccion
+# 101): el folio del servicio y si la modalidad bloquea el dia. Sin
+# esto, cada jornada de cada persona iba a la base por su equipo, su
+# servicio y su modalidad al calcular las recomendaciones.
+_CON_LO_QUE_LEE = (joinedload(m.Jornada.equipo).joinedload(m.Equipo.servicio),
+                   joinedload(m.Jornada.modalidad))
+
+
+def _jornadas_de_personas(db: Session, persona_ids: list[int],
+                          desde: datetime, hasta: datetime) -> dict[int, list]:
+    """Las jornadas vivas de VARIAS personas en la ventana ampliada, en
+    una sola consulta: persona -> [(jornada, relevado_en)]. Es lo que
+    `_jornadas_de_persona` hace para una; las recomendaciones del equipo
+    lo pedian persona por persona y dia por dia (seccion 101)."""
+    if not persona_ids:
+        return {}
+    filas = (
+        db.query(m.AsignacionPersonal.persona_id, m.Jornada,
+                 m.AsignacionPersonal.relevado_en)
+        .join(m.Jornada, m.AsignacionPersonal.jornada_id == m.Jornada.id)
+        .filter(
+            m.AsignacionPersonal.persona_id.in_(persona_ids),
+            m.Jornada.estatus != m.EstatusJornada.CANCELADA,
+            m.Jornada.fecha >= (desde - timedelta(days=1)).date(),
+            m.Jornada.fecha <= (hasta + timedelta(days=1)).date(),
+        )
+        .options(*_CON_LO_QUE_LEE)
+        .all()
+    )
+    salida: dict[int, list] = {}
+    for persona_id, j, relevado in filas:
+        salida.setdefault(persona_id, []).append((j, relevado))
+    return salida
+
+
+def _jornadas_de_vehiculos(db: Session, vehiculo_ids: list[int],
+                           desde: datetime, hasta: datetime) -> dict[int, list]:
+    """Igual, para varias unidades: unidad -> [(jornada, relevado_en)]."""
+    if not vehiculo_ids:
+        return {}
+    filas = (
+        db.query(m.AsignacionVehiculo.vehiculo_id, m.Jornada,
+                 m.AsignacionVehiculo.relevado_en)
+        .join(m.Jornada, m.AsignacionVehiculo.jornada_id == m.Jornada.id)
+        .filter(
+            m.AsignacionVehiculo.vehiculo_id.in_(vehiculo_ids),
+            m.Jornada.estatus != m.EstatusJornada.CANCELADA,
+            m.Jornada.fecha >= (desde - timedelta(days=1)).date(),
+            m.Jornada.fecha <= (hasta + timedelta(days=1)).date(),
+        )
+        .options(*_CON_LO_QUE_LEE)
+        .all()
+    )
+    salida: dict[int, list] = {}
+    for vehiculo_id, j, relevado in filas:
+        salida.setdefault(vehiculo_id, []).append((j, relevado))
+    return salida
+
+
+def _en_la_ventana(ocupadas: list, desde: datetime, hasta: datetime) -> list:
+    """De lo traido para varios dias, lo que cae en la ventana ampliada
+    de UN dia: el mismo recorte que hace la consulta de una persona."""
+    piso = (desde - timedelta(days=1)).date()
+    techo = (hasta + timedelta(days=1)).date()
+    return [(j, relevado) for j, relevado in ocupadas
+            if piso <= j.fecha <= techo]
 
 
 def _jornadas_de_vehiculo(db: Session, vehiculo_id: int, desde: datetime, hasta: datetime):
@@ -210,6 +278,64 @@ def revisar_vehiculo(
                        excluir_jornada_id, holgura_minima))
 
 
+def de_la_jornada(db: Session, jornada: m.Jornada, inicio: datetime,
+                  fin: datetime, bloquea_dia: bool) -> tuple[list, list]:
+    """Los choques de la gente y las unidades YA asignadas a esa jornada
+    si su ventana pasara a ser (inicio, fin): (bloqueos, riesgos), cada
+    uno con quien choca y la fecha del dia.
+
+    Mover un dia --la fecha, la modalidad, la hora o el vuelo que fija
+    la presentacion-- no volvia a revisar los empalmes (seccion 101):
+    Juan quedaba en dos servicios el mismo dia sin bloqueo ni alerta.
+    Se revisa igual que al asignar, sin contar el propio dia.
+    """
+    bloqueos, riesgos = [], []
+
+    def _anotar(hallazgos, quien):
+        for h in hallazgos:
+            destino = bloqueos if h.nivel == "bloqueo" else riesgos
+            destino.append({**h.como_dict(), "quien": quien,
+                            "fecha": inicio.date().isoformat()})
+
+    for a in jornada.personal:
+        if a.relevado_en:
+            continue
+        _anotar(revisar_persona(db, a.persona_id, inicio, fin, bloquea_dia,
+                                excluir_jornada_id=jornada.id),
+                a.persona.nombre if a.persona else str(a.persona_id))
+    for a in jornada.vehiculos:
+        if a.relevado_en:
+            continue
+        _anotar(revisar_vehiculo(db, a.vehiculo_id, inicio, fin, bloquea_dia,
+                                 excluir_jornada_id=jornada.id),
+                a.vehiculo.placa if a.vehiculo else str(a.vehiculo_id))
+    return bloqueos, riesgos
+
+
+def frenar_si_choca(bloqueos: list, riesgos: list, forzar: bool,
+                    que: str) -> None:
+    """La misma regla que al asignar: el bloqueo no se mueve; el riesgo
+    lo decide el consultor con forzar=true. `que` es lo que se estaba
+    haciendo, para el mensaje."""
+    from fastapi import HTTPException
+
+    if bloqueos:
+        quienes = ", ".join(sorted({b["quien"] for b in bloqueos}))
+        raise HTTPException(409, {
+            "mensaje": f"No se puede {que}: {quienes} no está libre a "
+                       "esa hora",
+            "que_hacer": "Cambia a quien choca por contingencia, o mueve "
+                         "el día a otra fecha u hora.",
+            "alertas": bloqueos,
+        })
+    if riesgos and not forzar:
+        raise HTTPException(409, {
+            "mensaje": f"Alerta de riesgo al {que}. Confirme con "
+                       "forzar=true para moverlo.",
+            "alertas": riesgos,
+        })
+
+
 def _en_el_taller(db: Session, vehiculo_id: int, inicio: datetime,
                   fin: datetime) -> list[Hallazgo]:
     """La unidad en el taller no se ofrece (seccion 52).
@@ -219,11 +345,31 @@ def _en_el_taller(db: Session, vehiculo_id: int, inicio: datetime,
     cliente una unidad que no existe. Sin fecha de salida se da por
     adentro.
     """
-    salida = []
+    return _taller_en(_taller_de(db, [vehiculo_id], fin).get(vehiculo_id, []),
+                      inicio, fin)
+
+
+def _taller_de(db: Session, vehiculo_ids: list[int],
+               hasta: datetime) -> dict[int, list[m.TallerVehiculo]]:
+    """Las entradas al taller de varias unidades que empiezan antes de
+    `hasta`, en orden: unidad -> [filas]. Cada dia recorta las suyas
+    como lo hace `_en_el_taller`."""
+    if not vehiculo_ids:
+        return {}
+    salida: dict[int, list] = {}
     for fila in (db.query(m.TallerVehiculo)
-                 .filter(m.TallerVehiculo.vehiculo_id == vehiculo_id,
-                         m.TallerVehiculo.desde <= fin.date())
+                 .filter(m.TallerVehiculo.vehiculo_id.in_(vehiculo_ids),
+                         m.TallerVehiculo.desde <= hasta.date())
                  .order_by(m.TallerVehiculo.desde).all()):
+        salida.setdefault(fila.vehiculo_id, []).append(fila)
+    return salida
+
+
+def _taller_en(filas: list, inicio: datetime, fin: datetime) -> list[Hallazgo]:
+    salida = []
+    for fila in filas:
+        if fila.desde > fin.date():
+            continue
         if fila.hasta is not None and fila.hasta < inicio.date():
             continue
         hasta = (f"hasta el {fila.hasta:%d/%m}" if fila.hasta
@@ -239,7 +385,7 @@ def recomendar_personal(
     db: Session, plaza_id: int, perfil_id: int | None,
     inicio: datetime, fin: datetime, bloquea_dia: bool,
 ) -> dict:
-    """Recomienda por plaza y disponibilidad.
+    """Recomienda por plaza y disponibilidad para un dia.
 
     Ya no se filtra por puesto: el personal de seguridad es general y el
     rol lo decide el consultor al asignar. Quien esta libre es candidato
@@ -248,62 +394,89 @@ def recomendar_personal(
 
     Si no hay recurso local libre, avisa para trasladar personal o dar de
     alta freelance."""
+    return recomendar_personal_por_dia(
+        db, plaza_id, perfil_id, [(inicio, fin, bloquea_dia)])[0]
+
+
+def recomendar_personal_por_dia(
+    db: Session, plaza_id: int, perfil_id: int | None,
+    dias: list[tuple[datetime, datetime, bool]],
+) -> list[dict]:
+    """Lo mismo, para varios dias de un golpe: una respuesta por dia, en
+    el mismo orden.
+
+    Lo caro se hace una vez para todos los dias y todas las personas
+    (seccion 101): la ficha de profesionalismo por lote y una sola
+    consulta con las jornadas de todos en la ventana que cubre los
+    dias. Antes cada dia pedia la ficha de cada persona otra vez.
+    """
     todos = (
         db.query(m.Persona)
         # La gente de oficina que llega de Odoo (seccion 74) no va a la
         # calle: no se le ofrece a ningun equipo.
         .filter(m.Persona.activo.is_(True), m.Persona.oficina.is_(False))
+        .options(joinedload(m.Persona.plaza))
         .all()
     )
     candidatos = [p for p in todos if p.plaza_id == plaza_id]
     otras_ciudades = [p for p in todos if p.plaza_id != plaza_id]
+    ids = [p.id for p in todos]
+    ocupadas = _jornadas_de_personas(
+        db, ids, min(d[0] for d in dias), max(d[1] for d in dias))
+    # La calificacion de profesionalismo entra aqui: entre dos personas
+    # igual de libres, el consultor debe poder ver a quien conviene
+    # mandar sin salirse de la pantalla.
+    tableros = profesionalismo.fichas(db, ids)
 
-    def _ficha(p) -> dict:
-        hallazgos = revisar_persona(db, p.id, inicio, fin, bloquea_dia)
-        # La calificacion de profesionalismo entra aqui: entre dos personas
-        # igual de libres, el consultor debe poder ver a quien conviene
-        # mandar sin salirse de la pantalla.
-        tablero = profesionalismo.ficha(db, p.id)
-        return {"persona_id": p.id, "nombre": p.nombre,
-                "es_freelance": p.es_freelance,
-                "ciudad": p.plaza.nombre if p.plaza else None,
-                "local": p.plaza_id == plaza_id,
-                "telefono": p.telefono,
-                "calificacion": tablero.get("calificacion"),
-                "confianza_calificacion": tablero.get("confianza"),
-                "horas_en_centauro": tablero.get("horas_en_centauro"),
-                "bloqueado": any(h.nivel == "bloqueo" for h in hallazgos),
-                "alertas": [h.como_dict() for h in hallazgos]}
+    salida = []
+    for inicio, fin, bloquea_dia in dias:
+        def _ficha(p) -> dict:
+            hallazgos = _evaluar(
+                _en_la_ventana(ocupadas.get(p.id, []), inicio, fin),
+                inicio, fin, bloquea_dia, None, HOLGURA_MINIMA_HORAS)
+            tablero = tableros.get(p.id, {})
+            return {"persona_id": p.id, "nombre": p.nombre,
+                    "es_freelance": p.es_freelance,
+                    "ciudad": p.plaza.nombre if p.plaza else None,
+                    "local": p.plaza_id == plaza_id,
+                    "telefono": p.telefono,
+                    "calificacion": tablero.get("calificacion"),
+                    "confianza_calificacion": tablero.get("confianza"),
+                    "horas_en_centauro": tablero.get("horas_en_centauro"),
+                    "bloqueado": any(h.nivel == "bloqueo" for h in hallazgos),
+                    "alertas": [h.como_dict() for h in hallazgos]}
 
-    libres, con_riesgo, ocupados = [], [], []
-    for p in candidatos:
-        ficha = _ficha(p)
-        if ficha["bloqueado"]:
-            ocupados.append(ficha)
-        elif ficha["alertas"]:
-            con_riesgo.append(ficha)
-        else:
-            libres.append(ficha)
+        libres, con_riesgo, ocupados = [], [], []
+        for p in candidatos:
+            ficha = _ficha(p)
+            if ficha["bloqueado"]:
+                ocupados.append(ficha)
+            elif ficha["alertas"]:
+                con_riesgo.append(ficha)
+            else:
+                libres.append(ficha)
 
-    aviso = None
-    if not libres and not con_riesgo:
-        aviso = ("Sin recurso local disponible en la plaza. "
-                 "Se requiere traslado de personal (genera viaticos extra) "
-                 "o alta de un freelance.")
+        aviso = None
+        if not libres and not con_riesgo:
+            aviso = ("Sin recurso local disponible en la plaza. "
+                     "Se requiere traslado de personal (genera viaticos extra) "
+                     "o alta de un freelance.")
 
-    # Mejor calificado primero, dentro de cada grupo.
-    for grupo in (libres, con_riesgo):
-        grupo.sort(key=lambda f: f.get("calificacion") or 0, reverse=True)
+        # Mejor calificado primero, dentro de cada grupo.
+        for grupo in (libres, con_riesgo):
+            grupo.sort(key=lambda f: f.get("calificacion") or 0, reverse=True)
 
-    # Quien esta en otra ciudad tambien se puede mandar: es el traslado
-    # que genera viaticos foraneos. Se muestra aparte para que el consultor
-    # vea que esta pagando por traerlo, no revuelto con los locales.
-    foraneos = [_ficha(p) for p in otras_ciudades]
-    foraneos.sort(key=lambda f: (f["bloqueado"], -(f.get("calificacion") or 0)))
+        # Quien esta en otra ciudad tambien se puede mandar: es el traslado
+        # que genera viaticos foraneos. Se muestra aparte para que el
+        # consultor vea que esta pagando por traerlo, no revuelto con los
+        # locales.
+        foraneos = [_ficha(p) for p in otras_ciudades]
+        foraneos.sort(key=lambda f: (f["bloqueado"], -(f.get("calificacion") or 0)))
 
-    return {"disponibles": libres, "con_alerta": con_riesgo,
-            "no_disponibles": ocupados, "de_otras_ciudades": foraneos,
-            "aviso": aviso}
+        salida.append({"disponibles": libres, "con_alerta": con_riesgo,
+                       "no_disponibles": ocupados,
+                       "de_otras_ciudades": foraneos, "aviso": aviso})
+    return salida
 
 
 def recomendar_vehiculos(
@@ -311,6 +484,18 @@ def recomendar_vehiculos(
     inicio: datetime, fin: datetime, bloquea_dia: bool,
     servicio_id: int | None = None,
 ) -> dict:
+    return recomendar_vehiculos_por_dia(
+        db, plaza_id, categoria_id, [(inicio, fin, bloquea_dia)],
+        servicio_id=servicio_id)[0]
+
+
+def recomendar_vehiculos_por_dia(
+    db: Session, plaza_id: int, categoria_id: int,
+    dias: list[tuple[datetime, datetime, bool]],
+    servicio_id: int | None = None,
+) -> list[dict]:
+    """Una respuesta por dia, con las jornadas y el taller de todas las
+    unidades traidos de una vez (seccion 101)."""
     # La flota propia siempre, y de los autos rentados solo los de este
     # servicio: se pidieron para el y se devuelven al terminarlo, asi que
     # ofrecerlos en otro seria prometer un auto que ya no esta.
@@ -320,44 +505,56 @@ def recomendar_vehiculos(
                 m.Vehiculo.activo.is_(True),
                 or_(m.Vehiculo.rentado.is_(False),
                     m.Vehiculo.servicio_id == servicio_id))
+        .options(joinedload(m.Vehiculo.categoria), joinedload(m.Vehiculo.plaza))
         .all()
     )
     candidatos = [v for v in todas if v.plaza_id == plaza_id]
     otras_ciudades = [v for v in todas if v.plaza_id != plaza_id]
+    ids = [v.id for v in todas]
+    techo = max(d[1] for d in dias)
+    ocupadas = _jornadas_de_vehiculos(db, ids, min(d[0] for d in dias), techo)
+    taller = _taller_de(db, ids, techo)
 
-    def _ficha(v) -> dict:
-        hallazgos = revisar_vehiculo(db, v.id, inicio, fin, bloquea_dia)
-        return {"vehiculo_id": v.id, "placa": v.placa,
-                "unidad": v.categoria.nombre if v.categoria else None,
-                "blindada": v.categoria.blindado if v.categoria else None,
-                "color": v.color, "anio": v.modelo_anio,
-                "marca_modelo": v.marca_modelo,
-                "rentado": v.rentado, "arrendadora": v.arrendadora,
-                "ciudad": v.plaza.nombre if v.plaza else None,
-                "local": v.plaza_id == plaza_id,
-                "bloqueado": any(h.nivel == "bloqueo" for h in hallazgos),
-                "alertas": [h.como_dict() for h in hallazgos]}
+    salida = []
+    for inicio, fin, bloquea_dia in dias:
+        def _ficha(v) -> dict:
+            hallazgos = (_taller_en(taller.get(v.id, []), inicio, fin)
+                         + _evaluar(_en_la_ventana(ocupadas.get(v.id, []),
+                                                   inicio, fin),
+                                    inicio, fin, bloquea_dia, None,
+                                    HOLGURA_MINIMA_HORAS))
+            return {"vehiculo_id": v.id, "placa": v.placa,
+                    "unidad": v.categoria.nombre if v.categoria else None,
+                    "blindada": v.categoria.blindado if v.categoria else None,
+                    "color": v.color, "anio": v.modelo_anio,
+                    "marca_modelo": v.marca_modelo,
+                    "rentado": v.rentado, "arrendadora": v.arrendadora,
+                    "ciudad": v.plaza.nombre if v.plaza else None,
+                    "local": v.plaza_id == plaza_id,
+                    "bloqueado": any(h.nivel == "bloqueo" for h in hallazgos),
+                    "alertas": [h.como_dict() for h in hallazgos]}
 
-    libres, con_riesgo, ocupados = [], [], []
-    for v in candidatos:
-        ficha = _ficha(v)
-        if ficha["bloqueado"]:
-            ocupados.append(ficha)
-        elif ficha["alertas"]:
-            con_riesgo.append(ficha)
-        else:
-            libres.append(ficha)
+        libres, con_riesgo, ocupados = [], [], []
+        for v in candidatos:
+            ficha = _ficha(v)
+            if ficha["bloqueado"]:
+                ocupados.append(ficha)
+            elif ficha["alertas"]:
+                con_riesgo.append(ficha)
+            else:
+                libres.append(ficha)
 
-    aviso = None if (libres or con_riesgo) else \
-        "Sin unidad disponible de esa categoria en la plaza."
+        aviso = None if (libres or con_riesgo) else \
+            "Sin unidad disponible de esa categoria en la plaza."
 
-    # Mejor calificado primero, dentro de cada grupo.
-    for grupo in (libres, con_riesgo):
-        grupo.sort(key=lambda f: f.get("calificacion") or 0, reverse=True)
+        # Mejor calificado primero, dentro de cada grupo.
+        for grupo in (libres, con_riesgo):
+            grupo.sort(key=lambda f: f.get("calificacion") or 0, reverse=True)
 
-    foraneas = [_ficha(v) for v in otras_ciudades]
-    foraneas.sort(key=lambda f: f["bloqueado"])
+        foraneas = [_ficha(v) for v in otras_ciudades]
+        foraneas.sort(key=lambda f: f["bloqueado"])
 
-    return {"disponibles": libres, "con_alerta": con_riesgo,
-            "no_disponibles": ocupados, "de_otras_ciudades": foraneas,
-            "aviso": aviso}
+        salida.append({"disponibles": libres, "con_alerta": con_riesgo,
+                       "no_disponibles": ocupados,
+                       "de_otras_ciudades": foraneas, "aviso": aviso})
+    return salida

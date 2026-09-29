@@ -146,6 +146,11 @@ TEXTOS_PUSH = {
         "relevo_sale_cuerpo": "{quien} te cubre: {cuando}{dias}. No te presentes; revisa tu día en la app.",
         "relevo_dias": " · {n} días",
         "relevo_rango": "{desde} al {hasta}",
+        # El regreso del titular (seccion 101): a los dos.
+        "regreso_titular_titulo": "Regresas a tu servicio",
+        "regreso_titular_cuerpo": "Vuelves el {cuando}: {quien} te cubre hasta el {hasta}. Abre la app y confirma de enterado.",
+        "regreso_cubre_titulo": "El titular regresa",
+        "regreso_cubre_cuerpo": "{quien} vuelve el {cuando}: tu último día en este servicio es el {hasta}. Revisa tu día en la app.",
         "asignacion_titulo": "Trabajas {dia}",
         "asignacion_cuerpo": "Te acaban de asignar {folio}: {dia} a las {hora}. Abre la app y confirma.",
         "hoy": "hoy", "manana": "mañana",
@@ -161,6 +166,8 @@ TEXTOS_PUSH = {
         "cancelacion_cuerpo": "{folio}: {rango} ya no va. No te presentes; revisa tu día en la app.",
         "cambio_hora_titulo": "Cambió tu hora",
         "cambio_hora_cuerpo": "{fecha}: ahora es a las {hora} (antes {antes}). Revisa tu día en la app.",
+        "cambio_fecha_titulo": "Cambió tu fecha",
+        "cambio_fecha_cuerpo": "Ahora es el {fecha} a las {hora} (antes el {antes_fecha} a las {antes}). Revisa tu día en la app.",
         "prueba": "Los avisos están funcionando en este teléfono.",
         "accion_confirmar": "Confirmo que voy",
         "accion_en_camino": "Voy en camino",
@@ -176,6 +183,10 @@ TEXTOS_PUSH = {
         "relevo_sale_cuerpo": "{quien} cobre você: {cuando}{dias}. Não se apresente; veja o seu dia no app.",
         "relevo_dias": " · {n} dias",
         "relevo_rango": "{desde} a {hasta}",
+        "regreso_titular_titulo": "Você volta ao seu serviço",
+        "regreso_titular_cuerpo": "Você volta em {cuando}: {quien} cobre você até {hasta}. Abra o app e confirme.",
+        "regreso_cubre_titulo": "O titular volta",
+        "regreso_cubre_cuerpo": "{quien} volta em {cuando}: o seu último dia neste serviço é {hasta}. Veja o seu dia no app.",
         "asignacion_titulo": "Você trabalha {dia}",
         "asignacion_cuerpo": "Acabaram de designar você para {folio}: {dia} às {hora}. Abra o app e confirme.",
         "hoy": "hoje", "manana": "amanhã",
@@ -191,6 +202,8 @@ TEXTOS_PUSH = {
         "cancelacion_cuerpo": "{folio}: {rango} já não acontece. Não se apresente; veja o seu dia no app.",
         "cambio_hora_titulo": "O seu horário mudou",
         "cambio_hora_cuerpo": "{fecha}: agora é às {hora} (antes {antes}). Veja o seu dia no app.",
+        "cambio_fecha_titulo": "A sua data mudou",
+        "cambio_fecha_cuerpo": "Agora é dia {fecha} às {hora} (antes dia {antes_fecha} às {antes}). Veja o seu dia no app.",
         "prueba": "Os avisos estão funcionando neste telefone.",
         "accion_confirmar": "Confirmo que vou",
         "accion_en_camino": "Estou a caminho",
@@ -402,6 +415,42 @@ def avisar_relevo(db: Session, entra: m.Persona, sale: m.Persona,
         db, sale.id,
         titulo=tx(de_sale, "relevo_sale_titulo"),
         cuerpo=_texto(de_sale, "relevo_sale_cuerpo", entra.nombre),
+        etiqueta="relevo", urgente=True)
+    return r
+
+
+def avisar_regreso(db: Session, titular: m.Persona, cubre: m.Persona,
+                   cierre: dict) -> dict:
+    """El titular vuelve: se les dice a los dos en el momento.
+
+    Marta regresa el 25 y Luis trabaja hasta el 24. Sin este aviso
+    (seccion 101) Luis podia presentarse el 25 a un servicio que ya no
+    era suyo, y Marta solo se enteraba si abria la app. Es el gemelo de
+    `avisar_relevo` con los papeles al reves, y como el no detiene nada:
+    si no sale, el regreso ya quedo capturado igual.
+
+    `cierre` es lo que devuelve `contingencia.regresar`: el dia en que
+    vuelve el titular y el ultimo del que cubria. Con el regreso
+    corregido se manda otra vez, con las fechas nuevas.
+    """
+    cuando, hasta = cierre.get("regresa_el"), cierre.get("hasta")
+    if not cuando or not hasta:
+        return {"enviados": 0, "motivo": "sin dias"}
+
+    de_titular = idioma_de(db, titular.id)
+    r = avisar(
+        db, titular.id,
+        titulo=tx(de_titular, "regreso_titular_titulo"),
+        cuerpo=tx(de_titular, "regreso_titular_cuerpo", quien=cubre.nombre,
+                  cuando=cuando, hasta=hasta),
+        etiqueta="relevo", urgente=True, accion="confirmar")
+
+    de_cubre = idioma_de(db, cubre.id)
+    avisar(
+        db, cubre.id,
+        titulo=tx(de_cubre, "regreso_cubre_titulo"),
+        cuerpo=tx(de_cubre, "regreso_cubre_cuerpo", quien=titular.nombre,
+                  cuando=cuando, hasta=hasta),
         etiqueta="relevo", urgente=True)
     return r
 
@@ -627,15 +676,22 @@ def avisar_cambio_de_hora(db: Session, jornada, antes) -> dict:
                            m.EstatusJornada.TERMINADA):
         return {"avisados": 0, "motivo": "el dia ya no se mueve"}
 
+    # Si lo que se movio fue la fecha, se dice la fecha (seccion 101):
+    # al mover solo el dia, el aviso decia "ahora es a las 08:00 (antes
+    # 08:00)" y nadie entendia que habia cambiado.
+    cambio_de_fecha = antes.date() != jornada.inicio_programado.date()
     avisados = []
     for persona_id in _asignados(db, [jornada]):
         lengua = idioma_de(db, persona_id)
         r = avisar(db, persona_id,
-                   titulo=tx(lengua, "cambio_hora_titulo"),
-                   cuerpo=tx(lengua, "cambio_hora_cuerpo",
+                   titulo=tx(lengua, "cambio_fecha_titulo" if cambio_de_fecha
+                             else "cambio_hora_titulo"),
+                   cuerpo=tx(lengua, "cambio_fecha_cuerpo" if cambio_de_fecha
+                             else "cambio_hora_cuerpo",
                              fecha=f"{jornada.fecha:%d/%m}",
                              hora=f"{jornada.inicio_programado:%H:%M}",
-                             antes=f"{antes:%H:%M}"),
+                             antes=f"{antes:%H:%M}",
+                             antes_fecha=f"{antes:%d/%m}"),
                    etiqueta="cambio-hora", urgente=True)
         if r["enviados"]:
             avisados.append(persona_id)

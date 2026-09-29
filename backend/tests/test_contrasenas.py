@@ -70,7 +70,9 @@ def test_no_se_cambia_sin_saber_la_actual(cliente, sesion, datos):
 
     r = cliente.post("/auth/mi-contrasena", headers=suyo,
                      json={"actual": "la que sea", "nueva": "camino largo"})
-    assert r.status_code == 401, r.text
+    # 403 y no 401 (seccion 101): la consola toma el 401 como sesion
+    # vencida, y aqui la sesion esta bien.
+    assert r.status_code == 403, r.text
     # Que falle por la contrasena y no por la sesion: esta prueba llego a
     # pasar por accidente cuando el candado de sesiones se comia tokens
     # buenos, y decia que si a algo que no habia verificado.

@@ -95,6 +95,14 @@ www.{$DOMINIO} {
 	@sw path /app/sw.js
 	header @sw Cache-Control "no-cache"
 
+	# El disparador de Pegasus lleva su secreto en la ruta (seccion 101):
+	# cada aviso dejaba `POST /gps/pegasus/aviso/<secreto>` en claro en el
+	# registro de acceso, diez archivos de 20 MB que cualquiera con el
+	# disco puede leer. Ese aviso no se escribe. La API tapa el suyo en
+	# `main.py`.
+	@pegasus path /gps/pegasus/aviso/*
+	log_skip @pegasus
+
 	log {
 		output file /data/acceso.log {
 			roll_size 20mb

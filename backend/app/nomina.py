@@ -25,7 +25,8 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_, select
+from sqlalchemy.orm import Session, contains_eager, joinedload
 
 from app import models as m
 from app import reloj
@@ -187,8 +188,52 @@ def pago_de_jornada(db: Session, jornada: m.Jornada,
 
 # ---------------------------------------------------------------- que entra
 
+def _ya_pagada(excepto_nomina_id: int | None = None):
+    """La condicion de que ese par (jornada, persona) ya esta pagado o
+    apartado por otro corte, para pedirselo a la base en la misma
+    consulta y no cargar todos los conceptos de la historia."""
+    condiciones = [m.ConceptoNomina.jornada_id == m.Jornada.id,
+                   m.ConceptoNomina.persona_id == m.AsignacionPersonal.persona_id]
+    if excepto_nomina_id:
+        condiciones.append(m.RenglonNomina.nomina_id != excepto_nomina_id)
+    return (select(m.ConceptoNomina.id)
+            .select_from(m.ConceptoNomina)
+            .join(m.RenglonNomina,
+                  m.ConceptoNomina.renglon_id == m.RenglonNomina.id)
+            .where(and_(*condiciones))
+            .exists())
+
+
+def _estatus_del_cierre():
+    """El estatus del ultimo cierre del servicio (el eventual tiene uno;
+    si por algo tuviera dos, vale el mas nuevo, como antes)."""
+    return (select(m.Cierre.estatus)
+            .where(m.Cierre.servicio_id == m.Servicio.id)
+            .order_by(m.Cierre.id.desc()).limit(1)
+            .scalar_subquery())
+
+
+def _terminadas_con_su_gente(db: Session, pais_id: int):
+    """Las jornadas terminadas del pais con cada asignacion, cargadas con
+    su equipo, su servicio y su modalidad en la misma consulta."""
+    return (db.query(m.Jornada, m.AsignacionPersonal)
+            .join(m.AsignacionPersonal,
+                  m.AsignacionPersonal.jornada_id == m.Jornada.id)
+            .join(m.Equipo, m.Jornada.equipo_id == m.Equipo.id)
+            .join(m.Servicio, m.Equipo.servicio_id == m.Servicio.id)
+            .filter(m.Servicio.pais_id == pais_id,
+                    m.Jornada.estatus == m.EstatusJornada.TERMINADA)
+            .options(contains_eager(m.Jornada.equipo)
+                     .contains_eager(m.Equipo.servicio),
+                     joinedload(m.Jornada.modalidad),
+                     joinedload(m.AsignacionPersonal.persona),
+                     joinedload(m.AsignacionPersonal.rol)))
+
+
 def jornadas_pendientes(db: Session, pais_id: int,
-                        excepto_nomina_id: int | None = None
+                        excepto_nomina_id: int | None = None,
+                        persona_id: int | None = None,
+                        limite: int | None = None,
                         ) -> list[tuple[m.Jornada, m.AsignacionPersonal]]:
     """Pares (jornada, persona) que se deben y no se han pagado.
 
@@ -197,6 +242,13 @@ def jornadas_pendientes(db: Session, pais_id: int,
     contrato se factura al mes, pero su gente cobra cada semana. Al cerrar
     el mes se revisa el periodo completo y lo que salga distinto se
     arrastra como ajuste (ver diferencias_del_servicio).
+
+    Una sola consulta con sus joins (seccion 101): antes traia todos los
+    conceptos pagados de la historia, todos los cierres y todas las
+    jornadas terminadas del pais, y cargaba una por una su servicio y su
+    gente. "Pagos" en la app lo hacia por cada agente para quedarse con
+    sus propios dias; con `persona_id` la base entrega solo los suyos.
+    `limite` es para quien solo quiere saber si hay algo.
     """
     # Lo que ya esta pagado o apartado por OTRO corte. La diferencia
     # importa: un borrador que nadie pago no puede excluir esas jornadas
@@ -204,37 +256,52 @@ def jornadas_pendientes(db: Session, pais_id: int,
     # avisara— pero mientras exista tampoco puede pagarse dos veces. Por
     # eso un borrador se puede descartar (ver `descartar`), y mientras
     # no se descarte, aparta.
-    tomadas = (db.query(m.ConceptoNomina, m.RenglonNomina)
-               .join(m.RenglonNomina,
-                     m.ConceptoNomina.renglon_id == m.RenglonNomina.id)
-               .filter(m.ConceptoNomina.jornada_id.isnot(None)))
-    if excepto_nomina_id:
-        tomadas = tomadas.filter(m.RenglonNomina.nomina_id != excepto_nomina_id)
-    ya_pagadas = {(c.jornada_id, r.persona_id) for c, r in tomadas.all()}
-
-    cierres = {c.servicio_id: c.estatus for c in db.query(m.Cierre).all()}
-
-    filas = (db.query(m.Jornada)
-             .join(m.Equipo, m.Jornada.equipo_id == m.Equipo.id)
-             .join(m.Servicio, m.Equipo.servicio_id == m.Servicio.id)
-             .filter(m.Servicio.pais_id == pais_id,
-                     m.Jornada.estatus == m.EstatusJornada.TERMINADA)
-             .order_by(m.Jornada.fecha).all())
-
-    pendientes = []
-    for j in filas:
-        servicio = j.equipo.servicio
-        if servicio.tipo != m.TipoServicio.IMPLANTADO:
-            if cierres.get(servicio.id) not in EN_FACTURACION:
-                continue
-        for a in j.personal:
-            if (j.id, a.persona_id) in ya_pagadas:
-                continue
-            pendientes.append((j, a))
-    return pendientes
+    consulta = (_terminadas_con_su_gente(db, pais_id)
+                .filter(~_ya_pagada(excepto_nomina_id),
+                        or_(m.Servicio.tipo == m.TipoServicio.IMPLANTADO,
+                            _estatus_del_cierre().in_(EN_FACTURACION)))
+                .order_by(m.Jornada.fecha, m.Jornada.id, m.AsignacionPersonal.id))
+    if persona_id:
+        consulta = consulta.filter(m.AsignacionPersonal.persona_id == persona_id)
+    if limite:
+        consulta = consulta.limit(limite)
+    return [(j, a) for j, a in consulta.all()]
 
 
 # ---------------------------------------------------------------- calculo
+
+def _sin_tarifa(db: Session, pais_id: int,
+                pendientes: list[tuple[m.Jornada, m.AsignacionPersonal]]
+                ) -> list[dict]:
+    """De lo que entraria al corte, lo que no se puede pagar y por que:
+    la tabla que detiene el corte y que la pantalla ensena con nombre y
+    dia. Es una sola para el calculo, la vista previa y el borrador que
+    no cerro (seccion 101)."""
+    faltan = []
+    for jornada, a in pendientes:
+        falta = que_falta_de_tarifa(db, a, jornada.modalidad_id, pais_id,
+                                    jornada)
+        if falta:
+            faltan.append({
+                "persona": a.persona.nombre,
+                "fecha": jornada.fecha.isoformat(),
+                "modalidad": jornada.modalidad.codigo.value,
+                "rol": a.rol.nombre if a.rol else None,
+                "tipo": "freelance" if a.persona.es_freelance else "de planta",
+                # Que es lo que falta: la tarifa del dia, o solo la hora
+                # extra de un dia que las tuvo.
+                "falta": falta})
+    return faltan
+
+
+def sin_tarifa_pendiente(db: Session, pais_id: int,
+                         excepto_nomina_id: int | None = None) -> list[dict]:
+    """Lo que hoy detendria el corte: las jornadas que se deben, no estan
+    en otro corte, y no tienen tarifa. Con `excepto_nomina_id` se mira
+    lo que veria el recalculo de ese borrador."""
+    return _sin_tarifa(db, pais_id,
+                       jornadas_pendientes(db, pais_id, excepto_nomina_id))
+
 
 def calcular(db: Session, pais_id: int, fecha_corte: date | None = None,
              quien_id: int | None = None) -> dict:
@@ -289,20 +356,7 @@ def calcular(db: Session, pais_id: int, fecha_corte: date | None = None,
     # Antes de armar nada: si algo no tiene tarifa, el corte no sale.
     # Pagar de menos a alguien que trabajo es peor que retrasar el corte,
     # y dejarlo fuera en silencio seria justo eso.
-    sin_tarifa = []
-    for jornada, a in pendientes:
-        falta = que_falta_de_tarifa(db, a, jornada.modalidad_id, pais_id,
-                                    jornada)
-        if falta:
-            sin_tarifa.append({
-                "persona": a.persona.nombre,
-                "fecha": jornada.fecha.isoformat(),
-                "modalidad": jornada.modalidad.codigo.value,
-                "rol": a.rol.nombre if a.rol else None,
-                "tipo": "freelance" if a.persona.es_freelance else "de planta",
-                # Que es lo que falta: la tarifa del dia, o solo la hora
-                # extra de un dia que las tuvo.
-                "falta": falta})
+    sin_tarifa = _sin_tarifa(db, pais_id, pendientes)
     if sin_tarifa:
         raise HTTPException(409, {
             "mensaje": ("Hay jornadas trabajadas sin tarifa cargada. Carga la "
@@ -393,6 +447,22 @@ def pagar(db: Session, nomina_id: int, persona_id: int | None = None) -> dict:
         raise HTTPException(409, "Esa nomina ya estaba pagada")
     if not nomina.renglones:
         raise HTTPException(409, "La nomina no tiene nada que pagar")
+    # Un borrador que no cerro porque le falta una tarifa no se paga
+    # como si fuera el corte (seccion 101): es el de las 7:00, y lo que
+    # llego despues --con tarifa o sin ella-- se quedo fuera porque el
+    # recalculo de las 11:00 no pudo salir. La regla es la misma del
+    # armado: sin tarifa el corte no sale; se carga y se recalcula.
+    if not nomina.lista_en:
+        faltan = sin_tarifa_pendiente(db, nomina.pais_id,
+                                      excepto_nomina_id=nomina.id)
+        if faltan:
+            raise HTTPException(409, {
+                "mensaje": ("Este corte es el borrador de las 7:00 y no cerró: "
+                            "hay días trabajados sin tarifa que se quedaron "
+                            "fuera"),
+                "que_hacer": ("Carga la tarifa que falta en el Tabulador y "
+                              "recalcula el corte; entonces se marca pagado."),
+                "sin_tarifa": faltan})
 
     nomina.estatus = m.EstatusNomina.PAGADA
     # Sin zona, como `lista_en`: la hora de pared del pais del corte.
@@ -623,11 +693,18 @@ def diferencias_del_servicio(db: Session, servicio_id: int,
 # ---------------------------------------------------------------- el lunes
 
 def _hay_que_pagar(db: Session, pais_id: int) -> bool:
-    """Si hay algo que llevar al corte: dias debidos o ajustes."""
-    if jornadas_pendientes(db, pais_id):
+    """Si hay algo que llevar al corte: dias debidos o ajustes.
+
+    Un ajuste que otro borrador ya aparto no cuenta (seccion 101): el
+    corte nuevo no lo va a incluir --`calcular` lo excluye--, y creer
+    que si armaba un corte sin renglones que a las 11:00 quedaba listo
+    para siempre: no se podia pagar ni tirar.
+    """
+    if jornadas_pendientes(db, pais_id, limite=1):
         return True
     return (db.query(m.AjusteNomina.id)
-            .filter_by(pais_id=pais_id, aplicado_en_nomina_id=None)
+            .filter_by(pais_id=pais_id, aplicado_en_nomina_id=None,
+                       pagado_en_nomina_id=None)
             .first()) is not None
 
 
@@ -665,6 +742,19 @@ def reloj_del_lunes(db: Session, ahora: datetime | None = None) -> list[dict]:
             continue
         try:
             resultado = calcular(db, pais.id, lunes)
+            if not resultado["personas"]:
+                # Sin renglones no hay corte (seccion 101): lo que habia
+                # a las 7:00 se cancelo o lo aparto otro borrador. Dejarlo
+                # listo lo volvia un corte vacio que ensuciaba el
+                # historial y no se podia pagar ni tirar.
+                vacia = db.get(m.NominaSemanal, resultado["nomina_id"])
+                # Los renglones del borrador ya se borraron al recalcular:
+                # se vuelven a leer para no borrarlos dos veces.
+                db.expire(vacia, ["renglones"])
+                db.delete(vacia)
+                db.commit()
+                hechos.append({"pais": pais.codigo, "resultado": "vacio"})
+                continue
             if cierra:
                 db.get(m.NominaSemanal, resultado["nomina_id"]).lista_en = local
             db.commit()
@@ -882,15 +972,14 @@ def vista_previa(db: Session, pais_id: int, fecha_corte: date) -> dict:
     ajustes, el mismo saldo en contra-- hecho al vuelo. Lo que no tiene
     tarifa no suma: sale aparte, que es lo que detiene el corte.
     """
-    filas, sin_tarifa = [], []
+    filas = []
     pendientes = jornadas_pendientes(db, pais_id)
+    # La misma tabla de faltantes que detiene el corte, con que es lo
+    # que falta --la tarifa del dia o solo la hora extra-- (seccion 101).
+    sin_tarifa = _sin_tarifa(db, pais_id, pendientes)
     for jornada, a in pendientes:
         pago = pago_de_jornada(db, jornada, a, pais_id)
         if not pago:
-            sin_tarifa.append({"persona": a.persona.nombre,
-                               "fecha": jornada.fecha.isoformat(),
-                               "modalidad": jornada.modalidad.codigo.value,
-                               "rol": a.rol.nombre if a.rol else None})
             continue
         filas.append({"persona_id": a.persona_id, "persona": a.persona.nombre,
                       "jornada": jornada, "ajuste": None,
@@ -951,44 +1040,43 @@ def todavia_no_entra(db: Session, pais_id: int) -> list[dict]:
     consultor no ha dado el visto bueno (seccion 66). Con lo que les
     falta y cuanto seria, para que nadie pregunte el lunes por que un
     servicio que ya termino no viene en la nomina."""
-    tomadas = {(c.jornada_id, c.persona_id)
-               for c in db.query(m.ConceptoNomina)
-               .filter(m.ConceptoNomina.jornada_id.isnot(None)).all()}
-    cierres = {c.servicio_id: c for c in db.query(m.Cierre)
-               .filter(m.Cierre.contrato_id.is_(None)).all()}
-    filas = (db.query(m.Jornada)
-             .join(m.Equipo, m.Jornada.equipo_id == m.Equipo.id)
-             .join(m.Servicio, m.Equipo.servicio_id == m.Servicio.id)
-             .filter(m.Servicio.pais_id == pais_id,
-                     m.Servicio.tipo == m.TipoServicio.EVENTUAL,
-                     m.Jornada.estatus == m.EstatusJornada.TERMINADA)
-             .order_by(m.Jornada.fecha).all())
+    # La misma consulta del corte, al reves (seccion 101): lo terminado
+    # del eventual cuyo cierre todavia no va a facturacion, sin cargar
+    # todos los cierres ni todos los conceptos pagados de la historia.
+    filas = (_terminadas_con_su_gente(db, pais_id)
+             .filter(m.Servicio.tipo == m.TipoServicio.EVENTUAL,
+                     ~_ya_pagada(),
+                     or_(_estatus_del_cierre().is_(None),
+                         _estatus_del_cierre().notin_(EN_FACTURACION)))
+             .order_by(m.Jornada.fecha, m.Jornada.id, m.AsignacionPersonal.id)
+             .all())
+    cierres: dict = {}
+    for servicio_id in {j.equipo.servicio_id for j, _ in filas}:
+        cierres[servicio_id] = (db.query(m.Cierre)
+                                .filter_by(servicio_id=servicio_id,
+                                           contrato_id=None)
+                                .order_by(m.Cierre.id.desc()).first())
 
     por_servicio: dict = {}
-    for j in filas:
+    for j, a in filas:
         servicio = j.equipo.servicio
         cierre = cierres.get(servicio.id)
-        if cierre and cierre.estatus in EN_FACTURACION:
-            continue
-        for a in j.personal:
-            if (j.id, a.persona_id) in tomadas:
-                continue
-            fila = por_servicio.setdefault(servicio.id, {
-                "servicio_id": servicio.id, "folio": servicio.folio,
-                "consultor": _nombre(db, servicio.consultor_id),
-                "termino": None, "dias": set(), "personas": set(),
-                "monto": CERO, "sin_tarifa": False,
-                "que_falta": _que_falta(servicio, cierre)})
-            fin = j.fin_real
-            if fin and (fila["termino"] is None or fin > fila["termino"]):
-                fila["termino"] = fin
-            fila["dias"].add(j.fecha)
-            fila["personas"].add(a.persona_id)
-            pago = pago_de_jornada(db, j, a, pais_id)
-            if pago:
-                fila["monto"] += pago["monto"]
-            else:
-                fila["sin_tarifa"] = True
+        fila = por_servicio.setdefault(servicio.id, {
+            "servicio_id": servicio.id, "folio": servicio.folio,
+            "consultor": _nombre(db, servicio.consultor_id),
+            "termino": None, "dias": set(), "personas": set(),
+            "monto": CERO, "sin_tarifa": False,
+            "que_falta": _que_falta(servicio, cierre)})
+        fin = j.fin_real
+        if fin and (fila["termino"] is None or fin > fila["termino"]):
+            fila["termino"] = fin
+        fila["dias"].add(j.fecha)
+        fila["personas"].add(a.persona_id)
+        pago = pago_de_jornada(db, j, a, pais_id)
+        if pago:
+            fila["monto"] += pago["monto"]
+        else:
+            fila["sin_tarifa"] = True
 
     salida = []
     for f in por_servicio.values():
@@ -1155,6 +1243,18 @@ def semana(db: Session, pais_id: int, ahora: datetime | None = None) -> dict:
         corte = {**armar_detalle(db, filas_del_corte(db, nomina), lunes),
                  **ficha(db, nomina)}
         proximo = None
+        if not nomina.lista_en:
+            # El borrador de las 7:00 que el reloj no puede cerrar
+            # (seccion 101): entre las 7:00 y las 11:00 llego un dia sin
+            # tarifa, el recalculo de las 11:00 falla y vuelve a fallar
+            # cada quince minutos, y la pantalla ensenaba el borrador
+            # como si nada. Aqui va la tabla de lo que falta --lo que
+            # veria ese recalculo--, y pasada la hora del cierre se dice
+            # que no salio.
+            corte["sin_tarifa"] = sin_tarifa_pendiente(
+                db, pais_id, excepto_nomina_id=nomina.id)
+            no_salio = bool(corte["sin_tarifa"]) and (
+                local >= datetime.combine(lunes, HORA_CIERRE))
     else:
         # Sin corte de este lunes que pagar: lo que va juntandose. Es para
         # este mismo lunes antes de las 11:00, o si el reloj no lo pudo

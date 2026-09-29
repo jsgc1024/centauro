@@ -1,6 +1,6 @@
 """Esquemas de entrada y salida de la API."""
 from datetime import date
-from typing import Literal
+from typing import Annotated, Literal
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -8,8 +8,14 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app import texto
 
 from app.models import (CodigoModalidad, CodigoVestimenta, ConceptoViatico,
-                        EscenarioViatico, Moneda, MotivoRenta, NivelHospital,
-                        TipoServicio)
+                        DimensionProfesionalismo, EscenarioViatico, Moneda,
+                        MotivoRenta, NivelHospital, TipoServicio)
+
+# Hasta donde llega un ajuste o una diferencia que se teclea a mano
+# (seccion 101): un millon en la moneda del pais. No es una regla de
+# negocio sino el tope de un dedazo con ceros de mas --ningun dia ni
+# ninguna comision se acerca-- y se mueve aqui si un dia hiciera falta.
+TOPE_AJUSTE = Decimal("1000000")
 
 
 class Base(BaseModel):
@@ -129,11 +135,12 @@ class ClienteOut(ClienteIn):
 
 class SolicitanteIn(Base):
     cliente_id: int
-    nombre: str
-    apellidos: str | None = None
-    correo: str | None = None
-    telefono: str | None = None
-    puesto: str | None = None
+    # Al largo de su columna (seccion 101): mas largo reventaba en 500.
+    nombre: str = Field(max_length=160)
+    apellidos: str | None = Field(None, max_length=160)
+    correo: str | None = Field(None, max_length=160)
+    telefono: str | None = Field(None, max_length=40)
+    puesto: str | None = Field(None, max_length=120)
 
     _capturado = capturado("nombre", "apellidos", "puesto")
 
@@ -216,8 +223,9 @@ class ComisionIn(Base):
     tipo_servicio: TipoServicio = TipoServicio.EVENTUAL
     perfil_id: int
     modalidad_id: int
-    monto: Decimal
-    monto_hora_extra: Decimal | None = None
+    # Sin negativos (seccion 101): es lo que se paga por un dia.
+    monto: Decimal = Field(ge=0)
+    monto_hora_extra: Decimal | None = Field(default=None, ge=0)
     moneda: Moneda
 
 
@@ -267,8 +275,9 @@ class PersonaOut(PersonaIn):
 class TarifaFreelanceIn(Base):
     persona_id: int
     modalidad_id: int
-    costo: Decimal
-    costo_hora_extra: Decimal | None = None
+    # Sin negativos (seccion 101): es lo que se le paga por un dia.
+    costo: Decimal = Field(ge=0)
+    costo_hora_extra: Decimal | None = Field(default=None, ge=0)
     moneda: Moneda
 
 
@@ -350,9 +359,11 @@ class ParadaIn(Base):
     final, como pendiente de confirmar, que es como la manda el cliente
     muchas veces."""
     hora: time | None = None
-    lugar: str
-    direccion: str | None = None
-    notas: str | None = None
+    # Con tope, al largo de su columna (seccion 101): un texto mas largo
+    # reventaba en la base con un 500 en vez de decir que es demasiado.
+    lugar: str = Field(max_length=400)
+    direccion: str | None = Field(None, max_length=300)
+    notas: str | None = Field(None, max_length=300)
 
     _capturado = capturado("lugar")
 
@@ -370,7 +381,8 @@ class JornadaIn(Base):
     # parte del minimo para dar el servicio por programado. Siguen siendo
     # opcionales porque un implantado da de alta el mes entero de un golpe
     # y esos datos llegan dia con dia.
-    origen_direccion: str | None = None
+    # Los textos con tope, al largo de su columna (seccion 101).
+    origen_direccion: str | None = Field(None, max_length=300)
     origen_lat: Decimal | None = None
     origen_lon: Decimal | None = None
     geocerca_metros: int | None = Field(None, ge=50, le=5000)
@@ -378,18 +390,18 @@ class JornadaIn(Base):
     # Lo que dijo Google del lugar, aparte de lo que decidio el consultor.
     origen_google_aeropuerto: bool | None = None
     forzar_aeropuerto: bool = False
-    vuelo_aerolinea: str | None = None
-    vuelo_numero: str | None = None
+    vuelo_aerolinea: str | None = Field(None, max_length=80)
+    vuelo_numero: str | None = Field(None, max_length=20)
     vuelo_hora: datetime | None = None
-    vuelo_origen: str | None = None
+    vuelo_origen: str | None = Field(None, max_length=120)
     vuelo_tipo: Literal["llegada", "salida"] | None = None
     # La agenda del dia se puede capturar desde el alta: el consultor la
     # tiene en el correo del cliente cuando esta dando de alta. Va parada
     # por parada, como se lee y como se imprime.
     paradas: list["ParadaIn"] = []
     # De cuando la agenda era un bloque de texto. Se sigue aceptando.
-    agenda_resumen: str | None = None
-    agenda_puntos: str | None = None
+    agenda_resumen: str | None = Field(None, max_length=300)
+    agenda_puntos: str | None = Field(None, max_length=2000)
 
     _capturado = capturado("vuelo_aerolinea", "vuelo_origen")
     _clave = en_mayusculas("vuelo_numero")
@@ -397,8 +409,8 @@ class JornadaIn(Base):
 
 class EquipoIn(Base):
     # El alias lo pone el sistema (Alfa, Beta, Gamma...).
-    clave: str | None = None
-    descripcion: str | None = None
+    clave: str | None = Field(None, max_length=40)
+    descripcion: str | None = Field(None, max_length=200)
     # Donde opera. Vacio: la ciudad del servicio.
     plaza_id: int | None = None
     # A quien cuida este equipo. Si viene vacio, hereda el del servicio.
@@ -532,16 +544,20 @@ class DiaIn(Base):
     hora_presentacion: time | None = None
     km_estimados: int | None = None
     es_foraneo: bool | None = None
+    # Mover el dia vuelve a revisar los empalmes de la gente y las
+    # unidades ya asignadas (seccion 101): el riesgo se acepta con esto,
+    # como al asignar; el bloqueo no.
+    forzar: bool = False
 
 
 class CancelarIn(Base):
     """Cancelar si pide motivo: es lo que el cliente va a preguntar."""
-    motivo: str
+    motivo: str = Field(max_length=300)
 
 
 class EliminarIn(Base):
     """Por que se borra. Se guarda aunque el servicio ya no exista."""
-    motivo: str | None = None
+    motivo: str | None = Field(None, max_length=300)
 
 
 class AsignarPersonalIn(Base):
@@ -742,7 +758,7 @@ class OrigenIn(Base):
     # "probaba" desde cualquier lado de la ciudad-- o un negativo, con
     # el que nadie podia marcar. De 50 m a 5 km: el aeropuerto usa 2 km.
     geocerca_metros: int | None = Field(None, ge=50, le=5000)
-    origen_direccion: str | None = None
+    origen_direccion: str | None = Field(None, max_length=300)
     # Cuando se dice, el radio se ajusta solo: 2 km en aeropuerto, 500 m
     # en cualquier otro lado.
     origen_aeropuerto: bool | None = None
@@ -755,11 +771,15 @@ class OrigenIn(Base):
 class VueloIn(Base):
     """Vuelo del ejecutivo para ese dia. Todo opcional: a veces solo se
     sabe la aerolinea y el numero, y la hora llega despues."""
-    vuelo_aerolinea: str | None = None
-    vuelo_numero: str | None = None
+    vuelo_aerolinea: str | None = Field(None, max_length=80)
+    vuelo_numero: str | None = Field(None, max_length=20)
     vuelo_hora: datetime | None = None
-    vuelo_origen: str | None = None
+    vuelo_origen: str | None = Field(None, max_length=120)
     vuelo_tipo: Literal["llegada", "salida"] | None = None
+    # El vuelo de llegada mueve la presentacion del primer dia, y con
+    # ella los empalmes de la gente ya asignada (seccion 101): un choque
+    # con riesgo se acepta con esto, como al asignar; el bloqueo no.
+    forzar: bool = False
 
     _capturado = capturado("vuelo_aerolinea", "vuelo_origen")
     _clave = en_mayusculas("vuelo_numero")
@@ -859,8 +879,10 @@ class ReabrirDiaIn(Base):
 class DiaFestivoIn(Base):
     pais_id: int
     fecha: date
-    nombre: str
-    factor_comision: Decimal = Decimal("2")
+    nombre: str = Field(max_length=120)
+    # Con piso (seccion 101): un factor de cero pagaba el festivo a
+    # cero, y uno negativo descontaba el dia.
+    factor_comision: Decimal = Field(default=Decimal("2"), gt=0)
 
 
 class DiaFestivoOut(DiaFestivoIn):
@@ -917,8 +939,8 @@ class HospedajeIn(Base):
     # cercanos el dia que el hotel sea el punto de origen.
     hotel_lat: Decimal | None = None
     hotel_lon: Decimal | None = None
-    habitacion: str | None = None
-    notas: str | None = None
+    habitacion: str | None = Field(None, max_length=40)
+    notas: str | None = Field(None, max_length=300)
 
     _capturado = capturado("nombre_libre")
 
@@ -928,17 +950,17 @@ class HospedajeOut(HospedajeIn):
 
 
 class AgendaIn(Base):
-    resumen: str | None = None
-    puntos: str | None = None
-    archivo_url: str | None = None
+    resumen: str | None = Field(None, max_length=300)
+    puntos: str | None = Field(None, max_length=2000)
+    archivo_url: str | None = Field(None, max_length=400)
 
 
 class ParadaEdicion(Base):
     """Lo que se puede corregir de una parada ya capturada."""
     hora: time | None = None
-    lugar: str | None = None
-    direccion: str | None = None
-    notas: str | None = None
+    lugar: str | None = Field(None, max_length=400)
+    direccion: str | None = Field(None, max_length=300)
+    notas: str | None = Field(None, max_length=300)
 
     _capturado = capturado("lugar")
 
@@ -952,7 +974,7 @@ class ParadaOut(Base):
 
 
 class PublicarTaskSheetIn(Base):
-    motivo: str | None = None
+    motivo: str | None = Field(None, max_length=300)
     forzar: bool = False
     # Apagado por omision: publicar y avisarle al cliente son dos actos
     # distintos. Ver el docstring de tasksheet.publicar.
@@ -963,9 +985,26 @@ class SenalIn(Base):
     """La senal: un color de la paleta (con palabra encima o sin ella),
     una palabra sola, o una imagen."""
     texto: str | None = Field(None, max_length=80)
-    imagen: str | None = None      # data URI o URL
+    imagen: str | None = None      # data URI de imagen, o URL
     nota: str | None = Field(None, max_length=200)
-    color: str | None = None       # clave de la paleta (app/senal.py)
+    color: str | None = Field(None, max_length=12)  # clave de la paleta (app/senal.py)
+
+    @field_validator("imagen")
+    @classmethod
+    def _imagen_o_enlace(cls, v):
+        """Solo una imagen incrustada o un enlace (seccion 101): el campo
+        era texto libre y terminaba en el `src` de la hoja que abren los
+        demas; cualquier otra cosa --un `javascript:`, HTML-- se rechaza."""
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        if not (v.startswith("data:image/") or v.startswith("http://")
+                or v.startswith("https://")):
+            raise ValueError("La imagen de la señal tiene que ser una imagen "
+                             "o un enlace https")
+        return v
 
 
 # ================================================================ ODOO
@@ -1127,7 +1166,9 @@ class CalcularNominaIn(Base):
 class VistoBuenoComisionesIn(Base):
     """El corte de comisiones de un mes y un pais (seccion 66)."""
     pais_id: int
-    anio: int
+    # Con rango (seccion 101): un ano de tres cifras reventaba al armar
+    # el ultimo dia del mes.
+    anio: int = Field(ge=2000, le=2100)
     mes: int = Field(ge=1, le=12)
 
 
@@ -1140,7 +1181,7 @@ class DiferenciaComisionIn(Base):
     signo: negativo es descuento."""
     pais_id: int
     consultor_id: int
-    monto: Decimal
+    monto: Decimal = Field(ge=-TOPE_AJUSTE, le=TOPE_AJUSTE)
     motivo: str = Field(max_length=400)
     servicio_id: int | None = None
 
@@ -1148,8 +1189,11 @@ class DiferenciaComisionIn(Base):
 class AjusteNominaIn(Base):
     persona_id: int
     pais_id: int
-    monto: Decimal          # con signo: negativo es descuento
-    motivo: str
+    # Con signo: negativo es descuento. Con tope y el motivo al largo de
+    # su columna (seccion 101): un motivo de 401 letras reventaba en la
+    # base.
+    monto: Decimal = Field(ge=-TOPE_AJUSTE, le=TOPE_AJUSTE)
+    motivo: str = Field(max_length=400)
     servicio_id: int | None = None
     jornada_id: int | None = None
     # De que es. Sin esto, un descuento por viaticos y una correccion
@@ -1173,10 +1217,13 @@ class CierreConDescuentoIn(Base):
 class RespuestaEncuestaIn(Base):
     """La calificacion general y las respuestas de la rama que toque.
 
-    Los valores de escala van como entero; los abiertos, como texto.
+    Los valores de escala van como entero; los abiertos, como texto. El
+    entero tiene rango (seccion 101): un 1000 en "puntualidad" entraba y
+    se volvia el promedio del consultor. El motor revisa ademas que cada
+    pregunta traiga lo suyo --escala o texto--.
     """
-    calificacion: int
-    respuestas: dict[str, int | str] = {}
+    calificacion: int = Field(ge=1, le=5)
+    respuestas: dict[str, Annotated[int, Field(ge=1, le=5)] | str] = {}
 
 
 class ClasificarEncuestaIn(Base):
@@ -1185,13 +1232,20 @@ class ClasificarEncuestaIn(Base):
 
 
 class PesosProfesionalismoIn(Base):
-    """Los seis pesos, que tienen que sumar 100."""
+    """Los seis pesos, que tienen que sumar 100.
+
+    Las dimensiones son las del catalogo y los pesos no bajan de cero
+    (seccion 101): una dimension inventada reventaba con error del
+    servidor, y dos pesos negativos que sumaran 100 con los demas se
+    guardaban. La ventana es de un mes por lo menos y los castigos no
+    son negativos: un castigo negativo premiaba la incidencia.
+    """
     pais_id: int
-    pesos: dict[str, Decimal]
-    meses_ventana: int | None = None
-    horas_referencia: int | None = None
-    castigo_error_menor: Decimal | None = None
-    castigo_leve: Decimal | None = None
-    castigo_grave: Decimal | None = None
+    pesos: dict[DimensionProfesionalismo, Annotated[Decimal, Field(ge=0)]]
+    meses_ventana: int | None = Field(default=None, ge=1)
+    horas_referencia: int | None = Field(default=None, ge=1)
+    castigo_error_menor: Decimal | None = Field(default=None, ge=0)
+    castigo_leve: Decimal | None = Field(default=None, ge=0)
+    castigo_grave: Decimal | None = Field(default=None, ge=0)
     # Cuanto baja el manejo por cada evento del GPS cada mil km.
-    puntos_por_evento_manejo: Decimal | None = None
+    puntos_por_evento_manejo: Decimal | None = Field(default=None, ge=0)

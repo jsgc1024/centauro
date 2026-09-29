@@ -90,18 +90,21 @@ def calendario_del_mes(anio: int, mes: int, dias_servicio,
                        desde_dia: int | None = None,
                        cubiertos: dict | None = None,
                        turno: str = TURNO_NATURAL,
-                       cancelados: set | None = None) -> list[dict]:
+                       cancelados: set | None = None,
+                       vacios: set | None = None) -> list[dict]:
     """El mes dia por dia, con el color que le toca a cada uno.
 
     verde  el dia esta cubierto por los recursos del servicio
-    ambar  esta contratado pero falta decir quien lo cubre; siempre es
+    ambar  esta contratado pero falta decir quien lo cubre; casi siempre
            un fin de semana, porque el que trabajo toda la semana
-           descansa y hay que confirmarlo o cambiarlo
+           descansa y hay que confirmarlo o cambiarlo; y el dia de entre
+           semana que existe sin nadie --`vacios`-- porque se abrio sin
+           la posicion que ya no podia ir (seccion 101)
     gris   no hay servicio contratado ese dia
 
-    En 12x36 el ambar no existe: cada dia nace con su persona puesta
-    --las dos se alternan y entre las dos cubren los siete dias-- asi
-    que el mes sale entero en verde.
+    En 12x36 el ambar de fin de semana no existe: cada dia nace con su
+    persona puesta --las dos se alternan y entre las dos cubren los siete
+    dias-- asi que el mes sale entero en verde, salvo el dia vacio.
     """
     es_12x36 = turno == TURNO_12X36
     tope = 7 if es_12x36 else hasta_donde(dias_servicio)
@@ -109,6 +112,7 @@ def calendario_del_mes(anio: int, mes: int, dias_servicio,
     primero = max(1, min(desde_dia or 1, ultimo))
     cubiertos = cubiertos or {}
     cancelados = cancelados or set()
+    vacios = vacios or set()
 
     salida = []
     for numero in range(1, ultimo + 1):
@@ -131,6 +135,8 @@ def calendario_del_mes(anio: int, mes: int, dias_servicio,
         elif quien:
             estado = "cubierto"
         elif not es_12x36 and dia.weekday() >= 5:
+            estado = "por_cubrir"
+        elif dia.isoformat() in vacios:
             estado = "por_cubrir"
         else:
             # Entre semana lo cubre la plantilla fija; si no hay nadie es
@@ -207,6 +213,12 @@ def generar_mes(db: Session, contrato_id: int,
     arranque = (arranque_del_mes(db, contrato, pareja, dias[0])
                 if es_12x36 and dias else 0)
 
+    # Lo que de la plantilla ya no puede ir (seccion 101) se resuelve una
+    # vez para todo el mes y no se pone en los dias; cada dia que queda
+    # sin esa posicion lleva su alerta.
+    fuera = plantilla_fuera(db, contrato, dias)
+    faltas_del_mes, sin_completar = set(), []
+
     creadas = 0
     for dia in dias:
         existente = (db.query(m.Jornada)
@@ -231,19 +243,31 @@ def generar_mes(db: Session, contrato_id: int,
         db.add(jornada)
         db.flush()
 
+        faltas = []
         if es_12x36:
-            _asignar_turno(db, jornada, contrato,
-                           de_quien_es(pareja, arranque, dias[0], dia))
+            faltas = _asignar_turno(db, jornada, contrato,
+                                    de_quien_es(pareja, arranque, dias[0], dia),
+                                    fuera)
         elif dia.weekday() < 5:
-            _asignar_del_contrato(db, jornada, contrato)
+            faltas = _asignar_del_contrato(db, jornada, contrato, fuera)
         else:
             # El fin de semana contratado se abre, pero vacio: quien
             # trabajo de lunes a viernes descansa, y darle el sabado por
             # hecho es como se llega al domingo sin conductor. La unidad
             # si va: el vehiculo del implantado siempre es el mismo.
             if contrato.vehiculo_id:
-                db.add(m.AsignacionVehiculo(jornada_id=jornada.id,
-                                            vehiculo_id=contrato.vehiculo_id))
+                motivo = _unidad_fuera(fuera, contrato.vehiculo_id, dia)
+                if motivo:
+                    faltas.append((m.TipoAlerta.VEHICULO_SIN_ASIGNAR, None,
+                                   contrato.vehiculo_id, motivo))
+                else:
+                    db.add(m.AsignacionVehiculo(
+                        jornada_id=jornada.id,
+                        vehiculo_id=contrato.vehiculo_id))
+        if faltas:
+            _avisar_lo_que_falta(db, jornada, faltas)
+            faltas_del_mes.update(f[3] for f in faltas)
+            sin_completar.append(dia.isoformat())
         creadas += 1
 
     # La base del mes es la que marca el calendario, no un numero fijo.
@@ -264,6 +288,11 @@ def generar_mes(db: Session, contrato_id: int,
         "dias_base_del_mes": contrato.dias_base,
         "calendario": calendario,
         "turno": turno,
+        # Lo que de la plantilla ya no pudo ir y los dias que quedaron
+        # sin esa posicion (seccion 101): la pantalla y el proceso de la
+        # manana lo dicen en voz alta.
+        "plantilla_fuera": sorted(faltas_del_mes),
+        "dias_sin_completar": sin_completar,
         "nota": (f"El mes va entero: {contrato.dias_base} dias cubiertos por "
                  f"dos personas que se alternan. No hay dias adicionales; lo "
                  f"que el cliente pida de mas sale como un eventual."
@@ -279,16 +308,76 @@ def rol_del_contrato(contrato: m.ContratoImplantado,
     """Con que rol va esa persona en este servicio.
 
     Si esta en la plantilla del mes, el suyo. Si es un relevo que viene a
-    cubrir, el de la posicion que cubre —la primera de la plantilla—,
-    porque lo que se le vendio al cliente ese dia es esa posicion, no la
-    persona. Sin plantilla no hay rol que heredar y el consultor lo dice.
+    cubrir sin decir que posicion, la del titular del mes --quien
+    maneja, que es la que se cubre casi siempre-- y sin titular, la
+    primera de la plantilla: lo que se le vendio al cliente ese dia es
+    esa posicion, no la persona. Sin plantilla no hay rol que heredar y
+    el consultor lo dice.
+
+    Antes era siempre la primera fila, y con la plantilla capturada
+    "coordinador, conductor" el relevo del conductor cobraba y se
+    facturaba como coordinador (seccion 101).
     """
     if persona_id:
         suyo = next((f for f in contrato.plantilla
                      if f.persona_id == persona_id), None)
         if suyo and suyo.rol_id:
             return suyo.rol_id
+    del_titular = next((f for f in contrato.plantilla
+                        if f.persona_id == contrato.titular_id), None)
+    if del_titular and del_titular.rol_id:
+        return del_titular.rol_id
     return contrato.plantilla[0].rol_id if contrato.plantilla else None
+
+
+def roles_por_posicion(contrato: m.ContratoImplantado, personal: list,
+                       posiciones: list) -> list:
+    """El rol de cada renglon con que se cubre un dia (seccion 101).
+
+    El suyo si viene escrito; si la persona es de la plantilla, el de su
+    fila; y si es un relevo, el de la posicion que cubre: la que queda
+    libre, en el mismo orden en que la ficha lista las posiciones. Asi
+    el sabado en que Carlos cubre al conductor, Carlos va de conductor
+    aunque la primera fila de la plantilla sea el coordinador: de ese rol
+    salen su comision y el precio del dia.
+    """
+    del_mes = {f.persona_id: f for f in posiciones}
+    quienes = {p["persona_id"] for p in personal}
+    libres = [f for f in posiciones if f.persona_id not in quienes]
+    roles = []
+    for fila in personal:
+        rol_id = fila.get("rol_id")
+        if not rol_id and fila["persona_id"] in del_mes:
+            rol_id = del_mes[fila["persona_id"]].rol_id
+        if not rol_id and libres:
+            rol_id = libres.pop(0).rol_id
+        if not rol_id:
+            rol_id = rol_del_contrato(contrato, fila["persona_id"])
+        roles.append(rol_id)
+    return roles
+
+
+def posiciones_del_dia(db: Session, contrato: m.ContratoImplantado,
+                       fecha: date) -> list:
+    """Las posiciones que se cubren ese dia: las filas de la plantilla.
+
+    En natural, la plantilla entera: cada dia va todo el equipo. En
+    12x36 una sola, la de quien le toca ese dia por la alternancia: el
+    dia es de una persona, y ofrecer las dos preseleccionadas dejaba el
+    dia con las dos con un clic --las dos cobraban y las dos entraban al
+    corte (seccion 101)--.
+    """
+    filas = sorted(contrato.plantilla, key=lambda f: f.id)
+    if turno_del_servicio(db, contrato.servicio_id) != TURNO_12X36:
+        return filas
+    pareja = pareja_del_turno(contrato)
+    dias = dias_del_mes(contrato.anio, contrato.mes, contrato.dias_servicio,
+                        contrato.desde_dia, TURNO_12X36)
+    if not dias or not pareja:
+        return filas[:1]
+    arranque = arranque_del_mes(db, contrato, pareja, dias[0])
+    de_quien = de_quien_es(pareja, arranque, dias[0], fecha)
+    return [de_quien] if de_quien else filas[:1]
 
 
 def _heredar_punto(jornada: m.Jornada, acuerdo) -> None:
@@ -314,6 +403,7 @@ def agregar_dia(db: Session, contrato_id: int, fecha: date,
         raise HTTPException(404, f"No existe el contrato {contrato_id}")
     if fecha.month != contrato.mes or fecha.year != contrato.anio:
         raise HTTPException(400, "La fecha no cae en el periodo del contrato")
+    _que_se_pueda_armar(contrato.servicio)
 
     # En 12x36 el mes ya esta cubierto entero y no hay dias adicionales:
     # decision de Salvador (20 sep). Lo que el cliente pida de mas es
@@ -341,17 +431,25 @@ def agregar_dia(db: Session, contrato_id: int, fecha: date,
     if ya_esta:
         # El dia ya existe. Si nadie lo cubre —el fin de semana que nace
         # en ambar— esto es justamente ponerle quien va, no un error.
+        # Cancelado, primero se reactiva (seccion 101): "ya esta
+        # cubierto" no decia nada de por que no se podia.
+        _sin_cancelar(ya_esta)
         if ya_esta.personal:
             raise HTTPException(409, "Ese dia ya esta cubierto")
         return _cubrir(db, contrato, ya_esta, persona_id)
 
     hora = time.fromisoformat(contrato.hora_presentacion)
     inicio = datetime.combine(fecha, hora)
+    # Adicional solo el fin de semana, con la misma regla que cubrir un
+    # dia y que generar el mes (seccion 101). Nacia siempre adicional, y
+    # un martes borrado por error y vuelto a abrir se facturaba al precio
+    # del dia adicional.
+    adicional = fecha.weekday() >= 5
     jornada = m.Jornada(
         equipo_id=equipo.id, fecha=fecha, modalidad_id=contrato.modalidad_id,
         inicio_programado=inicio,
         fin_programado=inicio + timedelta(hours=float(contrato.modalidad.horas)),
-        hora_confirmada=True, es_dia_adicional=True)
+        hora_confirmada=True, es_dia_adicional=adicional)
     acuerdo = (db.query(m.AcuerdoImplantado)
                .filter_by(servicio_id=contrato.servicio_id).first())
     _heredar_punto(jornada, acuerdo)
@@ -372,9 +470,10 @@ def agregar_dia(db: Session, contrato_id: int, fecha: date,
 
     cubre = db.get(m.Persona, cubre_id) if cubre_id else None
     return {"jornada_id": jornada.id, "fecha": fecha.isoformat(),
-            "es_dia_adicional": True,
+            "es_dia_adicional": adicional,
             "cubre": cubre.nombre if cubre else None,
-            "costo_extra": float(contrato.precio_dia_adicional or 0)}
+            "costo_extra": (float(contrato.precio_dia_adicional or 0)
+                            if adicional else 0.0)}
 
 
 def _cubrir(db: Session, contrato: m.ContratoImplantado, jornada: m.Jornada,
@@ -395,13 +494,15 @@ def _cubrir(db: Session, contrato: m.ContratoImplantado, jornada: m.Jornada,
     dias = [jornada]
     if jornada.fecha.weekday() >= 5:
         # El otro dia de ese mismo fin de semana, si tambien esta abierto
-        # y tambien esta vacio.
+        # y tambien esta vacio. Cancelado no se arrastra: ese se
+        # reactiva a proposito (seccion 101).
         paso = 1 if jornada.fecha.weekday() == 5 else -1
         vecino = (db.query(m.Jornada)
                   .filter_by(equipo_id=jornada.equipo_id,
                              fecha=jornada.fecha + timedelta(days=paso))
                   .first())
-        if vecino and vecino.fecha.weekday() >= 5 and not vecino.personal:
+        if (vecino and vecino.fecha.weekday() >= 5 and not vecino.personal
+                and vecino.estatus != m.EstatusJornada.CANCELADA):
             dias.append(vecino)
 
     for dia in dias:
@@ -413,12 +514,15 @@ def _cubrir(db: Session, contrato: m.ContratoImplantado, jornada: m.Jornada,
                                         vehiculo_id=contrato.vehiculo_id))
     db.commit()
 
+    # Lo que de verdad es adicional --el fin de semana-- se cobra aparte;
+    # un dia habil vuelto a cubrir es un dia base (seccion 101).
+    adicionales = [d for d in dias if d.es_dia_adicional]
     cubre = db.get(m.Persona, cubre_id)
     return {"jornada_id": jornada.id, "fecha": jornada.fecha.isoformat(),
-            "es_dia_adicional": True, "cubre": cubre.nombre,
+            "es_dia_adicional": jornada.es_dia_adicional, "cubre": cubre.nombre,
             "dias_cubiertos": [d.fecha.isoformat() for d in dias],
             "costo_extra": float(contrato.precio_dia_adicional or 0)
-                           * len(dias)}
+                           * len(adicionales)}
 
 
 def taller_de(db: Session, vehiculo_ids: list[int]) -> dict:
@@ -446,6 +550,45 @@ def _ya_empezo(jornada: m.Jornada) -> bool:
     """Un dia que ya arranco no se toca: eso es un servicio que se dio."""
     return bool(jornada.inicio_real) or jornada.estatus in (
         *m.ARRANCADAS, m.EstatusJornada.TERMINADA)
+
+
+# El implantado que ya no se arma (seccion 101): al cancelado --o cerrado
+# o terminado-- no se le cubren dias ni se le devuelven los cancelados.
+# Sus meses se consultan y se cierran; lo que haya que corregir se
+# resuelve en el cierre de cada mes. Es la misma regla que el eventual
+# gano en la seccion 98.
+YA_NO_SE_ARMA = (m.EstatusServicio.CANCELADO, m.EstatusServicio.CERRADO,
+                 m.EstatusServicio.TERMINADO)
+
+
+def _que_se_pueda_armar(servicio: m.Servicio) -> None:
+    if servicio.estatus in YA_NO_SE_ARMA:
+        raise HTTPException(409, {
+            "mensaje": f"El implantado ya está {servicio.estatus.value}: no "
+                       "se le cubren ni se le devuelven días",
+            "que_hacer": "Sus meses se consultan y se cierran desde su "
+                         "pantalla. Si el cliente lo vuelve a pedir, se da "
+                         "de alta otro implantado.",
+        })
+
+
+def _sin_cancelar(jornada: m.Jornada) -> None:
+    """Un dia cancelado no se cubre: primero se devuelve al servicio.
+
+    Cubrirlo contestaba 200, le ponia gente y lo dejaba cancelado: la
+    ficha decia "cubierto", el calendario "cancelado", el agente no lo
+    veia en su app y no se cobraba ni se pagaba (seccion 101). No se
+    revive solo porque un dia puede estar cancelado porque el cliente no
+    lo pidio: se reactiva a proposito, con su rastro, y despues se cubre.
+    """
+    if jornada.estatus == m.EstatusJornada.CANCELADA:
+        raise HTTPException(409, {
+            "mensaje": f"El día {jornada.fecha.isoformat()} está cancelado: "
+                       "no se cubre",
+            "que_hacer": "Primero reactívalo desde la ficha del día "
+                         "(«Reactivar el día») y después dile quién lo "
+                         "cubre.",
+        })
 
 
 def bajar_acuerdo_a_los_dias(db: Session, servicio: m.Servicio,
@@ -523,6 +666,7 @@ def dias_que_faltan(db: Session, servicio: m.Servicio,
 
 def reactivar_dia(db: Session, servicio: m.Servicio, fecha: date) -> dict:
     """Devuelve al servicio un dia que se habia cancelado."""
+    _que_se_pueda_armar(servicio)
     equipo = servicio.equipos[0] if servicio.equipos else None
     jornada = (db.query(m.Jornada)
                .filter_by(equipo_id=equipo.id, fecha=fecha).first()
@@ -650,7 +794,14 @@ def dia_del_servicio(db: Session, servicio: m.Servicio, fecha: date) -> dict:
 
     contratado = fecha.weekday() < hasta_donde(contrato.dias_servicio)
     empezado = not contrato.desde_dia or fecha.day >= contrato.desde_dia
-    if jornada and jornada.personal:
+    cancelado = bool(jornada and jornada.estatus == m.EstatusJornada.CANCELADA)
+    if cancelado:
+        # Se dice antes que "cubierto": el dia cancelado conserva a su
+        # gente por el rastro del dinero, y la ficha lo daba por
+        # cubierto mientras el calendario lo pintaba cancelado
+        # (seccion 101). Lo que se ofrece aqui es reactivarlo.
+        estado = "cancelado"
+    elif jornada and jornada.personal:
         estado = "cubierto"
     elif jornada or (contratado and empezado):
         estado = "por_cubrir"
@@ -687,6 +838,7 @@ def dia_del_servicio(db: Session, servicio: m.Servicio, fecha: date) -> dict:
     libres.sort(key=lambda x: (not x["del_equipo"], x["ocupado"], x["nombre"]))
 
     # Las posiciones del mes: a quien hay que reemplazar y con que unidad.
+    # En 12x36, una sola: la de quien le toca ese dia (seccion 101).
     posiciones = [{
         "persona_id": p.persona_id,
         "nombre": p.persona.nombre if p.persona else None,
@@ -694,7 +846,7 @@ def dia_del_servicio(db: Session, servicio: m.Servicio, fecha: date) -> dict:
         "rol": p.rol.nombre if p.rol else None,
         "vehiculo_id": p.vehiculo_id,
         "placa": p.vehiculo.placa if p.vehiculo else None,
-    } for p in contrato.plantilla]
+    } for p in posiciones_del_dia(db, contrato, fecha)]
 
     vecino = _vecino_del_fin(db, equipo.id if equipo else 0, fecha,
                              contrato.dias_servicio)
@@ -711,7 +863,12 @@ def dia_del_servicio(db: Session, servicio: m.Servicio, fecha: date) -> dict:
         "cubren": ([{"persona_id": a.persona_id,
                      "nombre": a.persona.nombre if a.persona else None}
                     for a in jornada.personal] if jornada else []),
-        "se_puede_cerrar": bool(jornada and not _ya_empezo(jornada)),
+        "se_puede_cerrar": bool(jornada and not cancelado
+                                and not _ya_empezo(jornada)),
+        # El cancelado se devuelve al servicio desde aqui, con su rastro;
+        # cubrirlo directo se rechaza (seccion 101).
+        "se_puede_reactivar": cancelado
+                              and servicio.estatus not in YA_NO_SE_ARMA,
         "candidatos": libres,
     }
 
@@ -731,8 +888,22 @@ def cubrir_dia(db: Session, servicio: m.Servicio, fecha: date,
     if not contrato:
         raise HTTPException(409, f"El mes {fecha.month:02d}/{fecha.year} "
                                  f"no esta abierto")
+    _que_se_pueda_armar(servicio)
     if not personal:
         raise HTTPException(409, "Hay que decir quien cubre el dia")
+    # En 12x36 el dia es de una sola persona: con las dos, las dos
+    # cobraban el dia y las dos entraban al corte (seccion 101). El
+    # relevo de quien no puede ir se hace con "Cambiar".
+    if (len(personal) > 1
+            and turno_del_servicio(db, servicio.id) == TURNO_12X36):
+        raise HTTPException(409, {
+            "mensaje": "Un día de 12 x 36 lo cubre una sola persona, y "
+                       f"vienen {len(personal)}",
+            "que_hacer": "Ese día es de quien le toca por la escala. Si no "
+                         "puede ir, el relevo se hace con «Cambiar», y si "
+                         "el cliente pide a alguien más, es un eventual "
+                         "aparte.",
+        })
     # Lo mismo que el dia adicional: despues de T0 un dia nuevo deshace
     # el termino del mes, y con el visto bueno dado ya no entra.
     from app import cierre_mes
@@ -748,12 +919,22 @@ def cubrir_dia(db: Session, servicio: m.Servicio, fecha: date,
         if vecino:
             dias.append(vecino)
 
+    # Con que rol va cada quien: por la posicion que cubre (seccion 101).
+    roles = roles_por_posicion(contrato, personal,
+                               posiciones_del_dia(db, contrato, fecha))
+
     tocados = []
     for dia in sorted(dias):
         jornada = (db.query(m.Jornada)
                    .filter_by(equipo_id=equipo.id, fecha=dia).first())
         if jornada and _ya_empezo(jornada):
             raise HTTPException(409, f"El dia {dia.isoformat()} ya empezo")
+        if jornada and jornada.estatus == m.EstatusJornada.CANCELADA:
+            # El dia pedido se rechaza con su porque; el otro dia del fin
+            # que este cancelado no se arrastra: se reactiva a proposito.
+            if dia == fecha:
+                _sin_cancelar(jornada)
+            continue
 
         if not jornada:
             inicio, fin = _ventana(contrato, dia)
@@ -774,15 +955,13 @@ def cubrir_dia(db: Session, servicio: m.Servicio, fecha: date,
             db.delete(asignacion)
         db.flush()
 
-        for fila in personal:
+        for fila, rol_id in zip(personal, roles):
             persona_id = fila["persona_id"]
             if not db.get(m.Persona, persona_id):
                 raise HTTPException(404, f"No existe la persona {persona_id}")
             db.add(m.AsignacionPersonal(
                 jornada_id=jornada.id, persona_id=persona_id,
-                rol_id=(fila.get("rol_id")
-                        or rol_del_contrato(contrato, persona_id)),
-                vehiculo_id=fila.get("vehiculo_id")))
+                rol_id=rol_id, vehiculo_id=fila.get("vehiculo_id")))
         for vehiculo_id in {f.get("vehiculo_id") for f in personal if f.get("vehiculo_id")}:
             db.add(m.AsignacionVehiculo(jornada_id=jornada.id,
                                         vehiculo_id=vehiculo_id))
@@ -1244,7 +1423,9 @@ def _aviso_del_dinero(viaticos: dict | None, sale: str, entra: str) -> str | Non
         partes.append(f"Se cancelaron {len(viaticos['cancelados'])} viatico(s) "
                       f"de {sale} que todavia no se transferian.")
     if viaticos.get("propuestos"):
-        total = sum(v["monto"] for v in viaticos["propuestos"])
+        # El motor manda el monto como cadena, en Decimal (seccion 101).
+        total = sum((Decimal(str(v["monto"])) for v in viaticos["propuestos"]),
+                    Decimal("0"))
         partes.append(f"A {entra} le tocarian ${total:,.2f} por tabulador: "
                       f"hay que solicitarlos.")
     return " ".join(partes) or None
@@ -1263,8 +1444,55 @@ def _aviso_del_dinero(viaticos: dict | None, sale: str, entra: str) -> str | Non
 ROL_CONDUCTOR = "conductor_seguridad"
 
 
+def _ciudad(db: Session, plaza_id: int | None) -> str:
+    plaza = db.get(m.Plaza, plaza_id) if plaza_id else None
+    return plaza.nombre if plaza else "otra ciudad"
+
+
+def por_que_no_va(db: Session, persona: m.Persona,
+                  plaza_id: int | None) -> str | None:
+    """Por que esa persona ya no puede ir a la plantilla, o None.
+
+    Lo mismo que filtra la consola al armar el mes (seccion 74 y la
+    ciudad del servicio), dicho tambien del lado del servidor y cada vez
+    que un mes se abre: alguien dado de baja en Odoo, de oficina o de
+    otra ciudad no se pone en veintidos dias sin que nadie lo vea
+    (seccion 101).
+    """
+    if not persona.activo:
+        return f"{persona.nombre} ya no está activo"
+    if persona.oficina:
+        return f"{persona.nombre} es personal de oficina: no va a la calle"
+    if plaza_id and persona.plaza_id != plaza_id:
+        return (f"{persona.nombre} es de {_ciudad(db, persona.plaza_id)}, no "
+                f"de {_ciudad(db, plaza_id)}")
+    return None
+
+
+def por_que_no_sale(db: Session, unidad: m.Vehiculo, plaza_id: int | None,
+                    bloqueos, dia: date | None) -> str | None:
+    """Por que esa unidad no puede salir ese dia, o None: de baja, de
+    renta, de otra ciudad o en el taller (seccion 101)."""
+    if not unidad.activo:
+        return f"La unidad {unidad.placa} está dada de baja"
+    if unidad.rentado:
+        return f"La unidad {unidad.placa} es de renta: no es de la flota fija"
+    if plaza_id and unidad.plaza_id != plaza_id:
+        return (f"La unidad {unidad.placa} es de {_ciudad(db, unidad.plaza_id)}, "
+                f"no de {_ciudad(db, plaza_id)}")
+    if dia and en_taller(bloqueos, dia):
+        fila = next(b for b in bloqueos if b.cubre(dia))
+        hasta = (f"hasta el {fila.hasta.isoformat()}" if fila.hasta
+                 else "sin fecha de salida")
+        return (f"La unidad {unidad.placa} está en el taller desde el "
+                f"{fila.desde.isoformat()}, {hasta}")
+    return None
+
+
 def validar_plantilla(db: Session, personal: list, unidades: list,
-                      turno: str = TURNO_NATURAL) -> None:
+                      turno: str = TURNO_NATURAL,
+                      plaza_id: int | None = None,
+                      primer_dia: date | None = None) -> None:
     """Cada quien con su rol, y toda unidad con alguien a bordo.
 
     Ya no se pregunta que es cada persona: el personal de seguridad es
@@ -1272,8 +1500,14 @@ def validar_plantilla(db: Session, personal: list, unidades: list,
     lo diga, porque de ese rol salen el precio al cliente y la comision
     que se le paga, y sin el la jornada no se puede cobrar ni pagar.
 
-    `personal` son ternas (persona_id, vehiculo_id, rol_id) y `unidades`
-    los ids de las unidades del mes.
+    Y que puedan ir (seccion 101): gente activa, de seguridad y de la
+    ciudad del servicio; unidades de la flota fija de esa ciudad que no
+    esten en el taller el primer dia del mes. La consola ya lo filtraba;
+    el servidor aceptaba por la API a un monitorista de oficina o una
+    unidad de Guadalajara en un implantado de la capital.
+
+    `personal` son cuaternas (persona_id, vehiculo_id, rol_id, empieza) y
+    `unidades` los ids de las unidades del mes.
     """
     if not personal:
         raise HTTPException(409, "El implantado necesita por lo menos una "
@@ -1287,6 +1521,13 @@ def validar_plantilla(db: Session, personal: list, unidades: list,
         persona = db.get(m.Persona, persona_id)
         if not persona:
             raise HTTPException(404, f"No existe la persona {persona_id}")
+        motivo = por_que_no_va(db, persona, plaza_id)
+        if motivo:
+            raise HTTPException(409, {
+                "mensaje": motivo,
+                "que_hacer": "La plantilla del mes se arma con personal de "
+                             "seguridad activo de la ciudad del servicio.",
+            })
         if not rol_id:
             raise HTTPException(409, {
                 "mensaje": f"Falta decir con que rol va {persona.nombre}",
@@ -1298,10 +1539,20 @@ def validar_plantilla(db: Session, personal: list, unidades: list,
             raise HTTPException(404, f"No existe el rol {rol_id}")
         gente[persona_id] = (persona, vehiculo_id, rol_id)
 
+    bloqueos = taller_de(db, list(unidades))
     for vehiculo_id in unidades:
         unidad = db.get(m.Vehiculo, vehiculo_id)
         if not unidad:
             raise HTTPException(404, f"No existe la unidad {vehiculo_id}")
+        motivo = por_que_no_sale(db, unidad, plaza_id,
+                                 bloqueos.get(vehiculo_id), primer_dia)
+        if motivo:
+            raise HTTPException(409, {
+                "mensaje": motivo,
+                "que_hacer": "La unidad del mes es una de la flota fija de "
+                             "la ciudad del servicio, disponible desde el "
+                             "primer día.",
+            })
         if not [p for p, v, _ in gente.values() if v == vehiculo_id]:
             raise HTTPException(409, {
                 "mensaje": f"La unidad {unidad.placa} no tiene a nadie "
@@ -1365,8 +1616,12 @@ def guardar_plantilla(db: Session, contrato: m.ContratoImplantado,
 
     `personal` son cuaternas (persona_id, vehiculo_id, rol_id, empieza).
     """
-    validar_plantilla(db, personal, unidades,
-                      turno_del_servicio(db, contrato.servicio_id))
+    turno = turno_del_servicio(db, contrato.servicio_id)
+    dias = dias_del_mes(contrato.anio, contrato.mes, contrato.dias_servicio,
+                        contrato.desde_dia, turno)
+    validar_plantilla(db, personal, unidades, turno,
+                      plaza_id=contrato.servicio.plaza_id,
+                      primer_dia=dias[0] if dias else None)
 
     for fila in list(contrato.plantilla):
         db.delete(fila)
@@ -1393,6 +1648,11 @@ def guardar_plantilla(db: Session, contrato: m.ContratoImplantado,
     contrato.titular_id = conduce or (personal[0][0] if personal else None)
     contrato.vehiculo_id = unidades[0] if unidades else None
     db.flush()
+    # La plantilla se guardo fila por fila: la que el contrato tenga en
+    # memoria sigue siendo la de antes, y rehacer los dias con ella les
+    # ponia la plantilla vieja --la unidad que se acababa de quitar
+    # (seccion 101)--.
+    db.expire(contrato, ["plantilla", "unidades"])
 
 
 def pareja_del_turno(contrato: m.ContratoImplantado) -> list:
@@ -1440,59 +1700,192 @@ def de_quien_es(pareja: list, arranque: int, inicio: date, dia: date):
     return pareja[(arranque + (dia - inicio).days) % 2]
 
 
+def plantilla_fuera(db: Session, contrato: m.ContratoImplantado,
+                    dias: list) -> dict:
+    """Lo que de la plantilla del mes ya no puede ir a sus dias.
+
+    {"personas": {persona_id: motivo}, "unidades": {vehiculo_id: {"motivo",
+    "dias"}}}; `dias` es None cuando la unidad no sale ningun dia (de
+    baja, de renta, de otra ciudad) y el conjunto de fechas cuando esta
+    en el taller solo parte del mes.
+
+    Es la revalidacion al abrir cada mes (seccion 101): la plantilla que
+    fue buena en septiembre puede traer en octubre al conductor que Odoo
+    dio de baja el 12 o la unidad que entro al taller sin fecha. El mes
+    se abre igual --el reloj no se detiene por eso-- pero esa posicion
+    no se pone en los dias: el dia queda por cubrir, con su alerta, y
+    el consultor la resuelve.
+    """
+    plaza_id = contrato.servicio.plaza_id
+    personas = {}
+    # Los contratos de antes de la plantilla operan con su titular.
+    gente = ([f.persona for f in contrato.plantilla] if contrato.plantilla
+             else [contrato.titular])
+    for persona in gente:
+        if persona is None:
+            continue
+        motivo = por_que_no_va(db, persona, plaza_id)
+        if motivo:
+            personas[persona.id] = motivo
+    ids = ({f.vehiculo_id for f in contrato.unidades}
+           | {f.vehiculo_id for f in contrato.plantilla if f.vehiculo_id})
+    if contrato.vehiculo_id:
+        ids.add(contrato.vehiculo_id)
+    bloqueos = taller_de(db, list(ids))
+    unidades = {}
+    for vehiculo_id in ids:
+        unidad = db.get(m.Vehiculo, vehiculo_id)
+        if unidad is None:
+            continue
+        motivo = por_que_no_sale(db, unidad, plaza_id, None, None)
+        if motivo:
+            unidades[vehiculo_id] = {"motivo": motivo, "dias": None}
+            continue
+        en = {d for d in dias if en_taller(bloqueos.get(vehiculo_id), d)}
+        if en:
+            unidades[vehiculo_id] = {
+                "motivo": por_que_no_sale(db, unidad, plaza_id,
+                                          bloqueos.get(vehiculo_id), min(en)),
+                "dias": en}
+    return {"personas": personas, "unidades": unidades}
+
+
+def _unidad_fuera(fuera: dict | None, vehiculo_id: int | None,
+                  dia: date) -> str | None:
+    """Por que esa unidad no sale ese dia, segun `plantilla_fuera`."""
+    if not fuera or not vehiculo_id:
+        return None
+    suya = fuera["unidades"].get(vehiculo_id)
+    if not suya:
+        return None
+    if suya["dias"] is None or dia in suya["dias"]:
+        return suya["motivo"]
+    return None
+
+
+def _avisar_lo_que_falta(db: Session, jornada: m.Jornada,
+                         faltas: list) -> None:
+    """Una alerta por cada posicion que no se pudo poner en el dia, como
+    la que deja la baja de Odoo (secciones 51 y 52): la central la ve y
+    la revision del mes la cuenta. La misma no se repite."""
+    for tipo, persona_id, vehiculo_id, motivo in faltas:
+        mensaje = (f"{motivo}: el día quedó sin esa posición, hay que "
+                   "cubrirla.")[:400]
+        repetida = (db.query(m.Alerta)
+                    .filter_by(jornada_id=jornada.id, tipo=tipo,
+                               mensaje=mensaje, atendida=False).first())
+        if repetida:
+            continue
+        db.add(m.Alerta(jornada_id=jornada.id, tipo=tipo,
+                        persona_id=persona_id, vehiculo_id=vehiculo_id,
+                        mensaje=mensaje))
+
+
 def _asignar_turno(db: Session, jornada: m.Jornada,
-                   contrato: m.ContratoImplantado, fila) -> None:
+                   contrato: m.ContratoImplantado, fila,
+                   fuera: dict | None = None) -> list:
     """El dia de una sola persona, con la unidad del mes.
 
     La unidad no rota: es una sola por turno --es regla-- y corre el mes
-    entero. Lo que rota es quien la maneja.
+    entero. Lo que rota es quien la maneja. Devuelve lo que no se pudo
+    poner (seccion 101).
     """
+    faltas = []
     unidad = (contrato.unidades[0].vehiculo_id if contrato.unidades
               else contrato.vehiculo_id)
+    motivo_unidad = _unidad_fuera(fuera, unidad, jornada.fecha)
+    if motivo_unidad:
+        faltas.append((m.TipoAlerta.VEHICULO_SIN_ASIGNAR, None, unidad,
+                       motivo_unidad))
+        unidad = None
     if fila:
-        db.add(m.AsignacionPersonal(jornada_id=jornada.id,
-                                    persona_id=fila.persona_id,
-                                    rol_id=fila.rol_id,
-                                    vehiculo_id=fila.vehiculo_id or unidad))
+        motivo = (fuera or {}).get("personas", {}).get(fila.persona_id)
+        if motivo:
+            faltas.append((m.TipoAlerta.PERSONAL_DE_BAJA, fila.persona_id,
+                           None, motivo))
+        else:
+            db.add(m.AsignacionPersonal(
+                jornada_id=jornada.id, persona_id=fila.persona_id,
+                rol_id=fila.rol_id,
+                vehiculo_id=(None if motivo_unidad
+                             else fila.vehiculo_id or unidad)))
     if unidad:
         db.add(m.AsignacionVehiculo(jornada_id=jornada.id,
                                     vehiculo_id=unidad))
+    return faltas
 
 
 def _asignar_del_contrato(db: Session, jornada: m.Jornada,
-                          contrato: m.ContratoImplantado) -> None:
+                          contrato: m.ContratoImplantado,
+                          fuera: dict | None = None) -> list:
     """Le pone al dia la plantilla completa del mes.
 
     Con el abordo puesto: quien maneja que unidad ya se decidio una vez
     al armar el mes, y repetirlo dia por dia era la parte del trabajo que
-    de verdad sobraba.
+    de verdad sobraba. Lo que ya no puede ir --`fuera`-- no se pone, y se
+    devuelve para avisarlo (seccion 101).
     """
+    faltas = []
+    personas_fuera = (fuera or {}).get("personas", {})
     if contrato.plantilla:
         for fila in contrato.plantilla:
-            db.add(m.AsignacionPersonal(jornada_id=jornada.id,
-                                        persona_id=fila.persona_id,
-                                        rol_id=fila.rol_id,
-                                        vehiculo_id=fila.vehiculo_id))
+            motivo = personas_fuera.get(fila.persona_id)
+            if motivo:
+                faltas.append((m.TipoAlerta.PERSONAL_DE_BAJA,
+                               fila.persona_id, None, motivo))
+                continue
+            db.add(m.AsignacionPersonal(
+                jornada_id=jornada.id, persona_id=fila.persona_id,
+                rol_id=fila.rol_id,
+                vehiculo_id=(None if _unidad_fuera(fuera, fila.vehiculo_id,
+                                                   jornada.fecha)
+                             else fila.vehiculo_id)))
         for fila in contrato.unidades:
+            motivo = _unidad_fuera(fuera, fila.vehiculo_id, jornada.fecha)
+            if motivo:
+                faltas.append((m.TipoAlerta.VEHICULO_SIN_ASIGNAR, None,
+                               fila.vehiculo_id, motivo))
+                continue
             db.add(m.AsignacionVehiculo(jornada_id=jornada.id,
                                         vehiculo_id=fila.vehiculo_id))
-        return
+        return faltas
 
     # Contratos de antes de la plantilla: siguen operando con su titular.
     if contrato.titular_id:
-        db.add(m.AsignacionPersonal(jornada_id=jornada.id,
-                                    persona_id=contrato.titular_id))
+        motivo = personas_fuera.get(contrato.titular_id)
+        if motivo:
+            faltas.append((m.TipoAlerta.PERSONAL_DE_BAJA, contrato.titular_id,
+                           None, motivo))
+        else:
+            db.add(m.AsignacionPersonal(jornada_id=jornada.id,
+                                        persona_id=contrato.titular_id))
     if contrato.vehiculo_id:
-        db.add(m.AsignacionVehiculo(jornada_id=jornada.id,
-                                    vehiculo_id=contrato.vehiculo_id))
+        motivo = _unidad_fuera(fuera, contrato.vehiculo_id, jornada.fecha)
+        if motivo:
+            faltas.append((m.TipoAlerta.VEHICULO_SIN_ASIGNAR, None,
+                           contrato.vehiculo_id, motivo))
+        else:
+            db.add(m.AsignacionVehiculo(jornada_id=jornada.id,
+                                        vehiculo_id=contrato.vehiculo_id))
+    return faltas
 
 
-def rehacer_dias(db: Session, contrato: m.ContratoImplantado) -> int:
+def rehacer_dias(db: Session, contrato: m.ContratoImplantado,
+                 plantilla_anterior: set | None = None) -> int:
     """Vuelve a poner la plantilla en los dias que todavia no pasaron.
 
     Lo ya operado no se toca: si alguien cubrio el martes, ese martes se
     queda como quedo. Reescribirlo seria borrar lo que de verdad paso, y
     de ahi salen la nomina y la comprobacion de viaticos.
+
+    Solo los dias que `generar_mes` habria llenado con la plantilla: en
+    natural, los de entre semana. El fin de semana nace vacio --quien
+    trabajo de lunes a viernes descansa-- o lo cubrio alguien a mano
+    desde la ficha, y rehacerlo le ponia la plantilla fija a todos los
+    sabados y borraba al relevo (seccion 101). Tampoco se pisa un dia
+    entre semana donde ya va alguien que no era de la plantilla
+    anterior: eso lo decidio el consultor. `plantilla_anterior` son las
+    personas de la plantilla que se acaba de reemplazar.
     """
     equipo = (contrato.servicio.equipos[0]
               if contrato.servicio.equipos else None)
@@ -1517,6 +1910,9 @@ def rehacer_dias(db: Session, contrato: m.ContratoImplantado) -> int:
     inicio = dias[0] if dias else primero
     arranque = (arranque_del_mes(db, contrato, pareja, inicio)
                 if es_12x36 else 0)
+    fuera = plantilla_fuera(db, contrato, dias)
+    anterior = (set(plantilla_anterior) if plantilla_anterior is not None
+                else None)
 
     rehechos = 0
     for jornada in equipo.jornadas:
@@ -1533,6 +1929,15 @@ def rehacer_dias(db: Session, contrato: m.ContratoImplantado) -> int:
         # Un dia con cambio ya fue decidido a mano: no se pisa.
         if any(a.reemplaza_a_id for a in jornada.personal):
             continue
+        if not es_12x36:
+            # El fin de semana no es de la plantilla fija (seccion 101).
+            if jornada.fecha.weekday() >= 5:
+                continue
+            # Ni el dia donde ya va alguien que no era de la plantilla
+            # que se reemplaza: un relevo puesto a mano.
+            if anterior is not None and any(a.persona_id not in anterior
+                                            for a in jornada.personal):
+                continue
 
         for a in list(jornada.personal):
             db.delete(a)
@@ -1541,10 +1946,12 @@ def rehacer_dias(db: Session, contrato: m.ContratoImplantado) -> int:
         db.flush()
         jornada.estatus = m.EstatusJornada.PLANEADA
         if es_12x36:
-            _asignar_turno(db, jornada, contrato,
-                           de_quien_es(pareja, arranque, inicio, jornada.fecha))
+            faltas = _asignar_turno(
+                db, jornada, contrato,
+                de_quien_es(pareja, arranque, inicio, jornada.fecha), fuera)
         else:
-            _asignar_del_contrato(db, jornada, contrato)
+            faltas = _asignar_del_contrato(db, jornada, contrato, fuera)
+        _avisar_lo_que_falta(db, jornada, faltas)
         rehechos += 1
 
     db.flush()
@@ -1590,16 +1997,24 @@ def estado_del_siguiente(db: Session, servicio: m.Servicio,
     razon*: un boton que no hace nada y no dice por que fue el problema
     que ya vimos con el primer mes.
     """
-    return estado_desde(ultimo_mes(db, servicio.id), servicio, hoy)
+    return estado_desde(ultimo_mes(db, servicio.id), servicio,
+                        hoy or hoy_del_servicio(db, servicio))
 
 
-def estado_desde(ultimo, servicio: m.Servicio, hoy: date | None = None) -> dict:
-    """Lo mismo, con el contrato ya en la mano.
+def hoy_del_servicio(db: Session, servicio: m.Servicio) -> date:
+    """Que dia es en el pais del servicio, nunca el del servidor: cerca
+    de la medianoche, con tres horas de diferencia con Brasil, el boton
+    del mes siguiente hablaba del dia equivocado (seccion 101)."""
+    return reloj.hoy_en(db.get(m.Pais, servicio.pais_id)
+                        if servicio.pais_id else None)
+
+
+def estado_desde(ultimo, servicio: m.Servicio, hoy: date) -> dict:
+    """Lo mismo, con el contrato ya en la mano y el hoy de su pais.
 
     La cartera ya trajo los meses de cada servicio; volver a preguntarlos
     uno por uno seria una consulta por renglon de la pantalla.
     """
-    hoy = hoy or date.today()
     if not ultimo:
         return {"se_puede": False, "periodo": None, "anio": None, "mes": None,
                 "razon": "Este implantado todavia no tiene ningun mes abierto."}
@@ -1629,7 +2044,12 @@ def estado_desde(ultimo, servicio: m.Servicio, hoy: date | None = None) -> dict:
 
 def abrir_siguiente(db: Session, servicio: m.Servicio,
                     hoy: date | None = None) -> dict:
-    """Abre el mes que sigue con los terminos y la plantilla vigentes."""
+    """Abre el mes que sigue con los terminos y la plantilla vigentes.
+
+    La plantilla se copia entera --son las posiciones del contrato-- y
+    al generar los dias se revisa quien de ella puede ir todavia
+    (seccion 101): lo que no, queda por cubrir y se dice en la respuesta.
+    """
     estado = estado_del_siguiente(db, servicio, hoy)
     if not estado["se_puede"]:
         raise HTTPException(409, {"mensaje": "No se puede abrir el mes que sigue",
@@ -1704,12 +2124,26 @@ def abrir_siguiente(db: Session, servicio: m.Servicio,
             "unidades": len(anterior.unidades), **generado}
 
 
+def atrasado(db: Session, servicio: m.Servicio, cuando: date) -> bool:
+    """Si al servicio le falta el mes en que ya esta: su ultimo contrato
+    es de un mes anterior al de hoy."""
+    ultimo = ultimo_mes(db, servicio.id)
+    return bool(ultimo) and (ultimo.anio, ultimo.mes) < (cuando.year,
+                                                          cuando.month)
+
+
 def por_abrir(db: Session, hoy: date | None = None) -> list:
     """Los implantados vivos a los que se les acaba el mes.
 
     Se miran faltando DIAS_ANTES o menos para que termine el mes en curso:
     antes de eso no hay prisa, y despues el consultor llega un dia 1 sin
     calendario.
+
+    Y los que se quedaron atras (seccion 101): si el reloj no corrio la
+    ultima semana --el worker caido del 24 al 30--, el dia 1 el mes en
+    curso no existe, y con la regla de la ventana nadie lo abria hasta
+    el 24 del mes siguiente. Un implantado vivo sin el mes de hoy le
+    toca en la primera vuelta que corra.
     """
     # El proceso corre a una hora fija de Mexico, pero el mes se acaba
     # en cada pais a su hora. Se mira el calendario de cada servicio.
@@ -1718,13 +2152,12 @@ def por_abrir(db: Session, hoy: date | None = None) -> list:
     def le_toca(servicio) -> bool:
         cuando = hoy or relojes.hoy(servicio.pais_id)
         ultimo_dia = calendar.monthrange(cuando.year, cuando.month)[1]
-        return ultimo_dia - cuando.day <= DIAS_ANTES
+        return (ultimo_dia - cuando.day <= DIAS_ANTES
+                or atrasado(db, servicio, cuando))
 
     vivos = (db.query(m.Servicio)
              .filter(m.Servicio.tipo == m.TipoServicio.IMPLANTADO,
-                     m.Servicio.estatus.notin_([m.EstatusServicio.CANCELADO,
-                                                m.EstatusServicio.CERRADO,
-                                                m.EstatusServicio.TERMINADO]))
+                     m.Servicio.estatus.notin_(list(YA_NO_SE_ARMA)))
              .all())
     return [s for s in vivos
             if le_toca(s)
@@ -1733,13 +2166,27 @@ def por_abrir(db: Session, hoy: date | None = None) -> list:
 
 
 def abrir_los_que_toquen(db: Session, hoy: date | None = None) -> dict:
-    """El proceso de todas las mananas. No revienta por uno malo."""
+    """El proceso de todas las mananas. No revienta por uno malo.
+
+    Al que se quedo atras le abre, en la misma vuelta, lo que le falte
+    hasta el mes en curso (seccion 101): un mes por vuelta lo dejaba
+    dias sin calendario.
+    """
     hechos, fallados = [], []
+    relojes = reloj.Relojes(db)
     for servicio in por_abrir(db, hoy):
+        cuando = hoy or relojes.hoy(servicio.pais_id)
         try:
-            abierto = abrir_siguiente(db, servicio, hoy)
-            hechos.append({"servicio_id": servicio.id, "folio": servicio.folio,
-                           "periodo": abierto["periodo"]})
+            for _vuelta in range(12):
+                abierto = abrir_siguiente(db, servicio, cuando)
+                hechos.append({"servicio_id": servicio.id,
+                               "folio": servicio.folio,
+                               "periodo": abierto["periodo"],
+                               "plantilla_fuera":
+                                   abierto.get("plantilla_fuera") or []})
+                _avisar_plantilla_fuera(db, servicio, abierto)
+                if not atrasado(db, servicio, cuando):
+                    break
         except HTTPException as error:
             db.rollback()
             fallados.append({"servicio_id": servicio.id,
@@ -1758,22 +2205,60 @@ def abrir_los_que_toquen(db: Session, hoy: date | None = None) -> dict:
     return {"abiertos": hechos, "fallados": fallados}
 
 
+def _avisar_plantilla_fuera(db: Session, servicio: m.Servicio,
+                            abierto: dict) -> None:
+    """El mes que el reloj abrio con alguien de la plantilla que ya no
+    puede ir se le dice a su consultor al telefono (seccion 101), como
+    la baja de Odoo: los dias quedaron por cubrir y nadie los esta
+    mirando a las seis de la manana. Un aviso que no sale no deshace el
+    mes: las alertas de la central ya quedaron."""
+    fuera = abierto.get("plantilla_fuera") or []
+    if not fuera or not servicio.consultor_id:
+        return
+    from app import push
+    try:
+        push.avisar(
+            db, servicio.consultor_id,
+            titulo=f"{servicio.folio}: el mes {abierto['periodo']} se abrió "
+                   "con posiciones por cubrir",
+            cuerpo="; ".join(fuera)[:300],
+            url=f"/consola/#/implantado/{servicio.id}",
+            etiqueta=f"plantilla-fuera-{servicio.id}-{abierto['periodo']}")
+    except Exception:                                 # noqa: BLE001
+        registro.exception("no se pudo avisar la plantilla fuera de %s",
+                           servicio.folio)
+
+
+def dias_abiertos_sin_nadie(equipo: m.Equipo | None) -> set:
+    """Los dias que existen, no estan cancelados y no tienen a nadie: el
+    fin de semana que nadie cubrio y, desde la seccion 101, el dia de
+    entre semana que se abrio sin la posicion que ya no podia ir. Se
+    pintan en ambar aunque el contrato diga que ahi va la plantilla."""
+    if not equipo:
+        return set()
+    return {j.fecha.isoformat() for j in equipo.jornadas
+            if j.estatus != m.EstatusJornada.CANCELADA and not j.personal}
+
+
 def dias_en_ambar(db: Session, servicio: m.Servicio,
                   desde: date | None = None) -> list[str]:
     """Los dias contratados que todavia no tienen quien los cubra.
 
-    Siempre son fines de semana: entre semana va la plantilla fija. Se
-    miran de hoy en adelante —lo que ya paso no se puede cubrir— y en
-    todos los meses abiertos, porque la hoja que se libera habla del
-    servicio, no de un mes.
+    Casi siempre son fines de semana: entre semana va la plantilla fija,
+    salvo el dia que se abrio sin alguien que ya no podia ir (seccion
+    101). Se miran de hoy en adelante —lo que ya paso no se puede
+    cubrir— y en todos los meses abiertos, porque la hoja que se libera
+    habla del servicio, no de un mes. `desde` es el hoy del pais del
+    servicio, salvo que quien llama traiga otro (el reloj de prueba).
     """
-    desde = desde or date.today()
+    desde = desde or hoy_del_servicio(db, servicio)
     equipo = servicio.equipos[0] if servicio.equipos else None
     cubiertos = {}
     if equipo:
         for jornada in equipo.jornadas:
             if jornada.personal:
                 cubiertos[jornada.fecha.isoformat()] = True
+    vacios = dias_abiertos_sin_nadie(equipo)
 
     ambar = []
     for contrato in (db.query(m.ContratoImplantado)
@@ -1784,7 +2269,8 @@ def dias_en_ambar(db: Session, servicio: m.Servicio,
             continue
         for dia in calendario_del_mes(contrato.anio, contrato.mes,
                                       contrato.dias_servicio,
-                                      contrato.desde_dia, cubiertos):
+                                      contrato.desde_dia, cubiertos,
+                                      vacios=vacios):
             if dia["estado"] == "por_cubrir" and dia["fecha"] >= desde.isoformat():
                 ambar.append(dia["fecha"])
     return ambar

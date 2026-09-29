@@ -466,6 +466,7 @@ const ASUNTOS = {
   "Precios distintos a los de la lista": "cie_pl_asunto",
   "La lista no tiene todo": "cie_li_asunto",
   "Sin tipo de cambio": "cie_asu_sin_tc",
+  "Sin precio en la lista": "cie_asu_sin_precio",
 };
 
 /* Como se llama cada precio de los terminos del implantado, para decir
@@ -641,6 +642,18 @@ function paraRevisar(o) {
       return { asunto: t("cie_li_asunto"),
                mensaje: reemplazar(t("cie_li_mensaje"), d),
                accion: t("cie_li_accion") };
+    /* Alguien fue sin rol, o con un rol o una unidad que la lista del
+       cliente no cotiza (seccion 101): antes la revision reventaba con
+       un 400 y aqui se pintaba el texto crudo, sin que hacer. */
+    case "sin_rol":
+      return { asunto: t("cie_asu_sin_precio"),
+               mensaje: t("cie_sin_rol_mensaje"),
+               accion: t("cie_sin_rol_accion") };
+    case "sin_precio":
+      return { asunto: t("cie_asu_sin_precio"),
+               mensaje: reemplazar(t("cie_sin_precio_mensaje"),
+                                   { q: d.que, m: d.modalidad }),
+               accion: t("cie_sin_precio_accion") };
     default:
       return { asunto: asunto(o.asunto), mensaje: o.mensaje || "" };
   }
@@ -1005,6 +1018,12 @@ export function tarjetaCierre(op) {
       return;
     }
     const nodos = (await cuerpo(c, op, pintar)).filter(Boolean);
+    /* Las encuestas al cliente, al pie de la tarjeta del eventual
+       (seccion 101): el mes del implantado no las lleva. */
+    if (op.encuestas && tiene(sesion.usuario, "encuestas.ver")) {
+      const encuestas = await bloqueEncuestas(op.encuestas);
+      if (encuestas) nodos.push(encuestas);
+    }
     caja.replaceChildren(conAyuda("h3", op.titulo, op.ayuda), ...nodos);
   };
   caja.append(conAyuda("h3", op.titulo, op.ayuda),
@@ -1157,4 +1176,89 @@ async function cuerpo(c, op, recargar) {
     h("p", { clase: "gris chico", style: "margin:0" },
       [factura, lineaComision].filter(Boolean).join(" · ")));
   return nodos;
+}
+
+/* ------------------------------------------------------------ las encuestas al cliente
+
+   Las dos encuestas del servicio, al pie de la tarjeta (seccion 101):
+   la que salio con su estatus, y la que no nacio --sin correo del
+   principal al terminar, que es frecuente-- diciendo por que. Antes
+   ninguna pantalla las ensenaba ni las mandaba: el correo se capturaba
+   despues con «Corregir los contactos» y la encuesta no salia. Quien
+   puede mandar encuestas manda la que falta o reenvia el correo de la
+   que sigue viva; el reenvio queda en la bitacora del servicio. */
+async function bloqueEncuestas(ruta) {
+  let filas;
+  try {
+    filas = await api.get(ruta);
+  } catch {
+    return null;
+  }
+  if (!filas || !filas.length) return null;
+  const zona = h("div", { style: "margin-top:14px" });
+  const puedeMandar = tiene(sesion.usuario, "encuestas.enviar");
+  const repintar = async () => {
+    const nuevo = await bloqueEncuestas(ruta);
+    if (nuevo) zona.replaceWith(nuevo);
+  };
+  zona.append(
+    h("h4", { clase: "seccion" }, t("cie_enc_titulo")),
+    ...filas.map(e => renglonEncuesta(e, puedeMandar, repintar)),
+    h("p", { clase: "chico gris", style: "margin:6px 0 0" }, t("cie_enc_pie")));
+  return zona;
+}
+
+function estadoEncuesta(e) {
+  if (e.estatus === "respondida") {
+    return reemplazar(t("cie_enc_respondida"), { n: e.calificacion ?? "" });
+  }
+  if (e.estatus === "expirada") return t("cie_enc_vencida");
+  if (e.estatus === "enviada") {
+    return reemplazar(t("cie_enc_enviada"), { f: fecha(e.expira_en) });
+  }
+  return e.motivo === "sin_correo" ? t("cie_enc_sin_correo")
+                                   : t("cie_enc_sin_enviar");
+}
+
+function renglonEncuesta(e, puedeMandar, repintar) {
+  const detalle = h("div", { clase: "chico" });
+  let boton = null;
+  if (puedeMandar && e.estatus === "sin_enviar" && e.correo) {
+    boton = h("button", { clase: "claro chico", type: "button",
+      onclick: async (ev) => {
+        ev.target.disabled = true;
+        try {
+          await api.post(`/encuestas/servicio/${e.servicio_id}/enviar`);
+          mensaje(t("cie_enc_mandada"));
+          await repintar();
+        } catch (err) {
+          mensaje(err.message, "grave");
+          ev.target.disabled = false;
+        }
+      } }, t("cie_enc_mandar"));
+  } else if (puedeMandar && e.estatus === "enviada") {
+    boton = h("button", { clase: "claro chico", type: "button",
+      onclick: async (ev) => {
+        ev.target.disabled = true;
+        try {
+          const r = await api.post(`/encuestas/${e.id}/reenviar`);
+          mensaje(reemplazar(t("cie_enc_reenviada"), { c: r.para || "" }));
+          /* El enlace, por si hay que mandarlo por otro camino: ya
+             quedo en la bitacora con el reenvio. */
+          detalle.replaceChildren(
+            h("span", { clase: "gris" }, t("cie_enc_enlace")), " ",
+            h("code", {}, `${location.origin}${r.enlace}`));
+        } catch (err) {
+          mensaje(err.message, "grave");
+        }
+        ev.target.disabled = false;
+      } }, t("cie_enc_reenviar"));
+  }
+  return h("div", { style: "margin:6px 0" },
+    h("div", { style: "display:flex;gap:10px;align-items:center;flex-wrap:wrap" },
+      h("b", {}, t(`enc_tipo_${e.tipo}`)),
+      h("span", { clase: "chico gris" }, e.para || ""),
+      h("span", { clase: "chico" }, estadoEncuesta(e)),
+      boton),
+    detalle);
 }

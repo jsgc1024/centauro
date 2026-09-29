@@ -1,5 +1,5 @@
 /* Consola de Centauro: entrada, navegacion y reparto por rol. */
-import { api, sesion } from "./api.js";
+import { ErrorApi, api, destinoPendiente, sesion } from "./api.js";
 import { cartera, nuevoServicio } from "./consultor.js";
 import { detener, tableroCentral } from "./central.js";
 import { bandejaFinanzas } from "./finanzas.js";
@@ -20,10 +20,11 @@ import { pantallaManual } from "./manual.js";
 import { botonReportar } from "./falla.js";
 import { pantallaCodigo } from "./codigo.js";
 import { pantallaEnlace, pantallaOlvide } from "./contrasena.js";
+import { nombreDelRol } from "./categorias.js";
 import { pantallaServicio } from "./servicio.js";
 import { aviso, campo, entrada, h, lista, mensaje, vaciar,
          vigilarCapturas } from "./util.js";
-import { IDIOMAS, idioma, ponerIdioma, t } from "./idioma.js";
+import { IDIOMAS, idioma, idiomaGuardado, ponerIdioma, t } from "./idioma.js";
 import { abrirRecorrido } from "./recorrido.js";
 import { firma } from "./firma.js";
 import { ADMINISTRA, CALIDAD, CATALOGOS, CODIGO, CONSULTA, DESEMPENO,
@@ -33,6 +34,23 @@ import { ADMINISTRA, CALIDAD, CATALOGOS, CODIGO, CONSULTA, DESEMPENO,
 /* La regla de captura vale para toda la consola, no para una
    pantalla: se engancha una sola vez al documento. */
 vigilarCapturas();
+
+/* Los errores de red y de captura salen en el idioma de quien mira:
+   api.js no importa idioma.js (tiene que vivir aunque este no cargue),
+   asi que se le presta el traductor aqui (seccion 101). */
+ErrorApi.traducir = t;
+
+/* Un solo oyente para cerrar los menus con un clic afuera (seccion
+   101). Antes cada repintado de la barra enganchaba uno por grupo y
+   otro por la pastilla, y ninguno se quitaba: tras una jornada eran
+   cientos, cada uno reteniendo un menu viejo. */
+document.addEventListener("click", (e) => {
+  for (const caja of document.querySelectorAll("details.grupo_menu[open]")) {
+    if (!caja.contains(e.target)) caja.open = false;
+  }
+  const menu = document.querySelector(".menu-yo");
+  if (menu && !menu.hidden && !menu.contains(e.target)) menu.hidden = true;
+});
 
 
 
@@ -119,7 +137,10 @@ async function pantallaEntrada() {
     try {
       await api.entrar((d.correo || "").trim().toLowerCase(), d.contrasena);
       await api.quienSoy();
-      location.hash = destinoDe(sesion.usuario);
+      idiomaDelUsuario();
+      /* Si la sesion vencio a media pantalla, se vuelve a esa pantalla
+         (seccion 101); si no, al inicio de su rol. */
+      location.hash = destinoPendiente() || destinoDe(sesion.usuario);
       pintar();
     } catch (err) {
       f.querySelector(".error").replaceChildren(aviso(err.message, "grave"));
@@ -127,8 +148,11 @@ async function pantallaEntrada() {
     }
   }});
 
+  const nota = notaEntrada ? aviso(notaEntrada, "ok") : null;
+  notaEntrada = "";
   f.append(
     portada(),
+    nota,
     campo(t("correo"), correo),
     campo(t("contrasena"), entrada("contrasena", { type: "password", required: "true",
                                                   autocomplete: "current-password" })),
@@ -144,6 +168,14 @@ async function pantallaEntrada() {
       } }, t("cc_olvide"))));
 
   cuerpo.append(puerta(f));
+}
+
+/* La consola arranca en el idioma de quien entra --el de su plaza, que
+   viene con su identidad-- si en este navegador nadie ha escogido uno
+   (seccion 101). La bandera sigue mandando: lo que se escoge se queda. */
+function idiomaDelUsuario() {
+  const suyo = sesion.usuario && sesion.usuario.idioma;
+  if (suyo && !idiomaGuardado() && suyo !== idioma()) ponerIdioma(suyo);
 }
 
 /* Lo que se abre sin haber entrado: el enlace del correo para crear la
@@ -238,9 +270,6 @@ function armazon() {
     caja.addEventListener("click", (e) => {
       if (e.target.tagName === "A") caja.open = false;
     });
-    document.addEventListener("click", (e) => {
-      if (caja.open && !caja.contains(e.target)) caja.open = false;
-    });
   }
 
   /* El menu va en su propio renglon, debajo del logo: apretado entre la
@@ -272,9 +301,10 @@ function armazon() {
 function quienSoy(rol) {
   const menu = h("div", { clase: "menu-yo", hidden: true },
     /* Su puesto si lo tiene --"Monitorista" dice mas que "central"--;
-       si no, su rol, como siempre. */
+       si no, su rol, en el idioma de la consola (seccion 101: salia
+       "director_operaciones" tal cual). */
     h("span", { clase: "rol" },
-      sesion.usuario.puesto || rol.replaceAll("_", " ")),
+      sesion.usuario.puesto || nombreDelRol(rol)),
     h("div", { clase: "nombre" }, sesion.usuario.nombre),
     h("span", { clase: "correo" }, sesion.usuario.correo),
     h("hr"),
@@ -284,6 +314,12 @@ function quienSoy(rol) {
       menu.hidden = true;
       abrirRecorrido(menuDe(sesion.usuario));
     } }, t("rec_ver")),
+    /* Cambiar la propia contrasena (seccion 101): la ruta existia y no
+       tenia boton; habia que salir y usar "olvide mi contrasena". */
+    h("button", { clase: "otra-vez", type: "button", onclick: () => {
+      menu.hidden = true;
+      location.hash = "#/mi-contrasena";
+    } }, t("cc_cambiar")),
     h("div", { clase: "idiomas" }, ...IDIOMAS.map(i =>
       h("button", {
         clase: `bandera ${i.codigo === idioma() ? "activa" : ""}`.trim(),
@@ -305,8 +341,8 @@ function quienSoy(rol) {
     h("span", { clase: "nom" }, nombreCorto(sesion.usuario.nombre)),
     h("span", { clase: "flecha" }, "▾"));
 
-  // Se cierra al picar en cualquier otro lado, como cualquier menu.
-  document.addEventListener("click", () => { menu.hidden = true; });
+  // Se cierra al picar en cualquier otro lado: lo hace el oyente
+  // global de arriba, uno para toda la consola.
 
   /* Reportar una falla (seccion 92) va aqui, a la vista en todas las
      pantallas y no dentro de la pastilla: se usa justo cuando algo salio
@@ -337,6 +373,55 @@ function iniciales(nombre) {
 
    Ahora el pais se elige, arranca en el de quien esta viendo, y cuando
    no hay nadie lo dice con todas sus letras. */
+/* ------------------------------------------------------- contrasena */
+
+/* Cambiar la propia contrasena, desde adentro (seccion 101). Cualquiera
+   con sesion puede; por eso no pasa por el menu ni por `abre`. Al
+   guardarla, el servidor cierra todas las sesiones --tambien esta--, asi
+   que se vuelve a la entrada con el correo ya puesto. */
+let notaEntrada = "";
+
+async function pantallaContrasena(main) {
+  const actual = entrada("actual", { type: "password", required: "true",
+                                      autocomplete: "current-password" });
+  const nueva = entrada("nueva", { type: "password", required: "true",
+                                    autocomplete: "new-password", minlength: "8" });
+  const repite = entrada("repite", { type: "password", required: "true",
+                                      autocomplete: "new-password" });
+  const error = h("div");
+  const f = h("form", { onsubmit: async (e) => {
+    e.preventDefault();
+    if (nueva.value !== repite.value) {
+      error.replaceChildren(aviso(t("cc_no_coinciden"), "grave"));
+      return;
+    }
+    const boton = f.querySelector("button[type=submit]");
+    boton.disabled = true;
+    try {
+      await api.post("/auth/mi-contrasena", { actual: actual.value, nueva: nueva.value });
+      correoSugerido = sesion.usuario.correo;
+      notaEntrada = t("cc_cambiada_vuelve");
+      api.salir(); detener(); detenerPanorama();
+      location.hash = "#/entrar"; pintar();
+    } catch (err) {
+      error.replaceChildren(aviso(err.message, "grave"));
+      boton.disabled = false;
+    }
+  } },
+    h("h2", {}, t("cc_cambiar")),
+    h("p", { clase: "sub" }, t("cc_nueva_sub")),
+    campo(t("cc_actual"), actual),
+    campo(t("cc_nueva"), nueva),
+    campo(t("cc_repite"), repite),
+    h("p", { clase: "gris chico" }, t("cc_reglas")),
+    error,
+    h("div", { clase: "acciones" },
+      h("button", { type: "submit" }, t("cc_guardar")),
+      h("button", { type: "button", clase: "claro chico", onclick: () => history.back() },
+        t("cancelar"))));
+  main.append(h("div", { clase: "tarjeta", style: "max-width:520px;margin:20px auto" }, f));
+}
+
 /* ------------------------------------------------------------ ruteo */
 
 /* Cada ruta dice de que pantalla del menu es: quien no la tiene en su
@@ -384,6 +469,7 @@ async function pintar() {
   if (!sesion.token) return pantallaEntrada();
   if (!sesion.usuario) {
     try { await api.quienSoy(); } catch { return pantallaEntrada(); }
+    idiomaDelUsuario();
   }
   await traerLogo();
 
@@ -404,6 +490,11 @@ async function pintar() {
   if (sesion.usuario.recorrido_pendiente) {
     sesion.usuario.recorrido_pendiente = false;
     abrirRecorrido(menuDe(sesion.usuario));
+  }
+
+  if (location.hash === "#/mi-contrasena") {
+    try { await pantallaContrasena(main); } catch (err) { main.append(aviso(err.message, "grave")); }
+    return;
   }
 
   for (const [patron, vista, clave, roles] of RUTAS) {

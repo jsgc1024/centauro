@@ -149,7 +149,12 @@ def armar(db: Session, servicio_id: int) -> dict:
         raise HTTPException(404, f"No existe el implantado {servicio_id}")
 
     acuerdo = _acuerdo(db, servicio)
-    contrato = _contrato_vigente(db, servicio)
+    # La plantilla del mes que se opera hoy --el hoy del pais del
+    # servicio--, no la del ultimo mes abierto: con el que sigue ya
+    # abierto la hoja presentaba a la gente de octubre en septiembre
+    # (seccion 101). Sin mes de hoy, el ultimo que exista.
+    contrato = _contrato_vigente(db, servicio,
+                                 motor.hoy_del_servicio(db, servicio))
 
     equipo = []
     if contrato:

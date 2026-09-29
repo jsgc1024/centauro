@@ -32,6 +32,7 @@ Dão e fecham acessos a administração, a direção geral, os recursos humanos 
 - **O escritório** recebe um **convite por e-mail** para criar a sua senha. O link vale **72 horas** e serve uma única vez. Reenviar manda um novo e desliga o anterior. Se o e-mail não chegar, a direção geral ou a administração podem **copiar o link** e entregá-lo em mãos; fica registrado quem o copiou.
 - **Quem esqueceu a senha** a recupera na entrada, com «Esqueceu sua senha?». Esse link vale **2 horas**. As duas coisas precisam do e-mail ligado.
 - **O pessoal de segurança** não recebe convite: define a senha com um **código de quatro dígitos** que o seu consultor dita —só a quem trabalha nos seus serviços— ou a central, na tela Código. O código vale **10 minutos**. O que protege esse caminho é que quem o dita reconheça a voz de quem liga.
-- **A sessão** dura 12 horas, a não ser que o cargo diga outra coisa.
+- **A sessão** dura 12 horas, a não ser que o cargo diga outra coisa. Se expira no meio de uma tela, ao entrar de novo volta-se a essa tela.
+- **Mudar a própria senha** se faz por dentro, no menu do nome: pede a atual e, ao salvar a nova, todas as sessões são encerradas, inclusive essa.
 
 > Quase todo travamento de acessos é uma dessas travas fazendo o seu trabalho. A mensagem diz qual e o que fazer; se não estiver clara, está em [quando o sistema diz não](#/manual/mensajes), em Acessos e senhas.

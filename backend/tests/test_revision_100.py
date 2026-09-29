@@ -787,6 +787,9 @@ def test_un_implantado_que_revienta_no_frena_a_los_demas(monkeypatch, db):
     class S:
         def __init__(self, i):
             self.id, self.folio = i, f"IM-{i}"
+            # El proceso pregunta que dia es en el pais de cada servicio
+            # (seccion 101); sin pais, el reloj de la casa.
+            self.pais_id = None
     monkeypatch.setattr(implantado, "por_abrir", lambda db_, hoy: [S(1), S(2)])
 
     def abrir(db_, servicio, hoy):

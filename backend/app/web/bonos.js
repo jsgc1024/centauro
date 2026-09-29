@@ -363,8 +363,9 @@ async function pintarCorte(zona, recargar) {
   }
 
   const filas = d.personas.map(p => {
+    /* Cruda: es la referencia del banco (seccion 101). */
     const referencia = h("input", { clase: "campo", type: "text",
-      placeholder: t("bon_referencia") });
+      placeholder: t("bon_referencia"), "data-crudo": "" });
     const boton = h("button", { clase: "chico", type: "button",
       disabled: !!p.pago || !puede("pagar"),
       onclick: async () => {

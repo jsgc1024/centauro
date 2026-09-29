@@ -15,6 +15,9 @@ imprime la aerolinea y asi se busca en la pantalla del aeropuerto.
 
 MENUDAS = {"de", "del", "la", "las", "los", "y", "e", "el", "al",
            "da", "do", "dos", "van", "von", "di", "der",
+           # El portugues tambien dice "das" (Maria das Dores), y el
+           # frances "du", "des", "le" (seccion 101).
+           "das", "du", "des", "le",
            # Los lugares de la agenda tambien las llevan:
            # "Comida en San Angel", "Bank of America".
            "en", "a", "con", "por", "para", "of", "the"}
@@ -37,8 +40,21 @@ def _palabra(palabra: str, primera: bool) -> str:
     bajo = palabra.lower()
     if not primera and bajo in MENUDAS:
         return bajo
+    # Una palabra que ya trae su mayuscula adentro, con minusculas al
+    # lado, se escribio asi a proposito: McDonald's, O'Brien, iPhone. Se
+    # respeta (seccion 101). La que viene toda en mayusculas o toda en
+    # minusculas si se empareja.
+    if con_mayuscula_adentro(palabra):
+        return palabra
     # Los compuestos con guion llevan las dos iniciales: Jean-Luc, Perez-Gomez.
     return "-".join(_inicial(t) for t in bajo.split("-"))
+
+
+def con_mayuscula_adentro(palabra: str) -> bool:
+    """Mayuscula despues de la primera letra y alguna minuscula: la
+    escribieron asi a proposito."""
+    return (any(c.isupper() for c in palabra[1:])
+            and any(c.islower() for c in palabra))
 
 
 def _inicial(trozo: str) -> str:

@@ -7,9 +7,9 @@
 import { api, sesion } from "./api.js";
 import { catalogos, faltaConsultor, listaDeConsultores } from "./catalogos.js";
 import { aviso, buscador, campo, coincide, conAyuda, datosDeFormulario,
-         dinero, entrada, estatus, etiqueta, fecha, h, hora, lista,
-         listaBuscable, mensaje, plegable, telefono, textoDe,
-         vaciar } from "./util.js";
+         dinero, entrada, estatus, etiqueta, fecha, fechaLocal, h, hora,
+         hoyLocal, lista, listaBuscable, mensaje, plegable, telefono,
+         textoDe, vaciar } from "./util.js";
 import { IDIOMAS, t } from "./idioma.js";
 import { queda } from "./cierre.js";
 
@@ -54,11 +54,23 @@ const TONO_ESTATUS = {
 
 /* ------------------------------------------------------------ cartera */
 
+/* Cuantos cerrados y cancelados se traen por vez: el mismo tope que
+   pone el servidor cuando no se le dice otro. */
+const PAGINA_DE_CERRADOS = 50;
+
 export async function cartera(main) {
-  /* Los relojes del cierre se piden aparte y no frenan la lista: quien
+  /* Los abiertos --todo lo que no esta cerrado ni cancelado-- se traen
+     sin tope (seccion 101): con 600 servicios al mes, los ultimos 100
+     dejaban fuera servicios vivos y el consultor creia que no existian.
+     Los cerrados y cancelados se traen por partes, con «Ver mas», y el
+     buscador los pide al servidor cuando la lista esta a medias.
+
+     Los relojes del cierre se piden aparte y no frenan la lista: quien
      no puede ver el cierre ve la cartera igual, sin relojes. */
-  const [servicios, cat, relojes] = await Promise.all([
-    api.get("/servicios"), catalogos(),
+  const [abiertos, primeraPagina, cat, relojes] = await Promise.all([
+    api.get("/servicios?vivos=true"),
+    api.get(`/servicios?vivos=false&limite=${PAGINA_DE_CERRADOS}`),
+    catalogos(),
     api.get("/cierre/relojes").catch(() => [])]);
   const relojDe = new Map(relojes.map(r => [r.servicio_id, r]));
   const cliente = (id) => {
@@ -73,57 +85,132 @@ export async function cartera(main) {
         t("nuevo_servicio"))),
   );
 
-  if (!servicios.length) {
-    main.append(h("div", { clase: "tarjeta" },
-      h("div", { clase: "vacio" }, t("sin_servicios"))));
-    return;
-  }
+  /* Lo cerrado que ya se trajo, de lo mas reciente a lo mas viejo, y si
+     el servidor todavia tiene mas. Los mas recientes vienen de una vez:
+     el que se cerro ayer sigue a la mano. */
+  const cerrados = [...primeraPagina];
+  let hayMasCerrados = primeraPagina.length === PAGINA_DE_CERRADOS;
+  /* Lo que el servidor encontro entre los cerrados para lo que se esta
+     buscando; nulo mientras no se busca. */
+  let encontrados = null;
+  let esperaBusqueda = null;
 
   /* Por folio, por cliente, por ejecutivo o por estatus. La cartera
      crece y nada mas: con doscientos servicios, encontrar uno a ojo
-     deja de ser posible. */
+     deja de ser posible. Los abiertos se filtran aqui, sobre lo que ya
+     esta en pantalla; los cerrados se le piden al servidor, porque aqui
+     solo hay una parte. */
   const zona = h("div");
   let q = "";
   const caja = buscador(t("bus_ayuda_servicio"), (texto) => {
     q = texto;
+    clearTimeout(esperaBusqueda);
+    if (!q.trim()) {
+      encontrados = null;
+      dibujar();
+      return;
+    }
     dibujar();
+    // Se espera a que deje de teclear: no una peticion por letra.
+    esperaBusqueda = setTimeout(() => buscarCerrados(q), 300);
   });
   main.append(
     h("div", { clase: "tarjeta lisa", style: "margin-bottom:16px" },
       campo(t("bus_buscar"), caja)),
     zona);
+
+  async function buscarCerrados(texto) {
+    try {
+      const lista = await api.get(
+        `/servicios?vivos=false&q=${encodeURIComponent(texto.trim())}`);
+      // Si siguio escribiendo, esta respuesta ya no sirve.
+      if (texto !== q) return;
+      encontrados = lista;
+    } catch {
+      encontrados = [];
+    }
+    dibujar();
+  }
+
+  async function verMas(boton) {
+    boton.disabled = true;
+    try {
+      const ultimo = cerrados.length ? cerrados[cerrados.length - 1].id : null;
+      const pagina = await api.get(
+        `/servicios?vivos=false&limite=${PAGINA_DE_CERRADOS}`
+        + (ultimo ? `&antes_de=${ultimo}` : ""));
+      cerrados.push(...pagina);
+      hayMasCerrados = pagina.length === PAGINA_DE_CERRADOS;
+    } catch (err) {
+      mensaje(err.message, "grave");
+      boton.disabled = false;
+      return;
+    }
+    dibujar();
+  }
+
   dibujar();
 
-  function dibujar() {
-    const filas = servicios.slice().reverse().filter(
-      s => coincide(q, s.folio, cliente(s.cliente_id), s.ejecutivo_completo,
-                    s.tipo, estatus(s.estatus)));
-    if (!filas.length) {
-      return zona.replaceChildren(
-        aviso(t("bus_nada").replace("{q}", q.trim())));
-    }
+  function fila(s) {
+    return h("tr", { clase: "clic",
+                     onclick: () => (location.hash = `#/servicio/${s.id}`) },
+      h("td", {}, h("b", {}, s.folio)),
+      h("td", {}, cliente(s.cliente_id)),
+      h("td", {}, s.ejecutivo_completo
+        || h("span", { clase: "gris" }, t("sin_ejecutivo"))),
+      h("td", {}, s.tipo === "implantado" ? t("implantado") : t("eventual")),
+      h("td", {}, etiqueta(estatus(s.estatus), TONO_ESTATUS[s.estatus] || ""),
+        relojDeCartera(relojDe.get(s.id), s)),
+      h("td", { clase: "num" }, s.equipos ? s.equipos.length : 1),
+    );
+  }
 
-    const cuerpo = h("tbody");
-    for (const s of filas) {
-      cuerpo.append(h("tr", { clase: "clic",
-                              onclick: () => (location.hash = `#/servicio/${s.id}`) },
-        h("td", {}, h("b", {}, s.folio)),
-        h("td", {}, cliente(s.cliente_id)),
-        h("td", {}, s.ejecutivo_completo
-          || h("span", { clase: "gris" }, t("sin_ejecutivo"))),
-        h("td", {}, s.tipo === "implantado" ? t("implantado") : t("eventual")),
-        h("td", {}, etiqueta(estatus(s.estatus), TONO_ESTATUS[s.estatus] || ""),
-          relojDeCartera(relojDe.get(s.id), s)),
-        h("td", { clase: "num" }, s.equipos ? s.equipos.length : 1),
-      ));
-    }
-
-    zona.replaceChildren(h("table", { clase: "lista" },
+  function tabla(filas) {
+    return h("table", { clase: "lista" },
       h("thead", {}, h("tr", {},
         h("th", {}, t("col_folio")), h("th", {}, t("col_cliente")),
         h("th", {}, t("col_ejecutivo")), h("th", {}, t("col_tipo")),
         h("th", {}, t("col_estatus")), h("th", {}, t("col_equipos")))),
-      cuerpo));
+      h("tbody", {}, ...filas.map(fila)));
+  }
+
+  function dibujar() {
+    const buscando = !!q.trim();
+    const vivos = abiertos.slice().reverse().filter(
+      s => coincide(q, s.folio, cliente(s.cliente_id), s.ejecutivo_completo,
+                    s.tipo, estatus(s.estatus)));
+    /* Buscando, lo cerrado es lo que contesto el servidor; si no, lo que
+       se ha traido con «Ver mas». */
+    const viejos = buscando ? (encontrados || []) : cerrados;
+    const partes = [];
+
+    if (!vivos.length && !buscando) {
+      partes.push(h("div", { clase: "tarjeta" },
+        h("div", { clase: "vacio" }, t("sin_servicios"))));
+    } else if (!vivos.length && buscando && !viejos.length
+               && encontrados !== null) {
+      partes.push(aviso(t("bus_nada").replace("{q}", q.trim())));
+    } else if (vivos.length) {
+      partes.push(tabla(vivos));
+    }
+
+    if (viejos.length || (!buscando && hayMasCerrados)) {
+      partes.push(h("h3", { clase: "grupo", style: "margin-top:18px" },
+                    t("cart_cerrados_titulo")));
+    }
+    if (viejos.length) partes.push(tabla(viejos));
+    if (buscando && encontrados === null) {
+      partes.push(h("div", { clase: "gris chico", style: "margin-top:8px" },
+                    t("cart_buscando_cerrados")));
+    } else if (!buscando && hayMasCerrados) {
+      const boton = h("button", { clase: "claro chico", type: "button",
+                                  onclick: () => verMas(boton) },
+                      t("cart_ver_mas"));
+      partes.push(h("div", { clase: "acciones", style: "margin-top:8px" },
+        boton, h("span", { clase: "gris chico" },
+                 t("cart_ver_mas_nota").replace("{n}", PAGINA_DE_CERRADOS))));
+    }
+    zona.replaceChildren(...partes);
   }
 }
 
@@ -167,8 +254,7 @@ const ANTICIPACION_AEROPUERTO = 45;
 const ANTICIPACION_NORMAL = 30;
 
 function hoyMas(dias) {
-  const f = new Date(Date.now() + dias * 86400000);
-  return f.toISOString().slice(0, 10);
+  return hoyLocal(dias);
 }
 
 /* La hora a la que el equipo tiene que estar en el punto. En 24 h,
@@ -961,8 +1047,7 @@ export async function nuevoServicio(main) {
           onclick: () => {
             const ultima = filas.length ? filas[filas.length - 1].f.value : "";
             const siguiente = ultima
-              ? new Date(new Date(ultima + "T00:00:00").getTime() + 86400000)
-                  .toISOString().slice(0, 10)
+              ? fechaLocal(new Date(new Date(ultima + "T12:00:00").getTime() + 86400000))
               : "";
             agregarDia(siguiente);
           } }, t("agregar_dia"))));
@@ -996,7 +1081,11 @@ export async function nuevoServicio(main) {
       (esAeropuerto.checked && vueloHora.value
         ? vueloHora.value.slice(11, 16) : "");
 
-    equipo.datos = () => {
+    /* `hereda`: el equipo cuida al principal del servicio y no manda
+       copia (seccion 101). El alta copiaba el principal del servicio al
+       equipo Alfa, y la hoja, el correo del TS y los avisos del dia leen
+       la copia del equipo: corregir el principal arriba no les llegaba. */
+    equipo.datos = (hereda = false) => {
       const jornadas = filas
         .filter(r => r.f.value)
         .map((r, i) => {
@@ -1041,10 +1130,10 @@ export async function nuevoServicio(main) {
 
       return {
         plaza_id: equipo.ciudad.valor(),
-        ejecutivo_nombre: ejecutivoNombre.value.trim() || null,
-        ejecutivo_apellidos: ejecutivoApellidos.value.trim() || null,
-        ejecutivo_correo: ejecutivoCorreo.value.trim() || null,
-        ejecutivo_telefono: ejecutivoTelefono.valor() || null,
+        ejecutivo_nombre: hereda ? null : ejecutivoNombre.value.trim() || null,
+        ejecutivo_apellidos: hereda ? null : ejecutivoApellidos.value.trim() || null,
+        ejecutivo_correo: hereda ? null : ejecutivoCorreo.value.trim() || null,
+        ejecutivo_telefono: hereda ? null : ejecutivoTelefono.valor() || null,
         jornadas,
       };
     };
@@ -1195,7 +1284,13 @@ export async function nuevoServicio(main) {
     // Quien copia al ejecutivo del primero se lleva sus datos ya
     // resueltos: lo que se ve en pantalla es lo que se guarda.
     for (const eq of equipos) eq.copiarEjecutivo();
-    const armados = equipos.map(eq => eq.datos());
+    /* El principal del primer equipo es el del servicio, y se guarda
+       arriba: ese equipo --y el que marca «mismo ejecutivo»-- lo hereda
+       en vez de llevar una copia (seccion 101). Solo el equipo que cuida
+       a otro principal lleva el suyo. */
+    const principal = equipos[0].ejecutivo();
+    const armados = equipos.map(
+      (eq, i) => eq.datos(i === 0 || eq.mismoEjecutivo.checked));
     if (armados.some(eq => !eq.jornadas.length)) {
       return mensaje(t("dia_con_fecha"), "alerta");
     }
@@ -1215,13 +1310,13 @@ export async function nuevoServicio(main) {
         solicitante_apellidos: d.solicitante_apellidos,
         solicitante_correo: d.solicitante_correo,
         solicitante_telefono: solicitanteTelefono.valor(),
-        /* El ejecutivo del primer equipo se guarda tambien arriba: es el
-           que sale en la cartera y el que heredan los equipos que no
+        /* El ejecutivo del primer equipo se guarda arriba: es el que
+           sale en la cartera y el que heredan los equipos que no
            capturen el suyo. */
-        ejecutivo_nombre: armados[0].ejecutivo_nombre,
-        ejecutivo_apellidos: armados[0].ejecutivo_apellidos,
-        ejecutivo_correo: armados[0].ejecutivo_correo,
-        ejecutivo_telefono: armados[0].ejecutivo_telefono,
+        ejecutivo_nombre: principal.nombre || null,
+        ejecutivo_apellidos: principal.apellidos || null,
+        ejecutivo_correo: principal.correo || null,
+        ejecutivo_telefono: principal.telefono || null,
         idioma_ejecutivo: idiomaEjecutivo.value,
         idioma_solicitante: idiomaSolicitante.value || null,
         vestimenta: vestimenta.value || null,

@@ -242,6 +242,9 @@ function forma(servicio, cliente, zona, d) {
       const lineas = [t("con_listo")];
       if (r.avisos) lineas.push(reemplazar(t("con_listo_avisos"), { n: r.avisos }));
       if (r.encuestas) lineas.push(t("con_listo_encuesta"));
+      /* La encuesta que no habia nacido por falta de correo, con el
+         servicio ya terminado, sale con la correccion (seccion 101). */
+      if ((r.encuestas_nuevas || []).length) lineas.push(t("con_listo_encuesta_nueva"));
       if (r.lista_corregida) lineas.push(t("con_listo_lista"));
       if ((r.otros_servicios || []).length) {
         lineas.push(reemplazar(t("con_listo_otros"),

@@ -120,7 +120,10 @@ function renglon(f, info, abrir) {
     h("td", {}, f.consultor || "—"),
     h("td", {}, factura(f)),
     h("td", { clase: "der num" }, h("b", {}, dinero(f.total, moneda))),
-    h("td", { clase: "der num" }, dinero(f.viaticos, moneda)),
+    /* Los viaticos van en la moneda del pais, que es en la que se
+       pagaron (seccion 82), no en la de la factura: un servicio
+       facturado en dolares decia "US$2,204" de unos pesos (seccion 101). */
+    h("td", { clase: "der num" }, dinero(f.viaticos, f.moneda_viaticos || moneda)),
     h("td", {}, chipFotos(f, info)));
 }
 
@@ -279,16 +282,25 @@ export function pestanaHistorial() {
           { n: filas.length, t: datos.total })), mas) : "");
   }
 
+  /* Cada peticion lleva su numero y solo se pinta la ultima que se
+     pidio (seccion 101): con el folio a medio escribir, la busqueda
+     lenta de "EP/E-0" llegaba despues de la rapida de "EP/E-01" y
+     pisaba la tabla con resultados que no eran del filtro escrito. */
+  let peticion = 0;
+
   async function cargar(otraPagina = false) {
     if (!otraPagina) pagina = 1;
+    const mia = ++peticion;
     let r;
     try {
       r = await api.get(`/cierre/historial?${consulta(filtros,
         { pagina, por_pagina: POR_PAGINA })}`);
     } catch (err) {
+      if (mia !== peticion) return;
       zona.replaceChildren(aviso(err.message, "grave"));
       return;
     }
+    if (mia !== peticion) return;
     datos = r;
     filas = otraPagina ? filas.concat(r.filas) : r.filas;
     pintar();
@@ -501,6 +513,10 @@ async function detalle(zona, cierreId, volver) {
     return;
   }
   const moneda = d.moneda || "MXN";
+  /* El dinero del personal --lo entregado, lo comprobado, lo devuelto--
+     se pago en la moneda del pais; solo la factura va en la suya
+     (seccion 101). */
+  const local = d.moneda_viaticos || moneda;
   const regresar = h("a", { clase: "volver", href: "#",
     onclick: (e) => { e.preventDefault(); volver(); } }, t("fac_his_volver"));
   zona.replaceChildren(
@@ -513,14 +529,14 @@ async function detalle(zona, cierreId, volver) {
       cifra(t("fac_col_factura"), d.factura || t("fac_sin_factura"),
         diaCorto(d.facturado_en || d.aprobado_en)),
       cifra(t("fac_his_total_facturado"), dinero(d.total, moneda)),
-      cifra(t("fac_his_viaticos_comprobados"), dinero(d.comprobado, moneda),
-        reemplazar(t("fac_his_de_entregados"), { m: dinero(d.entregado, moneda) })),
-      cifra(t("fac_his_devuelto"), dinero(d.devuelto, moneda))),
+      cifra(t("fac_his_viaticos_comprobados"), dinero(d.comprobado, local),
+        reemplazar(t("fac_his_de_entregados"), { m: dinero(d.entregado, local) })),
+      cifra(t("fac_his_devuelto"), dinero(d.devuelto, local))),
     avisoDelArchivo(d),
     ...d.personas.map(p => h("div", { clase: "tarjeta", style: "margin-top:14px" },
       h("h3", { style: "margin:0 0 4px" }, p.nombre || "—"),
       h("div", { clase: "comprobantes" },
-        ...p.comprobantes.map(c => renglonTicket(c, p.moneda || moneda, d)),
-        ...p.devoluciones.map(x => renglonDevolucion(x, p.moneda || moneda, d))))));
+        ...p.comprobantes.map(c => renglonTicket(c, p.moneda || local, d)),
+        ...p.devoluciones.map(x => renglonDevolucion(x, p.moneda || local, d))))));
   window.scrollTo({ top: 0 });
 }

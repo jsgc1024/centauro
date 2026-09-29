@@ -10,8 +10,8 @@ from datetime import datetime
 
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app import accesos, auth
@@ -43,8 +43,10 @@ COMISIONES = auth.puede("comisiones.ver")
 class RenglonComisionIn(BaseModel):
     perfil_id: int
     modalidad_id: int
-    monto: Decimal = Decimal("0")
-    monto_hora_extra: Decimal | None = None
+    # Sin negativos (seccion 101): un -700 por dedazo se guardaba y se
+    # pagaba. Cero si es un monto: "este rol no cobra en esta modalidad".
+    monto: Decimal = Field(default=Decimal("0"), ge=0)
+    monto_hora_extra: Decimal | None = Field(default=None, ge=0)
 
 
 class TabuladorComisionIn(BaseModel):
@@ -155,6 +157,22 @@ def guardar_tabulador(datos: TabuladorComisionIn,
     if not pais:
         raise HTTPException(404, f"No existe el pais {datos.pais_id}")
 
+    # El rol tiene que existir y la modalidad ser de ese pais (seccion
+    # 101): un renglon con la modalidad de Brasil en la tabla de Mexico
+    # se guardaba y ningun dia lo iba a encontrar.
+    for r in datos.renglones:
+        if not db.get(m.PerfilPersonal, r.perfil_id):
+            raise HTTPException(404, f"No existe el rol {r.perfil_id}")
+        modalidad = db.get(m.Modalidad, r.modalidad_id)
+        if not modalidad:
+            raise HTTPException(404, f"No existe la modalidad {r.modalidad_id}")
+        if modalidad.pais_id != datos.pais_id:
+            raise HTTPException(400, {
+                "mensaje": (f"La modalidad {modalidad.codigo.value} no es de "
+                            f"{pais.nombre}"),
+                "que_hacer": "Cada país tiene sus modalidades: elige una de "
+                             "la tabla de ese país."})
+
     tocados = 0
     cambios = []
     for r in datos.renglones:
@@ -235,12 +253,15 @@ def implantados(pais_id: int, ahora: datetime | None = None,
 # --------------------------------------------------------- comisiones
 
 @router.get("/comisiones", summary="El corte de comisiones del mes")
-def comisiones(pais_id: int, anio: int, mes: int,
+def comisiones(pais_id: int, anio: int = Query(ge=2000, le=2100),
+               mes: int = Query(ge=1, le=12),
                ahora: datetime | None = None,
                db: Session = Depends(get_db),
                usuario: m.Usuario = Depends(COMISIONES)):
     """Lo que se le paga a cada consultor, lo que no y por que, sus
-    diferencias y lo que viene en camino. El consultor ve el suyo."""
+    diferencias y lo que viene en camino. El consultor ve el suyo.
+    El ano y el mes con rango (seccion 101): un ano de tres cifras
+    reventaba al armar la fecha del mes, con error del servidor."""
     return motor_comisiones.corte_del_mes(db, pais_id, anio, mes, usuario,
                                           reloj.de_prueba(ahora))
 
@@ -414,6 +435,19 @@ def crear_ajuste(datos: s.AjusteNominaIn, db: Session = Depends(get_db),
     persona = db.get(m.Persona, datos.persona_id)
     if not persona:
         raise HTTPException(404, f"No existe la persona {datos.persona_id}")
+    # El ajuste entra al corte del pais que dice, asi que tiene que ser
+    # el de la persona (seccion 101): con el pais equivocado se quedaba
+    # esperando un corte donde ella nunca cobra. Y el servicio o el dia
+    # que no existen se dicen, no revientan en la llave foranea.
+    if persona.plaza and persona.plaza.pais_id != datos.pais_id:
+        raise HTTPException(400, {
+            "mensaje": f"{persona.nombre} no es de ese país: su ajuste no "
+                       "entraría a ningún corte suyo",
+            "que_hacer": "Regístralo en el país de su plaza."})
+    if datos.servicio_id is not None and not db.get(m.Servicio, datos.servicio_id):
+        raise HTTPException(404, f"No existe el servicio {datos.servicio_id}")
+    if datos.jornada_id is not None and not db.get(m.Jornada, datos.jornada_id):
+        raise HTTPException(404, f"No existe la jornada {datos.jornada_id}")
 
     # La correccion de un dia no se teclea: la calcula el motor
     # comparando lo que ya salio contra lo que corresponde segun la

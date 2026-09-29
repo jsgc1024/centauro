@@ -42,7 +42,10 @@ CATALOGOS = ("paises", "plazas", "perfiles", "categorias-vehiculo",
              "dias-festivos", "hospitales", "hoteles", "profesionalismo",
              # Lo que vale cada criterio del bono y lo que el arranque
              # confirma a mano (seccion 97).
-             "criterio_estrella", "arranque")
+             "criterio_estrella", "arranque",
+             # La capacitacion del bono dicha a mano al calcular un mes
+             # (seccion 101): decide dinero y queda con quien lo dijo.
+             "evaluacion_mensual")
 
 GRUPOS = {
     "accesos": ("usuario",),
@@ -97,6 +100,7 @@ TEXTOS = {
             "dias-festivos": "Días festivos", "hospitales": "Hospitales",
             "hoteles": "Hoteles", "profesionalismo": "Pesos del profesionalismo",
             "criterio_estrella": "Criterios del bono", "arranque": "El arranque",
+            "evaluacion_mensual": "Bono del mes",
         },
         "accion": {
             "catalogo creado": "Agregó «{nombre}»",
@@ -112,6 +116,7 @@ TEXTOS = {
             "criterio del bono cambiado": "«{detalle}»: {antes} → {despues}",
             "arranque confirmado": "Confirmó a mano: {detalle}",
             "arranque sin confirmar": "Quitó la confirmación: {detalle}",
+            "capacitacion del bono a mano": "{detalle}: capacitación del mes dicha a mano, cumplida {antes} → {despues}",
             "acceso creado": "Le dio acceso a {persona}, como {despues}",
             "acceso desactivado": "Cerró el acceso de {persona}: «{detalle}»",
             "acceso cerrado": "Cerró el acceso de {persona}: {detalle}",
@@ -194,6 +199,7 @@ TEXTOS = {
             "dias-festivos": "Public holidays", "hospitales": "Hospitals",
             "hoteles": "Hotels", "profesionalismo": "Professionalism weights",
             "criterio_estrella": "Bonus criteria", "arranque": "The go-live",
+            "evaluacion_mensual": "Monthly bonus",
         },
         "accion": {
             "catalogo creado": "Added “{nombre}”",
@@ -209,6 +215,7 @@ TEXTOS = {
             "criterio del bono cambiado": "«{detalle}»: {antes} → {despues}",
             "arranque confirmado": "Confirmed by hand: {detalle}",
             "arranque sin confirmar": "Removed the confirmation: {detalle}",
+            "capacitacion del bono a mano": "{detalle}: month's training set by hand, met {antes} → {despues}",
             "acceso creado": "Gave access to {persona}, as {despues}",
             "acceso desactivado": "Closed {persona}'s access: “{detalle}”",
             "acceso cerrado": "Closed {persona}'s access: {detalle}",
@@ -291,6 +298,7 @@ TEXTOS = {
             "dias-festivos": "Feriados", "hospitales": "Hospitais",
             "hoteles": "Hotéis", "profesionalismo": "Pesos do profissionalismo",
             "criterio_estrella": "Critérios do bônus", "arranque": "O arranque",
+            "evaluacion_mensual": "Bônus do mês",
         },
         "accion": {
             "catalogo creado": "Adicionou “{nombre}”",
@@ -306,6 +314,7 @@ TEXTOS = {
             "criterio del bono cambiado": "«{detalle}»: {antes} → {despues}",
             "arranque confirmado": "Confirmou à mão: {detalle}",
             "arranque sin confirmar": "Retirou a confirmação: {detalle}",
+            "capacitacion del bono a mano": "{detalle}: treinamento do mês dito à mão, cumprido {antes} → {despues}",
             "acceso creado": "Deu acesso a {persona}, como {despues}",
             "acceso desactivado": "Fechou o acesso de {persona}: “{detalle}”",
             "acceso cerrado": "Fechou o acesso de {persona}: {detalle}",
@@ -605,10 +614,13 @@ def que_cambio(r: m.RegistroAdmin, idioma: str, nombres: _Nombres) -> str:
         despues = _actividad(despues)
     if r.accion == "permiso de mas quitado":
         antes = _actividad(antes)
-    if r.accion in ("paquetes con viaticos", "producto de odoo preferido"):
+    if r.accion in ("paquetes con viaticos", "producto de odoo preferido",
+                    "capacitacion del bono a mano"):
         antes = t["si"] if antes == "true" else t["no"] if antes == "false" else antes
         despues = (t["si"] if despues == "true"
                    else t["no"] if despues == "false" else despues)
+    if r.accion == "capacitacion del bono a mano" and not antes:
+        antes = t["ninguno"]        # el mes todavia no se habia calculado
 
     if not plantilla:
         # Una accion que no tiene frase todavia --una lectura de Odoo, por

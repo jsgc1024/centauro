@@ -169,7 +169,15 @@ function celdaUnidad(f) {
     h("div", { clase: "chico", style: "margin-top:4px" },
       h("b", {}, [f.categoria, f.plaza].filter(Boolean).join(" · "))),
     h("div", { clase: "chico gris" },
-      [f.marca_modelo, f.color, f.anio].filter(Boolean).join(" · ") || "—"));
+      [f.marca_modelo, f.color, f.anio].filter(Boolean).join(" · ") || "—"),
+    /* Odoo la archivo y Pegasus la sigue reportando (seccion 101): antes
+       contaba como ligada y no salia en ningun renglon. Se dice donde se
+       arregla, como con lo que no liga. */
+    f.de_baja
+      ? h("div", { clase: "chico", style: "margin-top:4px" },
+          etiqueta(t("uni_de_baja"), "alerta"),
+          h("div", { clase: "chico gris" }, t("uni_de_baja_pie")))
+      : null);
 }
 
 function celdaGps(f) {
@@ -241,7 +249,7 @@ function celdaOdometro(f) {
 }
 
 function porRevisar(f) {
-  return f.gps !== "reporta" || f.sin_encendido;
+  return f.gps !== "reporta" || f.sin_encendido || f.de_baja;
 }
 
 function dibujar(zona) {

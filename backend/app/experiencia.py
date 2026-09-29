@@ -11,21 +11,37 @@ from app import models as m
 def horas_acumuladas(db: Session, persona_id: int) -> int:
     """Horas reales cuando se registraron los hitos; si no, las de la
     modalidad contratada de esa jornada."""
-    jornadas = (db.query(m.Jornada)
-                .join(m.AsignacionPersonal,
-                      m.AsignacionPersonal.jornada_id == m.Jornada.id)
-                .filter(m.AsignacionPersonal.persona_id == persona_id,
-                        m.Jornada.estatus.in_([m.EstatusJornada.TERMINADA,
-                                               *m.ARRANCADAS]))
-                .all())
+    return horas_por_persona(db, [persona_id]).get(persona_id, 0)
 
-    horas = 0.0
-    for j in jornadas:
-        if j.inicio_real and j.fin_real:
-            horas += (j.fin_real - j.inicio_real).total_seconds() / 3600
-        elif j.estatus == m.EstatusJornada.TERMINADA:
-            horas += float(j.modalidad.horas)
-    return int(round(horas))
+
+def horas_por_persona(db: Session, persona_ids: list[int]) -> dict[int, int]:
+    """Lo mismo, para varias personas de un golpe: persona -> horas.
+
+    La ficha de profesionalismo de todo el personal la pedia persona por
+    persona, cargando cada jornada con su modalidad (seccion 101). Aqui
+    una sola consulta trae las horas de todos, sin cargar objetos.
+    """
+    if not persona_ids:
+        return {}
+    filas = (db.query(m.AsignacionPersonal.persona_id,
+                      m.Jornada.inicio_real, m.Jornada.fin_real,
+                      m.Jornada.estatus, m.Modalidad.horas)
+             .join(m.Jornada, m.AsignacionPersonal.jornada_id == m.Jornada.id)
+             .join(m.Modalidad, m.Jornada.modalidad_id == m.Modalidad.id)
+             .filter(m.AsignacionPersonal.persona_id.in_(list(persona_ids)),
+                     m.Jornada.estatus.in_([m.EstatusJornada.TERMINADA,
+                                            *m.ARRANCADAS]))
+             .all())
+
+    horas: dict[int, float] = {}
+    for persona_id, inicio_real, fin_real, estatus, contratadas in filas:
+        suma = horas.get(persona_id, 0.0)
+        if inicio_real and fin_real:
+            suma += (fin_real - inicio_real).total_seconds() / 3600
+        elif estatus == m.EstatusJornada.TERMINADA:
+            suma += float(contratadas)
+        horas[persona_id] = suma
+    return {persona_id: int(round(suma)) for persona_id, suma in horas.items()}
 
 
 def resumen(db: Session, persona_id: int) -> dict:

@@ -7290,6 +7290,363 @@ nunca existió: la flota se lee desde la consola.
   recarga del proxy. Cambian la consola, la app de campo, el
   `docker-compose.prod.yml` y el `Caddyfile`.
 
+## 101. La consola, el eventual, el cierre, el implantado, la nómina y la contingencia
+
+La **cuarta tanda** de la revisión del 28 de septiembre (sección 98), y
+la última de lo que no necesitaba decisión de Salvador: la consola, el
+alta y la hoja del eventual, del término a la factura, el implantado,
+la nómina y el cambio por contingencia. Quedan las 14 decisiones, que
+se le llevan juntas.
+
+### La consola
+
+- **Un dato mal capturado se explica con su campo y en el idioma de
+  quien mira.** El servidor contestaba «Field required. Input should be
+  a valid decimal», en inglés en las tres consolas y sin decir cuál
+  campo. Ahora cada renglón dice el campo y qué le falta —«Falta el
+  dato «fecha»», ««nombre» es demasiado largo: caben 120 letras»— y
+  viaja también en piezas (campo, tipo, límite) para que la consola lo
+  diga en español, inglés o portugués. Sin red o con el servidor lento
+  la consola decía «sin_red» o «tardo», que no es ningún idioma; ahora
+  lo dice en el de quien mira, y la app de campo igual.
+- **La sesión que vence a media pantalla regresa a esa pantalla.**
+  Quien estaba en el servicio 123 caía en el inicio de su rol al volver
+  a entrar. Un error de la hoja o del desglose llegaba con el JSON tal
+  cual; se lee como los demás. Y el «tu rol no tiene permiso» dice
+  quién sí puede, como ya lo hacía el de las actividades.
+- **La referencia del banco se guarda tal cual.** La regla de mayúsculas
+  pasaba a «Título» la referencia del depósito, la del pago del bono, la
+  confirmación de una compra y el folio del taller: «SPEI 7F3A9B0C»
+  quedaba «Spei 7f3a9b0c», y así se buscaba contra el estado de cuenta.
+  Y la regla conoce «das» (Maria das Dores), «du», «des» y «le», y
+  respeta la mayúscula de adentro que alguien escribió a propósito
+  (McDonald's, O'Brien); lo que viene todo en mayúsculas o todo en
+  minúsculas se sigue emparejando. Igual en el servidor.
+- **La consola arranca en el idioma de quien entra** —el de su plaza,
+  que ya viene con su identidad— y la bandera que se escoge se queda
+  para la siguiente pestaña y para mañana. El consultor de Brasil la
+  picaba cada vez.
+- **Cambiar mi contraseña**, en el menú del nombre. La ruta existía y
+  no tenía botón: había que salir y usar «olvidé mi contraseña». Pide la
+  actual, guarda la nueva y, como cierra las demás sesiones, regresa a
+  la entrada con el correo puesto. La contraseña actual equivocada
+  contesta 403 y no 401: la consola toma el 401 como sesión vencida y
+  sacaba a la persona.
+- **Lo que el servidor escribía en español sale en el idioma de la
+  consola**: las frases de cada dimensión del profesionalismo («3 de
+  12 estrellas posibles en 4 meses», «2 leve») viajan con su clave y
+  sus números y la consola las arma; la nota de las encuestas trae su
+  clave; el rol de quien no tiene puesto sale con su nombre y no como
+  «director_operaciones».
+- **Detalles.** Las búsquedas del historial, del código de campo, del
+  tablero de personal y de la bitácora de administración descartan la
+  respuesta vieja que llegaba después de la nueva y pisaba la tabla; el
+  mapa del punto de encuentro espera a que se deje de teclear la
+  latitud (cada imagen de Google se paga: «-99.0719» pedía ocho) y se
+  queda con la última; la barra engancha un solo oyente de clic en vez
+  de uno por menú en cada repintado; el tabulador de lo que se paga por
+  día respeta los centavos y manda solo las celdas que cambiaron; la
+  app de campo dice el dinero en la moneda del país (pintaba «$» fijo
+  también en Brasil, en pagos, bono y viáticos).
+- **El Panorama**: el botón
+  «Abrir» de las alertas llevaba a «esa pantalla no existe»; «Por
+  depositar» y «afuera sin comprobar» dan un monto por moneda en vez de
+  sumar pesos con reales bajo «$»; y «Nómina de la semana» trae un
+  renglón por país, no la de un país cualquiera.
+- **En Catálogos, lo quitado tiene vuelta.** Un festivo, un hospital, un
+  hotel, una ciudad o un parámetro de combustible que se quitaba
+  desaparecía de la lista, no había «Reactivar» y volver a darlo de alta
+  chocaba con «ya existe»: el 25 de diciembre quitado por error dejaba
+  de pagarse al doble. Ahora los inactivos salen en gris con
+  «Reactivar». Y las fechas propuestas en la consola usan el día del
+  país, no el de Londres (desde las 18:00 salían corridas un día).
+- **La tabla de días ya no ofrece «Quitar» ni «Agregar día»** en un
+  servicio terminado, sin visto bueno, en facturación, cerrado o
+  cancelado: el servidor lo negaba desde la sección 98 y los botones
+  seguían ahí. Y la hoja congelada del task sheet ya no tiene tope:
+  con las fotos de 512 px que ahora manda Odoo una hoja pasaba de los
+  20,000 caracteres y publicarla contestaba «un texto es más largo de
+  lo que cabe» (migración `b4d6f8a0c2e4`).
+
+### El eventual: el alta, la hoja y la cartera
+
+- **Con dos o más equipos la hoja se arma y se confirma por equipo.**
+  Con Alfa y Beta el bloque del task sheet decía «el servicio tiene
+  varios equipos» y desaparecían el botón de confirmar, la vestimenta,
+  la señal y la hoja. Ahora hay un bloque por equipo, con lo que le
+  falta a cada hoja y sus botones de PDF y «Ver», y confirmar la
+  asignación no depende de que la vista previa cargue.
+- **Corregir el principal llega a la hoja y a los avisos.** El alta
+  copiaba el principal al equipo Alfa, y la hoja, el correo del task
+  sheet y los avisos de llegada y contacto leían la copia: se corregía
+  el teléfono arriba y todo seguía saliendo con el viejo. El alta ya no
+  copia (el primer equipo hereda el del servicio), y en los servicios
+  que ya existían la copia idéntica se suelta al corregir.
+- **Mover un día vuelve a revisar los empalmes.** Cambiar la fecha, la
+  modalidad, la hora, o capturar el vuelo que recorre la presentación,
+  dejaba a la gente y las unidades encima de otro servicio sin aviso.
+  Ahora se revisa la disponibilidad de cada uno con la ventana nueva:
+  el empalme real bloquea, el poco margen es una alerta que el
+  consultor acepta con «Mover igual» y queda en la bitácora.
+- **El punto de encuentro y el vuelo dejan rastro**, marcados como
+  cobertura cuando toca, y si el vuelo de llegada mueve la
+  presentación, a quien ya había confirmado le llega «Cambió tu hora».
+- **Eliminar un equipo acomoda la cotización.** Al eliminar Beta,
+  Gamma pasaba a llamarse Beta pero la cotización guardaba los renglones
+  por nombre: el comparativo y la factura quedaban desalineados. Los
+  renglones del equipo eliminado se quitan, los de los demás se
+  renombran y el total vuelve a ser la suma de lo que queda.
+- **La cartera sin tope y el buscador en el servidor.** Traía solo los
+  últimos cien servicios y buscaba entre esos: a veinte altas por día,
+  un servicio de hace una semana ya no aparecía. Ahora trae todos los
+  abiertos, los cerrados por partes con «Ver más», y el buscador le pide
+  al servidor lo que coincida entre los cerrados, sin acentos ni
+  mayúsculas, en una sola consulta.
+- **Un servicio de un solo día acepta el vuelo de salida**: el transfer
+  al aeropuerto solo tenía la casilla de llegada y, usada para el vuelo
+  de salida, recorría la presentación.
+- **«Asignar recursos» y «Pagos» ya no crecen con el historial.**
+  Medido: 930 consultas y 0.65 s con 16 personas y 3 días; ahora 20
+  consultas y 0.06 s, sin crecer con los días ni con los meses. «Pagos»
+  en la app recorría todas las jornadas terminadas del país para
+  quedarse con las de quien pregunta; la base entrega solo las suyas.
+  Nada de lo que se ve cambia.
+- **Un implantado recién capturado por error se puede eliminar** desde
+  la pantalla (el servidor ya lo permitía en «solicitado»).
+- **Detalles del alta y de la hoja.** La escalación de la hoja toma al
+  director de operaciones del país del servicio; quien solicita se
+  reconoce por correo exacto («_» ya no es comodín); la encuesta se
+  re-apunta con la hora del país; los textos largos del alta y de la
+  hoja contestan 422 con qué corregir; el aviso al mover solo la fecha
+  dice que cambió la fecha; «Cancelar» no se ofrece donde el servidor
+  lo niega; dos consultores asignando a la vez al mismo recurso chocan
+  (candado por persona y unidad); la imagen de la señal se escapa en la
+  hoja y solo acepta una imagen incrustada o un enlace.
+
+### Del término a la factura
+
+- **El consultor no clasifica la encuesta que lo califica.** La del
+  solicitante califica al consultor y él mismo la podía cerrar «sin
+  incidencia». La clasifica dirección de operaciones; una sola vez, y
+  con una incidencia del mismo servicio.
+- **«Ver el correo» de la encuesta ya no regala el enlace** para
+  contestarla: quien solo ve encuestas lo ve tapado; quien ya podía
+  sacarlo lo ve vivo y queda en la bitácora.
+- **El cierre no se abre antes del término.** Por la API nacía con la
+  fecha que se mandara y mandaba las encuestas antes de trabajar el
+  servicio. Solo con el servicio terminado, con el T0 del sistema y sin
+  encuestas desde ahí.
+- **La encuesta que no nació se manda después.** Sin correo del
+  principal no había encuesta y nada la mandaba al capturarlo. Al
+  corregir el correo de un servicio terminado la encuesta sale sola, y
+  la tarjeta del visto bueno lista las dos con su estado, con «Mandar»
+  para la que falta y «Reenviar el enlace» para la viva, con rastro.
+- **Los dos avisos que deciden la comisión salen también por correo**:
+  «arrancan tus 24 horas» y «finanzas lo regresó» iban solo al
+  teléfono, y el consultor trabaja en la consola.
+- **Detalles.** Justificar una desviación solo sobre una que la revisión
+  enseña, con su tipo y su monto, mientras espera visto bueno; el
+  historial pinta los viáticos en la moneda del país; la aprobación, la
+  factura y su intento se sellan con la hora del país (para Brasil, fin
+  de mes caía en el mes anterior y la comisión entraba a otro corte);
+  la revisión reporta «sin rol» o «la lista no cotiza X» como
+  observación en vez de reventar; las respuestas de escala de la
+  encuesta van de 1 a 5; la página de la encuesta contestada o vencida
+  habla el idioma en que salió; si Odoo contesta sin folio el cierre no
+  queda «facturado»; dos «Dar visto bueno» a la vez no duplican los
+  ajustes de nómina (candado en el cierre, también en el mes del
+  implantado).
+
+### El implantado
+
+- **Editar el trato ya no regresa un 12 × 36 a «natural».** La consola
+  mandaba el trato sin el turno y el servidor lo rellenaba: el mes
+  siguiente nacía con las dos personas todos los días y los fines de
+  semana sin nadie. Se escribe solo lo que llega, la consola manda el
+  turno, y con un mes generado el turno ya no se cambia.
+- **El relevo toma el rol de la posición que cubre**, no el de la
+  primera fila de la plantilla (Carlos cubría al conductor y cobraba
+  como coordinador); en 12 × 36 la ficha ofrece una sola posición.
+- **El día 1 abre el mes aunque el reloj no haya corrido la última
+  semana**, y se pone al día con los meses que falten en una sola
+  vuelta.
+- **El mes de un implantado cancelado tiene dónde cerrarse**: el aviso
+  de las 24 horas llevaba a «no existe». La cartera lo sigue mostrando
+  mientras un mes suyo tenga cierre por terminar y la pantalla se abre
+  en consulta, con la tarjeta de cada mes.
+- **Cubrir un día cancelado pide reactivarlo primero**, con el botón en
+  la ficha; antes le ponía gente y lo dejaba cancelado.
+- **La plantilla se valida en el servidor** (personal de seguridad
+  activo de la ciudad, unidad fija y disponible) y **cada mes se
+  revalida al abrirse**: la baja de Odoo o la unidad en el taller
+  dejan la posición por cubrir, en ámbar, con su alerta para la central
+  y el aviso al consultor; la hoja no se libera con días sin nadie.
+- **Guardar la plantilla del mes no pisa los fines de semana ni los
+  relevos puestos a mano**: solo rehace los días hábiles y respeta a
+  quien no era de la plantilla anterior.
+- **La unidad sale del taller**: fecha de salida y «Salió del taller»
+  en el bloque del mes; la que vino de Odoo se cierra en Odoo, con
+  mensaje.
+- **Detalles.** Reabrir un día hábil no lo cobra como adicional; la hoja
+  imprime la distancia de los hospitales; mes 13, hora «8:00» y montos
+  negativos contestan 422; el trato, el taller, el mes siguiente y la
+  red del cierre del mes usan el día del país; el panel del mes lista
+  solo sus cambios; guardar la plantilla retoma los precios de la
+  lista; la hoja del servicio presenta la plantilla del mes que se
+  opera hoy; la prueba que dependía de la fecha ya no depende. Lo de la
+  sección 98 (cerrar un día con rastro, el depósito ya en el banco) se
+  comprobó y quedó amarrado con pruebas.
+
+### La nómina, las comisiones y el bono
+
+- **Una comisión retenida no se cancela por factura no cobrada.** Se
+  aceptaba y descontaba dinero que nunca se pagó. Solo sobre la que se
+  paga o se pagó; con quién lo registró y el mes que pone el sistema.
+- **Una evaluación autorizada no se recalcula** (se corrige con ajuste),
+  y decir a mano si la capacitación se cumplió deja rastro con quién.
+- **El borrador de las 7:00 que no cierra a las 11:00 lo dice la
+  pantalla**: cuál persona, día, modalidad y rol se quedaron sin tarifa,
+  y ese borrador no se marca pagado hasta que la tarifa esté y el corte
+  se recalcule. Antes finanzas veía el borrador viejo con «Marcar
+  pagado» como si nada.
+- **Detalles.** Un borrador viejo ya no deja al reloj armar un corte
+  vacío que quedaba «listo» para siempre; al relevado se le exige en el
+  bono solo lo de antes del relevo; los montos, umbrales, factores y
+  pesos tienen rango (−700, 150 %, factor 0 se guardaban), y un dato
+  imposible es 422 o 404, no error del servidor; «ver los cortes de
+  nómina» ya no lo traen de fábrica el consultor ni la central (siguen
+  viendo su comisión).
+
+### La contingencia, el GPS y la central
+
+- **«Cambio formalizado · Luis entra por Juan» llega a la ficha de
+  pánico** de la central, y el panel del cambio liga la alerta abierta.
+- **El regreso del titular avisa al teléfono a los dos**, y el cambio de
+  personal del implantado avisa a quien entra y a quien sale. El correo
+  al cliente por esos cambios es decisión.
+- **Deshacer contesta claro** si el titular ya regresó o si el día ya
+  terminó, y no deja el día partido.
+- **Un cambio para otro día pide volver a publicar la hoja**: la
+  publicada era una foto con el nombre viejo y la revisión decía «hoja:
+  lista». Lo dice la respuesta, la tarjeta del cambio y la revisión de
+  la central, y el bloque del task sheet gana «Volver a publicar la
+  hoja».
+- **El tablero de la central no se repinta con una captura en curso**:
+  cada 45 segundos se llevaba la resolución del pánico a medio escribir.
+- **Detalles.** El secreto del disparador de Pegasus no queda en los
+  registros de acceso (el proxy no escribe ese aviso, la API lo tapa, y
+  hay una puerta por cabecera `X-Pegasus-Secreto`); Unidades enseña la
+  unidad de baja en Odoo en su renglón; el dinero de la vista previa del
+  cambio en `Decimal`; la hora del relevo se valida (del día, ya
+  ocurrida, no antes de la llegada de quien sale); la hora del pánico
+  sale en la hora del país del servicio.
+
+### Cómo se hizo
+
+Cinco frentes a la vez sobre copias del código (`ola4/g2` a `g6`, cada
+uno con su base de pruebas), a partir de los hallazgos de cada revisor,
+y la consola a mano; los cinco se integraron en `obra` con tres choques
+resueltos (`manual.py`, `nomina.py`, `schemas.py`) y una prueba estática
+que se relajó (publicar la hoja por servicio es válido). Las claves de
+idioma de cada frente van en su bloque `seccion 101 (gN)` al final de
+cada idioma.
+
+### Por dentro
+
+- `main.py`: el manejador de `RequestValidationError`
+  (`renglon_de_captura`, `TIPOS_DE_CAPTURA`, `FRASES_DE_CAPTURA`).
+  `web/api.js`: `ErrorApi.traducir`, `texto`, `TIPOS`, `DE_FABRICA`,
+  `sesionVencida`, `destinoPendiente`, `detalleDe`. `web/app.js`: el
+  oyente global, `idiomaDelUsuario`, `pantallaContrasena`,
+  `nombreDelRol`. `web/idioma.js`: `idiomaGuardado` con `localStorage`.
+  `texto.py` y `web/util.js`: `das` y `con_mayuscula_adentro`.
+  `contrasenas.cambiar`: 403. `auth.requiere`: `que_hacer`.
+  `profesionalismo.py` y `gps.py`: `frase` por dimensión;
+  `web/personal.js`: `fraseDe`. `routers/encuestas.py`: `clave`.
+  `web/historial.js`, `codigo.js`, `personal.js`, `bitacora_admin.js`,
+  `mapa.js`: contadores de petición. `web/nomina.js`: el tabulador.
+  `routers/campo.py` y `web/campo/app.js`: `moneda` y `dineroApp`.
+  `panorama.py` y `web/panorama.js`: por moneda y por país.
+  `routers/catalogos.py`, `web/catalogos_pantalla.js`: los inactivos y
+  «Reactivar». `web/util.js`: `hoyLocal`, `fechaLocal`.
+- Eventual: `web/servicio.js` (`bloqueTaskSheet` por equipo,
+  `choqueDeDia`, `panelDeChoque`, `conForzar`, `bloqueOrigen` con el
+  vuelo de salida, `ANTES_DE_ARRANCAR`, `YA_NO_SE_CANCELA`),
+  `web/consultor.js` (el alta sin copia del principal, la cartera con
+  «Ver más» y `buscarCerrados`), `contactos_servicio.py`
+  (`_adoptar_el_del_servicio`), `disponibilidad.py` (`de_la_jornada`,
+  `frenar_si_choca`, `recomendar_*_por_dia`), `routers/servicios.py`
+  (`corregir_dia` con `forzar`, `listar_servicios` con `vivos`,
+  `antes_de`, `q`, `_candado_del_recurso`, `eliminar_equipo`),
+  `routers/operacion.py` (rastro y aviso del vuelo), `cotizacion.py`
+  (`al_eliminar_equipo`), `profesionalismo.py` (`fichas` por lote),
+  `experiencia.py`, `gps.py` (`manejo_de_varios`), `nomina.py`
+  (`jornadas_pendientes` por persona), `tasksheet.py` (`_escalacion`),
+  `routers/solicitantes.py`, `push.py` (`cambio_fecha_*`),
+  `tasksheet_html.py` (`_senal`), `schemas.py` (topes, `forzar`,
+  `_imagen_o_enlace`).
+- Cierre: `encuestas.py` (`es_juez_y_parte`, `sin_encuesta`,
+  `reenviar`, la escala, los textos de la página), `routers/encuestas.py`
+  (`clasificar`, `ver_correo`, `del_servicio`, `/reenviar`),
+  `encuestas_html.py`, `cierre.py` (`YA_TERMINO`, `correo_al_consultor`,
+  `tomar`), `routers/cierre.py` (`abrir`, `respaldar`, `aprobar`,
+  `enviar_finanzas`), `cierre_mes.py`, `facturacion.py`, `revisor.py`,
+  `cotizacion.py` (`_sin_precio`), `textos_aviso.py`, `web/cierre.js`
+  (`bloqueEncuestas`, `paraRevisar`), `web/historial.js`,
+  `web/contactos.js`, `schemas.py` (`RespuestaEncuestaIn`).
+- Implantado: `implantado.py` (`roles_por_posicion`,
+  `posiciones_del_dia`, `atrasado`, `YA_NO_SE_ARMA`, `_sin_cancelar`,
+  `validar_plantilla`, `plantilla_fuera`, `rehacer_dias`,
+  `hoy_del_servicio`, `dias_en_ambar`), `routers/implantados.py`
+  (`AcuerdoIn.turno`, `guardar_acuerdo`, `/ficha`, `PUT
+  .../taller/{id}`, `hora_valida`, `panel_del_mes`, `guardar_plantilla`),
+  `cierre_mes.py`, `hoja_implantado.py`, `hoja_implantado_html.py`,
+  `routers/tasksheet.py`, `web/implantado.js`.
+- Nómina: `comisiones.cancelar_por_no_cobro`, `bonos.evaluar` y
+  `medir_seguimiento`, `nomina.py` (`_sin_tarifa`,
+  `sin_tarifa_pendiente`, `semana`, `pagar`, `_hay_que_pagar`,
+  `reloj_del_lunes` con `vacio`), `routers/nomina.py`,
+  `routers/bonos.py`, `routers/profesionalismo.py`, `bitacora_admin.py`,
+  `permisos.py`, `schemas.py` (`TOPE_AJUSTE`, rangos), `web/nomina.js`.
+- Contingencia: `contingencia.py` (`quien_entra_por_quien`,
+  `hoja_anterior_al_cambio`, `revisar_hora_del_relevo`, `deshacer`),
+  `routers/contingencia.py`, `central.py` (`_cambio_de_la_alerta`,
+  `_hoja_vieja`, `_pais_de_la_alerta`), `push.py` (`avisar_regreso`),
+  `routers/implantados.py`, `gps.py`, `routers/gps.py`, `main.py`
+  (`tapar_secreto`), `despliegue/Caddyfile` (`log_skip`), `manual.py`,
+  `web/central.js` (`hayCaptura`), `web/servicio.js` (`botonRepublicar`),
+  `web/unidades.js`.
+- La app de campo cambia (`campo/app.js`): el armazón sube a
+  `centauro-campo-v18`. Migración `b4d6f8a0c2e4` (`task_sheet.contenido`
+  pasa a `Text`). `web/servicio.js`: `YA_NO_SE_ARMA` y `tablaDias`.
+
+### Las pruebas
+
+- Seis archivos nuevos: `tests/test_revision_101_consola.py` (16),
+  `_eventual.py` (31), `_cierre.py` (18), `_implantado.py` (24),
+  `_nomina.py` (16) y `_contingencia.py` (18): cada regla de arriba con
+  su escenario, adaptadas de las que reprodujeron los hallazgos.
+- Pruebas viejas que cambiaron con la regla: la contraseña actual
+  equivocada contesta 403; abrir el cierre de un servicio planeado ya no
+  se puede (se cierra a mano y `abrir` devuelve el cierre que nació);
+  sin rol el dinero se detiene con 409 y su observación; la página de la
+  encuesta vencida habla inglés al principal que la recibió en inglés;
+  la hora del relevo se manda con `?ahora=`; el monto de la vista previa
+  del cambio sale como cadena; la prueba del mes siguiente usa un mes
+  fijo; el servicio de mentiras del proceso de la mañana trae país.
+- La batería completa en verde.
+
+### Para subirlo
+
+- **Con migración** (`b4d6f8a0c2e4`: `task_sheet.contenido` sin tope):
+  el bloque de siempre, con `alembic upgrade head`, y la recarga del
+  proxy, porque cambia el `Caddyfile`. Cambian la consola y la app de
+  campo.
+- Después de subir, en Accesos → editar puesto, quitar «ver los cortes
+  de nómina» a los cuatro puestos que ya la traen guardada: Consultor de
+  seguridad, Consultor JR, Supervisor de central y Monitorista (los
+  puestos que se creen desde ahora ya no la traen).
+
 ## 14. Lo que falta
 
 ### Abierto
@@ -7299,9 +7656,10 @@ nunca existió: la flota se lee desde la consola.
   hallazgos en `REVISION_2026_09_28.md`. La primera tanda —el dinero
   y los días trabajados— quedó en la sección 98; la segunda —la app
   de campo y el ciclo del día— en la 99; la tercera —accesos, correo,
-  reloj y servidor, con el subdominio `www`— en la 100. Falta la
-  cuarta: la consola, el implantado, la nómina y los detalles. Y las
-  14 decisiones, que se le llevan juntas al final.
+  reloj y servidor, con el subdominio `www`— en la 100; y la cuarta
+  —la consola, el eventual, el cierre, el implantado, la nómina y la
+  contingencia— en la 101. Quedan las 14 decisiones, que se le llevan
+  juntas.
 - **El puesto de administración del sistema y calidad**: Aridiai
   Morales. Aprobado el 27 de septiembre con sus pantallas. Hechos los
   cuatro pasos: los candados de Accesos (sección 83), el puesto con sus

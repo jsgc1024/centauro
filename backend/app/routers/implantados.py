@@ -7,7 +7,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app import accesos, auditoria, auth
@@ -19,6 +19,7 @@ from app import comisiones
 from app import reloj
 from app import implantado as motor
 from app import implantado_precios
+from app import push
 from app import tasksheet
 from app import viaticos_implantado as viaticos
 from app import models as m
@@ -34,15 +35,34 @@ DINERO = auth.puede("implantado.viaticos")
 LECTURA = auth.puede("implantado.ver")
 
 
+def hora_valida(valor: str) -> str:
+    """La hora del encuentro como HH:MM:SS, o un 422 con que corregir.
+
+    Una "8:00" pasaba el esquema y reventaba al generar el mes con un
+    500 sin explicacion (seccion 101). Se acepta HH:MM y se guarda con
+    sus segundos, que es como la leen los dias.
+    """
+    try:
+        return time.fromisoformat(str(valor).strip()).isoformat()
+    except ValueError:
+        raise ValueError("La hora no se entiende: escríbela como 07:30:00.")
+
+
+def _hora_valida(cls, v):
+    return hora_valida(v)
+
+
 class ContratoIn(BaseModel):
     servicio_id: int
-    anio: int
-    mes: int
+    # Un mes 13 reventaba el calendario con un 500 (seccion 101).
+    anio: int = Field(ge=2000, le=2100)
+    mes: int = Field(ge=1, le=12)
     modalidad_id: int
     esquema: m.EsquemaCotizacionImplantado = m.EsquemaCotizacionImplantado.POR_DIA
     incluye_fines_de_semana: bool = False
     dias_servicio: m.DiasServicio | None = None
     hora_presentacion: str = "08:00:00"
+    _hora = field_validator("hora_presentacion")(_hora_valida)
     titular_id: int | None = None
     titular_rotacion_id: int | None = None
     vehiculo_id: int | None = None
@@ -403,7 +423,12 @@ class AcuerdoIn(BaseModel):
     dias_servicio: m.DiasServicio | None = None
     # "natural" --una persona, doce horas corridas-- o "12x36" --dos
     # personas alternando, los siete dias--. Ver AcuerdoImplantado.turno.
-    turno: Literal["natural", "12x36"] = "natural"
+    # Sin valor por omision: al corregir el trato solo se escribe lo que
+    # viene, y un cuerpo sin `turno` dejaba un 12x36 en natural --el mes
+    # siguiente nacia con las dos personas todos los dias habiles y los
+    # fines de semana sin nadie (seccion 101)--. El alta lo toma como
+    # natural si no lo dice.
+    turno: Literal["natural", "12x36"] | None = None
     origen_direccion: str | None = None
     origen_lat: Decimal | None = None
     origen_lon: Decimal | None = None
@@ -478,6 +503,7 @@ class MesImplantadoIn(BaseModel):
     dias_cubiertos: list[date] = []
     modalidad_id: int
     hora_presentacion: str = "08:00:00"
+    _hora = field_validator("hora_presentacion")(_hora_valida)
     esquema: m.EsquemaCotizacionImplantado = m.EsquemaCotizacionImplantado.POR_DIA
     personal: list[EnPlantillaIn] = []
     unidades: list[int] = []
@@ -528,6 +554,7 @@ class AltaImplantadoIn(BaseModel):
     dias_cubiertos: list[date] = []
     modalidad_id: int
     hora_presentacion: str = "08:00:00"
+    _hora = field_validator("hora_presentacion")(_hora_valida)
     esquema: m.EsquemaCotizacionImplantado = m.EsquemaCotizacionImplantado.POR_DIA
     # La plantilla del mes: cualquier combinacion, siempre con al menos
     # un conductor de seguridad y toda unidad con el suyo.
@@ -629,8 +656,10 @@ def _guardar_servicio(db: Session, usuario: m.Usuario, datos) -> m.Servicio:
     db.flush()
     servicio.folio = siguiente_folio(db, m.TipoServicio.IMPLANTADO)
 
-    db.add(m.AcuerdoImplantado(servicio_id=servicio.id,
-                               **datos.acuerdo.model_dump()))
+    trato = datos.acuerdo.model_dump()
+    # El alta que no dice el turno es natural (seccion 101).
+    trato["turno"] = trato.get("turno") or motor.TURNO_NATURAL
+    db.add(m.AcuerdoImplantado(servicio_id=servicio.id, **trato))
     auditoria.registrar(db, usuario, servicio, "alta implantado",
                         "cliente y trato")
     db.flush()
@@ -789,7 +818,11 @@ def disponibilidad(plaza_id: int, desde: date, dias_servicio: m.DiasServicio,
     if not dias:
         raise HTTPException(409, "Ese periodo no tiene dias de servicio")
 
-    arranque = time.fromisoformat(hora)
+    # Una hora que no se entiende contestaba 500 (seccion 101).
+    try:
+        arranque = time.fromisoformat(hora_valida(hora))
+    except ValueError as error:
+        raise HTTPException(422, str(error))
     horas = float(modalidad.horas)
     ventanas = []
     for dia in dias:
@@ -855,12 +888,67 @@ def disponibilidad(plaza_id: int, desde: date, dias_servicio: m.DiasServicio,
             "personal": personal, "vehiculos": vehiculos}
 
 
+# Las fases del cierre de un mes en las que ya no queda nada por hacer.
+CIERRE_TERMINADO = ("aprobado", "facturado")
+
+
+def _ficha_de_cartera(db: Session, s_: m.Servicio, ciudades: dict) -> dict:
+    """El renglon de un implantado en la cartera, y lo que su pantalla
+    necesita para pintarse: sus meses con la fase de cada cierre."""
+    meses = (db.query(m.ContratoImplantado)
+             .filter_by(servicio_id=s_.id)
+             .order_by(m.ContratoImplantado.anio.desc(),
+                       m.ContratoImplantado.mes.desc()).all())
+    ultimo = meses[0] if meses else None
+    relojes = cierre_mes.relojes_de(db, meses)
+    hoy = reloj.hoy_en(db.get(m.Pais, s_.pais_id))
+    return {
+        "servicio_id": s_.id, "folio": s_.folio,
+        "cliente": s_.cliente.nombre if s_.cliente else None,
+        "ejecutivo": s_.ejecutivo_completo,
+        "ciudad": ciudades.get(s_.plaza_id),
+        "estatus": s_.estatus.value,
+        "titular": ultimo.titular.nombre if ultimo and ultimo.titular else None,
+        "unidad": ultimo.vehiculo.placa if ultimo and ultimo.vehiculo else None,
+        "ultimo_mes": (f"{ultimo.mes:02d}/{ultimo.anio}" if ultimo else None),
+        "meses": len(meses),
+        # Los meses abiertos, del mas viejo al mas nuevo, y si se
+        # puede abrir el que sigue. Con esto el panel pinta las
+        # pestanas del mes y el boton, sin otra vuelta al servidor.
+        "periodos": [{"anio": c.anio, "mes": c.mes,
+                      "periodo": f"{c.mes:02d}/{c.anio}",
+                      "contrato_id": c.id,
+                      # En que va el cierre de cada mes; vacio
+                      # mientras se trabaja (seccion 56). Con su
+                      # reloj, si corre uno (seccion 59).
+                      "fase": (relojes.get(c.id) or {}).get("fase"),
+                      "reloj": (relojes.get(c.id) or {}).get("reloj"),
+                      "sin_cierre": (None if c.id in relojes
+                                     else _sin_cierre(db, c, hoy))}
+                     for c in reversed(meses)],
+        "siguiente": motor.estado_desde(ultimo, s_, hoy),
+    }
+
+
+def _con_cierre_pendiente(ficha: dict) -> bool:
+    """Si a algun mes le falta cerrar: tiene cierre y no esta terminado."""
+    return any(p["fase"] and p["fase"] not in CIERRE_TERMINADO
+               for p in ficha["periodos"])
+
+
 @router.get("", summary="Cartera de implantados")
 def cartera(db: Session = Depends(get_db), _=Depends(LECTURA)):
-    """Uno por servicio, no uno por mes: el implantado es continuo."""
+    """Uno por servicio, no uno por mes: el implantado es continuo.
+
+    El cancelado sigue en la cartera mientras un mes suyo tenga cierre
+    por terminar (seccion 101): cancelar con dias trabajados arranca el
+    cierre del mes, y escondido de la cartera ese mes se quedaba sin
+    visto bueno --la comision se perdia por plazo y la factura nunca
+    salia--. Ya cerrado todo, se va de la lista; su pantalla sigue
+    abriendo por su enlace (`/{servicio_id}/ficha`).
+    """
     servicios = (db.query(m.Servicio)
-                 .filter(m.Servicio.tipo == m.TipoServicio.IMPLANTADO,
-                         m.Servicio.estatus != m.EstatusServicio.CANCELADO)
+                 .filter(m.Servicio.tipo == m.TipoServicio.IMPLANTADO)
                  .order_by(m.Servicio.id.desc()).all())
     # El servicio guarda el id de la ciudad, no la ciudad: se traen una
     # vez y se buscan aqui, en vez de una consulta por renglon.
@@ -868,40 +956,23 @@ def cartera(db: Session = Depends(get_db), _=Depends(LECTURA)):
 
     salida = []
     for s_ in servicios:
-        meses = (db.query(m.ContratoImplantado)
-                 .filter_by(servicio_id=s_.id)
-                 .order_by(m.ContratoImplantado.anio.desc(),
-                           m.ContratoImplantado.mes.desc()).all())
-        ultimo = meses[0] if meses else None
-        relojes = cierre_mes.relojes_de(db, meses)
-        hoy = reloj.hoy_en(db.get(m.Pais, s_.pais_id))
-        salida.append({
-            "servicio_id": s_.id, "folio": s_.folio,
-            "cliente": s_.cliente.nombre if s_.cliente else None,
-            "ejecutivo": s_.ejecutivo_completo,
-            "ciudad": ciudades.get(s_.plaza_id),
-            "estatus": s_.estatus.value,
-            "titular": ultimo.titular.nombre if ultimo and ultimo.titular else None,
-            "unidad": ultimo.vehiculo.placa if ultimo and ultimo.vehiculo else None,
-            "ultimo_mes": (f"{ultimo.mes:02d}/{ultimo.anio}" if ultimo else None),
-            "meses": len(meses),
-            # Los meses abiertos, del mas viejo al mas nuevo, y si se
-            # puede abrir el que sigue. Con esto el panel pinta las
-            # pestanas del mes y el boton, sin otra vuelta al servidor.
-            "periodos": [{"anio": c.anio, "mes": c.mes,
-                          "periodo": f"{c.mes:02d}/{c.anio}",
-                          "contrato_id": c.id,
-                          # En que va el cierre de cada mes; vacio
-                          # mientras se trabaja (seccion 56). Con su
-                          # reloj, si corre uno (seccion 59).
-                          "fase": (relojes.get(c.id) or {}).get("fase"),
-                          "reloj": (relojes.get(c.id) or {}).get("reloj"),
-                          "sin_cierre": (None if c.id in relojes
-                                         else _sin_cierre(db, c, hoy))}
-                         for c in reversed(meses)],
-            "siguiente": motor.estado_desde(ultimo, s_),
-        })
+        ficha = _ficha_de_cartera(db, s_, ciudades)
+        if (s_.estatus == m.EstatusServicio.CANCELADO
+                and not _con_cierre_pendiente(ficha)):
+            continue
+        salida.append(ficha)
     return salida
+
+
+@router.get("/{servicio_id}/ficha", summary="Un implantado, como en la cartera")
+def ficha(servicio_id: int, db: Session = Depends(get_db), _=Depends(LECTURA)):
+    """Lo que la pantalla del implantado lee para pintarse, este o no en
+    la cartera: el cancelado con un mes por cerrar llega por el enlace
+    del aviso «24 h para el visto bueno», y decia «no existe»
+    (seccion 101)."""
+    servicio = _servicio_implantado(db, servicio_id)
+    ciudades = {p.id: p.nombre for p in db.query(m.Plaza).all()}
+    return _ficha_de_cartera(db, servicio, ciudades)
 
 
 def _sin_cierre(db: Session, contrato: m.ContratoImplantado,
@@ -923,14 +994,15 @@ def _sin_cierre(db: Session, contrato: m.ContratoImplantado,
     return "dias_sin_cerrar" if pendientes else "sin_nada"
 
 
-def _contrato_vigente(db: Session, servicio_id: int):
-    """El mes que manda hoy: el de este mes, y si no, el mas reciente."""
-    hoy = date.today()
-    delMes = _contrato_del_mes(db, servicio_id, hoy.year, hoy.month)
+def _contrato_vigente(db: Session, servicio: m.Servicio):
+    """El mes que manda hoy --el hoy del pais del servicio, no el del
+    servidor (seccion 101)--: el de este mes, y si no, el mas reciente."""
+    hoy = motor.hoy_del_servicio(db, servicio)
+    delMes = _contrato_del_mes(db, servicio.id, hoy.year, hoy.month)
     if delMes:
         return delMes
     return (db.query(m.ContratoImplantado)
-            .filter_by(servicio_id=servicio_id)
+            .filter_by(servicio_id=servicio.id)
             .order_by(m.ContratoImplantado.anio.desc(),
                       m.ContratoImplantado.mes.desc())
             .first())
@@ -945,7 +1017,7 @@ def ver_acuerdo(servicio_id: int, db: Session = Depends(get_db),
     # La hora del encuentro vive en el contrato del mes, no en el
     # acuerdo. Viaja con el acuerdo porque es donde se lee y donde se
     # corrige: quien mira el trato quiere saber a que hora es.
-    contrato = _contrato_vigente(db, servicio.id)
+    contrato = _contrato_vigente(db, servicio)
     delMes = {
         "hora_presentacion": contrato.hora_presentacion if contrato else None,
         "mes_anio": contrato.anio if contrato else None,
@@ -978,7 +1050,7 @@ def cambiar_hora(servicio_id: int, datos: HoraDeEncuentroIn,
     servicio = _servicio_implantado(db, servicio_id)
     contrato = (_contrato_del_mes(db, servicio.id, datos.anio, datos.mes)
                 if datos.anio and datos.mes
-                else _contrato_vigente(db, servicio.id))
+                else _contrato_vigente(db, servicio))
     if not contrato:
         raise HTTPException(409, {
             "mensaje": "Ese servicio no tiene ningun mes abierto",
@@ -1007,7 +1079,29 @@ def guardar_acuerdo(servicio_id: int, datos: AcuerdoIn,
         acuerdo = m.AcuerdoImplantado(servicio_id=servicio.id)
         db.add(acuerdo)
     antes = acuerdo.fecha_inicio
-    for campo, valor in datos.model_dump().items():
+    # Solo lo que vino (seccion 101): un cuerpo sin `turno` rellenaba el
+    # turno con "natural" y un 12x36 se volvia natural al corregir el
+    # protocolo. Lo que se manda vacio si se borra: la consola manda el
+    # trato completo.
+    cambios = datos.model_dump(exclude_unset=True)
+    turno_actual = acuerdo.turno or motor.TURNO_NATURAL
+    turno_nuevo = cambios.get("turno") or turno_actual
+    if turno_nuevo != turno_actual and (
+            db.query(m.ContratoImplantado)
+            .filter_by(servicio_id=servicio.id, generado=True).count()):
+        # Del turno salen que dias tiene el mes y quien va en cada uno:
+        # con un mes ya en la calle no se cambia, ni de natural a 12x36
+        # ni al reves.
+        raise HTTPException(409, {
+            "mensaje": "El turno no se cambia con un mes ya generado",
+            "que_hacer": "Del turno salen los días del mes y quién va en "
+                         "cada uno. Si el trato cambia de verdad, se cierra "
+                         "este implantado y se da de alta otro con el turno "
+                         "nuevo.",
+        })
+    if "turno" in cambios and cambios["turno"] is None:
+        cambios["turno"] = turno_actual
+    for campo, valor in cambios.items():
         setattr(acuerdo, campo, valor)
     auditoria.registrar(db, usuario, servicio, "acuerdo implantado",
                         datos.zona_operacion or "alcance actualizado")
@@ -1132,7 +1226,11 @@ def panel_del_mes(servicio_id: int, anio: int, mes: int,
 
     cambios = []
     if equipo:
-        ids = [j.id for j in equipo.jornadas]
+        # Solo los cambios que arrancan en un dia de ESTE mes: el equipo
+        # es el mismo mes tras mes, y el panel listaba los de todos los
+        # meses (seccion 101).
+        ids = [j.id for j in equipo.jornadas
+               if primero <= j.fecha <= ultimo]
         for r in (db.query(m.ReemplazoRecurso)
                   .filter(m.ReemplazoRecurso.desde_jornada_id.in_(ids)).all()
                   if ids else []):
@@ -1286,7 +1384,10 @@ def calendario(servicio_id: int, anio: int, mes: int,
         "cancelados": sorted(cancelados),
         "dias": motor.calendario_del_mes(
             anio, mes, contrato.dias_servicio, contrato.desde_dia, cubiertos,
-            motor.turno_del_servicio(db, servicio.id), cancelados),
+            motor.turno_del_servicio(db, servicio.id), cancelados,
+            # El dia abierto sin nadie va en ambar tambien entre semana
+            # (seccion 101).
+            vacios=motor.dias_abiertos_sin_nadie(equipo)),
     }
 
 
@@ -1426,6 +1527,21 @@ def cambiar(servicio_id: int, datos: CambioRecursoIn,
                         + (f"; dia partido: {', '.join(partidos)}"
                            if partidos else ""))
     db.commit()
+
+    # El aviso al telefono, como en el router de contingencia (seccion
+    # 101). A se enferma a las 10:00 y entra C: el recordatorio de la
+    # vispera solo mira manana, asi que C no se enteraba mas que por
+    # telefono, y A podia presentarse al dia siguiente. Sale despues de
+    # guardar y nunca tumba el cambio. Solo de personal: una unidad no
+    # tiene telefono, y el correo al cliente del implantado es decision
+    # de Salvador.
+    if datos.tipo == m.TipoRecurso.PERSONAL:
+        entra = db.get(m.Persona, datos.entra_id)
+        sale = db.get(m.Persona, datos.sale_id)
+        resultado["avisado"] = (push.avisar_relevo(db, entra, sale, resultado)
+                                if entra and sale else None)
+        # `avisar` apaga los telefonos que ya no existen: se guarda.
+        db.commit()
     return resultado
 
 
@@ -1486,7 +1602,8 @@ def hospitales_del_servicio(servicio_id: int, db: Session = Depends(get_db),
 class RenglonTabuladorIn(BaseModel):
     """Un concepto del tabulador del acuerdo, por dia y por persona."""
     concepto: m.ConceptoViatico
-    monto: Decimal = Decimal("0")
+    # Un monto negativo no es un viatico (seccion 101).
+    monto: Decimal = Field(default=Decimal("0"), ge=0)
     # El concepto que existe pero no tiene numero fijo: se captura el dia
     # que toca. Un taxi que a veces hay y a veces no.
     monto_abierto: bool = False
@@ -1529,7 +1646,9 @@ def guardar_tabulador(servicio_id: int, datos: TabuladorDelAcuerdoIn,
 class ViaticoDelMesIn(BaseModel):
     """Lo que se le deposita a una persona por sus dias de ese mes."""
     persona_id: int
-    monto: Decimal
+    # Sin negativos (seccion 101): `fijar` los repartia entre los dias y
+    # el viatico nacia con deuda.
+    monto: Decimal = Field(ge=0)
 
 
 class DepositoDelMesIn(BaseModel):
@@ -1759,21 +1878,27 @@ def al_taller(servicio_id: int, datos: TallerIn,
             **resultado}
 
 
-@router.get("/{servicio_id}/taller",
-            summary="Unidades del servicio que estan o estuvieron fuera")
-def taller_del_servicio(servicio_id: int, db: Session = Depends(get_db),
-                        _=Depends(LECTURA)):
-    servicio = _servicio_implantado(db, servicio_id)
+def _unidades_del_servicio(db: Session, servicio: m.Servicio) -> set:
+    """Las unidades que este implantado uso en algun dia o algun mes."""
     equipo = servicio.equipos[0] if servicio.equipos else None
     usadas = {a.vehiculo_id for j in (equipo.jornadas if equipo else [])
               for a in j.vehiculos}
     contratos = (db.query(m.ContratoImplantado)
                  .filter_by(servicio_id=servicio.id).all())
-    usadas |= {c.vehiculo_id for c in contratos if c.vehiculo_id}
+    return usadas | {c.vehiculo_id for c in contratos if c.vehiculo_id}
+
+
+@router.get("/{servicio_id}/taller",
+            summary="Unidades del servicio que estan o estuvieron fuera")
+def taller_del_servicio(servicio_id: int, db: Session = Depends(get_db),
+                        _=Depends(LECTURA)):
+    servicio = _servicio_implantado(db, servicio_id)
+    usadas = _unidades_del_servicio(db, servicio)
     if not usadas:
         return []
 
-    hoy = date.today()
+    # El hoy del pais del servicio, no el del servidor (seccion 101).
+    hoy = motor.hoy_del_servicio(db, servicio)
     filas = (db.query(m.TallerVehiculo)
              .filter(m.TallerVehiculo.vehiculo_id.in_(usadas))
              .order_by(m.TallerVehiculo.desde.desc()).all())
@@ -1782,8 +1907,62 @@ def taller_del_servicio(servicio_id: int, db: Session = Depends(get_db),
              "hasta": f.hasta.isoformat() if f.hasta else None,
              "tipo": f.tipo.value if f.tipo else None,
              "taller": f.taller, "folio": f.folio, "nota": f.nota,
-             "hoy_fuera": f.cubre(hoy)}
+             "hoy_fuera": f.cubre(hoy),
+             # La entrada que vino de Odoo se cierra en Odoo: la
+             # siguiente lectura la traeria otra vez (seccion 101).
+             "de_odoo": f.odoo_id is not None}
             for f in filas]
+
+
+class SalidaDelTallerIn(BaseModel):
+    """El dia en que la unidad volvio a la calle."""
+    hasta: date
+
+
+@router.put("/{servicio_id}/taller/{taller_id}",
+            summary="Sacar del taller una unidad: ponerle fecha de salida")
+def salir_del_taller(servicio_id: int, taller_id: int,
+                     datos: SalidaDelTallerIn, db: Session = Depends(get_db),
+                     usuario: m.Usuario = Depends(CONSULTOR)):
+    """La unidad que entro al taller sin fecha --lo normal en un
+    correctivo-- no tenia como salir: quedaba bloqueada para cualquier
+    servicio para siempre y el mes que sigue la copiaba a la plantilla
+    (seccion 101). Con la fecha de salida puesta, la disponibilidad y el
+    mes que se abra la vuelven a considerar desde ese dia.
+
+    Lo que vino de Odoo no se cierra aqui: la lectura de cada hora lo
+    dejaria como Odoo lo tenga. Se manda a cerrarlo alla.
+
+    Los dias que ya tienen a la otra unidad no cambian solos: si la
+    unidad vuelve al servicio, se cambia desde el dia con «Cambiar».
+    """
+    servicio = _servicio_implantado(db, servicio_id)
+    fila = db.get(m.TallerVehiculo, taller_id)
+    if not fila or fila.vehiculo_id not in _unidades_del_servicio(db, servicio):
+        raise HTTPException(404, f"No existe la entrada al taller {taller_id} "
+                                 "de una unidad de este servicio")
+    if fila.odoo_id is not None:
+        raise HTTPException(409, {
+            "mensaje": f"La entrada al taller de {fila.vehiculo.placa} vino "
+                       "de Odoo: no se cierra desde aquí",
+            "que_hacer": "Ponle la fecha de salida en Odoo (Flotilla → "
+                         "Servicios) y la siguiente lectura la trae.",
+        })
+    if datos.hasta < fila.desde:
+        raise HTTPException(409, {
+            "mensaje": f"La salida ({datos.hasta.isoformat()}) es antes de "
+                       f"la entrada ({fila.desde.isoformat()})",
+            "que_hacer": "Pon el día en que la unidad volvió a la calle.",
+        })
+    antes = fila.hasta.isoformat() if fila.hasta else "sin fecha"
+    fila.hasta = datos.hasta
+    auditoria.registrar(db, usuario, servicio, "unidad sale del taller",
+                        f"{fila.vehiculo.placa}: salida {antes} -> "
+                        f"{datos.hasta.isoformat()}")
+    db.commit()
+    return {"id": fila.id, "placa": fila.vehiculo.placa,
+            "desde": fila.desde.isoformat(), "hasta": datos.hasta.isoformat(),
+            "hoy_fuera": fila.cubre(motor.hoy_del_servicio(db, servicio))}
 
 
 @router.get("/{servicio_id}/mes/{anio}/{mes}/plantilla",
@@ -1818,26 +1997,44 @@ def ver_plantilla(servicio_id: int, anio: int, mes: int,
 def guardar_plantilla(servicio_id: int, anio: int, mes: int,
                       datos: PlantillaIn, db: Session = Depends(get_db),
                       usuario: m.Usuario = Depends(CONSULTOR)):
-    """Cambia la plantilla del mes y la vuelve a poner en todos sus dias.
+    """Cambia la plantilla del mes y la vuelve a poner en sus dias de
+    entre semana que todavia no pasan.
 
-    No toca los dias que ya se operaron ni los que traen un cambio: si
-    alguien cubrio el martes, ese martes se queda como quedo. Lo que se
-    reescribe es lo que todavia no ha pasado.
+    No toca los dias que ya se operaron, los que traen un cambio ni los
+    que cubrio alguien a mano --el sabado con relevo, el martes donde
+    ya va otro--: si alguien cubrio el martes, ese martes se queda como
+    quedo (seccion 101). Y si el mes va con la lista de implantados del
+    cliente (seccion 80), vuelve a tomar sus precios con la plantilla
+    nueva: seguia diciendo «va con la lista» con los precios de la
+    plantilla anterior.
     """
     servicio = _servicio_implantado(db, servicio_id)
     contrato = _contrato_del_mes(db, servicio.id, anio, mes)
     if not contrato:
         raise HTTPException(409, f"El mes {mes:02d}/{anio} no esta abierto")
 
+    anterior = {f.persona_id for f in contrato.plantilla}
     motor.guardar_plantilla(
         db, contrato,
         [(p.persona_id, p.vehiculo_id, p.rol_id, p.empieza)
          for p in datos.personal],
         datos.unidades)
-    rehechos = motor.rehacer_dias(db, contrato)
+    rehechos = motor.rehacer_dias(db, contrato, plantilla_anterior=anterior)
+    precios = []
+    if (contrato.precios_de_la_lista
+            and not cierre_mes.con_visto_bueno(db, contrato)):
+        antes = {c: str(getattr(contrato, c)) for c in implantado_precios.CAMPOS}
+        implantado_precios.al_abrir(db, contrato)
+        precios = [f"{c}: {antes[c]} -> {getattr(contrato, c)}"
+                   for c in implantado_precios.CAMPOS
+                   if antes[c] != str(getattr(contrato, c))]
     auditoria.registrar(db, usuario, servicio, "plantilla implantado",
-                        f"{mes:02d}/{anio}: {len(datos.personal)} persona(s), "
-                        f"{len(datos.unidades)} unidad(es), "
-                        f"{rehechos} dia(s) rehechos")
+                        (f"{mes:02d}/{anio}: {len(datos.personal)} persona(s), "
+                         f"{len(datos.unidades)} unidad(es), "
+                         f"{rehechos} dia(s) rehechos"
+                         + ("; precios de la lista: " + "; ".join(precios)
+                            if precios else ""))[:400])
     db.commit()
-    return {"resultado": "plantilla guardada", "dias_rehechos": rehechos}
+    return {"resultado": "plantilla guardada", "dias_rehechos": rehechos,
+            "precios_de_la_lista": contrato.precios_de_la_lista,
+            "precios_cambiados": precios}

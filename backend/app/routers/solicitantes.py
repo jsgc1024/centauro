@@ -47,13 +47,18 @@ def buscar_o_crear(db: Session, cliente_id: int, nombre: str | None,
         return None
     telefono = _con_clave_de_pais(db, cliente_id, telefono)
 
+    # Comparacion exacta sin mayusculas, no `ilike` (seccion 101): en
+    # LIKE `_` y `%` son comodines, asi que «j_lopez@x.com» reconocia a
+    # «jalopez@x.com» y un nombre con «%» casaba con cualquiera, y el
+    # servicio se ligaba al contacto equivocado.
     consulta = db.query(m.Solicitante).filter_by(cliente_id=cliente_id)
-    encontrado = (consulta.filter(m.Solicitante.correo.ilike(correo)).first()
+    encontrado = (consulta.filter(
+                      func.lower(m.Solicitante.correo) == correo.lower()).first()
                   if correo else
                   consulta.filter(
-                      m.Solicitante.nombre.ilike(nombre),
-                      func.coalesce(m.Solicitante.apellidos, "")
-                      .ilike(apellidos or "")).first())
+                      func.lower(m.Solicitante.nombre) == nombre.lower(),
+                      func.lower(func.coalesce(m.Solicitante.apellidos, ""))
+                      == (apellidos or "").lower()).first())
 
     if encontrado:
         for campo, valor in (("apellidos", apellidos), ("correo", correo),

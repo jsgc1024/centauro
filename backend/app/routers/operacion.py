@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app import auditoria
 from app import auth
+from app import disponibilidad as disp
 from app import models as m
 from app import geocercas
 from app import horas_extra
@@ -46,6 +47,7 @@ def configurar_origen(jornada_id: int, datos: s.OrigenIn,
         raise HTTPException(404, f"No existe la jornada {jornada_id}")
     antes = (jornada.origen_lat, jornada.origen_lon, jornada.geocerca_metros,
              jornada.origen_aeropuerto)
+    direccion_de_antes = jornada.origen_direccion
     # Solo se pisa lo que viene: mandar el pin no borra la direccion, y
     # mandar la direccion no borra el pin. Pero mandar un campo en nulo a
     # proposito si lo limpia: es como se quita un pin mal puesto.
@@ -81,6 +83,20 @@ def configurar_origen(jornada_id: int, datos: s.OrigenIn,
             + (f", aeropuerto {'si' if despues[3] else 'no'}"
                if antes[3] != despues[3] else ""),
             jornada_id=jornada.id)
+    # El punto de encuentro es el dato mas delicado del servicio y se
+    # cambiaba sin rastro (seccion 101): quien cubre a otro consultor lo
+    # movia sin quedar en cobertura ni avisarle al titular. Queda cuando
+    # cambia la direccion o se fija el pin por primera vez; mover un pin
+    # que ya existia lo anota el renglon de arriba.
+    if (jornada.origen_direccion != direccion_de_antes
+            or (antes[0] is None and despues[0] is not None)):
+        auditoria.registrar(
+            db, usuario, jornada.equipo.servicio, "punto de encuentro",
+            f"{jornada.fecha}: {jornada.origen_direccion or 'sin dirección'}"
+            + (" · pin fijado" if antes[0] is None and despues[0] is not None
+               else "")
+            + (" · aeropuerto" if jornada.origen_aeropuerto else ""),
+            jornada_id=jornada.id)
     db.commit()
     programacion.evaluar(jornada.equipo.servicio)
     db.commit()
@@ -90,26 +106,67 @@ def configurar_origen(jornada_id: int, datos: s.OrigenIn,
             "con_pin": jornada.origen_lat is not None}
 
 
+CAMPOS_DEL_VUELO = ("vuelo_aerolinea", "vuelo_numero", "vuelo_hora",
+                    "vuelo_origen", "vuelo_tipo")
+
+
+def _vuelo_en_palabras(jornada: m.Jornada) -> str:
+    if not (jornada.vuelo_aerolinea or jornada.vuelo_numero
+            or jornada.vuelo_hora):
+        return "sin vuelo"
+    partes = [jornada.vuelo_tipo or "llegada",
+              " ".join(x for x in (jornada.vuelo_aerolinea, jornada.vuelo_numero)
+                       if x) or "sin número"]
+    if jornada.vuelo_hora:
+        partes.append(f"{jornada.vuelo_hora:%d/%m %H:%M}")
+    if jornada.vuelo_origen:
+        partes.append(jornada.vuelo_origen)
+    return " · ".join(partes)
+
+
 @router.patch("/jornadas/{jornada_id}/vuelo",
               summary="Capturar el vuelo del ejecutivo de ese dia")
 def configurar_vuelo(jornada_id: int, datos: s.VueloIn,
                      db: Session = Depends(get_db),
-                     _=Depends(PLANEAR)):
+                     usuario: m.Usuario = Depends(PLANEAR)):
     """El vuelo sale en el meet and greet del task sheet. Se puede ir
-    completando: primero la aerolinea y el numero, la hora despues."""
+    completando: primero la aerolinea y el numero, la hora despues.
+
+    Deja rastro en la bitacora del servicio cuando algo del vuelo cambia
+    y, si el vuelo mueve la presentacion, se lo avisa a quien ya habia
+    confirmado (seccion 101): Juan confirmo para las 07:00, el vuelo de
+    las 14:00 pasaba la presentacion a las 13:15 y su confirmacion
+    apuntaba a una hora que ya no existia.
+    """
     jornada = db.get(m.Jornada, jornada_id)
     if not jornada:
         raise HTTPException(404, f"No existe la jornada {jornada_id}")
+    de_antes = {campo: getattr(jornada, campo) for campo in CAMPOS_DEL_VUELO}
+    antes = jornada.inicio_programado
     # Solo se pisa lo que viene: mandar la hora no borra la aerolinea.
     # Mandar un campo en nulo a proposito si lo limpia, que es como se
     # quita un vuelo cuando el dia deja de arrancar en aeropuerto.
-    for campo, valor in datos.model_dump(exclude_unset=True).items():
+    for campo, valor in datos.model_dump(exclude_unset=True,
+                                         exclude={"forzar"}).items():
         setattr(jornada, campo, valor)
 
-    movida = _ajustar_presentacion(db, jornada)
+    movida = _ajustar_presentacion(db, jornada, datos.forzar)
+    cambio = any(getattr(jornada, campo) != de_antes[campo]
+                 for campo in CAMPOS_DEL_VUELO)
+    if cambio or movida:
+        auditoria.registrar(
+            db, usuario, jornada.equipo.servicio, "capturar vuelo",
+            f"{jornada.fecha}: {_vuelo_en_palabras(jornada)}"
+            + (f" · presentación {antes:%H:%M} -> "
+               f"{jornada.inicio_programado:%H:%M}" if movida else ""),
+            jornada_id=jornada.id)
     db.commit()
     programacion.evaluar(jornada.equipo.servicio)
     db.commit()
+    # Quien ya confirmo lo hizo sobre una hora, como en corregir_dia.
+    if movida:
+        push.avisar_cambio_de_hora(db, jornada, antes)
+        db.commit()
     return {"resultado": "configurado", "jornada_id": jornada.id,
             "aerolinea": jornada.vuelo_aerolinea,
             "vuelo": jornada.vuelo_numero,
@@ -118,7 +175,8 @@ def configurar_vuelo(jornada_id: int, datos: s.VueloIn,
             "presentacion_movida": movida}
 
 
-def _ajustar_presentacion(db: Session, jornada: m.Jornada) -> bool:
+def _ajustar_presentacion(db: Session, jornada: m.Jornada,
+                          forzar: bool = False) -> bool:
     """La presentacion del primer dia la manda el vuelo que llega.
 
     El equipo no se presenta a la hora que aterriza el ejecutivo: se
@@ -149,8 +207,15 @@ def _ajustar_presentacion(db: Session, jornada: m.Jornada) -> bool:
         return False
 
     modalidad = db.get(m.Modalidad, jornada.modalidad_id)
+    # Con la hora nueva se vuelven a revisar los empalmes de quien ya
+    # esta en el dia (seccion 101), como en corregir_dia: si choca, el
+    # vuelo no se guarda.
+    fin = nuevo + timedelta(hours=float(modalidad.horas))
+    bloqueos, riesgos = disp.de_la_jornada(db, jornada, nuevo, fin,
+                                           modalidad.bloquea_dia_completo)
+    disp.frenar_si_choca(bloqueos, riesgos, forzar, "mover la presentación")
     jornada.inicio_programado = nuevo
-    jornada.fin_programado = nuevo + timedelta(hours=float(modalidad.horas))
+    jornada.fin_programado = fin
     # La hora sale del vuelo: es un dato, no un supuesto.
     jornada.hora_confirmada = True
     return True

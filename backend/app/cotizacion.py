@@ -16,20 +16,34 @@ def _tarifario_de(db: Session, servicio: m.Servicio) -> m.Tarifario:
     return db.get(m.Tarifario, cliente.tarifario_id)
 
 
+def _sin_precio(que: str, modalidad: m.Modalidad | None) -> HTTPException:
+    """La lista del cliente no cotiza eso. Con clave y datos (seccion
+    101): la revision del cierre lo convierte en una observacion que la
+    pantalla dice en su idioma, en vez de reventar con el texto crudo."""
+    codigo = modalidad.codigo.value if modalidad else ""
+    return HTTPException(400, {
+        "mensaje": f"El tarifario no tiene precio para {que} en {codigo}",
+        "que_hacer": "Corrige el rol o la unidad de la asignación, o pide "
+                     "que la lista del cliente lo incluya.",
+        "clave": "sin_precio", "que": que, "modalidad": codigo})
+
+
 def precio_recurso(db: Session, tarifario_id: int, perfil_id: int | None,
                    modalidad_id: int) -> m.TarifaRecurso:
     """El precio del rol. Sin rol no hay precio que buscar."""
     if not perfil_id:
-        raise HTTPException(400, "Hay personal asignado sin rol. Diga con "
-                                 "que rol va antes de cotizar o cerrar.")
+        raise HTTPException(400, {
+            "mensaje": "Hay personal asignado sin rol. Diga con que rol va "
+                       "antes de cotizar o cerrar.",
+            "que_hacer": "Ponle su rol en el equipo del día.",
+            "clave": "sin_rol"})
     tarifa = (db.query(m.TarifaRecurso)
               .filter_by(tarifario_id=tarifario_id, perfil_id=perfil_id,
                          modalidad_id=modalidad_id).first())
     if not tarifa:
         perfil = db.get(m.PerfilPersonal, perfil_id)
-        modalidad = db.get(m.Modalidad, modalidad_id)
-        raise HTTPException(400, f"El tarifario no tiene precio para "
-                                 f"{perfil.nombre} en {modalidad.codigo.value}")
+        raise _sin_precio(perfil.nombre if perfil else str(perfil_id),
+                          db.get(m.Modalidad, modalidad_id))
     return tarifa
 
 
@@ -40,9 +54,8 @@ def precio_vehiculo(db: Session, tarifario_id: int, categoria_id: int,
                          modalidad_id=modalidad_id).first())
     if not tarifa:
         categoria = db.get(m.CategoriaVehiculo, categoria_id)
-        modalidad = db.get(m.Modalidad, modalidad_id)
-        raise HTTPException(400, f"El tarifario no tiene precio para "
-                                 f"{categoria.nombre} en {modalidad.codigo.value}")
+        raise _sin_precio(categoria.nombre if categoria else str(categoria_id),
+                          db.get(m.Modalidad, modalidad_id))
     return tarifa
 
 
@@ -375,6 +388,50 @@ def vigente(db: Session, servicio_id: int) -> m.Cotizacion | None:
                        estatus=m.EstatusCotizacion.AUTORIZADA)
             .order_by(m.Cotizacion.version.desc())
             .first())
+
+
+def al_eliminar_equipo(db: Session, servicio: m.Servicio, eliminado: str,
+                       renombres: dict[str, str]) -> int:
+    """Los renglones de las cotizaciones del servicio siguen a sus
+    equipos cuando se elimina uno (seccion 101). Devuelve cuantos
+    renglones se tocaron.
+
+    Los renglones van por alias (`equipo_clave`) y eliminar un equipo
+    recorre los alias --si se va Beta, Gamma pasa a ser Beta--: la
+    cotizacion se quedaba con los renglones de "Beta" apuntando al que
+    era Gamma, los de "Gamma" huerfanos como dias de menos en el
+    comparativo, y el total sumando un equipo que ya no existe. Aqui se
+    quitan los del eliminado, se renombran los demas en el mismo paso y
+    el total vuelve a ser la suma de lo que queda. El monto fijo de
+    gastos no es de ningun equipo: si iba en el eliminado, pasa al
+    primer dia del primer equipo que queda, que es donde lo pone
+    `con_gastos`.
+    """
+    tocados = 0
+    cotizaciones = (db.query(m.Cotizacion)
+                    .filter_by(servicio_id=servicio.id).all())
+    if not cotizaciones:
+        return 0
+    primer_dia = next(iter(_dias(servicio)), None)
+    for cotizacion in cotizaciones:
+        for linea in list(cotizacion.lineas):
+            if linea.equipo_clave == eliminado:
+                if linea.tipo == m.TipoLinea.VIATICOS and primer_dia:
+                    # Los equipos que quedan ya traen su alias nuevo.
+                    equipo, jornada = primer_dia
+                    linea.equipo_clave = equipo.alias
+                    linea.fecha = jornada.fecha
+                    linea.modalidad_id = jornada.modalidad_id
+                else:
+                    cotizacion.lineas.remove(linea)
+                tocados += 1
+            elif linea.equipo_clave in renombres:
+                linea.equipo_clave = renombres[linea.equipo_clave]
+                tocados += 1
+        cotizacion.total = sum((Decimal(str(l.subtotal))
+                                for l in cotizacion.lineas), Decimal("0"))
+    db.flush()
+    return tocados
 
 
 # ---------------------------------------------------------------- en el servicio

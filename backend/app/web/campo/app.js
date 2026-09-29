@@ -9,7 +9,7 @@
    - el boton rojo siempre esta, en todas las pantallas
 
    Todo pasa por el mismo backend y la misma sesion que la consola. */
-import { anotarMensaje, api, cajaNegra, sesion } from "/consola/api.js";
+import { ErrorApi, anotarMensaje, api, cajaNegra, sesion } from "/consola/api.js";
 import { idioma, ponerIdioma, t } from "/consola/idioma.js";
 import { apartadas, encolar, limpiar, pendientes, retenida, sacar,
          vaciar } from "./cola.js";
@@ -51,6 +51,26 @@ const hitos = () => ({
    idioma. */
 const LOCALES = { es: "es-MX", en: "en-US", pt: "pt-BR" };
 const local = () => LOCALES[idioma()] || "es-MX";
+
+/* Los errores de red y de captura salen en el idioma de la app: api.js
+   no importa idioma.js, se le presta el traductor (seccion 101). */
+ErrorApi.traducir = t;
+
+/* El dinero con la moneda de su pais (seccion 101): la app pintaba "$"
+   fijo, tambien en Brasil, donde se paga en reales. Sin centavos cuando
+   no los hay, como en la consola. */
+function dineroApp(valor, moneda = "MXN") {
+  const numero = Number(valor || 0);
+  try {
+    return new Intl.NumberFormat(local(), {
+      style: "currency", currency: moneda || "MXN",
+      minimumFractionDigits: Number.isInteger(numero) ? 0 : 2,
+      maximumFractionDigits: 2,
+    }).format(numero);
+  } catch {
+    return `${moneda} ${numero.toLocaleString(local())}`;
+  }
+}
 
 let vista = "hoy";
 
@@ -1390,8 +1410,7 @@ function depositos(servicio) {
     ...filas.map(d => h("div", { clase: "fila separa",
                                  style: "margin-bottom:6px" },
       h("div", {},
-        h("b", { clase: "num" },
-          `$${Number(d.monto).toLocaleString(local())}`),
+        h("b", { clase: "num" }, dineroApp(d.monto, d.moneda)),
         d.cuando
           ? h("div", { clase: "chico gris" },
               new Date(d.cuando).toLocaleDateString(local()))
@@ -1443,13 +1462,12 @@ async function pantallaPagos() {
   const curso = d.en_curso;
   cuerpo.push(h("div", { clase: "caja" },
     h("span", { clase: "gris chico" }, t("cmp_semana_curso")),
-    h("div", { clase: "grande" },
-      `$${(curso.total || 0).toLocaleString(local())}`),
-    h("div", { clase: "chico gris" }, curso.nota),
+    h("div", { clase: "grande" }, dineroApp(curso.total, curso.moneda)),
+    h("div", { clase: "chico gris" }, t("cmp_en_curso_nota")),
     ...(curso.dias || []).map(x => h("div", {
       clase: "fila separa chico", style: "margin-top:8px" },
       h("span", {}, `${x.fecha} · ${x.rol || ""}`),
-      h("span", { clase: "num" }, `$${x.monto.toLocaleString(local())}`)))));
+      h("span", { clase: "num" }, dineroApp(x.monto, curso.moneda))))));
 
   /* El bono del mes vencido, arriba de los cortes semanales. Va aqui y
      no en "yo" porque es dinero, y porque el dia que no llega es el dia
@@ -1473,7 +1491,7 @@ async function pantallaPagos() {
       ...c.dias.map(x => h("div", { clase: "fila separa chico",
                                     style: "margin-bottom:6px" },
         h("span", {}, x.descripcion),
-        h("span", { clase: "num" }, `$${x.monto.toLocaleString(local())}`))));
+        h("span", { clase: "num" }, dineroApp(x.monto, c.moneda)))));
 
     cuerpo.push(h("div", { clase: "caja" },
       h("div", { clase: "fila separa" },
@@ -1482,7 +1500,7 @@ async function pantallaPagos() {
           h("div", { clase: "chico gris" },
             c.pagado ? t("cmp_pagado") : t("cmp_calculado_no_pagado"))),
         h("div", { style: "text-align:right" },
-          h("b", { clase: "num" }, `$${c.total.toLocaleString(local())}`),
+          h("b", { clase: "num" }, dineroApp(c.total, c.moneda)),
           h("div", {},
             h("span", { clase: `marca ${c.pagado ? "ok" : "alerta"}` },
               c.pagado ? t("cmp_marca_pagado")
@@ -1513,8 +1531,7 @@ function tarjetaBono(b) {
   return h("div", { clase: "caja principal" },
     h("span", { clase: "gris chico" },
       `${t("cmp_bono")} · ${b.periodo}`),
-    h("div", { clase: "grande" },
-      `$${Number(b.bono).toLocaleString(local())}`),
+    h("div", { clase: "grande" }, dineroApp(b.bono, b.moneda)),
     h("div", { clase: "chico" },
       h("span", { clase: `marca ${b.pagado_en ? "ok" : "alerta"}` }, estado)),
     h("div", { clase: "chico gris", style: "margin-top:6px" },
@@ -1920,16 +1937,16 @@ function tarjetaViatico(s) {
         plazo ? plazo.marca : null),
       h("div", { clase: "marco" },
         renglon(t("cmp_te_depositaron"),
-                `$${s.entregado.toLocaleString(local())}`),
+                dineroApp(s.entregado, s.moneda)),
         /* Lo autorizado que sigue en finanzas, dicho aparte y con su
            nombre. Sumarlo arriba era decirle a alguien que ya tenia un
            dinero que no habia salido del banco. */
         s.por_depositar > 0
           ? renglon(t("cmp_por_depositar"),
-                    `$${s.por_depositar.toLocaleString(local())}`, "ambar")
+                    dineroApp(s.por_depositar, s.moneda), "ambar")
           : null,
         renglon(t("cmp_has_comprobado"),
-                `$${s.comprobado.toLocaleString(local())}`),
+                dineroApp(s.comprobado, s.moneda)),
         /* Lo que ya regreso, confirmado por finanzas. Va pegado a lo
            comprobado porque los dos apagan la misma deuda: sin este
            renglon, "te depositaron 285, comprobaste 270, no te falta
@@ -1937,17 +1954,17 @@ function tarjetaViatico(s) {
            consultor para preguntar por quince pesos. */
         s.devuelto > 0
           ? renglon(t("cmp_devolviste"),
-                    `$${s.devuelto.toLocaleString(local())}`, "verde")
+                    dineroApp(s.devuelto, s.moneda), "verde")
           : null,
         renglon(t("cmp_te_falta_comprobar"),
-                `$${s.por_comprobar.toLocaleString(local())}`,
+                dineroApp(s.por_comprobar, s.moneda),
                 s.por_comprobar > 0 ? "ambar" : "verde"),
         /* Lo que dijo que transfirio y finanzas todavia no ha visto
            entrar. Se dice con su nombre y no se descuenta de arriba:
            hasta que se confirme, ese dinero sigue siendo suyo. */
         s.devolucion_en_revision > 0
           ? renglon(t("cmp_devolucion_en_revision"),
-                    `$${s.devolucion_en_revision.toLocaleString(local())}`,
+                    dineroApp(s.devolucion_en_revision, s.moneda),
                     "ambar")
           : null),
       plazo ? plazo.pie : null,
@@ -2128,7 +2145,7 @@ function devolver(servicio) {
   form.append(
     h("div", { clase: "chico gris", style: "margin-bottom:6px" },
       t("cmp_sobra").replace("{m}",
-        `$${servicio.por_devolver.toLocaleString(local())}`)),
+        dineroApp(servicio.por_devolver, servicio.moneda))),
     h("div", { clase: "campo" }, h("label", {}, t("cmp_cuanto_devuelves")),
       monto),
     h("div", { clase: "campo" }, h("label", {}, t("cmp_referencia")),

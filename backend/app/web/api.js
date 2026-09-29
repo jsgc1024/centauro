@@ -11,24 +11,105 @@ export const sesion = {
 
 export class ErrorApi extends Error {
   constructor(codigo, detalle) {
-    super(ErrorApi.mensajeDe(detalle) || `Error ${codigo}`);
+    super(ErrorApi.mensajeDe(detalle, codigo) || `Error ${codigo}`);
     this.codigo = codigo;
     this.detalle = detalle;
   }
+
+  /* Quien traduce. Este archivo no importa idioma.js a proposito: es el
+     unico que tiene que seguir funcionando aunque idioma.js sea justo lo
+     que no cargo. La consola y la app de campo le prestan su `t()` al
+     arrancar (seccion 101); sin el, los codigos salen en espanol. */
+  static traducir = null;
+
+  static texto(clave, huecos = {}) {
+    const base = ErrorApi.traducir ? ErrorApi.traducir(clave) : null;
+    let texto = base && base !== clave ? base : (ErrorApi.DE_FABRICA[clave] || clave);
+    for (const [k, v] of Object.entries(huecos)) texto = texto.split(`{${k}}`).join(v);
+    return texto;
+  }
+
   /* El backend contesta errores de tres formas: texto, {mensaje, ...} o
      la lista de validacion de FastAPI. Aqui se normalizan. */
-  static mensajeDe(d) {
+  static mensajeDe(d, codigo = null) {
+    /* Se fue la senal o se acabo el tiempo: la pantalla decia "sin_red"
+       y "tardo" tal cual, que no es ningun idioma (seccion 101). */
+    if (codigo === 0) return ErrorApi.texto(d === "tardo" ? "api_tardo" : "cc_sin_red");
     if (!d) return null;
     if (typeof d === "string") return d;
+    /* Un dato mal capturado (422): el servidor dice que campo y que le
+       falta, y aqui se dice en el idioma de quien mira. Si el servidor
+       no trae la lista (un 422 de antes), se usa su mensaje. */
+    if (Array.isArray(d.errores) && d.errores.length) {
+      return d.errores.map(e => ErrorApi.dato(e)).join("\n");
+    }
     /* El backend escribe dos cosas distintas: que paso y que hacer. La
        segunda es la unica que sirve para salir del problema —"Registra
        primero la recepcion"— y se estaba tirando. Van juntas. */
     if (d.mensaje) return d.que_hacer ? `${d.mensaje}\n\n${d.que_hacer}`
                                       : d.mensaje;
-    if (Array.isArray(d)) return d.map(x => x.msg || JSON.stringify(x)).join(". ");
+    /* La lista de FastAPI, por si un 422 llega sin pasar por el
+       manejador del servidor: cuando menos, con el nombre del campo. */
+    if (Array.isArray(d)) {
+      return d.map(x => {
+        const campo = ErrorApi.campoDe(x.loc);
+        return campo ? `${campo}: ${x.msg}` : (x.msg || JSON.stringify(x));
+      }).join(". ");
+    }
     return null;
   }
+
+  static campoDe(loc) {
+    return (Array.isArray(loc) ? loc : [])
+      .filter(x => !["body", "query", "path"].includes(x))
+      .map(String).join(".");
+  }
+
+  /* Un renglon de la lista del servidor: {campo, tipo, limite}. */
+  static dato(e) {
+    const clave = ErrorApi.TIPOS[e.tipo] || "val_otro";
+    return ErrorApi.texto(clave, { campo: e.campo || "?",
+                                   limite: e.limite === undefined || e.limite === null
+                                     ? "" : String(e.limite),
+                                   detalle: e.detalle || "" });
+  }
 }
+
+/* Que clave de idioma le toca a cada tipo de error de captura. */
+ErrorApi.TIPOS = {
+  falta: "val_falta", numero: "val_numero", entero: "val_entero",
+  largo: "val_largo", corto: "val_corto", minimo: "val_minimo",
+  mas_de: "val_mas_de", maximo: "val_maximo", menos_de: "val_menos_de",
+  fecha: "val_fecha", hora: "val_hora",
+  opcion: "val_opcion", texto: "val_texto", lista: "val_lista",
+  cuerpo: "val_cuerpo", regla: "val_regla",
+};
+
+/* Lo que se dice cuando no hay quien traduzca (idioma.js no cargo). Sin
+   acentos a proposito: es el unico texto de la consola que no pasa por
+   idioma.js, y la revision estatica lo sabe por eso. */
+ErrorApi.DE_FABRICA = {
+  cc_sin_red: "No hay conexion. Revisa tu internet e intentalo otra vez.",
+  api_tardo: "El servidor tardo demasiado en contestar. Intentalo otra vez.",
+  api_sesion_vencio: "La sesion vencio. Vuelve a entrar.",
+  val_falta: "Falta el dato «{campo}».",
+  val_numero: "«{campo}» tiene que ser un numero.",
+  val_entero: "«{campo}» tiene que ser un numero entero.",
+  val_largo: "«{campo}» es demasiado largo: caben {limite} letras.",
+  val_corto: "«{campo}» es demasiado corto: minimo {limite} letras.",
+  val_minimo: "«{campo}» tiene que ser de {limite} o mas.",
+  val_mas_de: "«{campo}» tiene que ser mas de {limite}.",
+  val_maximo: "«{campo}» no puede pasar de {limite}.",
+  val_menos_de: "«{campo}» tiene que ser menos de {limite}.",
+  val_fecha: "«{campo}» no es una fecha valida.",
+  val_hora: "«{campo}» no es una hora valida.",
+  val_opcion: "«{campo}» no es una opcion valida.",
+  val_texto: "«{campo}» tiene que ser un texto.",
+  val_lista: "«{campo}» tiene que ser una lista.",
+  val_cuerpo: "Lo que se mando no se pudo leer.",
+  val_regla: "«{campo}»: {detalle}",
+  val_otro: "«{campo}»: {detalle}",
+};
 
 /* Cuanto se espera antes de darlo por perdido. Sin esto, media barra
    de senal deja la app en "Un momento..." para siempre: el telefono no
@@ -99,6 +180,40 @@ export function cajaNegra() {
            llamadas: [...ERRORES, ...RECIENTES].sort(porHora).slice(0, 10) };
 }
 
+/* La sesion vencio a media pantalla: se guarda donde estaba para volver
+   ahi despues de entrar otra vez (seccion 101). Antes, quien estaba en
+   el servicio 123 caia en la pantalla de inicio de su rol. */
+const VOLVER = "centauro_volver";
+
+function sesionVencida() {
+  sesion.token = null;
+  try {
+    const donde = location.hash;
+    if (donde && donde !== "#/entrar") sessionStorage.setItem(VOLVER, donde);
+  } catch { /* sin sessionStorage se vuelve al inicio */ }
+  location.hash = "#/entrar";
+  return new ErrorApi(401, ErrorApi.texto("api_sesion_vencio"));
+}
+
+/* A donde volver despues de entrar, una sola vez. */
+export function destinoPendiente() {
+  try {
+    const donde = sessionStorage.getItem(VOLVER);
+    sessionStorage.removeItem(VOLVER);
+    return donde && donde !== "#/entrar" ? donde : null;
+  } catch { return null; }
+}
+
+/* El texto de una respuesta con error, ya como `detail` si era JSON. */
+function detalleDe(texto, codigo, ruta) {
+  try {
+    const datos = JSON.parse(texto);
+    if (datos && datos.detail !== undefined) return datos.detail;
+  } catch { /* no era JSON */ }
+  const recorte = String(texto || "").trim().slice(0, 400);
+  return recorte ? "Error " + codigo + " · " + ruta + " · " + recorte : null;
+}
+
 async function pedir(metodo, ruta, cuerpo, opciones = {}) {
   try {
     const datos = await pedirAlServidor(metodo, ruta, cuerpo, opciones);
@@ -140,13 +255,11 @@ async function pedirAlServidor(metodo, ruta, cuerpo, opciones = {}) {
     clearTimeout(reloj);
   }
 
-  if (r.status === 401) {
-    sesion.token = null;
-    location.hash = "#/entrar";
-    throw new ErrorApi(401, "La sesion vencio. Vuelve a entrar.");
-  }
+  if (r.status === 401) throw sesionVencida();
   if (opciones.crudo) {
-    if (!r.ok) throw new ErrorApi(r.status, await r.text());
+    /* Un error con `crudo` (la hoja, el desglose) llegaba con el JSON
+       tal cual: {"detail":{"mensaje":...}}. Se lee como los demas. */
+    if (!r.ok) throw new ErrorApi(r.status, detalleDe(await r.text(), r.status, ruta));
     return r.text();
   }
   const texto = await r.text();
@@ -186,7 +299,8 @@ export const api = {
     const cab = {};
     if (sesion.token) cab["Authorization"] = `Bearer ${sesion.token}`;
     const r = await fetch(ruta, { headers: cab });
-    if (!r.ok) throw new ErrorApi(r.status, await r.text());
+    if (r.status === 401) throw sesionVencida();
+    if (!r.ok) throw new ErrorApi(r.status, detalleDe(await r.text(), r.status, ruta));
     return URL.createObjectURL(await r.blob());
   },
 
@@ -199,11 +313,7 @@ export const api = {
     const cuerpo = new FormData();
     cuerpo.append(campo, archivo);
     const r = await fetch(ruta, { method: "POST", headers: cab, body: cuerpo });
-    if (r.status === 401) {
-      sesion.token = null;
-      location.hash = "#/entrar";
-      throw new ErrorApi(401, "La sesion vencio. Vuelve a entrar.");
-    }
+    if (r.status === 401) throw sesionVencida();
     const datos = await r.json().catch(() => null);
     if (!r.ok) throw new ErrorApi(r.status, datos && datos.detail);
     return datos;
@@ -222,11 +332,7 @@ export const api = {
       if (v !== null && v !== undefined) cuerpo.append(k, v);
     }
     const r = await fetch(ruta, { method: metodo, headers: cab, body: cuerpo });
-    if (r.status === 401) {
-      sesion.token = null;
-      location.hash = "#/entrar";
-      throw new ErrorApi(401, "La sesion vencio. Vuelve a entrar.");
-    }
+    if (r.status === 401) throw sesionVencida();
     const datos = await r.json().catch(() => null);
     if (!r.ok) throw new ErrorApi(r.status, datos && datos.detail);
     return datos;

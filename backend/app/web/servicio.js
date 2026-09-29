@@ -5,7 +5,7 @@ import { api, sesion } from "./api.js";
 import { catalogos } from "./catalogos.js";
 import { buscadorDeLugar } from "./mapa.js";
 import { aviso, campo, conAyuda, dinero, entrada, estatus, etiqueta, fecha,
-         h, hora, lista, mensaje, plegable, sinTildes,
+         fechaLocal, h, hora, hoyLocal, lista, mensaje, plegable, sinTildes,
          telefono } from "./util.js";
 import { IDIOMAS, idioma, t } from "./idioma.js";
 import { tarjetaCierre } from "./cierre.js";
@@ -80,6 +80,9 @@ async function bloqueVistoBueno(servicio, cat) {
     rutas: { estado: `${base}/estado`, revision: `${base}/revision`,
              viaticos: `${base}/viaticos`,
              desglose: `${base}/desglose-gastos` },
+    /* Las encuestas al cliente, al pie (seccion 101): la que falta se
+       manda desde ahi y la viva se reenvia. */
+    encuestas: `/encuestas/servicio/${servicio.id}`,
     esMes: false,
     lugar: plaza ? plaza.nombre : (pais ? pais.nombre : ""),
     moneda: (pais && pais.moneda_local) || "MXN",
@@ -131,7 +134,7 @@ function encabezado(servicio, cliente, plaza) {
                     .replace("{n}", servicio.equipos.length),
                   t("srv_servicio_eliminado"), "#/servicios") }, t("srv_eliminar"))
             : "",
-          !["cancelado", "cerrado"].includes(servicio.estatus)
+          !YA_NO_SE_CANCELA.includes(servicio.estatus)
             ? h("button", { clase: "claro chico", type: "button",
                 onclick: () => cancelar(servicio) }, t("srv_cancelar"))
             : ""))),
@@ -158,9 +161,28 @@ function tipoDe(tipo) {
 }
 
 /* Un servicio que ya arranco no se borra: se cancela. La pantalla no
-   decide nada, solo evita ofrecer un boton que el servidor va a negar. */
-const ANTES_DE_ARRANCAR = ["borrador", "cotizado", "autorizado", "planeado",
-                           "asignado"];
+   decide nada, solo evita ofrecer un boton que el servidor va a negar.
+   La misma lista que `models.ANTES_DE_ARRANCAR`: `solicitado` --como
+   nace el implantado-- faltaba aqui (seccion 101), y una captura
+   equivocada no se podia deshacer desde la pantalla aunque el servidor
+   ya la aceptara. */
+const ANTES_DE_ARRANCAR = ["borrador", "solicitado", "cotizado", "autorizado",
+                           "planeado", "asignado"];
+
+/* Lo que el servidor ya no deja cancelar (`YA_NO_SE_CANCELA` en
+   routers/servicios.py): o esta cancelado, o ya termino y va camino a
+   facturarse, o ya se cerro. Se ofrecia en terminado, sin visto bueno y
+   en facturacion y el servidor lo negaba (seccion 101). */
+const YA_NO_SE_CANCELA = ["cancelado", "cerrado", "terminado",
+                          "sin_visto_bueno", "en_facturacion"];
+
+/* Lo que ya no se arma (`YA_NO_SE_ARMA` en routers/servicios.py, seccion
+   98): al terminado, sin visto bueno, en facturacion, cerrado o
+   cancelado no se le agregan ni se le quitan dias ni se le mueven
+   fechas. El servidor lo negaba y la tabla seguia ofreciendo los
+   botones (seccion 101). */
+const YA_NO_SE_ARMA = ["cancelado", "cerrado", "en_facturacion",
+                       "sin_visto_bueno", "terminado"];
 
 /* Cancelar exige motivo: es lo primero que pregunta el cliente y lo
    que la central necesita para saber por que se cayo el servicio. */
@@ -944,7 +966,7 @@ async function abrirCambio(zona, servicio, equipo, cat, persona, datos) {
   /* El cambio aplica del dia que se elija en adelante. Se propone hoy si
      hoy es uno de los dias del equipo, que es el caso de la contingencia
      de verdad; si no, el primero que queda. */
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = hoyLocal();
   const desde = lista("desde", dias.map(
     j => ({ valor: j.id, texto: fecha(j.fecha) })));
   const suyo = dias.find(j => j.fecha === hoy);
@@ -968,6 +990,19 @@ async function abrirCambio(zona, servicio, equipo, cat, persona, datos) {
     h("div", { clase: "gris chico" }, t("srv_buscando_entra")));
   const previa = h("div", { style: "margin-top:12px" });
 
+  /* La alerta abierta de este servicio, para ligarla al cambio (seccion
+     101). La central estabiliza y el consultor formaliza: con el enlace,
+     la ficha del panico en su tablero dice "Cambio formalizado · Luis
+     entra por Juan" y se ahorra la llamada de "oye, ya lo cambiaste?".
+     Nunca se mandaba, asi que el enlace siempre quedaba vacio. Solo en
+     el eventual: la puerta del implantado no lo lleva. */
+  let alerta = null;
+  if (!puerta.implantado) {
+    const abiertas = await api.get(
+      `/contingencia/alertas?servicio_id=${servicio.id}`).catch(() => []);
+    alerta = abiertas[0] || null;
+  }
+
   /* La puerta del implantado habla de fechas y la de eventual de
      jornadas. Es la misma eleccion del consultor dicha de dos maneras. */
   const fechaDe = new Map(dias.map(j => [String(j.id), j.fecha]));
@@ -984,12 +1019,17 @@ async function abrirCambio(zona, servicio, equipo, cat, persona, datos) {
         sale_persona_id: persona.persona_id,
         motivo: nota.value.trim()
                 || MOTIVOS.find(x => x.valor === motivo.value).texto,
-        motivo_tipo: motivo.value });
+        motivo_tipo: motivo.value,
+        alerta_id: alerta ? alerta.id : null });
 
   zona.replaceChildren(h("div", { clase: "tarjeta lisa" },
     h("h4", { style: "margin:0 0 2px" }, t("srv_cambiar_a").replace("{p}", persona.nombre)),
     h("p", { clase: "gris chico", style: "margin:0 0 12px" },
       t("srv_cambio_pie")),
+    alerta
+      ? h("div", { clase: "aviso alerta", style: "margin:0 0 12px" },
+          t("srv_liga_alerta").replace("{hora}", hora(alerta.reportada_en)))
+      : "",
     h("div", { clase: "rejilla dos" },
       campo(t("srv_desde_dia"), desde),
       campo(t("srv_hasta_cuando"), h("div", {},
@@ -1135,7 +1175,10 @@ function bloqueDinero(v, entra) {
   /* Propuesta, no asignacion: el sistema saca la cuenta del tabulador
      para que el consultor no tenga que ir a buscarla, pero la solicitud
      la hace el, como con cualquier otra. */
-  const propuesto = (v.propuestos || []).reduce((a, x) => a + x.monto, 0);
+  /* El monto llega como cadena, como el resto del dinero (seccion 101):
+     se suma como numero, no se pega. */
+  const propuesto = (v.propuestos || []).reduce(
+    (a, x) => a + Number(x.monto || 0), 0);
   if (propuesto) {
     caja.append(linea(
       t("srv_le_tocarian").replace("{p}", entra)
@@ -1162,7 +1205,7 @@ function abrirRegreso(zona, r) {
      advertir, que es el candado del dinero. */
   const corrige = Boolean(r.regreso_en);
   const minimo = diaSiguiente(r.desde);
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = hoyLocal();
   let valor = hoy < minimo ? minimo : hoy;
   if (!corrige && r.hasta && valor > r.hasta) valor = r.hasta;
 
@@ -1187,7 +1230,7 @@ function abrirRegreso(zona, r) {
 function diaSiguiente(iso) {
   const d = new Date(`${iso}T12:00:00`);
   d.setDate(d.getDate() + 1);
-  return d.toISOString().slice(0, 10);
+  return fechaLocal(d);
 }
 
 async function verPreviaRegreso(e, zona, r, desde) {
@@ -1311,13 +1354,22 @@ function recuadroPrevia(r, cuerpo, entra, puerta) {
         /* Quien hace el cambio tiene que saber si el cliente ya se
            enteró o si le toca llamarlo. Sin esto, el consultor se queda
            adivinando y acaba avisando dos veces o ninguna. El implantado
-           no manda este correo, así que ahí no se dice nada. */
-        mensaje(hecho && hecho.cliente_avisado === true
-                ? t("srv_cambio_hecho_avisado")
-                : hecho && hecho.cliente_avisado === false
-                  ? t("srv_cambio_hecho_sin_aviso")
-                  : t("srv_cambio_hecho"));
-        setTimeout(() => location.reload(), 1400);
+           no manda este correo, así que ahí no se dice nada.
+
+           Y si no hubo correo pero la hoja ya estaba publicada, la hoja
+           que el cliente tiene trae el nombre de quien ya no va (seccion
+           101): se le dice que la vuelva a publicar, y se le da tiempo
+           de leerlo antes de recargar. */
+        const hoja = hecho && hecho.hoja_por_publicar;
+        mensaje(hoja
+                ? t("srv_cambio_republicar_hoja")
+                : hecho && hecho.cliente_avisado === true
+                  ? t("srv_cambio_hecho_avisado")
+                  : hecho && hecho.cliente_avisado === false
+                    ? t("srv_cambio_hecho_sin_aviso")
+                    : t("srv_cambio_hecho"),
+                hoja ? "alerta" : "ok");
+        setTimeout(() => location.reload(), hoja ? 4000 : 1400);
       } catch (err) {
         mensaje(err.message, "grave");
         ev.target.disabled = false;
@@ -1444,6 +1496,15 @@ function tarjetaCambio(r) {
   if (r.en_curso && r.se_vuelve_a_pedir && r.hasta) {
     tarjeta.append(h("div", { clase: "chico gris", style: "margin-top:4px" },
       t("srv_r_repedir").replace("{f}", fecha(r.hasta))));
+  }
+
+  /* La hoja que el cliente tiene es de antes de este cambio (seccion
+     101): trae el nombre y el telefono de quien ya no va. Se dice aqui,
+     donde el consultor ve el cambio, hasta que la vuelva a publicar. */
+  if (r.hoja_por_publicar) {
+    tarjeta.append(h("div", { clase: "aviso alerta",
+                              style: "margin-top:6px" },
+      t("srv_hoja_vieja")));
   }
 
   const firma = h("div", { clase: "chico gris", style: "margin-top:4px" },
@@ -1808,9 +1869,17 @@ function bloqueOrigen(jornada, cual = {}) {
      manda, y se marca sola cuando el dia ya trae vuelo o cuando Google
      dice que el lugar elegido es un aeropuerto. */
   const puedeVolar = cual.primero || cual.ultimo;
-  const tipoVuelo = cual.primero ? "llegada" : "salida";
+  /* Un servicio de un solo dia es el primero y el ultimo a la vez: un
+     transfer puede ser del aeropuerto al hotel o del hotel al
+     aeropuerto, y solo se ofrecia el vuelo de llegada (seccion 101). Si
+     el consultor metia ahi el vuelo de las 14:00 con el que se va el
+     ejecutivo, la presentacion se recorria a las 13:15. Con un solo dia
+     se ofrecen las dos casillas; el dia lleva un vuelo, el de llegada o
+     el de salida. */
+  const soloUnDia = !!(cual.primero && cual.ultimo);
   const traeVuelo = !!(jornada.vuelo_numero || jornada.vuelo_aerolinea
                        || jornada.vuelo_hora);
+  const traeSalida = traeVuelo && jornada.vuelo_tipo === "salida";
 
   /* El punto se busca en Google y de ahi salen sus coordenadas: de ellas
      dependen la geocerca del conductor y los hospitales de la hoja. */
@@ -1837,7 +1906,8 @@ function bloqueOrigen(jornada, cual = {}) {
      privadas que si lo son, pero eso se decide a proposito. */
   let forzadoAeropuerto = false;
   const enAeropuerto = h("input", { type: "checkbox",
-    checked: traeVuelo || !!jornada.origen_aeropuerto,
+    checked: (traeVuelo && !(soloUnDia && traeSalida))
+             || !!jornada.origen_aeropuerto,
     onchange: () => {
       if (enAeropuerto.checked && lugar.segunGoogle() === false) {
         const ok = confirm(
@@ -1845,9 +1915,28 @@ function bloqueOrigen(jornada, cual = {}) {
         if (!ok) { enAeropuerto.checked = false; return; }
         forzadoAeropuerto = true;
       }
+      // Un vuelo por dia: el de llegada quita al de salida.
+      if (enAeropuerto.checked && soloUnDia) terminaEnAeropuerto.checked = false;
       lugar.decirAeropuerto(enAeropuerto.checked);
       verVuelo();
     } });
+  /* Solo con un dia: el vuelo con el que se va el ejecutivo. En un
+     servicio de varios dias esa casilla es la del ultimo dia. */
+  const terminaEnAeropuerto = h("input", { type: "checkbox",
+    checked: soloUnDia && traeSalida,
+    onchange: () => {
+      if (terminaEnAeropuerto.checked) {
+        enAeropuerto.checked = false;
+        lugar.decirAeropuerto(false);
+      }
+      verVuelo();
+    } });
+  /* Que vuelo lleva el dia: el de llegada abre el dia en el aeropuerto
+     y fija la presentacion; el de salida lo cierra y no mueve nada. */
+  const tipoVuelo = () =>
+    (cual.primero && enAeropuerto.checked ? "llegada" : "salida");
+  const conVuelo = () => enAeropuerto.checked
+    || (soloUnDia && terminaEnAeropuerto.checked);
   const aerolinea = entrada("vuelo_aerolinea",
                             { value: jornada.vuelo_aerolinea || "" });
   const numero = entrada("vuelo_numero", { value: jornada.vuelo_numero || "",
@@ -1858,19 +1947,18 @@ function bloqueOrigen(jornada, cual = {}) {
                               { value: jornada.vuelo_origen || "",
                                 placeholder: "Frankfurt" });
 
+  /* Los textos del bloque siguen al tipo de vuelo: con un solo dia
+     cambian segun la casilla marcada. */
+  const tituloVuelo = h("h4", { style: "margin-top:10px" });
+  const pieVuelo = h("p", { clase: "gris chico", style: "margin:0 0 10px" });
+  const etiquetaLugar = h("label", {});
   const bloqueVuelo = h("div", { hidden: !traeVuelo },
-    h("h4", { style: "margin-top:10px" },
-      cual.primero ? t("srv_vuelo_llegada")
-                   : t("srv_vuelo_salida")),
-    h("p", { clase: "gris chico", style: "margin:0 0 10px" },
-      cual.primero
-        ? t("srv_vuelo_llegada_pie")
-        : t("srv_vuelo_salida_pie")),
+    tituloVuelo, pieVuelo,
     h("div", { clase: "rejilla tres" },
       campo(t("srv_aerolinea"), aerolinea),
       campo(t("srv_num_vuelo"), numero),
       campo(t("srv_hora"), horaVuelo)),
-    campo(cual.primero ? t("srv_procedencia") : t("srv_destino"), procedencia));
+    h("div", { clase: "campo" }, etiquetaLugar, procedencia));
 
   /* La hora a la que el equipo se presenta ese dia. Vive aqui, junto al
      punto: son la misma pregunta —donde y a que hora arranca— y de ella
@@ -1882,11 +1970,12 @@ function bloqueOrigen(jornada, cual = {}) {
     value: jornada.hora_confirmada ? heredada : "" });
   const notaHora = h("div", { clase: "chico gris" });
 
+  const laPoneElVuelo = () => cual.primero && enAeropuerto.checked
+                              && !!horaVuelo.value;
+
   function verHora() {
-    const laPoneElVuelo = cual.primero && enAeropuerto.checked
-                          && !!horaVuelo.value;
-    presentacion.disabled = laPoneElVuelo;
-    notaHora.textContent = laPoneElVuelo
+    presentacion.disabled = laPoneElVuelo();
+    notaHora.textContent = laPoneElVuelo()
       ? t("srv_hora_vuelo")
       : (jornada.hora_confirmada
           ? ""
@@ -1894,14 +1983,28 @@ function bloqueOrigen(jornada, cual = {}) {
   }
   horaVuelo.addEventListener("input", verHora);
 
-  function verVuelo() { bloqueVuelo.hidden = !enAeropuerto.checked; verHora(); }
-  verHora();
+  function verVuelo() {
+    bloqueVuelo.hidden = !conVuelo();
+    const llega = tipoVuelo() === "llegada";
+    tituloVuelo.textContent = llega ? t("srv_vuelo_llegada") : t("srv_vuelo_salida");
+    pieVuelo.textContent = llega ? t("srv_vuelo_llegada_pie") : t("srv_vuelo_salida_pie");
+    etiquetaLugar.textContent = llega ? t("srv_procedencia") : t("srv_destino");
+    verHora();
+  }
+  verVuelo();
 
   const casillaAeropuerto = puedeVolar
     ? h("label", { clase: "casilla", style: "margin-top:12px" }, enAeropuerto,
         h("span", {}, cual.primero
           ? t("srv_arranca_aeropuerto")
           : t("srv_termina_aeropuerto")))
+    : "";
+  const casillaTermina = soloUnDia
+    ? h("div", {},
+        h("label", { clase: "casilla", style: "margin-top:6px" },
+          terminaEnAeropuerto, h("span", {}, t("srv_termina_aeropuerto"))),
+        h("div", { clase: "chico gris", style: "margin:2px 0 6px" },
+          t("srv_un_solo_vuelo")))
     : "";
 
   const guardar = h("button", { type: "button", onclick: async (e) => {
@@ -1926,27 +2029,32 @@ function bloqueOrigen(jornada, cual = {}) {
         forzar_aeropuerto: forzadoAeropuerto,
       });
 
+      /* El vuelo de llegada mueve la presentacion y la hora mueve la
+         ventana: las dos vuelven a revisar los empalmes de quien ya esta
+         en el dia (seccion 101), y con riesgo se pregunta antes de
+         forzar. */
       if (puedeVolar) {
-        const vuela = enAeropuerto.checked;
+        const vuela = conVuelo();
         // Quitarle el aeropuerto al dia borra su vuelo: si no, la hoja
         // seguiria anunciando un vuelo que ya no existe.
-        await api.patch(`/operacion/jornadas/${jornada.id}/vuelo`, {
-          vuelo_aerolinea: vuela ? (aerolinea.value.trim() || null) : null,
-          vuelo_numero: vuela ? (numero.value.trim() || null) : null,
-          vuelo_origen: vuela ? (procedencia.value.trim() || null) : null,
-          vuelo_tipo: vuela && horaVuelo.value ? tipoVuelo : null,
-          vuelo_hora: vuela && horaVuelo.value
-            ? `${jornada.fecha}T${horaVuelo.value}:00` : null,
-        });
+        await conForzar((forzar) =>
+          api.patch(`/operacion/jornadas/${jornada.id}/vuelo`, {
+            vuelo_aerolinea: vuela ? (aerolinea.value.trim() || null) : null,
+            vuelo_numero: vuela ? (numero.value.trim() || null) : null,
+            vuelo_origen: vuela ? (procedencia.value.trim() || null) : null,
+            vuelo_tipo: vuela && horaVuelo.value ? tipoVuelo() : null,
+            vuelo_hora: vuela && horaVuelo.value
+              ? `${jornada.fecha}T${horaVuelo.value}:00` : null,
+            forzar,
+          }));
       }
 
       /* La hora se manda despues del vuelo: cuando el vuelo la fija, la
          del vuelo es la buena y no la que quedo escrita en el campo. */
-      const laPoneElVuelo = cual.primero && enAeropuerto.checked
-                            && !!horaVuelo.value;
-      if (!laPoneElVuelo && presentacion.value) {
-        await api.patch(`/servicios/jornadas/${jornada.id}`,
-                        { hora_presentacion: `${presentacion.value}:00` });
+      if (!laPoneElVuelo() && presentacion.value) {
+        await conForzar((forzar) =>
+          api.patch(`/servicios/jornadas/${jornada.id}`,
+                    { hora_presentacion: `${presentacion.value}:00`, forzar }));
       }
 
       mensaje(cual.primero ? t("srv_mg_guardado")
@@ -1955,7 +2063,7 @@ function bloqueOrigen(jornada, cual = {}) {
       // guardado, y no lo que se traia de antes.
       setTimeout(() => location.reload(), 700);
     } catch (err) {
-      mensaje(err.message, "grave");
+      mensaje(err.message, err.tono || "grave");
       e.target.disabled = false;
     }
   } }, t("srv_guardar"));
@@ -1988,7 +2096,9 @@ function bloqueOrigen(jornada, cual = {}) {
       lugar.cajaMapa),
 
     // Solo el de llegada va aqui: abre el dia. El de salida lo cierra.
-    cual.primero ? h("div", {}, casillaAeropuerto, bloqueVuelo) : "",
+    // Con un solo dia van las dos casillas, y el bloque del vuelo que
+    // toque.
+    cual.primero ? h("div", {}, casillaAeropuerto, casillaTermina, bloqueVuelo) : "",
 
     h("h4", { clase: "grupo" }, t("srv_hora_presentacion")),
     h("p", { clase: "gris chico", style: "margin:0 0 10px" },
@@ -2302,50 +2412,84 @@ function pintarFaltantes(zona, faltantes) {
   }
 }
 
+/* Los equipos del servicio en el orden de la pantalla, y si hay mas de
+   uno: cada equipo lleva su propio task sheet (routers/tasksheet.py). */
+function equiposDe(servicio) {
+  return (servicio.equipos || []).slice().sort((a, b) => a.id - b.id);
+}
+
+/* El titulo de un equipo dentro del bloque de la hoja, solo cuando hay
+   varios: con uno, la hoja es la del servicio. */
+function tituloDeEquipo(servicio, equipo) {
+  return equiposDe(servicio).length > 1
+    ? h("h4", { clase: "grupo" }, t("srv_ts_de_equipo").replace("{a}", equipo.alias))
+    : "";
+}
+
 async function bloqueTaskSheet(servicio) {
   const caja = h("div", { clase: "tarjeta" },
     conAyuda("h3", t("srv_task_sheet"), "ay_srv_hoja"));
+  const equipos = equiposDe(servicio);
   /* Quien consulta no arma la hoja (seccion 85): ve la que ya salio. */
   if (soloConsulta(sesion.usuario)) {
     const salio = !!servicio.asignacion_confirmada_en;
     caja.append(h("p", { clase: "gris chico", style: "margin:0 0 10px" },
-                  t(salio ? "ts_consulta" : "ts_consulta_sin")),
-                ...botonesDeLaHoja(servicio, salio));
-    return caja;
-  }
-  let vista;
-  try {
-    vista = await api.get(`/task-sheets/servicio/${servicio.id}/vista-previa`);
-  } catch (e) {
-    caja.append(aviso(e.message, "alerta"));
+                  t(salio ? "ts_consulta" : "ts_consulta_sin")));
+    for (const equipo of equipos) {
+      caja.append(tituloDeEquipo(servicio, equipo),
+                  ...botonesDeLaHoja(equipo, salio));
+    }
     return caja;
   }
 
-  /* Lo que falta para publicar vive en su propia zona y se sabe
-     repintar. Se pide una vez al abrir la pantalla, y desde que asignar
-     un recurso ya no recarga todo --se repinta en su sitio, para no
-     cerrarle el panel al consultor a media tarea-- esta lista se
-     quedaba con la foto de antes: el equipo ya estaba puesto y la hoja
-     seguia diciendo "sin personal asignado". */
-  const zonaFaltantes = h("div", {});
-  pintarFaltantes(zonaFaltantes, vista.faltantes);
-  caja.append(zonaFaltantes);
+  /* Una vista previa por equipo, con las rutas por equipo (seccion
+     101). El atajo por servicio contesta 409 con dos equipos, y la
+     pantalla lo pintaba como error y se iba sin el boton de confirmar,
+     la vestimenta, la senal ni los botones de la hoja: un servicio con
+     Alfa y Beta no se podia confirmar ni imprimir. Lo que falle en un
+     equipo se dice en su bloque y no tumba lo demas. */
+  const vistas = await Promise.all(equipos.map(
+    equipo => api.get(`/task-sheets/equipo/${equipo.id}/vista-previa`)
+      .catch(err => ({ error: err }))));
+
+  /* Lo que falta para publicar vive en su propia zona por equipo y se
+     sabe repintar. Se pide una vez al abrir la pantalla, y desde que
+     asignar un recurso ya no recarga todo --se repinta en su sitio,
+     para no cerrarle el panel al consultor a media tarea-- esta lista
+     se quedaba con la foto de antes: el equipo ya estaba puesto y la
+     hoja seguia diciendo "sin personal asignado". */
+  const zonas = new Map();
+  equipos.forEach((equipo, i) => {
+    const zonaFaltantes = h("div", {});
+    if (vistas[i].error) {
+      zonaFaltantes.replaceChildren(aviso(vistas[i].error.message, "alerta"));
+    } else {
+      pintarFaltantes(zonaFaltantes, vistas[i].faltantes);
+    }
+    zonas.set(equipo.id, zonaFaltantes);
+    caja.append(tituloDeEquipo(servicio, equipo), zonaFaltantes);
+  });
   refrescarHoja = async () => {
-    try {
-      const otra = await api.get(
-        `/task-sheets/servicio/${servicio.id}/vista-previa`);
-      pintarFaltantes(zonaFaltantes, otra.faltantes);
-    } catch { /* si no se puede, se queda lo ultimo que se supo */ }
+    for (const equipo of equipos) {
+      try {
+        const otra = await api.get(`/task-sheets/equipo/${equipo.id}/vista-previa`);
+        pintarFaltantes(zonas.get(equipo.id), otra.faltantes);
+      } catch { /* si no se puede, se queda lo ultimo que se supo */ }
+    }
   };
 
   if (servicio.tipo === "eventual") {
     caja.append(bloqueVestimenta(servicio));
   }
-  caja.append(bloqueSenal(servicio, vista));
+  /* La senal es del servicio, no del equipo: la misma en todas las
+     hojas. Se toma de la primera vista que llego. */
+  caja.append(bloqueSenal(servicio, vistas.find(v => !v.error) || {}));
 
   /* La firma del consultor sobre su propia asignacion: que el sistema
      vea gente y unidad todos los dias no quiere decir que el ya haya
-     terminado. Es lo que la central espera para trabajar el servicio. */
+     terminado. Es lo que la central espera para trabajar el servicio.
+     Confirma por todos los equipos de una vez, y vive fuera de la vista
+     previa: si una hoja falla, el boton sigue. */
   const confirmar = h("button", { onclick: async (e) => {
     e.target.disabled = true;
     try {
@@ -2369,35 +2513,70 @@ async function bloqueTaskSheet(servicio) {
       : h("div", { clase: "acciones", style: "margin-top:14px" },
           confirmar,
           h("span", { clase: "gris chico" }, t("confirmar_nota"))),
+    liberado && tiene(sesion.usuario, "tasksheet.publicar")
+      ? botonRepublicar(servicio) : "",
 
     /* El TS lo manda el consultor por correo, sobre la misma cadena
        donde el cliente pidio y cotizo el servicio. El sistema solo lo
        entrega al dia: cada boton arma la hoja con lo ultimo capturado. */
     h("h4", { clase: "grupo" }, t("ts_titulo")),
     h("p", { clase: "gris chico", style: "margin:0 0 10px" },
-      liberado ? t("ts_al_dia") : t("ts_sin_liberar")),
-    /* Un PDF por idioma, siempre los tres: el TS lo lee el ejecutivo y
-       el idioma es el que el prefiera, no el de quien opera la consola.
-       Ver es otra cosa: eso lo lee el consultor, y sale en el idioma en
-       que tenga puesta su consola. */
-    ...botonesDeLaHoja(servicio, liberado));
+      liberado ? t("ts_al_dia") : t("ts_sin_liberar")));
+  /* Un PDF por idioma, siempre los tres: el TS lo lee el ejecutivo y
+     el idioma es el que el prefiera, no el de quien opera la consola.
+     Ver es otra cosa: eso lo lee el consultor, y sale en el idioma en
+     que tenga puesta su consola. Con varios equipos, una fila de
+     botones por equipo. */
+  for (const equipo of equipos) {
+    caja.append(tituloDeEquipo(servicio, equipo),
+                ...botonesDeLaHoja(equipo, liberado));
+  }
 
   return caja;
 }
 
+/* Volver a publicar la hoja (seccion 101).
+
+   Un cambio de recurso para otro dia no manda correo: "el cambio viaja
+   en el task sheet". Pero la hoja publicada es una foto de cuando se
+   confirmo la asignacion, y la consola no tenia con que publicar otra:
+   la central marcaba la hoja como pendiente y el consultor no podia
+   quitarle la marca mas que por la API. Publica una version nueva con lo
+   ultimo capturado; el PDF se baja y se manda como siempre, y no le
+   escribe al cliente. */
+function botonRepublicar(servicio) {
+  const boton = h("button", { clase: "claro chico", type: "button" },
+    t("srv_republicar_hoja"));
+  boton.onclick = async () => {
+    boton.disabled = true;
+    try {
+      const r = await api.post(
+        `/task-sheets/servicio/${servicio.id}/publicar`, { avisar: false });
+      mensaje(t("srv_republicada").replace("{v}", r.version || ""));
+      setTimeout(() => location.reload(), 1400);
+    } catch (err) {
+      mensaje(err.message, "grave");
+      boton.disabled = false;
+    }
+  };
+  return h("div", { clase: "acciones", style: "margin-top:8px" }, boton,
+    h("span", { clase: "gris chico" }, t("srv_republicar_pie")));
+}
+
 /* Ver la hoja y bajarla en PDF: lo mismo para quien la arma y para quien
-   la consulta (seccion 85), por eso lleva `consulta-si`. */
-function botonesDeLaHoja(servicio, liberado) {
+   la consulta (seccion 85), por eso lleva `consulta-si`. Por equipo: la
+   hoja es de cada equipo. */
+function botonesDeLaHoja(equipo, liberado) {
   return [
     h("div", { clase: "acciones" },
       ...IDIOMAS.map(i => h("button", { clase: "consulta-si",
         disabled: !liberado || undefined,
         title: `${t("ts_pdf")} · ${i.nombre}`,
-        onclick: () => abrirHoja(servicio, i.codigo, true) },
+        onclick: () => abrirHoja(equipo, i.codigo, true) },
         `${i.bandera} ${t("ts_pdf")} · ${i.nombre}`))),
     h("div", { clase: "acciones", style: "margin-top:8px" },
       h("button", { clase: "claro chico consulta-si", disabled: !liberado || undefined,
-        onclick: () => abrirHoja(servicio, idioma()) }, t("ts_ver")))];
+        onclick: () => abrirHoja(equipo, idioma()) }, t("ts_ver")))];
 }
 /* Abre la hoja en otra pestaña y, si se pide, la manda a imprimir: ahi
    se elige "Guardar como PDF". Se hace asi y no con un PDF armado en el
@@ -2409,14 +2588,14 @@ function botonesDeLaHoja(servicio, liberado) {
    en una pestaña nueva y el servidor contesta "se requiere iniciar
    sesion". Y ponerlo en la direccion tampoco es opcion: el token se
    quedaria en el historial y en cualquier bitacora por donde pase. */
-async function abrirHoja(servicio, idioma, imprimir = false) {
+async function abrirHoja(equipo, idioma, imprimir = false) {
   const w = window.open("", "_blank");
   if (!w) return mensaje(t("srv_bloqueo_ventana"), "alerta");
   w.document.write('<p style="font:14px system-ui;padding:20px">'
                    + t("srv_preparando") + "</p>");
   try {
     const html = await api.get(
-      `/task-sheets/servicio/${servicio.id}/hoja?idioma=${idioma}`,
+      `/task-sheets/equipo/${equipo.id}/hoja?idioma=${idioma}`,
       { crudo: true });
     w.document.open();
     w.document.write(html);
@@ -2687,17 +2866,75 @@ function ciudadDe(equipo, cat) {
 
 /* --------------------------------------------------------- dias del equipo */
 
+/* El choque que contesta el servidor al mover un dia (seccion 101):
+   sus alertas, cada una con quien choca y por que, y si alguna es un
+   bloqueo. Nulo cuando el error es otra cosa. */
+function choqueDeDia(err) {
+  const d = err && err.detalle;
+  if (!d || !Array.isArray(d.alertas) || !d.alertas.length) return null;
+  return {
+    bloqueo: d.alertas.some(a => a.nivel === "bloqueo"),
+    lineas: d.alertas.map(a => `${a.quien || "—"}: ${a.motivo || a.mensaje || ""}`),
+  };
+}
+
+/* El choque pintado como al asignar: la etiqueta, los motivos y, si
+   solo es riesgo, el boton de mover igual. */
+function panelDeChoque(choque, acciones) {
+  return h("div", { clase: "tarjeta lisa", style: "margin:4px 0 8px" },
+    h("div", {},
+      etiqueta(choque.bloqueo ? t("srv_ocupado") : t("srv_riesgo"),
+               choque.bloqueo ? "grave" : "alerta"),
+      " ",
+      h("b", {}, t(choque.bloqueo ? "srv_mover_bloqueado" : "srv_mover_riesgo"))),
+    h("ul", { clase: "chico", style: "margin:6px 0" },
+      ...choque.lineas.map(l => h("li", {}, l))),
+    h("div", { clase: "acciones" },
+      choque.bloqueo ? "" : h("button", { clase: "chico claro", type: "button",
+        onclick: (e) => { e.target.disabled = true; acciones.moverIgual(); } },
+        t("srv_mover_igual")),
+      h("button", { clase: "chico claro", type: "button",
+        onclick: () => acciones.dejar() },
+        t(choque.bloqueo ? "srv_cerrar" : "srv_dejar_como_estaba"))));
+}
+
+/* Lo mismo, para quien guarda con un boton y no en una tabla: con
+   riesgo pregunta y reintenta forzando; con bloqueo lo dice y no. */
+async function conForzar(pedir) {
+  try {
+    return await pedir(false);
+  } catch (err) {
+    const choque = choqueDeDia(err);
+    if (!choque) throw err;
+    if (choque.bloqueo) {
+      throw new Error(`${t("srv_mover_bloqueado")}\n${choque.lineas.join("\n")}`);
+    }
+    const ok = confirm(`${t("srv_mover_riesgo")}\n${choque.lineas.join("\n")}\n\n`
+                       + t("srv_mover_igual_pregunta"));
+    if (!ok) {
+      // No es una falla: el consultor decidio no mover.
+      const nada = new Error(t("srv_dejado_como_estaba"));
+      nada.tono = "alerta";
+      throw nada;
+    }
+    return pedir(true);
+  }
+}
+
 /* El mismo recuadro del alta, siempre a la vista: el servicio se sigue
    armando despues de darlo de alta. La fecha, la modalidad y la hora del
    dia 1 se corrigen aqui, y la agenda de cada dia se sube aqui. */
 function tablaDias(servicio, equipo, cat, cambios = []) {
   const cuerpo = h("tbody");
   const dias = [...equipo.jornadas].sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
+  const seArma = !YA_NO_SE_ARMA.includes(servicio.estatus);
 
   dias.forEach((jornada, i) => {
-    const fechaDia = h("input", { type: "date", value: jornada.fecha });
+    const fechaDia = h("input", { type: "date", value: jornada.fecha,
+                                  disabled: seArma ? undefined : true });
     const modalidad = lista("modalidad", opcionesModalidad(cat, jornada));
     modalidad.value = jornada.modalidad_id;
+    if (!seArma) modalidad.disabled = true;
     /* La hora se lee aqui y se captura adentro, junto al punto del dia:
        son la misma pregunta y tenerla en dos lugares confundia. La que
        nadie ha confirmado se dice desconocida en vez de aparentar dato:
@@ -2709,12 +2946,33 @@ function tablaDias(servicio, equipo, cat, cambios = []) {
     const nota = h("div", { clase: "chico gris" },
       jornada.hora_confirmada ? "" : t("srv_arranca_h").replace("{h}", heredada));
 
+    /* Mover el dia vuelve a revisar los empalmes de quien ya esta en el
+       (seccion 101): el choque se pinta debajo del dia, como al asignar,
+       y con riesgo se ofrece mover igual; con bloqueo no hay boton y el
+       campo regresa a lo que estaba. */
+    const zonaChoque = h("td", { colspan: "6" });
+    const filaChoque = h("tr", { hidden: true }, zonaChoque);
+    const comoEstaba = () => {
+      fechaDia.value = jornada.fecha;
+      modalidad.value = jornada.modalidad_id;
+    };
+
     const guardar = async (cambios) => {
       try {
         const r = await api.patch(`/servicios/jornadas/${jornada.id}`, cambios);
+        filaChoque.hidden = true;
         mensaje(t("srv_dia_actualizado").replace("{f}", fecha(r.fecha)));
         if (r.estatus_servicio) setTimeout(() => location.reload(), 600);
-      } catch (err) { mensaje(err.message, "grave"); }
+      } catch (err) {
+        const choque = choqueDeDia(err);
+        if (!choque) { mensaje(err.message, "grave"); return; }
+        zonaChoque.replaceChildren(panelDeChoque(choque, {
+          moverIgual: () => guardar({ ...cambios, forzar: true }),
+          dejar: () => { comoEstaba(); filaChoque.hidden = true; },
+        }));
+        filaChoque.hidden = false;
+        if (choque.bloqueo) comoEstaba();
+      }
     };
 
     fechaDia.addEventListener("change",
@@ -2789,7 +3047,8 @@ function tablaDias(servicio, equipo, cat, cambios = []) {
              puede traer dos personas en la nomina. */
           huboCambio(cambios, jornada.fecha)
             ? h("span", {}, " ", etiqueta(t("srv_cambio"), "alerta")) : ""),
-        h("td", {}, quitar)),
+        h("td", {}, seArma ? quitar : "")),
+      filaChoque,
       filaDia);
   });
 
@@ -2798,8 +3057,7 @@ function tablaDias(servicio, equipo, cat, cambios = []) {
      de dejar el campo vacio o en hoy, que cae antes del servicio. */
   const ultimo = dias.length ? dias[dias.length - 1].fecha : null;
   const siguiente = ultimo
-    ? new Date(new Date(`${ultimo}T00:00:00`).getTime() + 86400000)
-        .toISOString().slice(0, 10)
+    ? fechaLocal(new Date(new Date(`${ultimo}T12:00:00`).getTime() + 86400000))
     : "";
   const nuevaFecha = h("input", { type: "date", value: siguiente });
   const nuevaModalidad = lista("modalidad", opcionesModalidad(cat));
@@ -2827,8 +3085,10 @@ function tablaDias(servicio, equipo, cat, cambios = []) {
         h("th", {}, t("srv_pres_actividad")), h("th", {}, t("srv_estatus")),
         h("th", {}, ""))),
       cuerpo),
-    h("div", { clase: "acciones", style: "margin-top:12px" },
-      nuevaFecha, nuevaModalidad, agregar));
+    seArma
+      ? h("div", { clase: "acciones", style: "margin-top:12px" },
+          nuevaFecha, nuevaModalidad, agregar)
+      : "");
 }
 
 /* Las modalidades del pais del servicio. La del dia que se esta viendo

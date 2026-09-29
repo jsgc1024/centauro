@@ -216,11 +216,19 @@ def _escalacion(db: Session, servicio: m.Servicio) -> list[dict]:
                         "telefono": consultor.telefono,
                         "correo": consultor.correo})
 
-    director = (db.query(m.Persona)
-                .join(m.Usuario, m.Usuario.persona_id == m.Persona.id)
-                .filter(m.Usuario.rol == m.Rol.DIRECTOR_OPERACIONES,
-                        m.Usuario.activo.is_(True))
-                .first())
+    # El director de operaciones del pais del servicio (seccion 101): se
+    # tomaba el primero activo, y con Brasil en noviembre la hoja de Sao
+    # Paulo podia salir con el director de Mexico. Si el pais no tiene
+    # el suyo, se cae al que haya.
+    directores = (db.query(m.Persona)
+                  .join(m.Usuario, m.Usuario.persona_id == m.Persona.id)
+                  .join(m.Plaza, m.Persona.plaza_id == m.Plaza.id)
+                  .filter(m.Usuario.rol == m.Rol.DIRECTOR_OPERACIONES,
+                          m.Usuario.activo.is_(True))
+                  .order_by((m.Plaza.pais_id == servicio.pais_id).desc(),
+                            m.Persona.id)
+                  .all())
+    director = directores[0] if directores else None
     if director:
         niveles.append({"nivel": 2, "cargo": "Director de operaciones",
                         "nombre": director.nombre,

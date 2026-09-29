@@ -430,6 +430,19 @@ function parrafoAyuda(rotulo, clave, opcional = false) {
    dia/mes y mes/dia, que con clientes extranjeros importa. El nombre
    del dia y el del mes salen del idioma de la consola: en portugues un
    viernes es "Sex", no "Vie". */
+/* La fecha de un Date como la ve quien mira, "AAAA-MM-DD". `toISOString`
+   da la de Londres: en Mexico desde las 18:00 y en Brasil desde las
+   21:00 "hoy" ya era manana, y las fechas propuestas salian un dia
+   corridas (seccion 101). */
+export function fechaLocal(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-`
+    + `${String(d.getDate()).padStart(2, "0")}`;
+}
+
+export function hoyLocal(mas = 0) {
+  return fechaLocal(new Date(Date.now() + mas * 86400000));
+}
+
 export function fecha(iso) {
   if (!iso) return "—";
   const f = new Date(iso + (iso.length === 10 ? "T00:00:00" : ""));
@@ -522,19 +535,33 @@ export function datosDeFormulario(formulario) {
    "Maria de la Cruz", no "Maria De La Cruz". */
 const MENUDAS = new Set(["de", "del", "la", "las", "los", "y", "e", "el",
                          "al", "da", "do", "dos", "van", "von", "di", "der",
+                         // El portugues tambien dice "das" (Maria das
+                         // Dores), y el frances "du", "des", "le" (seccion 101).
+                         "das", "du", "des", "le",
                          // Los lugares de la agenda tambien las llevan:
                          // "Comida en San Angel", "Bank of America".
                          "en", "a", "con", "por", "para", "of", "the"]);
 
+/* Una palabra que ya trae su mayuscula adentro, con minusculas al lado,
+   se escribio asi a proposito: McDonald's, O'Brien, iPhone. Se respeta
+   (seccion 101); la que viene toda en mayusculas o toda en minusculas
+   si se empareja. La misma regla vive en texto.py del servidor. */
+function conMayusculaAdentro(palabra) {
+  return /[A-ZÁÉÍÓÚÑÜ]/.test(palabra.slice(1)) && /[a-záéíóúñü]/.test(palabra);
+}
+
 export function titulo(texto) {
   let primera = true;
-  return String(texto || "").trim().toLowerCase()
+  return String(texto || "").trim()
     .split(/(\s+|-|\/)/)
-    .map((parte) => {
-      if (!parte.trim()) return parte;
+    .map((original) => {
+      if (!original.trim()) return original;
+      const parte = original.toLowerCase();
       const enlace = !primera && MENUDAS.has(parte);
       primera = false;
-      return enlace ? parte : parte.charAt(0).toUpperCase() + parte.slice(1);
+      if (enlace) return parte;
+      if (conMayusculaAdentro(original)) return original;
+      return parte.charAt(0).toUpperCase() + parte.slice(1);
     })
     .join("");
 }

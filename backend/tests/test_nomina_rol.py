@@ -147,7 +147,10 @@ def test_sin_rol_el_dinero_se_detiene_antes_de_la_nomina(cliente, sesion,
                           headers=h).json()
     envio = cliente.post(f"/cierre/{cierre['cierre_id']}/enviar-finanzas",
                          headers=h)
-    assert envio.status_code == 400, envio.text
+    # La revision lo reporta como observacion --con que hacer-- en vez
+    # de reventar con 400 (seccion 101): el envio contesta como con
+    # cualquier otro punto por corregir.
+    assert envio.status_code == 409, envio.text
     assert "sin rol" in str(envio.json()["detail"]).lower()
 
 

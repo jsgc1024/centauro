@@ -12,6 +12,7 @@ El lunes alguien pregunta por qué no viene un día que trabajó; o en Nóminas 
 ### Por qué pasa · de lo más común a lo menos
 1. **Su servicio todavía no tiene visto bueno.** El eventual entra al corte cuando su consultor da el visto bueno; no espera a que finanzas apruebe. Sale en Nóminas, en **Todavía no entra**, con lo que le falta y cuánto sería.
 2. **Llegó después de las 11:00 del lunes.** A esa hora el corte queda listo y ya no se recalcula: lo que llega después entra solo al lunes siguiente.
+   Si entre las 7:00 y las 11:00 llegó un día sin tarifa, el corte no cierra: la pestaña dice que lo que se ve es el borrador de las 7:00, enseña la tabla de lo que falta —persona, día, modalidad, rol— y no ofrece «Marcar pagado» hasta que la tarifa esté cargada y el corte se recalcule.
 3. **Falta una tarifa, y el corte entero no sale.** Cada día se paga con el monto del rol con el que fue esa persona, en su país, su tipo de servicio y su modalidad; el freelance, con su tarifa. Si un día trabajado no tiene monto, no se inventa: pagar de menos a quien trabajó es peor que retrasar el corte.
 4. **Fue sin rol.** Sin rol no hay tarifa que buscar.
 5. **Lo relevaron.** Quien no alcanzó a marcar su llegada no tiene ese día. Quien fue relevado a media jornada cobra su día completo, sin las horas extra.

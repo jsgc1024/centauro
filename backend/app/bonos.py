@@ -289,18 +289,41 @@ def medir_recompra(db: Session, jornadas: list[m.Jornada],
 
 def medir_seguimiento(db: Session, jornadas: list[m.Jornada], persona_id: int) -> dict:
     """Asertividad en el uso de la app: que cada jornada tenga su secuencia
-    completa de hitos y sin alertas por falta de reporte."""
+    completa de hitos y sin alertas por falta de reporte.
+
+    Al relevado a media jornada se le exige solo lo que paso antes del
+    relevo (seccion 101): el dia es suyo --lo empezo y marco su
+    llegada--, pero el fin lo marca quien se quedo, y el contacto con
+    el ejecutivo tambien si el relevo llego antes. Se le cobraba ese
+    fin ajeno como falla, y con pocas jornadas en el mes perdia la
+    estrella.
+    """
     if not jornadas:
         return {"valor": CERO, "aplica": False,
                 "detalle": "Sin jornadas este mes"}
 
+    relevado_en = {a.jornada_id: a.relevado_en for a in
+                   db.query(m.AsignacionPersonal)
+                   .filter(m.AsignacionPersonal.jornada_id.in_(
+                               [j.id for j in jornadas]),
+                           m.AsignacionPersonal.persona_id == persona_id,
+                           m.AsignacionPersonal.relevado_en.isnot(None))
+                   .all()}
     completas = 0
     faltantes = []
     for j in jornadas:
-        tipos = {h.tipo for h in db.query(m.Hito).filter_by(
-            jornada_id=j.id, persona_id=persona_id).all()}
+        hitos = db.query(m.Hito).filter_by(jornada_id=j.id).all()
+        tipos = {h.tipo for h in hitos if h.persona_id == persona_id}
         requeridos = {m.TipoHito.LLEGADA_ORIGEN, m.TipoHito.CONTACTO_EJECUTIVO,
                       m.TipoHito.FIN_SERVICIO}
+        relevo = relevado_en.get(j.id)
+        if relevo is not None:
+            # La llegada siempre: con ella se quedo con el dia. El
+            # contacto solo si el ejecutivo subio antes de que lo
+            # relevaran; el fin nunca es suyo.
+            antes = {h.tipo for h in hitos if h.marcado_en <= relevo}
+            requeridos = {m.TipoHito.LLEGADA_ORIGEN} | (
+                {m.TipoHito.CONTACTO_EJECUTIVO} & antes)
         sin_reporte = (db.query(m.Alerta)
                        .filter_by(jornada_id=j.id, tipo=m.TipoAlerta.SIN_REPORTE)
                        .count())
@@ -497,6 +520,18 @@ def evaluar(db: Session, persona_id: int, anio: int, mes: int,
     if evaluacion:
         if evaluacion.estatus == m.EstatusEvaluacion.PAGADA:
             raise HTTPException(409, "Esa evaluacion ya se pago")
+        # Autorizar congela el monto (seccion 101): recalcular una
+        # autorizada la regresaba a calculada, se perdia quien la firmo
+        # y la persona desaparecia de la bandeja del dia 5 sin que RRHH
+        # se enterara. La tarea del dia 3 ya la respetaba; esta no.
+        if evaluacion.estatus == m.EstatusEvaluacion.AUTORIZADA:
+            raise HTTPException(409, {
+                "mensaje": "Esa evaluación ya está autorizada: el bono es "
+                           "dinero y no se recalcula",
+                "que_hacer": "Lo que haya que corregir va como ajuste a "
+                             "mano en Nóminas, con su motivo; la "
+                             "evaluación se queda como la firmó Recursos "
+                             "Humanos."})
         for r in list(evaluacion.detalle):
             db.delete(r)
         db.flush()

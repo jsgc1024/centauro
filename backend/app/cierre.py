@@ -1025,6 +1025,15 @@ def nombre_estatus(estatus: m.EstatusCierre) -> str:
     return NOMBRE_ESTATUS.get(estatus, estatus.value.replace("_", " "))
 
 
+# El servicio que ya termino --o se cancelo--: solo a esos se les abre
+# el cierre a mano (seccion 101). Antes la ruta lo abria sobre uno en
+# curso o planeado, con el T0 que se le mandara, y las encuestas al
+# cliente salian antes de trabajar el servicio.
+YA_TERMINO = (m.EstatusServicio.TERMINADO, m.EstatusServicio.SIN_VISTO_BUENO,
+              m.EstatusServicio.EN_FACTURACION, m.EstatusServicio.CERRADO,
+              m.EstatusServicio.CANCELADO)
+
+
 def abrir(db: Session, servicio_id: int, abierto_en: datetime | None = None,
           motivo: str = "termino") -> m.Cierre:
     """Arranca el primer reloj: las 24 horas del personal.
@@ -1071,6 +1080,87 @@ def abrir(db: Session, servicio_id: int, abierto_en: datetime | None = None,
 
 
 # ---------------------------------------------------------------- visto bueno y regreso
+
+def _de_que(cierre: m.Cierre) -> str:
+    """El folio, y el mes si es del implantado: el folio es el mismo todo
+    el contrato."""
+    if cierre.contrato_id:
+        return (f"{cierre.servicio.folio} {cierre.contrato.mes:02d}/"
+                f"{cierre.contrato.anio}")
+    return cierre.servicio.folio
+
+
+def _pantalla(cierre: m.Cierre) -> str:
+    """Donde se da el visto bueno: la del servicio, o el panel del mes en
+    el implantado (seccion 56). El consultor trabaja en la consola, no en
+    la app de campo."""
+    if cierre.contrato_id:
+        return f"/consola/#/implantado/{cierre.servicio_id}"
+    return f"/consola/#/servicio/{cierre.servicio_id}"
+
+
+def correo_al_consultor(db: Session, cierre: m.Cierre, asunto: str,
+                        cuerpo: str, que_hacer: str, hasta: datetime,
+                        motivo: str | None = None) -> bool:
+    """Un correo al consultor titular, ademas del aviso al telefono
+    (seccion 101).
+
+    Los dos avisos que deciden la comision --arrancan tus 24 horas;
+    finanzas lo regreso-- salian solo por push, y el push solo llega al
+    telefono que tiene la app de campo suscrita. El consultor trabaja en
+    la consola: si no instalo la app, o cambio de telefono, T1 llegaba,
+    sus 24 horas corrian y nadie se lo decia. Va en el idioma del pais,
+    como los demas avisos a la gente de la casa, y dice que servicio,
+    hasta cuando y que hacer. `asunto`, `cuerpo` y `que_hacer` son
+    claves de `textos_aviso`. Solo escribe; quien llama guarda.
+    """
+    from app import correo_html
+    from app import textos_aviso as ta
+
+    servicio = cierre.servicio
+    consultor = (db.get(m.Persona, servicio.consultor_id)
+                 if servicio.consultor_id else None)
+    if consultor is None or not consultor.correo:
+        return False
+    lengua = ta.idioma_de(db, servicio, m.Destinatario.CONSULTOR)
+    de_que = _de_que(cierre)
+    pares = [(ta.t(lengua, "enc_servicio"), de_que),
+             (ta.t(lengua, "cie_vence"), f"{hasta:%d/%m/%Y %H:%M}")]
+    if motivo:
+        pares.append((ta.t(lengua, "cie_motivo"), motivo))
+    pares.append((ta.t(lengua, "cie_que_hacer"), ta.t(lengua, que_hacer)))
+    db.add(m.Notificacion(
+        servicio_id=servicio.id,
+        destinatario=m.Destinatario.CONSULTOR, canal=m.Canal.CORREO,
+        correo=consultor.correo, idioma=lengua,
+        asunto=ta.t(lengua, asunto, de_que=de_que)[:200],
+        cuerpo=ta.t(lengua, cuerpo, de_que=de_que,
+                    fecha=f"{hasta:%d/%m}", hora=f"{hasta:%H:%M}")[:2000],
+        datos=correo_html.guardar_datos(pares),
+        enlace_seguimiento=_pantalla(cierre)))
+    return True
+
+
+def tomar(db: Session, cierre_id: int) -> m.Cierre:
+    """El cierre con su fila bloqueada hasta que quien llama guarde
+    (seccion 101), como `nomina.pagar` toma el corte.
+
+    Es el candado del visto bueno: dos envios del mismo cierre en el
+    mismo segundo leian los dos "sin visto bueno" y los dos generaban los
+    ajustes de nomina. Con la fila tomada, el segundo espera al primero
+    y lo encuentra ya en facturacion.
+    """
+    # `populate_existing`: quien llama ya leyo el cierre en esta sesion y
+    # sin esto la fila bloqueada se lee de la base pero el objeto se
+    # queda con el estatus de antes de esperar --justo el que el
+    # candado tiene que corregir--.
+    cierre = (db.query(m.Cierre)
+              .filter(m.Cierre.id == cierre_id)
+              .populate_existing().with_for_update().first())
+    if not cierre:
+        raise HTTPException(404, f"No existe el cierre {cierre_id}")
+    return cierre
+
 
 def dar_visto_bueno(cierre: m.Cierre, momento: datetime) -> None:
     """El visto bueno del consultor: pasa a facturacion.
@@ -1137,21 +1227,22 @@ def regresar(db: Session, cierre: m.Cierre, motivo: str, usuario: m.Usuario,
     if (not cierre.contrato_id
             and cierre.servicio.estatus == m.EstatusServicio.EN_FACTURACION):
         cierre.servicio.estatus = m.EstatusServicio.SIN_VISTO_BUENO
-    de_que = (f"{cierre.servicio.folio} {cierre.contrato.mes:02d}/"
-              f"{cierre.contrato.anio}" if cierre.contrato_id
-              else cierre.servicio.folio)
+    de_que = _de_que(cierre)
     auditoria.registrar(db, usuario, cierre.servicio, "devolver a operacion",
                         (f"{de_que}: {motivo}"
                          + (f" (factura {anulada} anulada)" if anulada
                             else ""))[:400])
+    hasta = momento + timedelta(hours=HORAS_REGRESO)
+    # El correo se guarda con el regreso (seccion 101): el push de abajo
+    # solo llega al telefono suscrito, y de estas 24 horas depende que la
+    # factura vuelva a salir.
+    correo_al_consultor(db, cierre, "cie_reg_asunto", "cie_reg_cuerpo",
+                        "cie_reg_que_hacer", hasta, motivo=motivo)
     db.commit()
 
-    hasta = momento + timedelta(hours=HORAS_REGRESO)
     if cierre.servicio.consultor_id:
         from app import push
-        pantalla = (f"/consola/#/implantado/{cierre.servicio_id}"
-                    if cierre.contrato_id
-                    else f"/consola/#/servicio/{cierre.servicio_id}")
+        pantalla = _pantalla(cierre)
         try:
             push.avisar(
                 db, cierre.servicio.consultor_id,
@@ -1248,12 +1339,12 @@ def avanzar(db: Session, cierre: m.Cierre,
         from app import push
         # En el implantado el visto bueno es del mes y se da en su
         # panel (seccion 56).
-        de_que = (f"{servicio.folio} {cierre.contrato.mes:02d}/"
-                  f"{cierre.contrato.anio}" if cierre.contrato_id
-                  else servicio.folio)
-        pantalla = (f"/consola/#/implantado/{servicio.id}"
-                    if cierre.contrato_id
-                    else f"/consola/#/servicio/{servicio.id}")
+        de_que = _de_que(cierre)
+        pantalla = _pantalla(cierre)
+        # Y por correo (seccion 101): el push solo llega al telefono que
+        # tiene la app suscrita, y de este plazo depende la comision.
+        correo_al_consultor(db, cierre, "cie_vb_asunto", "cie_vb_cuerpo",
+                            "cie_vb_que_hacer", limite)
         try:
             push.avisar(
                 db, servicio.consultor_id,

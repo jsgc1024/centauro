@@ -744,10 +744,13 @@ def mis_comisiones(db: Session = Depends(get_db),
     if persona:
         ya_en_corte = {c.jornada_id for r in renglones for c in r.conceptos
                        if c.jornada_id}
+        # Solo los suyos, desde la base (seccion 101): antes se traian
+        # todas las jornadas terminadas del pais --con su servicio y su
+        # gente, una por una-- para quedarse con las de esta persona, y
+        # cada apertura de "Pagos" tardaba mas que la anterior.
         for jornada, asignacion in motor.jornadas_pendientes(
-                db, persona.plaza.pais_id if persona.plaza else 0):
-            if asignacion.persona_id != usuario.persona_id:
-                continue
+                db, persona.plaza.pais_id if persona.plaza else 0,
+                persona_id=usuario.persona_id):
             if jornada.id in ya_en_corte:
                 continue
             pago = motor.pago_de_jornada(db, jornada, asignacion,
@@ -761,11 +764,15 @@ def mis_comisiones(db: Session = Depends(get_db),
                 "monto": Decimal(str(pago["monto"])),
             })
 
+    # La moneda de su pais: la app pintaba "$" fijo tambien en Brasil
+    # (seccion 101).
+    pais = persona.plaza.pais if persona and persona.plaza else None
     return {
         "cortes": cortes,
         "en_curso": {
             "dias": pendientes,
             "total": sum((p["monto"] for p in pendientes), Decimal("0")),
+            "moneda": pais.moneda_local.value if pais else "MXN",
             "nota": "Todavia no entra a un corte. Puede cambiar si un dia "
                     "se corrige.",
         },

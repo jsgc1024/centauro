@@ -462,22 +462,56 @@ def resolver_retenida(db: Session, comision_id: int, se_paga: bool,
     return comision
 
 
-def cancelar_por_no_cobro(db: Session, comision_id: int, anio: int, mes: int,
-                          motivo: str) -> dict:
-    """Nota de credito o cancelacion: resta en el corte siguiente."""
+def cancelar_por_no_cobro(db: Session, comision_id: int, motivo: str,
+                          usuario: m.Usuario,
+                          ahora: datetime | None = None) -> dict:
+    """Nota de credito o cancelacion: resta en el corte siguiente.
+
+    Solo sobre una comision que se paga o que ya se pago (seccion 101).
+    La retenida y la perdida nunca se pagaron: cancelarlas "por factura
+    no cobrada" le descontaba al consultor un dinero que nunca recibio,
+    y a la retenida ademas la sacaba de las manos de direccion general
+    sin que nadie la decidiera. El mes del descuento lo pone el sistema
+    --el que siga abierto hoy, como en `diferencia_a_mano`--: el que
+    mandaba el cliente no tenia tope y un mes futuro dejaba el descuento
+    dormido. Y queda escrito quien lo registro.
+    """
     comision = db.get(m.ComisionConsultor, comision_id)
     if not comision:
         raise HTTPException(404, f"No existe la comision {comision_id}")
     if comision.estatus == m.EstatusComision.AJUSTADA:
-        raise HTTPException(409, "Esa comision ya tiene ajuste registrado")
+        raise HTTPException(409, {
+            "mensaje": "Esa comisión ya tiene registrado su ajuste por "
+                       "factura no cobrada",
+            "que_hacer": "Si hay algo más que corregir, regístralo como "
+                         "diferencia a mano en el corte del mes."})
+    if comision.estatus == m.EstatusComision.RETENIDA:
+        raise HTTPException(409, {
+            "mensaje": "Esa comisión está retenida por una incidencia grave: "
+                       "no se ha pagado y no hay nada que descontar",
+            "que_hacer": "Primero la decide dirección general. Si decide que "
+                         "se paga y la factura no se cobró, entonces se "
+                         "cancela aquí."})
+    if comision.estatus == m.EstatusComision.PERDIDA:
+        raise HTTPException(409, {
+            "mensaje": "Esa comisión se perdió y nunca se pagó: no hay nada "
+                       "que descontar",
+            "que_hacer": "No hace falta registrar nada."})
+    motivo = (motivo or "").strip()
+    if len(motivo) < MINIMO_MOTIVO:
+        raise HTTPException(400, {
+            "mensaje": "Falta decir por qué no se cobró",
+            "que_hacer": (f"Escribe al menos {MINIMO_MOTIVO} letras: es lo "
+                          "que lee el consultor en su corte.")})
 
     pais_id = comision.servicio.pais_id
-    anio, mes = mes_abierto(db, pais_id, anio, mes)
+    hoy = _hoy(db, pais_id, ahora)
+    anio, mes = mes_abierto(db, pais_id, hoy.year, hoy.month)
     ajuste = m.AjusteComision(
         comision_id=comision.id, consultor_id=comision.consultor_id,
         pais_id=pais_id, servicio_id=comision.servicio_id,
         anio=anio, mes=mes, monto=-Decimal(str(comision.monto)), motivo=motivo,
-        tipo=AJUSTE_NO_COBRADA)
+        tipo=AJUSTE_NO_COBRADA, creado_por_id=usuario.persona_id)
     db.add(ajuste)
     comision.estatus = m.EstatusComision.AJUSTADA
     db.commit()
@@ -888,8 +922,24 @@ def diferencia_a_mano(db: Session, pais_id: int, consultor_id: int,
     persona = db.get(m.Persona, consultor_id)
     if not persona:
         raise HTTPException(404, f"No existe la persona {consultor_id}")
-    if servicio_id is not None and not db.get(m.Servicio, servicio_id):
-        raise HTTPException(404, f"No existe el servicio {servicio_id}")
+    if not db.get(m.Pais, pais_id):
+        raise HTTPException(404, f"No existe el pais {pais_id}")
+    # La diferencia entra al corte del pais que dice, asi que tiene que
+    # ser el del consultor y el del servicio (seccion 101): con otro
+    # pais se quedaba en un corte donde el nunca cobra.
+    if persona.plaza and persona.plaza.pais_id != pais_id:
+        raise HTTPException(400, {
+            "mensaje": f"{persona.nombre} no es de ese país: la diferencia no "
+                       "entraría a ningún corte suyo",
+            "que_hacer": "Regístrala en el país de su plaza."})
+    if servicio_id is not None:
+        servicio = db.get(m.Servicio, servicio_id)
+        if not servicio:
+            raise HTTPException(404, f"No existe el servicio {servicio_id}")
+        if servicio.pais_id != pais_id:
+            raise HTTPException(400, {
+                "mensaje": f"El servicio {servicio.folio} es de otro país",
+                "que_hacer": "Registra la diferencia en el país del servicio."})
     hoy = _hoy(db, pais_id, ahora)
     anio, mes = mes_abierto(db, pais_id, hoy.year, hoy.month)
     ajuste = m.AjusteComision(

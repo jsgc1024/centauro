@@ -186,6 +186,13 @@ def test_el_plazo_para_cerrar_nace_en_la_hora_del_pais(cliente, sesion, datos,
                                brasil["pais"]["id"], brasil["plaza"]["id"],
                                manana(-2))
     h = sesion("consultor")
+    # El cierre solo se abre con el servicio terminado (seccion 101): la
+    # central cierra a mano el dia de antier y el cierre nace ahi, con
+    # la hora de alla; `abrir` devuelve ese.
+    r = cliente.post(f"/operacion/jornadas/{j['id']}/cerrar-a-mano",
+                     headers=sesion("central"),
+                     json={"justificacion": "Se cerro sin marcas; confirmado por telefono"})
+    assert r.status_code == 200, r.text
     r = cliente.post(f"/cierre/servicio/{servicio['id']}/abrir", headers=h)
     assert r.status_code in (200, 201), r.text
 

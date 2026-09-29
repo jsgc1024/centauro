@@ -228,7 +228,12 @@ def test_el_relevado_ya_no_ve_el_dia_ni_lo_cierra(cliente, sesion, datos):
                   inicio).status_code == 200
 
     relevo = inicio + timedelta(hours=4)
-    r = cliente.post("/contingencia/reemplazos/personal", headers=h, json={
+    # El consultor lo captura una hora despues, con el reloj del servidor
+    # ahi (seccion 101): una hora de relevo que todavia no llega ya no
+    # se acepta.
+    captura = (relevo + timedelta(hours=1)).isoformat()
+    r = cliente.post(f"/contingencia/reemplazos/personal?ahora={captura}",
+                     headers=h, json={
         "desde_jornada_id": j["id"],
         "sale_persona_id": datos["personal"]["Juan Ramirez"]["id"],
         "entra_persona_id": datos["personal"]["Luis Mendoza"]["id"],
@@ -268,7 +273,11 @@ def test_la_marca_del_relevado_de_antes_del_relevo_si_entra(
     juan, h = sesion("juan"), sesion("consultor")
     assert marcar(cliente, juan, j["id"], "llegada_origen",
                   inicio - timedelta(minutes=10)).status_code == 200
-    r = cliente.post("/contingencia/reemplazos/personal", headers=h, json={
+    # Capturado a las tres horas, con el reloj del servidor ahi (seccion
+    # 101): una hora de relevo que todavia no llega ya no se acepta.
+    captura = (inicio + timedelta(hours=3)).isoformat()
+    r = cliente.post(f"/contingencia/reemplazos/personal?ahora={captura}",
+                     headers=h, json={
         "desde_jornada_id": j["id"],
         "sale_persona_id": datos["personal"]["Juan Ramirez"]["id"],
         "entra_persona_id": datos["personal"]["Luis Mendoza"]["id"],

@@ -20,6 +20,7 @@ Quien no se presento no trabajo, y relevarlo es cambiar un nombre en una
 lista.
 """
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 from ayudas import (asignar, configurar_origen, cotizar_y_autorizar,
                     crear_servicio, jornada, manana, marcar, marcar_fin)
@@ -61,9 +62,15 @@ def _cambio(datos, j, motivo="Se sintio mal", **extra):
             "motivo": motivo, **extra}
 
 
-def _relevo(cliente, sesion, datos, j, motivo="Se sintio mal", **extra):
-    return cliente.post("/contingencia/reemplazos/personal",
-                        headers=sesion("consultor"),
+def _relevo(cliente, sesion, datos, j, motivo="Se sintio mal", ahora=None,
+            **extra):
+    """`ahora` es el reloj del servidor (seccion 101): la hora del relevo
+    que captura el consultor se revisa contra el, y estas pruebas arman
+    servicios de dentro de un ano."""
+    ruta = "/contingencia/reemplazos/personal"
+    if ahora is not None:
+        ruta += f"?ahora={ahora.isoformat()}"
+    return cliente.post(ruta, headers=sesion("consultor"),
                         json=_cambio(datos, j, motivo, **extra))
 
 
@@ -287,9 +294,11 @@ def test_no_se_deshace_si_el_dinero_ya_se_movio(cliente, sesion, datos):
 
 # ================================================== el regreso del titular
 
-def _regreso(cliente, sesion, reemplazo_id, dia, **extra):
-    return cliente.post(f"/contingencia/reemplazos/{reemplazo_id}/regreso",
-                        headers=sesion("consultor"),
+def _regreso(cliente, sesion, reemplazo_id, dia, ahora=None, **extra):
+    ruta = f"/contingencia/reemplazos/{reemplazo_id}/regreso"
+    if ahora is not None:
+        ruta += f"?ahora={ahora.isoformat()}"
+    return cliente.post(ruta, headers=sesion("consultor"),
                         json={"desde": dia, **extra})
 
 
@@ -687,10 +696,12 @@ def test_la_hora_que_el_sistema_propuso_para_el_regreso_queda_al_lado(
                   inicio - timedelta(minutes=10)).status_code == 200
     marcar(cliente, sesion("luis"), dias[2]["id"], "contacto_ejecutivo", marca)
 
-    # El consultor corrige la hora: dice que fue una hora despues.
+    # El consultor corrige la hora: dice que fue una hora despues. Lo
+    # captura a las dos horas, con el reloj del servidor ahi (seccion
+    # 101): una hora que todavia no llega ya no se acepta.
     corregida = (marca + timedelta(hours=1)).isoformat()
     r = _regreso(cliente, sesion, hecho["reemplazo_id"], dias[2]["fecha"],
-                 relevado_en=corregida)
+                 ahora=marca + timedelta(hours=2), relevado_en=corregida)
     assert r.status_code == 200, r.text
     assert r.json()["jornadas_partidas"] == [dias[2]["fecha"]]
 
@@ -893,8 +904,9 @@ def test_al_que_entra_no_se_le_abre_dinero_solo(cliente, sesion, datos):
     v = r.json()["viaticos"]
 
     # La cuenta esta: el consultor no tiene que ir a buscar el tabulador.
+    # El monto sale como cadena, en Decimal (seccion 101).
     assert v["propuestos"], v
-    assert all(x["monto"] > 0 for x in v["propuestos"])
+    assert all(Decimal(x["monto"]) > 0 for x in v["propuestos"])
 
     # Pero nadie le asigno nada todavia.
     afuera = cliente.get("/viaticos/finanzas/por-comprobar",
@@ -986,9 +998,12 @@ def test_el_consultor_puede_corregir_la_hora_y_se_nota(cliente, sesion, datos):
            inicio - timedelta(minutes=10))
     marcar(cliente, sesion("juan"), j["id"], "contacto_ejecutivo", inicio)
 
-    # El sistema propondria las 07:00; el consultor sabe que fue a las 11.
+    # El sistema propondria las 07:00; el consultor sabe que fue a las 11
+    # y lo captura a las seis de la tarde (seccion 101: una hora que
+    # todavia no llega ya no se acepta, asi que el reloj se para ahi).
     de_verdad = inicio + timedelta(hours=4)
-    r = _relevo(cliente, sesion, datos, j, relevado_en=de_verdad.isoformat())
+    r = _relevo(cliente, sesion, datos, j, ahora=inicio + timedelta(hours=11),
+                relevado_en=de_verdad.isoformat())
     assert r.status_code == 200, r.text
     cuerpo = r.json()
 
@@ -1039,7 +1054,10 @@ def test_la_unidad_tambien_acepta_la_hora_del_cambio(cliente, sesion, datos):
 
     otra = next(v for v in datos["vehiculos"]
                 if v["id"] != datos["suburban"]["id"])
-    r = cliente.post("/contingencia/reemplazos/vehiculo",
+    # Con el reloj del servidor una hora despues del cambio (seccion 101):
+    # una hora que todavia no llega ya no se acepta.
+    despues = (cuando + timedelta(hours=1)).isoformat()
+    r = cliente.post(f"/contingencia/reemplazos/vehiculo?ahora={despues}",
                      headers=sesion("consultor"),
                      json={"desde_jornada_id": j["id"],
                            "sale_vehiculo_id": datos["suburban"]["id"],

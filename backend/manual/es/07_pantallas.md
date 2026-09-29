@@ -62,7 +62,7 @@ Quién puede entrar, con qué puesto, y cuándo entró por última vez. Aquí se
 Las cinco lecturas de Odoo: aquí se hacen el ensayo y la primera lectura de cada una, y se ve lo que falta corregir allá. Ver [lo que viene de Odoo](#/manual/leer/odoo).
 
 ### Catálogos {#catalogos}
-Lo que el sistema usa para calcular y para armar la hoja del servicio: festivos, hospitales, hoteles, ciudades, combustible, categorías de unidades, perfiles, países, modalidades, el tabulador de viáticos y las tarifas de freelance. Lo que decide dinero lo fija dirección de operaciones. Aquí vive también la bitácora de administración: quién cambió qué.
+Lo que el sistema usa para calcular y para armar la hoja del servicio: festivos, hospitales, hoteles, ciudades, combustible, categorías de unidades, perfiles, países, modalidades, el tabulador de viáticos y las tarifas de freelance. Lo que decide dinero lo fija dirección de operaciones. Lo que se quita no se pierde: sale en gris con «Reactivar». Aquí vive también la bitácora de administración: quién cambió qué.
 
 ### Manual del sistema {#manual}
 Este manual: cómo funciona cada pieza, qué hacer cuando algo se atora, el estado del sistema en vivo y los casos: las fallas reportadas por revisar y lo que ya se resolvió. Mientras dura el cambio a Connect, también [el arranque](#/manual/arranque): lo que falta para operar todo aquí y apagar OVH, revisándose solo, con de quién es cada cosa y dónde se arregla.

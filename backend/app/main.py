@@ -1,8 +1,11 @@
+import logging
+import re
 from contextlib import asynccontextmanager
 
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
@@ -81,6 +84,35 @@ class CuerpoConTope:
 
 app.add_middleware(CuerpoConTope)
 
+
+# El disparador de Pegasus lleva su secreto en la ruta (seccion 101):
+# cada aviso dejaba `POST /gps/pegasus/aviso/<secreto>` en claro en el
+# registro de acceso de uvicorn. Con el secreto solo se puede hacer que
+# Centauro mire antes, pero es un secreto en un log. Se tapa antes de
+# escribirlo, sin dependencias: uvicorn escribe la ruta como argumento
+# del renglon, y el filtro la cambia por `***`. El del proxy lo salta el
+# `Caddyfile`.
+RUTA_CON_SECRETO = re.compile(r"(/gps/pegasus/aviso/)[^\s/?\"]+")
+
+
+def tapar_secreto(texto: str) -> str:
+    return RUTA_CON_SECRETO.sub(r"\1***", texto)
+
+
+class SinSecretoDePegasus(logging.Filter):
+    """Tapa el secreto del disparador en el renglon del access log."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(tapar_secreto(a) if isinstance(a, str) else a
+                                for a in record.args)
+        if isinstance(record.msg, str):
+            record.msg = tapar_secreto(record.msg)
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(SinSecretoDePegasus())
+
 app.include_router(acceso.router)
 app.include_router(catalogos.router, prefix="/catalogos")
 app.include_router(solicitantes.router)
@@ -155,6 +187,92 @@ def dato_que_no_cabe(request: Request, exc: DataError):
     return JSONResponse(status_code=400,
                         content={"detail": {"mensaje": mensaje,
                                             "que_hacer": que_hacer}})
+
+
+# Un dato mal capturado (seccion 101). FastAPI contesta su lista en
+# ingles --"Field required. Input should be a valid decimal"-- sin decir
+# cual campo, y asi salia en la consola en los tres idiomas. Aqui se
+# traduce cada renglon a lo que hay que corregir, con el nombre del
+# campo, y se manda ademas en piezas (`errores`: campo, tipo, limite)
+# para que la consola lo diga en el idioma de quien mira.
+TIPOS_DE_CAPTURA = {
+    "missing": "falta",
+    "decimal_parsing": "numero", "float_parsing": "numero",
+    "decimal_type": "numero", "float_type": "numero",
+    "int_parsing": "entero", "int_type": "entero", "int_from_float": "entero",
+    "string_too_long": "largo", "string_too_short": "corto",
+    "too_long": "largo", "too_short": "corto",
+    "greater_than_equal": "minimo", "greater_than": "mas_de",
+    "less_than_equal": "maximo", "less_than": "menos_de",
+    "date_parsing": "fecha", "date_from_datetime_parsing": "fecha",
+    "date_type": "fecha", "datetime_parsing": "fecha",
+    "datetime_from_date_parsing": "fecha", "datetime_type": "fecha",
+    "time_parsing": "hora", "time_type": "hora",
+    "enum": "opcion", "literal_error": "opcion",
+    "string_type": "texto", "list_type": "lista",
+    "json_invalid": "cuerpo", "missing_argument": "cuerpo",
+    "value_error": "regla", "assertion_error": "regla",
+}
+
+FRASES_DE_CAPTURA = {
+    "falta": "Falta el dato «{campo}».",
+    "numero": "«{campo}» tiene que ser un número.",
+    "entero": "«{campo}» tiene que ser un número entero.",
+    "largo": "«{campo}» es demasiado largo: caben {limite} letras.",
+    "corto": "«{campo}» es demasiado corto: mínimo {limite} letras.",
+    "minimo": "«{campo}» tiene que ser de {limite} o más.",
+    "mas_de": "«{campo}» tiene que ser más de {limite}.",
+    "maximo": "«{campo}» no puede pasar de {limite}.",
+    "menos_de": "«{campo}» tiene que ser menos de {limite}.",
+    "fecha": "«{campo}» no es una fecha válida.",
+    "hora": "«{campo}» no es una hora válida.",
+    "opcion": "«{campo}» no es una opción válida.",
+    "texto": "«{campo}» tiene que ser un texto.",
+    "lista": "«{campo}» tiene que ser una lista.",
+    "cuerpo": "Lo que se mandó no se pudo leer.",
+    "regla": "«{campo}»: {detalle}",
+    "otro": "«{campo}»: {detalle}",
+}
+
+
+def _limite_de(error: dict):
+    ctx = error.get("ctx") or {}
+    for llave in ("max_length", "min_length", "ge", "gt", "le", "lt"):
+        if llave in ctx:
+            valor = ctx[llave]
+            # "ge=0" se lee "de 0 o mas"; "gt=0" es "mas de 0": se dice
+            # como el minimo que no pasa.
+            return str(valor)
+    return None
+
+
+def renglon_de_captura(error: dict) -> dict:
+    """Un error de Pydantic, en piezas y con su frase en espanol."""
+    tipo = TIPOS_DE_CAPTURA.get(error.get("type", ""), "otro")
+    campo = "" if tipo == "cuerpo" else ".".join(
+        str(x) for x in error.get("loc", ())
+        if x not in ("body", "query", "path", "header"))
+    detalle = str(error.get("msg", ""))
+    for prefijo in ("Value error, ", "Assertion failed, "):
+        if detalle.startswith(prefijo):
+            detalle = detalle[len(prefijo):]
+    limite = _limite_de(error)
+    frase = FRASES_DE_CAPTURA[tipo].format(campo=campo or "?", limite=limite or "",
+                                           detalle=detalle)
+    return {"campo": campo, "tipo": tipo, "limite": limite,
+            "detalle": detalle, "mensaje": frase}
+
+
+@app.exception_handler(RequestValidationError)
+async def dato_mal_capturado(request: Request, exc: RequestValidationError):
+    renglones = [renglon_de_captura(e) for e in exc.errors()]
+    return JSONResponse(status_code=422, content={"detail": {
+        "mensaje": " ".join(r["mensaje"] for r in renglones)
+                   or "Un dato no tiene la forma esperada.",
+        "que_hacer": "Corrige el dato y vuelve a guardar.",
+        "errores": [{k: v for k, v in r.items() if k != "mensaje"}
+                    for r in renglones],
+    }})
 
 
 @app.get("/api", tags=["Sistema"], summary="Ficha de la API")

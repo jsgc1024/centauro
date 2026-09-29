@@ -14,13 +14,37 @@
      4. la semana   para ver venir el lunes de seis servicios
 */
 import { api, sesion } from "./api.js";
-import { aviso, campo, conAyuda, entrada, estatus, etiqueta, fecha, h,
-         hora, lista, mensaje, testigo } from "./util.js";
+import { aviso, campo, conAyuda, entrada, estatus, etiqueta, fecha,
+         fechaLocal, h, hora, lista, mensaje, testigo } from "./util.js";
 import { t } from "./idioma.js";
 import { tiene } from "./menu.js";
 
 const REFRESCO_SEGUNDOS = 45;
 let temporizador = null;
+
+/* Si la central esta escribiendo algo en el tablero, esta vuelta no se
+   pinta (seccion 101). El tablero se repintaba entero cada 45 segundos y
+   se llevaba la resolucion del panico a medio escribir, y la hora y el
+   motivo de la marca a mano: la central tomaba la alerta, llamaba,
+   escribia, y la caja volvia vacia. La app de campo ya se cuidaba de
+   esto (`hayCaptura`); la consola no.
+
+   Es captura un campo con el foco o un campo con algo escrito dentro de
+   la zona --un panel abierto ya trae su hora propuesta--. Al guardar, el
+   panel se quita y la siguiente vuelta pinta. Ante la duda, no se
+   repinta: el dato se ve un minuto mas viejo y eso no le cuesta nada a
+   nadie. */
+const SIN_TEXTO = ["checkbox", "radio", "hidden", "button", "submit"];
+
+function hayCaptura(zona) {
+  for (const c of zona.querySelectorAll("input, textarea")) {
+    if (SIN_TEXTO.includes(c.type)) continue;
+    if ((c.value || "").trim()) return true;
+  }
+  const foco = document.activeElement;
+  return !!foco && zona.contains(foco)
+    && ["INPUT", "TEXTAREA", "SELECT"].includes(foco.tagName);
+}
 
 export async function tableroCentral(main) {
   main.append(
@@ -36,6 +60,7 @@ export async function tableroCentral(main) {
       clearInterval(temporizador);
       return;
     }
+    if (hayCaptura(zona)) return;
     await pintar(zona);
   };
 
@@ -413,7 +438,7 @@ function fechaDeLaMarca(q, horaTexto) {
   if (horaTexto >= inicio) return q.fecha;
   const siguiente = new Date(`${q.fecha}T12:00:00`);
   siguiente.setDate(siguiente.getDate() + 1);
-  return siguiente.toISOString().slice(0, 10);
+  return fechaLocal(siguiente);
 }
 
 function formularioDeMarca(q, tipo, boton) {

@@ -202,7 +202,9 @@ def test_un_enlace_vencido_no_muestra_la_encuesta(cliente, sesion, datos):
 
     r = cliente.get(f"/encuestas/pagina/{token}")
     assert r.status_code == 409
-    assert "contestada" in r.text
+    # En el idioma en que salio la encuesta --el principal, en ingles--
+    # (seccion 101); antes decia "ya fue contestada" en espanol.
+    assert "already answered" in r.text
 
 
 def test_el_correo_lleva_la_marca_y_un_solo_boton(cliente, sesion, datos):

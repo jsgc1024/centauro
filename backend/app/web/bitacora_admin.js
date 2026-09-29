@@ -68,14 +68,22 @@ export async function pestanaBitacora(zona) {
   const tabla = h("div");
   let datos = null;
 
+  // Solo se pinta la respuesta del ultimo filtro pedido (seccion 101).
+  let peticion = 0;
+
   async function cargar() {
     tabla.replaceChildren(h("div", { clase: "gris chico" }, "…"));
+    const mia = ++peticion;
+    let r;
     try {
-      datos = await api.get(`/bitacora-admin?${consulta(filtros, { idioma: idioma() })}`);
+      r = await api.get(`/bitacora-admin?${consulta(filtros, { idioma: idioma() })}`);
     } catch (err) {
+      if (mia !== peticion) return;
       tabla.replaceChildren(h("div", { clase: "aviso grave" }, err.message));
       return;
     }
+    if (mia !== peticion) return;
+    datos = r;
     pintarTabla();
   }
 

@@ -79,7 +79,10 @@ def _en_200(partes: list[str]) -> str | None:
 def _lo_que_cambio(antes_pesos: dict, antes_p, datos) -> tuple[list, list]:
     """Solo lo que se movio, con su valor de antes (seccion 86)."""
     antes, despues = [], []
-    for nombre, peso in datos.pesos.items():
+    for dimension, peso in datos.pesos.items():
+        # La dimension llega como catalogo desde la seccion 101; la
+        # bitacora la escribe por su clave, como siempre.
+        nombre = dimension.value
         previo = antes_pesos.get(nombre)
         if previo is None or Decimal(str(previo)) != Decimal(str(peso)):
             antes.append(f"{nombre}: {previo}")

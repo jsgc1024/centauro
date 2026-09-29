@@ -10,8 +10,8 @@
 import { api, sesion } from "./api.js";
 import { catalogos, faltaConsultor, listaDeConsultores } from "./catalogos.js";
 import { aviso, buscador, campo, coincide, conAyuda, dinero, entrada,
-         estatus, etiqueta, h, lista, listaBuscable, mensaje, tasa, telefono,
-         vaciar } from "./util.js";
+         estatus, etiqueta, fechaLocal, h, hoyLocal, lista, listaBuscable,
+         mensaje, tasa, telefono, vaciar } from "./util.js";
 import { buscadorDeLugar } from "./mapa.js";
 import { bloqueRevisionUnidad } from "./servicio.js";
 import { IDIOMAS, idioma, t } from "./idioma.js";
@@ -1073,7 +1073,7 @@ export async function nuevoImplantado(main) {
      el dia 1. De esa fecha salen el anio, el mes y el dia de arranque;
      preguntar los tres por separado era preguntar lo mismo tres veces. */
   const fechaInicio = h("input", { type: "date",
-                                   value: hoy.toISOString().slice(0, 10),
+                                   value: fechaLocal(hoy),
                                    onchange: () => {
                                      pintarMes(); traerDisponibilidad();
                                      revisar();
@@ -1449,14 +1449,17 @@ function renglon(etiqueta_, valor) {
 }
 
 export async function pantallaImplantado(main, servicioId) {
-  const [cartera, acuerdo, servicio, cat] = await Promise.all([
-    api.get("/implantados"),
+  /* La ficha se pide por su numero y no buscandola en la cartera: el
+     cancelado con un mes por cerrar llega aqui por el enlace del aviso
+     «24 h para el visto bueno» y la cartera ya no lo trae cuando todo
+     cerro; la pantalla decia «no existe» (seccion 101). */
+  const [ficha, acuerdo, servicio, cat] = await Promise.all([
+    api.get(`/implantados/${servicioId}/ficha`).catch(() => null),
     api.get(`/implantados/${servicioId}/acuerdo`),
     api.get(`/servicios/${servicioId}`),
     catalogos(),
   ]);
 
-  const ficha = cartera.find(x => String(x.servicio_id) === String(servicioId));
   const paisDelServicio = cat.paises.find(p => p.id === servicio.pais_id);
   if (ficha && paisDelServicio) {
     monedas[ficha.servicio_id] = paisDelServicio.moneda_local;
@@ -1472,6 +1475,12 @@ export async function pantallaImplantado(main, servicioId) {
     main.classList.add("solo-consulta");
     main.append(aviso(t("imp_consulta"), "alerta"));
   }
+  /* El cancelado ya no se arma: se consulta y se cierran sus meses. Los
+     botones que lo armarian --editar el trato, cubrir un dia, el
+     taller, liberar la hoja-- no se ofrecen; la tarjeta del cierre de
+     cada mes si, que es a lo que se viene (seccion 101). */
+  const cancelado = ficha.estatus === "cancelado";
+  if (cancelado) main.append(aviso(t("imp_cancelado_consulta"), "alerta"));
 
   /* ------------------------------------------------------ encabezado */
 
@@ -1526,7 +1535,7 @@ export async function pantallaImplantado(main, servicioId) {
     tarjetaAcuerdo.replaceChildren(...[
       h("div", { clase: "cabeza-servicio" },
         conAyuda("h4", t("imp_trato"), "ay_imp_trato", { style: "margin:0" }),
-        h("button", { clase: "claro chico", type: "button",
+        cancelado ? null : h("button", { clase: "claro chico", type: "button",
           onclick: () => editarAcuerdo() }, t("imp_editar"))),
       h("div", { clase: "rejilla dos" },
         renglon(t("imp_punto_fijo"), acuerdo.origen_direccion),
@@ -1616,6 +1625,10 @@ export async function pantallaImplantado(main, servicioId) {
             d => d.valor === dias.value) || {}).texto || null,
           fecha_inicio: fecha.value || null,
           dias_servicio: dias.value,
+          /* El turno viaja tal cual esta: aqui no se cambia, y sin
+             mandarlo el servidor lo daba por natural y un 12x36
+             perdia su escala al corregir el protocolo (seccion 101). */
+          turno: acuerdo.turno || "natural",
           origen_direccion: lugar.direccion || null,
           origen_lat: lugar.lat,
           origen_lon: lugar.lon,
@@ -1703,7 +1716,7 @@ export async function pantallaImplantado(main, servicioId) {
     // La hoja hasta abajo: es lo ultimo que se hace, cuando todo lo de
     // arriba ya quedo.
     main.append(bloqueHoja(servicioId, ficha.estatus));
-  } else {
+  } else if (!cancelado) {
     armarPrimerMes(main, servicioId, acuerdo, servicio, cat);
   }
 }
@@ -1777,6 +1790,8 @@ async function pintarMesDelServicio(main, servicioId, ficha) {
      propias tarjetas, debajo: cambian con la pestana del mes. */
   const delMes = h("div");
   main.append(tarjeta, delMes);
+  // El cancelado se lee; sus meses se cierran (seccion 101).
+  const cancelado = ficha.estatus === "cancelado";
 
   const periodos = ficha.periodos && ficha.periodos.length
     ? ficha.periodos
@@ -1838,7 +1853,7 @@ async function pintarMesDelServicio(main, servicioId, ficha) {
 
     const fichaDia = h("div", { clase: "ficha-dia" });
     const calendario = widgetCalendario(
-      (fecha) => fichaDelDia(servicioId, fecha, fichaDia));
+      (fecha) => fichaDelDia(servicioId, fecha, fichaDia, cancelado));
     const primero = datos.dias.find(d => d.estado !== "sin_servicio");
     calendario.pintar(primero ? primero.fecha : datos.dias[0].fecha,
                       datos.dias_servicio, cubiertos, datos.turno,
@@ -1850,10 +1865,9 @@ async function pintarMesDelServicio(main, servicioId, ficha) {
        buscar la fecha en la rejilla es un clic de mas treinta veces al
        mes. Si hoy no cae en este mes, o cae en un dia sin servicio, no
        se abre nada: mejor vacio que abriendo el dia equivocado. */
-    const hoyISO = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
-      .toISOString().slice(0, 10);
+    const hoyISO = hoyLocal();
     if (datos.dias.some(d => d.fecha === hoyISO && d.estado !== "sin_servicio")) {
-      fichaDelDia(servicioId, hoyISO, fichaDia);
+      fichaDelDia(servicioId, hoyISO, fichaDia, cancelado);
     }
 
     delMes.replaceChildren(
@@ -1887,7 +1901,7 @@ async function pintarMesDelServicio(main, servicioId, ficha) {
         : h("div", {}),
       caja,
       calendario.nodo,
-      bloqueTaller(servicioId, actual, () => pintar()),
+      cancelado ? h("div") : bloqueTaller(servicioId, actual, () => pintar()),
       fichaDia,
       abrirSiguiente(servicioId, ficha.siguiente, periodos, (nuevo) => {
         periodos.push(nuevo);
@@ -2212,6 +2226,13 @@ function abrirSiguiente(servicioId, estado, periodos, alAbrir) {
       const r = await api.post(`/implantados/${servicioId}/mes-siguiente`, {});
       mensaje(`${r.periodo} ${t("imp_mes_abierto")}: `
               + `${r.jornadas_creadas || 0} ${t("imp_dias_armados")}`);
+      /* Lo que de la plantilla ya no pudo ir --la baja de Odoo, la
+         unidad en el taller-- se dice en voz alta: esos dias quedaron
+         por cubrir (seccion 101). */
+      if (r.plantilla_fuera && r.plantilla_fuera.length) {
+        mensaje(t("imp_mes_plantilla_fuera")
+                  .replace("{q}", r.plantilla_fuera.join(" · ")), "alerta");
+      }
       const [mes, anio] = r.periodo.split("/");
       alAbrir({ anio: Number(anio), mes: Number(mes), periodo: r.periodo });
     } catch (err) {
@@ -2266,9 +2287,11 @@ function bloqueHoja(servicioId, estatus) {
     h("p", { clase: "gris chico", style: "margin:0 0 10px" },
       t("imp_ts_nota")),
     /* Liberar la hoja es decir que el servicio ya esta armado: ahi pasa
-       a asignado. Antes de eso se puede ver, pero no se ha entregado. */
+       a asignado. Antes de eso se puede ver, pero no se ha entregado.
+       El cancelado ya no se libera (seccion 101): se lee. */
     traba,
-    h("div", { clase: "acciones", style: "margin-bottom:10px" }, liberar),
+    estatus === "cancelado" ? null
+      : h("div", { clase: "acciones", style: "margin-bottom:10px" }, liberar),
     h("div", { clase: "acciones" },
       ...IDIOMAS.map(i => h("button", { clase: "consulta-si",
         title: `${t("ts_pdf")} · ${i.nombre}`,
@@ -2316,8 +2339,13 @@ async function abrirHoja(servicioId, lengua, imprimir = false) {
    La plantilla no crece aqui: el dia se cubre con las mismas posiciones
    del mes, con su gente o con un relevo en su lugar. Si el cliente
    quiere personal adicional eso es otro servicio —un eventual, con su
-   folio y su hoja—. */
-async function fichaDelDia(servicioId, fecha, caja) {
+   folio y su hoja—.
+
+   En 12x36 el servidor manda una sola posicion --la de quien le toca
+   ese dia-- y un dia cancelado se reactiva desde aqui antes de cubrirlo
+   (seccion 101). Con `soloVer` --el implantado cancelado-- la ficha se
+   lee y no se mueve. */
+async function fichaDelDia(servicioId, fecha, caja, soloVer = false) {
   caja.replaceChildren(h("div", { clase: "gris chico" }, t("imp_cargando")));
 
   let dia;
@@ -2337,7 +2365,9 @@ async function fichaDelDia(servicioId, fecha, caja) {
     sin_servicio: t("imp_dia_sin_servicio"),
     por_cubrir: t("imp_dia_por_cubrir"),
     cubierto: t("imp_dia_cubierto"),
+    cancelado: t("imp_dia_cancelado"),
   };
+  const cancelado = dia.estado === "cancelado";
 
   /* Quien puede cubrir cada posicion. Los ocupados se ven, pero no se
      eligen: saber que Ernesto no puede es tan util como saber que Luis
@@ -2368,13 +2398,19 @@ async function fichaDelDia(servicioId, fecha, caja) {
     dia.estado === "sin_servicio" ? t("imp_abrir_dia") : t("imp_cubrir_dia"));
   const cerrar = h("button", { clase: "claro", type: "button",
     onclick: () => cerrarDia() }, t("imp_cerrar_dia"));
+  const reactivar = h("button", { type: "button",
+    onclick: () => reactivarDia() }, t("imp_reactivar_dia"));
 
   async function cubrir() {
     boton.disabled = true;
     try {
       await api.post(`/implantados/${servicioId}/dia/${fecha}/cubrir`, {
+        /* Con el rol de la posicion que cubre: sin el, el relevo del
+           conductor quedaba con el rol de la primera fila de la
+           plantilla --el coordinador-- y asi cobraba (seccion 101). */
         personal: filas.map(f => ({
           persona_id: Number(f.quien.value),
+          rol_id: f.posicion.rol_id || null,
           vehiculo_id: f.posicion.vehiculo_id || null })),
         ambos_dias: ambos.checked,
       });
@@ -2398,13 +2434,32 @@ async function fichaDelDia(servicioId, fecha, caja) {
     }
   }
 
+  /* La vuelta de cerrar el dia: el cancelado vuelve al servicio con su
+     gente y su rastro, y despues se cubre o se cambia. */
+  async function reactivarDia() {
+    reactivar.disabled = true;
+    try {
+      await api.post(`/implantados/${servicioId}/dia/${fecha}/reactivar`, {});
+      mensaje(t("imp_dia_reactivado"));
+      location.reload();
+    } catch (err) {
+      mensaje(err.message, "grave");
+      reactivar.disabled = false;
+    }
+  }
+
   caja.replaceChildren(...[
     h("div", { clase: "cabeza-servicio" },
       h("div", {},
         h("b", { style: "text-transform:capitalize" }, comoSeLee),
         h("div", { clase: "gris chico" }, TITULOS[dia.estado] || "")),
-      h("button", { clase: "claro chico", type: "button",
+      h("button", { clase: "claro chico consulta-si", type: "button",
         onclick: () => caja.replaceChildren() }, t("cancelar"))),
+
+    cancelado
+      ? h("div", { clase: "bloqueo", style: "margin:8px 0" },
+          h("b", {}, t("imp_dia_cancelado_pie")))
+      : null,
 
     filas.length
       ? h("table", { clase: "lista" },
@@ -2414,14 +2469,15 @@ async function fichaDelDia(servicioId, fecha, caja) {
           h("tbody", {}, ...filas.map(f => f.nodo)))
       : h("div", { clase: "vacio" }, t("imp_sin_plantilla")),
 
-    dia.otro_dia_del_fin
+    dia.otro_dia_del_fin && !cancelado
       ? h("label", { clase: "casilla", style: "margin-top:10px" }, ambos,
           h("span", {}, `${t("imp_todo_el_fin")} ${dia.otro_dia_del_fin}`))
       : null,
 
-    h("div", { clase: "acciones", style: "margin-top:14px" },
-      filas.length ? boton : null,
-      dia.se_puede_cerrar ? cerrar : null)].filter(Boolean));
+    soloVer ? null : h("div", { clase: "acciones", style: "margin-top:14px" },
+      filas.length && !cancelado ? boton : null,
+      dia.se_puede_cerrar ? cerrar : null,
+      dia.se_puede_reactivar ? reactivar : null)].filter(Boolean));
 
   /* Quien iba, arriba; que paso, abajo. Son las dos mitades de la misma
      pregunta y hasta hoy vivian en dos pantallas distintas.
@@ -2720,13 +2776,44 @@ function bloqueTaller(servicioId, periodo, alGuardar) {
       const filas = await api.get(`/implantados/${servicioId}/taller`);
       const hoy = filas.filter(x => x.hoy_fuera);
       if (!hoy.length) return;
-      fuera.replaceChildren(...hoy.map(x => h("div", {},
+      fuera.replaceChildren(...hoy.map(x => h("div", { style: "margin-bottom:6px" },
         etiqueta(`${t("imp_taller_fuera")}: ${x.placa}`, "alerta"),
         h("span", { clase: "chico" },
           ` ${x.desde} → ${x.hasta || t("imp_taller_sin_fecha")}`
-          + (x.taller ? ` · ${x.taller}` : "")))));
+          + (x.taller ? ` · ${x.taller}` : "")),
+        salidaDelTaller(x))));
     } catch (err) { /* sin taller que mostrar */ }
   })();
+
+  /* Sacar del taller la unidad que entro sin fecha (seccion 101): sin
+     esto quedaba bloqueada para cualquier servicio para siempre. Lo que
+     vino de Odoo se cierra en Odoo, y se dice. */
+  function salidaDelTaller(x) {
+    if (x.de_odoo) {
+      return h("div", { clase: "chico" }, t("imp_taller_de_odoo"));
+    }
+    const hasta = h("input", { type: "date", clase: "chico",
+                               style: "width:auto;margin:0",
+                               value: x.hasta || hoyLocal() });
+    const boton = h("button", { clase: "claro chico", type: "button",
+      onclick: () => mandar() }, t("imp_taller_salir"));
+    async function mandar() {
+      if (!hasta.value) return;
+      boton.disabled = true;
+      try {
+        const r = await api.put(
+          `/implantados/${servicioId}/taller/${x.id}`, { hasta: hasta.value });
+        mensaje(t("imp_taller_salio").replace("{p}", r.placa)
+                  .replace("{f}", r.hasta), "alerta");
+        alGuardar();
+      } catch (err) {
+        mensaje(err.message, "grave");
+        boton.disabled = false;
+      }
+    }
+    return h("div", { clase: "acciones", style: "margin-top:4px" },
+      h("span", { clase: "chico gris" }, t("imp_taller_salida")), hasta, boton);
+  }
 
   function alternar() {
     caja.hidden = !caja.hidden;
@@ -2734,7 +2821,7 @@ function bloqueTaller(servicioId, periodo, alGuardar) {
   }
 
   async function pintarFormulario() {
-    const hoy = new Date().toISOString().slice(0, 10);
+    const hoy = hoyLocal();
     const primero = `${periodo.anio}-${String(periodo.mes).padStart(2, "0")}-01`;
     const desde = h("input", { type: "date",
       value: hoy > primero ? hoy : primero });
@@ -2746,7 +2833,8 @@ function bloqueTaller(servicioId, periodo, alGuardar) {
     const categoria = lista("categoria", []);
     const entra = lista("entra", []);
     const taller = entrada("taller");
-    const folio = entrada("folio");
+    // El folio del taller se guarda como lo imprime el taller (seccion 101).
+    const folio = entrada("folio", { "data-crudo": "" });
     const nota = entrada("nota");
     const error = h("div", { clase: "bloqueo", hidden: true });
 

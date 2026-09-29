@@ -26,18 +26,22 @@ Lo que se corrige vale de aqui en adelante:
 Mientras el servicio no este cerrado ni cancelado.
 """
 import re
-from datetime import datetime
 
 from fastapi import HTTPException
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app import auditoria, auth, telefonos
+from app import auditoria, auth, reloj, telefonos
 from app import models as m
 from app.odoo_personal_reglas import DOMINIOS_RAROS
 
 IDIOMAS = ("es", "en", "pt")
 CERRADOS = (m.EstatusServicio.CERRADO, m.EstatusServicio.CANCELADO)
+# El servicio que ya termino y todavia se corrige: si le aparece el
+# correo del principal o del solicitante, la encuesta que no nacio sale
+# ahora (seccion 101).
+TERMINADOS = (m.EstatusServicio.TERMINADO, m.EstatusServicio.SIN_VISTO_BUENO,
+              m.EstatusServicio.EN_FACTURACION)
 FORMA_DE_CORREO = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 LARGO_NOMBRE = 160
 LARGO_CORREO = 160
@@ -177,8 +181,14 @@ def _repuntar_encuesta(db: Session, servicio: m.Servicio, tipo,
                        nombre: str | None, correo: str | None,
                        idioma: str | None) -> int:
     """La encuesta que no se ha contestado le llega a quien es ahora: su
-    recordatorio sale del correo de la encuesta."""
-    ahora = datetime.now()
+    recordatorio sale del correo de la encuesta.
+
+    Su vencimiento es hora del pais del servicio y se compara con esa
+    misma hora (seccion 101): con la del servidor, en Brasil una encuesta
+    que vence en las proximas tres horas se re-apuntaba o no segun la
+    hora de Mexico.
+    """
+    ahora = reloj.ahora_del_servicio(db, servicio)
     cuantas = 0
     for e in (db.query(m.Encuesta)
               .filter_by(servicio_id=servicio.id, tipo=tipo,
@@ -255,8 +265,11 @@ def corregir(db: Session, servicio_id: int, entrada: dict,
 
     # ---- el principal del servicio
     eje = entrada.get("ejecutivo")
+    principal_de_antes = None
     if eje is not None:
         antes_correo = servicio.ejecutivo_correo
+        principal_de_antes = {campo: getattr(servicio, f"ejecutivo_{campo}")
+                              for campo in CAMPOS}
         nuevos = _limpiar(db, servicio, eje, "del principal")
         _poner(servicio, "ejecutivo_", nuevos, "ejecutivo", cambios)
         idioma = _idioma(eje.get("idioma"), "el principal")
@@ -290,14 +303,64 @@ def corregir(db: Session, servicio_id: int, entrada: dict,
         avisos += _repuntar_avisos(db, servicio.id, m.Destinatario.EJECUTIVO,
                                    antes_correo, equipo.ejecutivo_correo)
 
+    # ---- los equipos que traian una copia del principal del servicio
+    if principal_de_antes is not None:
+        cambios += _adoptar_el_del_servicio(servicio, principal_de_antes)
+
     if cambios:
         auditoria.registrar(db, usuario, servicio, "corregir contactos",
                             _para_la_bitacora(cambios))
+
+    # La encuesta que no nacio (seccion 101): al terminar sin correo del
+    # principal --frecuente: se consigue despues-- no se creo, y quien
+    # capturaba el correo aqui esperaba que saliera. Sale ahora, si el
+    # servicio ya termino; `generar` no repite la que ya existe ni crea
+    # la que sigue sin correo.
+    nuevas = []
+    if (servicio.estatus in TERMINADOS
+            and any(c["campo"] == "correo" and c["quien"] in ("solicitante",
+                                                                "ejecutivo")
+                    for c in cambios)):
+        from app import encuestas as motor_encuestas
+        nuevas = motor_encuestas.generar(db, servicio.id)
+        if nuevas:
+            auditoria.registrar(db, usuario, servicio, "enviar encuestas",
+                                ", ".join(e.tipo.value for e in nuevas)
+                                + " (al corregir el correo)")
     db.flush()
     return {"cambios": cambios, "avisos": avisos, "encuestas": encuestas,
+            "encuestas_nuevas": [e.tipo.value for e in nuevas],
             "lista_corregida": lista_corregida,
             "task_sheet_liberado": servicio.asignacion_confirmada_en is not None,
             "otros_servicios": _otros_con_lo_de_antes(db, servicio, de_antes)}
+
+
+def _adoptar_el_del_servicio(servicio: m.Servicio, de_antes: dict) -> list[dict]:
+    """El equipo que traia una copia del principal del servicio pasa a
+    heredarlo (seccion 101).
+
+    El alta de la consola copiaba el principal al equipo Alfa, y la hoja,
+    el correo del task sheet y los avisos de llegada y contacto leen la
+    copia del equipo (`Equipo.tiene_ejecutivo_propio`): corregir el
+    correo o el telefono arriba quedaba en la bitacora y en la cartera,
+    pero la hoja y los avisos seguian saliendo con el dato viejo. La
+    copia identica a lo de antes se suelta --el equipo queda heredando--
+    y de ahi en adelante cualquier correccion del servicio le llega
+    sola. El equipo que cuida a OTRO principal no se toca.
+    """
+    adoptados = []
+    for equipo in servicio.equipos:
+        if not equipo.tiene_ejecutivo_propio:
+            continue
+        if not all(_igual(getattr(equipo, f"ejecutivo_{campo}"), de_antes[campo])
+                   for campo in CAMPOS):
+            continue
+        for campo in CAMPOS:
+            setattr(equipo, f"ejecutivo_{campo}", None)
+        adoptados.append({"quien": f"equipo {equipo.alias}", "campo": "principal",
+                          "antes": "copia del principal del servicio",
+                          "despues": "el del servicio"})
+    return adoptados
 
 
 def _otros_con_lo_de_antes(db: Session, servicio: m.Servicio,

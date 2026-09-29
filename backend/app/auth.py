@@ -165,8 +165,15 @@ def requiere(*roles: m.Rol):
         if HEREDA.get(usuario.rol, set()) & permitidos:
             return usuario
         if usuario.rol not in permitidos:
+            # Con quien si puede, dicho en el mensaje (seccion 101):
+            # `roles_permitidos` viajaba en el detalle y la pantalla no lo
+            # ensenaba, a diferencia del 403 de `puede`.
+            quienes = sorted(r.value.replace("_", " ") for r in permitidos)
             raise HTTPException(403, {
                 "mensaje": "Tu rol no tiene permiso para esta accion",
+                "que_hacer": (f"Esto lo hace: {', '.join(quienes)}. Tu "
+                              f"entraste como "
+                              f"{usuario.rol.value.replace('_', ' ')}."),
                 "tu_rol": usuario.rol.value,
                 "roles_permitidos": sorted(r.value for r in permitidos),
             })

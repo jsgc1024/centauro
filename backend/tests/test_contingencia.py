@@ -4,6 +4,8 @@ Lo que se verifica no es que el endpoint conteste 200, sino que el dinero
 quede donde debe: quien sale no se lleva viaticos sin comprobar y quien
 entra no trabaja sin viaticos.
 """
+from decimal import Decimal
+
 from ayudas import asignar, crear_servicio, jornada, manana
 
 
@@ -235,9 +237,10 @@ def test_al_que_entra_se_le_proponen_viaticos(cliente, sesion, datos):
                      headers=h).json()
 
     # Uno por cada dia que le queda al servicio, con monto del tabulador.
+    # El monto sale como cadena, en Decimal (seccion 101).
     propuestos = r["viaticos"]["propuestos"]
     assert len(propuestos) == 2
-    assert all(n["monto"] > 0 for n in propuestos)
+    assert all(Decimal(n["monto"]) > 0 for n in propuestos)
 
     # Propuestos quiere decir propuestos: no hay nada asignado todavia.
     suyos = cliente.get(

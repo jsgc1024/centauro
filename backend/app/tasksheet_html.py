@@ -383,7 +383,10 @@ def _senal(senal: dict | None, contenido: dict, t: dict) -> str:
                   f'color:{color["letra"]}">{palabra}</div>')
         texto = f'<div class="senal-frase">{frase}.</div>'
     else:
-        imagen = (f'<img class="senal-imagen" src="{senal["imagen"]}" alt="">'
+        # Escapada como todo lo demas (seccion 101): iba cruda al src y
+        # quien arma la senal podia meter HTML en la hoja que abren los
+        # demas. El esquema ya solo acepta una imagen o un enlace.
+        imagen = (f'<img class="senal-imagen" src="{_esc(senal["imagen"])}" alt="">'
                   if senal.get("imagen") else "")
         texto = (f'<div class="senal-texto">{_esc(senal["texto"])}</div>'
                  if senal.get("texto") else "")

@@ -26,8 +26,8 @@
    Quien puede escribir en cada uno lo decide el servidor; aqui solo se
    deja de pintar el boton que le contestaria que no. */
 import { api, sesion } from "./api.js";
-import { campo, conAyuda, dinero, entrada, etiqueta, fecha, h, hora, lista,
-         mensaje, reducirImagen } from "./util.js";
+import { campo, conAyuda, dinero, entrada, etiqueta, fecha, h, hora,
+         hoyLocal, lista, mensaje, reducirImagen } from "./util.js";
 import { idioma, t } from "./idioma.js";
 import { menuDe, tiene } from "./menu.js";
 import { pestanaBitacora } from "./bitacora_admin.js";
@@ -100,7 +100,7 @@ function paisInicial(d) {
   return (d.paises.find(p => p.codigo === "MX") || d.paises[0] || {}).id;
 }
 const ANIO = () => new Date().getFullYear();
-const HOY = () => new Date().toISOString().slice(0, 10);
+const HOY = () => hoyLocal();
 
 /* ============================================================ la pantalla */
 
@@ -151,9 +151,9 @@ async function traer() {
     api.get("/catalogos/plazas?todas=true"),
     api.get("/catalogos/perfiles"),
     api.get("/catalogos/categorias-vehiculo"),
-    api.get("/catalogos/dias-festivos"),
-    api.get("/catalogos/parametros-combustible"),
-    api.get("/catalogos/hospitales"),
+    api.get("/catalogos/dias-festivos?incluir_inactivos=true"),
+    api.get("/catalogos/parametros-combustible?incluir_inactivos=true"),
+    api.get("/catalogos/hospitales?incluir_inactivos=true"),
     api.get("/catalogos/hoteles?todos=true"),
     api.get("/catalogos/modalidades"),
     api.get("/catalogos/tabulador-viaticos"),
@@ -166,10 +166,24 @@ async function traer() {
     pesos[p.id] = await api.get(`/profesionalismo/pesos?pais_id=${p.id}`)
       .catch(() => null);
   }));
-  return { paises, plazas, perfiles, categorias, festivos, combustible,
-           hospitales, hoteles, modalidades, tabulador, freelance, gente,
-           colores, pesos };
+  /* Lo quitado viene en las listas (seccion 101) y se aparta: las cuentas
+     y los selectores siguen con lo vivo, y cada tabla lo pinta en gris
+     con «Reactivar». Antes lo quitado no tenia vuelta: la lista no lo
+     traia y volver a darlo de alta chocaba con «ya existe». */
+  const apagados = {};
+  const vivos = (clave, lista) => {
+    apagados[clave] = lista.filter(x => x.activo === false);
+    return lista.filter(x => x.activo !== false);
+  };
+  return { paises, plazas: vivos("plazas", plazas), perfiles, categorias,
+           festivos: vivos("festivos", festivos),
+           combustible: vivos("combustible", combustible),
+           hospitales: vivos("hospitales", hospitales),
+           hoteles: vivos("hoteles", hoteles), modalidades, tabulador,
+           freelance, gente, colores, pesos, apagados };
 }
+
+const apagadosDe = (d, clave, filtro) => (d.apagados[clave] || []).filter(filtro);
 
 const paisDe = (d, id) => d.paises.find(p => p.id === Number(id));
 const nombrePais = (d, id) => (paisDe(d, id) || {}).nombre || "—";
@@ -355,6 +369,28 @@ function quitar(ruta, nombre, recargar) {
   });
 }
 
+/* Lo quitado vuelve con un clic; lo que ya lo usaba nunca se fue. */
+function reactivar(ruta, nombre, recargar) {
+  return boton(t("ctl_reactivar"), async (e) => {
+    e.target.disabled = true;
+    try {
+      await api.post(`${ruta}/reactivar`);
+      mensaje(t("ctl_reactivado").replace("{que}", nombre));
+      await recargar();
+    } catch (err) {
+      mensaje(err.message, "grave");
+      e.target.disabled = false;
+    }
+  });
+}
+
+/* El boton que le toca al renglon: quitar al vivo, reactivar al quitado. */
+function quitarOReactivar(x, ruta, nombre, recargar) {
+  return x.activo === false ? reactivar(ruta, nombre, recargar)
+    : quitar(ruta, nombre, recargar);
+}
+const filaDe = (x) => ({ clase: x.activo === false ? "apagado" : "" });
+
 /* Un formulario chico: los campos que se le digan y sus dos botones.
    `campos`: [{k, texto, tipo, opciones, valor, requerido, entero, crudo}].
    Si guardar truena, el mensaje sale y el formulario se queda como
@@ -469,8 +505,9 @@ function festivos(caja, d, recargar) {
     selAnio.value = String(anio);
     selAnio.addEventListener("change", () => { anio = Number(selAnio.value); pintar(); });
 
-    const del = d.festivos
-      .filter(f => f.pais_id === paisId && f.fecha.startsWith(String(anio)))
+    const esDelAnio = (f) => f.pais_id === paisId && f.fecha.startsWith(String(anio));
+    const del = [...d.festivos.filter(esDelAnio),
+                 ...apagadosDe(d, "festivos", esDelAnio)]
       .sort((a, b) => a.fecha.localeCompare(b.fecha));
     const factor = (f) => (Number(f.factor_comision) === 2 ? t("ctl_al_doble")
       : t("ctl_por_factor").replace("{n}", numero(f.factor_comision)));
@@ -478,11 +515,11 @@ function festivos(caja, d, recargar) {
       h("div", { clase: "acciones", style: "margin:0 0 10px" },
         botonesDePais(d, paisId, (id) => { paisId = id; pintar(); }), selAnio),
       tabla([t("ctl_fecha"), t("ctl_nombre"), t("ctl_comision_dia"), ""],
-        del.map(f => h("tr", {},
+        del.map(f => h("tr", filaDe(f),
           h("td", { clase: "num" }, fecha(f.fecha)), h("td", {}, f.nombre),
           h("td", { clase: "chico" }, factor(f)),
           h("td", { style: "text-align:right" },
-            puede(clave) ? quitar(`/catalogos/dias-festivos/${f.id}`, f.nombre, recargar) : null)))),
+            puede(clave) ? quitarOReactivar(f, `/catalogos/dias-festivos/${f.id}`, f.nombre, recargar) : null)))),
       puede(clave) ? h("div", { clase: "acciones", style: "margin-top:10px" },
         boton(t("ctl_agregar_festivo"), () => abrirAlta())) : null].filter(Boolean));
   }
@@ -528,8 +565,8 @@ function lugares(cuerpo, d, recargar, tipo) {
     const selCiudad = lista("ciudad", opcionesCiudad(d, paisId, t("ctl_todas_ciudades")));
     selCiudad.value = ciudadId;
     selCiudad.addEventListener("change", () => { ciudadId = selCiudad.value; pintar(); });
-    const filas = todos.filter(x => x.pais_id === paisId
-      && (!ciudadId || x.plaza_id === Number(ciudadId)))
+    const aqui = (x) => x.pais_id === paisId && (!ciudadId || x.plaza_id === Number(ciudadId));
+    const filas = [...todos.filter(aqui), ...apagadosDe(d, tipo, aqui)]
       .sort((a, b) => (nombreCiudad(d, a.plaza_id) + a.nombre)
         .localeCompare(nombreCiudad(d, b.plaza_id) + b.nombre));
     const cabezas = [t("ctl_nombre"), t("ctl_ciudad"),
@@ -538,7 +575,7 @@ function lugares(cuerpo, d, recargar, tipo) {
       h("div", { clase: "acciones", style: "margin:0 0 10px" },
         botonesDePais(d, paisId, (id) => { paisId = id; ciudadId = ""; pintar(); }),
         h("div", { style: "min-width:200px" }, selCiudad)),
-      tabla(cabezas, filas.map(x => h("tr", {},
+      tabla(cabezas, filas.map(x => h("tr", filaDe(x),
         h("td", {}, h("b", {}, x.nombre),
           x.direccion ? h("div", { clase: "chico gris" }, x.direccion) : null),
         h("td", {}, nombreCiudad(d, x.plaza_id)),
@@ -548,8 +585,8 @@ function lugares(cuerpo, d, recargar, tipo) {
           ? etiqueta(t("ctl_sin_ubicacion"), "alerta")
           : h("span", { clase: "chico gris num" }, `${Number(x.lat).toFixed(4)}, ${Number(x.lon).toFixed(4)}`)),
         h("td", { style: "text-align:right;white-space:nowrap" },
-          puede(clave) ? boton(t("ctl_editar"), () => abrir(x)) : null,
-          puede(clave) ? quitar(`/catalogos/${tipo}/${x.id}`, x.nombre, recargar) : null)))),
+          puede(clave) && x.activo !== false ? boton(t("ctl_editar"), () => abrir(x)) : null,
+          puede(clave) ? quitarOReactivar(x, `/catalogos/${tipo}/${x.id}`, x.nombre, recargar) : null)))),
       puede(clave) ? h("div", { clase: "acciones", style: "margin-top:10px" },
         boton(t(esHospital ? "ctl_agregar_hospital" : "ctl_agregar_hotel"), () => abrir(null))) : null].filter(Boolean));
   }
@@ -648,18 +685,19 @@ function ciudades(caja, d, recargar) {
   const forma = h("div");
 
   function pintar() {
-    const filas = d.plazas.filter(x => x.pais_id === paisId)
+    const delPais = (x) => x.pais_id === paisId;
+    const filas = [...d.plazas.filter(delPais), ...apagadosDe(d, "plazas", delPais)]
       .sort((a, b) => a.nombre.localeCompare(b.nombre));
     zona.replaceChildren(...[
       h("div", { clase: "acciones", style: "margin:0 0 10px" },
         botonesDePais(d, paisId, (id) => { paisId = id; pintar(); })),
-      tabla([t("ctl_ciudad"), t("ctl_personal_propio"), ""], filas.map(x => h("tr", {},
+      tabla([t("ctl_ciudad"), t("ctl_personal_propio"), ""], filas.map(x => h("tr", filaDe(x),
         h("td", {}, h("b", {}, x.nombre), x.fija ? " " : null,
           x.fija ? etiqueta(t("ctl_fija"), "ok") : null),
         h("td", {}, siNo(x.tiene_recurso_local)),
         h("td", { style: "text-align:right;white-space:nowrap" },
-          puede(clave) ? boton(t("ctl_editar"), () => abrir(x)) : null,
-          puede(clave) && !x.fija ? quitar(`/catalogos/plazas/${x.id}`, x.nombre, recargar) : null)))),
+          puede(clave) && x.activo !== false ? boton(t("ctl_editar"), () => abrir(x)) : null,
+          puede(clave) && !x.fija ? quitarOReactivar(x, `/catalogos/plazas/${x.id}`, x.nombre, recargar) : null)))),
       puede(clave) ? h("div", { clase: "acciones", style: "margin-top:10px" },
         boton(t("ctl_agregar_ciudad"), () => abrir(null))) : null].filter(Boolean));
   }
@@ -701,21 +739,22 @@ function combustible(caja, d, recargar) {
   function pintar() {
     const moneda = monedaDe(d, paisId);
     const vigente = vigenteDe(d, paisId);
-    const filas = d.combustible.filter(x => x.pais_id === paisId)
+    const delPais = (x) => x.pais_id === paisId;
+    const filas = [...d.combustible.filter(delPais), ...apagadosDe(d, "combustible", delPais)]
       .sort((a, b) => b.vigencia_desde.localeCompare(a.vigencia_desde));
     zona.replaceChildren(...[
       h("div", { clase: "acciones", style: "margin:0 0 10px" },
         botonesDePais(d, paisId, (id) => { paisId = id; pintar(); })),
       tabla([t("ctl_vigente_desde"), t("ctl_precio_litro"), t("ctl_holgura"), ""],
-        filas.map(x => h("tr", {},
+        filas.map(x => h("tr", filaDe(x),
           h("td", { clase: "num" }, fecha(x.vigencia_desde), " ",
             vigente && vigente.id === x.id ? etiqueta(t("ctl_vigente"), "ok") : null),
           h("td", { clase: "num" }, dinero(x.precio_litro, moneda)),
           h("td", { clase: "num" }, `${numero(x.holgura_pct)} %`),
           h("td", { style: "text-align:right;white-space:nowrap" },
-            puede(clave) ? boton(t("ctl_editar"), () => abrir(x)) : null,
-            puede(clave) ? quitar(`/catalogos/parametros-combustible/${x.id}`,
-                                  fecha(x.vigencia_desde), recargar) : null)))),
+            puede(clave) && x.activo !== false ? boton(t("ctl_editar"), () => abrir(x)) : null,
+            puede(clave) ? quitarOReactivar(x, `/catalogos/parametros-combustible/${x.id}`,
+                                            fecha(x.vigencia_desde), recargar) : null)))),
       puede(clave) ? h("div", { clase: "acciones", style: "margin-top:10px" },
         boton(t("ctl_agregar_precio"), () => abrir(null))) : null].filter(Boolean));
   }

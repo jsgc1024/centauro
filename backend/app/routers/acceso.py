@@ -605,7 +605,7 @@ def cambiar_mi_contrasena(datos: CambioContrasenaIn, peticion: Request,
     try:
         resultado = contrasenas.cambiar(db, usuario, datos.actual, datos.nueva)
     except HTTPException as e:
-        if e.status_code == 401:
+        if e.status_code == 403:
             intentos.fallo(usuario.correo, ip)
         raise
     intentos.exito(usuario.correo, ip)

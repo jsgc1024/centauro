@@ -399,6 +399,9 @@ def _dinero(db: Session, ahora: datetime, relojes: reloj.Relojes) -> dict:
                      m.EstatusViatico.EN_COMPROBACION)))
                 .all())
     vistos, afuera, vencido, personas, detalle = set(), CERO, CERO, set(), []
+    # Un monto por moneda (seccion 101): los reales de Brasil se sumaban
+    # con los pesos y salian con "$". Igual que en facturacion.
+    afuera_por_moneda, vencido_por_moneda = {}, {}
     for v in abiertos:
         servicio = v.jornada.equipo.servicio
         clave = (servicio.id, v.persona_id,
@@ -411,16 +414,26 @@ def _dinero(db: Session, ahora: datetime, relojes: reloj.Relojes) -> dict:
         if c["estatus"] != "abierto" or c["falta"] <= 0:
             continue
         afuera += c["falta"]
+        moneda = v.moneda.value if v.moneda else "MXN"
+        afuera_por_moneda[moneda] = afuera_por_moneda.get(moneda, CERO) + c["falta"]
         personas.add(v.persona_id)
         # El plazo de comprobacion se vence a la hora de alla.
         if c["limite"] and c["limite"] < relojes.del_servicio(servicio):
             vencido += c["falta"]
+            vencido_por_moneda[moneda] = (vencido_por_moneda.get(moneda, CERO)
+                                          + c["falta"])
             detalle.append({"viatico_id": v.id, "persona": v.persona.nombre,
                             "folio": servicio.folio, "monto": c["falta"],
                             "vencio": c["limite"].isoformat()})
 
     corte = lunes_de(ahora.date())
-    nomina = db.query(m.NominaSemanal).filter_by(fecha_corte=corte).first()
+    # La nomina es una por pais: con dos paises, `.first()` ensenaba el
+    # total y el estatus de uno cualquiera. Un renglon por pais activo.
+    nominas = {n.pais_id: n for n in db.query(m.NominaSemanal)
+               .filter_by(fecha_corte=corte).all()}
+    paises = (db.query(m.Pais).filter(m.Pais.activo.is_(True))
+              .order_by(m.Pais.id).all())
+    nomina = nominas.get(paises[0].id) if paises else None
 
     # El camino al cobro: cuantos servicios --y meses de implantado-- hay
     # en cada fase, y lo que vence primero.
@@ -450,21 +463,42 @@ def _dinero(db: Session, ahora: datetime, relojes: reloj.Relojes) -> dict:
                           if c.servicio.consultor_id} or {0})).all()}
     por_facturar = facturacion.por_facturar(db)
 
+    por_depositar_moneda = {}
+    for v in por_transferir:
+        moneda = v.moneda.value if v.moneda else "MXN"
+        por_depositar_moneda[moneda] = (por_depositar_moneda.get(moneda, CERO)
+                                        + _d(v.monto_total))
+
+    def por_moneda(cuentas: dict) -> list:
+        return [{"moneda": k, "monto": v} for k, v in sorted(cuentas.items())]
+
     return {
         "por_depositar": {
             "monto": sum((_d(v.monto_total) for v in por_transferir), CERO),
+            "montos": por_moneda(por_depositar_moneda),
             "cuantos": len(por_transferir)},
         "afuera_sin_comprobar": {
             "monto": afuera,
+            "montos": por_moneda(afuera_por_moneda),
             "personas": len(personas),
             "vencido": vencido,
+            "vencidos": por_moneda(vencido_por_moneda),
             "detalle_vencido": detalle},
         "nomina_de_la_semana": {
             "fecha_corte": corte.isoformat(),
             # En clave, no en español: la consola habla tres idiomas.
             "estatus": nomina.estatus.value if nomina else "sin_calcular",
             "total": _d(nomina.total) if nomina else CERO,
-            "personas": len(nomina.renglones) if nomina else 0},
+            "personas": len(nomina.renglones) if nomina else 0,
+            # Un renglon por pais (seccion 101).
+            "por_pais": [{
+                "pais": pais.codigo, "moneda": pais.moneda_local.value,
+                "estatus": (nominas[pais.id].estatus.value
+                            if pais.id in nominas else "sin_calcular"),
+                "total": _d(nominas[pais.id].total) if pais.id in nominas else CERO,
+                "personas": (len(nominas[pais.id].renglones)
+                             if pais.id in nominas else 0),
+            } for pais in paises]},
         "camino": {
             "comprobacion": {"cuantos": len(comprobacion)},
             "sin_visto_bueno": {"cuantos": len(sin_visto),

@@ -190,6 +190,13 @@ function tarjetaDelLunes(semana, recargar) {
   const c = semana.corte;
   const hs = semana.horario;
   const caja = h("div", { clase: "tarjeta" });
+  /* Donde cae la tabla de lo que falta: la del borrador que no cerro y
+     la del "Recalcular" o "Armar el corte" que no salio. Un solo lugar,
+     para que el segundo intento reemplace la tabla y no la repita. */
+  const faltantes = h("div");
+  /* Lo que el recalculo de este borrador no puede pagar (seccion 101):
+     el servidor lo manda con el borrador que todavia no cierra. */
+  const sinTarifa = c && c.estado === "borrador" ? (c.sin_tarifa || []) : [];
 
   if (c) {
     const pie = c.estado === "listo"
@@ -198,19 +205,33 @@ function tarjetaDelLunes(semana, recargar) {
           q: c.calculada_por || t("nom_el_sistema"), h: hora(c.calculada_en) })
         + " " + reemplazar(t("nom_horario"), { c: hs.cierre, p: hs.pago });
     caja.append(cabeza(reemplazar(t("nom_corte_del"), { f: fecha(c.fecha_corte) }),
-                       estadoDelCorte(c.estado), pie));
+                       estadoDelCorte(c.estado), pie), faltantes);
+    if (sinTarifa.length) {
+      /* El borrador de las 7:00 que no cierra: entre las 7:00 y las
+         11:00 llego un dia sin tarifa y el recalculo de las 11:00 no
+         sale. Antes se veia como un corte cualquiera, con "Marcar
+         pagado", y el dia nuevo esperaba en silencio al lunes
+         siguiente. Ahora se dice cual borrador es este, con nombre y
+         dia lo que falta, y pasada la hora del cierre, que no cerro. */
+      faltantes.replaceChildren(
+        aviso(t(semana.no_salio ? "nom_borrador_no_cerro" : "nom_borrador_sin_tarifa"),
+              semana.no_salio ? "grave" : "alerta"),
+        tablaSinTarifa(sinTarifa));
+    }
   } else {
     const p = semana.proximo;
     caja.append(cabeza(reemplazar(t("nom_va_para"), { f: fecha(p.fecha_corte) }),
       etiqueta(reemplazar(t("nom_e_se_arma"), { h: hs.borrador })),
-      reemplazar(t("nom_va_pie"), { b: hs.borrador, c: hs.cierre })));
+      reemplazar(t("nom_va_pie"), { b: hs.borrador, c: hs.cierre })), faltantes);
     if (semana.no_salio) {
-      caja.append(aviso(t("nom_no_salio"), "grave"));
-      if (p.sin_tarifa.length) caja.append(tablaSinTarifa(p.sin_tarifa));
+      faltantes.replaceChildren(...[
+        aviso(t("nom_no_salio"), "grave"),
+        p.sin_tarifa.length ? tablaSinTarifa(p.sin_tarifa) : null,
+      ].filter(Boolean));
       if (puede("calcular")) {
         caja.append(h("div", { clase: "acciones", style: "margin-top:10px" },
           h("button", { type: "button",
-            onclick: (e) => calcular(e, semana.lunes, recargar) },
+            onclick: (e) => calcular(e, semana.lunes, recargar, faltantes) },
             t("nom_armar"))));
       }
     }
@@ -223,13 +244,19 @@ function tarjetaDelLunes(semana, recargar) {
     const acciones = h("div", { clase: "acciones", style: "margin-top:16px" });
     if (c.estado === "borrador" && puede("calcular")) {
       acciones.append(h("button", { clase: "claro", type: "button",
-        onclick: (e) => calcular(e, c.fecha_corte, recargar) },
+        onclick: (e) => calcular(e, c.fecha_corte, recargar, faltantes) },
         t("nom_recalcular")));
     }
-    if (c.estado !== "pagado" && puede("pagar")) {
+    /* El borrador que no cerro por una tarifa no se ofrece pagar: es la
+       misma regla del armado --sin tarifa el corte no sale-- y el
+       servidor tambien lo rechaza. Se carga la tarifa, se recalcula y
+       entonces si. */
+    if (c.estado !== "pagado" && !sinTarifa.length && puede("pagar")) {
       acciones.append(h("button", { type: "button",
         onclick: (e) => pagar(e, c, recargar) },
         reemplazar(t("nom_marcar_pagado"), { m: dinero(c.total, monedaActual) })));
+    } else if (c.estado !== "pagado" && sinTarifa.length && puede("pagar")) {
+      acciones.append(h("span", { clase: "gris chico" }, t("nom_pagar_cuando_cierre")));
     }
     if (acciones.children.length) caja.append(acciones);
   }
@@ -466,19 +493,29 @@ function todaviaNo(filas) {
    Eso no es un error que esconder: pagar de menos a alguien que trabajo
    es peor que retrasar el corte, asi que la pantalla lo pone completo,
    con nombre y fecha. */
+/* Que es lo que falta: la tarifa del dia, o solo la hora extra de un
+   dia que las tuvo (seccion 98). Escrito entero a proposito. */
+const FALTA_TARIFA = {
+  tarifa: "nom_falta_tarifa",
+  "hora extra": "nom_falta_hora_extra",
+};
+
 function tablaSinTarifa(filas) {
   return h("table", { clase: "tabla-cierre" },
     h("thead", {}, h("tr", {},
       h("th", {}, t("nom_persona")), h("th", {}, t("nom_dia")),
-      h("th", {}, t("nom_modalidad")), h("th", {}, t("nom_rol")))),
+      h("th", {}, t("nom_modalidad")), h("th", {}, t("nom_rol")),
+      h("th", {}, t("nom_c_falta")))),
     h("tbody", {}, ...filas.map(f => h("tr", {},
       h("td", {}, h("b", {}, f.persona)),
       h("td", {}, fecha(f.fecha)),
       h("td", {}, f.modalidad),
-      h("td", {}, f.rol || etiqueta(t("nom_sin_rol"), "grave"))))));
+      h("td", {}, f.rol || etiqueta(t("nom_sin_rol"), "grave")),
+      h("td", {}, etiqueta(t(FALTA_TARIFA[f.falta] || "nom_falta_tarifa"),
+                           "alerta"))))));
 }
 
-async function calcular(e, lunes, recargar) {
+async function calcular(e, lunes, recargar, faltantes) {
   e.target.disabled = true;
   try {
     await api.post("/nomina/calcular", { pais_id: paisActual, fecha_corte: lunes });
@@ -486,6 +523,13 @@ async function calcular(e, lunes, recargar) {
     await recargar();
   } catch (err) {
     const filas = (err.detalle && err.detalle.sin_tarifa) || [];
+    /* El motor dice a quien y que dia le falta la tarifa: va en la
+       tarjeta, con nombre y dia, y no solo el texto generico del aviso
+       (seccion 101). */
+    if (filas.length && faltantes) {
+      faltantes.replaceChildren(aviso(t("nom_no_salio"), "grave"),
+                                tablaSinTarifa(filas));
+    }
     mensaje(filas.length ? t("nom_no_salio") : err.message, "grave");
     e.target.disabled = false;
   }
@@ -1115,28 +1159,36 @@ function tablaComision(titulo, datos, tabla, tipo) {
   const celdas = [];
   const cuerpoTabla = h("tbody");
 
+  /* Los centavos se respetan (seccion 101): la celda redondeaba a
+     enteros al pintar y al guardar cualquier otra celda volvia a
+     escribir todas las demas ya redondeadas, sin que nadie las hubiera
+     tocado. Se pinta lo que hay y solo viaja lo que cambio. */
+  const comoEstaba = (x) => (x === null || x === undefined || x === ""
+                             ? "" : String(Number(x)));
+
   for (const r of tabla.renglones) {
     const fila = h("tr", {}, h("td", {}, h("b", {}, r.rol)));
     for (const c of r.celdas) {
       const monto = entrada("monto", {
-        type: "number", step: "1", min: "0", clase: "num",
+        type: "number", step: "0.01", min: "0", clase: "num",
         style: "text-align:right; max-width:110px",
-        value: c.monto !== null ? String(Math.round(Number(c.monto))) : "",
+        value: comoEstaba(c.monto),
         placeholder: t("nom_sin_cargar"),
       });
       /* La hora extra solo donde la modalidad la admite. Ofrecerla donde
          no aplica invita a capturar un numero que nunca se va a usar. */
       const extra = c.aplica_horas_extra
         ? entrada("he", {
-            type: "number", step: "1", min: "0", clase: "num",
+            type: "number", step: "0.01", min: "0", clase: "num",
             style: "text-align:right; max-width:90px",
-            value: c.monto_hora_extra !== null
-              ? String(Math.round(Number(c.monto_hora_extra))) : "",
+            value: comoEstaba(c.monto_hora_extra),
             placeholder: t("nom_h_extra"),
           })
         : null;
       celdas.push({ perfil_id: r.perfil_id, modalidad_id: c.modalidad_id,
-                    monto, extra });
+                    monto, extra,
+                    antes: { monto: comoEstaba(c.monto),
+                             extra: comoEstaba(c.monto_hora_extra) } });
       fila.append(h("td", { style: "text-align:right" },
         monto,
         extra ? h("div", { style: "margin-top:4px" }, extra) : null));
@@ -1148,14 +1200,19 @@ function tablaComision(titulo, datos, tabla, tipo) {
     onclick: (e) => mandar(e) },
     reemplazar(t("nom_tab_guardar"), { t: titulo.toLowerCase() }));
 
+  /* Solo las celdas que cambiaron; si ninguna cambio, no se manda nada. */
+  const cambio = (c) => c.monto.value !== c.antes.monto
+    || (c.extra ? c.extra.value : "") !== (c.extra ? c.antes.extra : "");
+
   async function mandar(e) {
+    const cambiadas = celdas.filter(c => c.monto.value !== "" && cambio(c));
+    if (!cambiadas.length) return mensaje(t("nom_tab_sin_cambios"), "alerta");
     e.target.disabled = true;
     try {
       await api.put("/nomina/tabulador", {
         pais_id: paisActual,
         tipo_servicio: tipo,
-        renglones: celdas
-          .filter(c => c.monto.value !== "")
+        renglones: cambiadas
           .map(c => ({
             perfil_id: c.perfil_id,
             modalidad_id: c.modalidad_id,
@@ -1164,6 +1221,9 @@ function tablaComision(titulo, datos, tabla, tipo) {
               ? Number(c.extra.value) : null,
           })),
       });
+      for (const c of cambiadas) {
+        c.antes = { monto: c.monto.value, extra: c.extra ? c.extra.value : "" };
+      }
       mensaje(t("nom_tab_guardado").replace("{t}", titulo.toLowerCase()));
     } catch (err) { mensaje(err.message, "grave"); }
     e.target.disabled = false;

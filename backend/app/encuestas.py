@@ -48,6 +48,16 @@ PREGUNTAS = {
             "abierta": {"comentario": "Anything else you want us to know?"},
         },
         "gracias": "Thank you. Your answer goes straight to the operations team.",
+        # Lo que la pagina y la API le contestan a quien abre el enlace
+        # (seccion 101): en el idioma en que salio la encuesta.
+        "ya_contestada": "This survey was already answered. Thank you.",
+        "ya_vencio": "The link for this survey has expired.",
+        "faltan": "Some questions are still unanswered.",
+        "sobran": "Those questions are not part of this survey.",
+        "calificacion_1_5": "The rating goes from 1 to 5.",
+        "escala_1_5": "Scale answers go from 1 to 5.",
+        "abierta_texto": "That question takes a written answer.",
+        "no_se_pudo": "Your answer could not be sent. Please try again.",
     },
     "es": {
         "ejecutivo": {
@@ -72,6 +82,14 @@ PREGUNTAS = {
             "abierta": {"comentario": "¿Algo más que quiera decirnos?"},
         },
         "gracias": "Gracias. Su respuesta llega directo al equipo de operaciones.",
+        "ya_contestada": "Esa encuesta ya fue contestada. Gracias.",
+        "ya_vencio": "El enlace de esa encuesta ya venció.",
+        "faltan": "Faltan preguntas por contestar.",
+        "sobran": "Esas preguntas no van en esta encuesta.",
+        "calificacion_1_5": "La calificación va del 1 al 5.",
+        "escala_1_5": "Las respuestas de escala van del 1 al 5.",
+        "abierta_texto": "Esa pregunta se contesta con texto.",
+        "no_se_pudo": "No se pudo enviar su respuesta. Inténtelo de nuevo.",
     },
     "pt": {
         "ejecutivo": {
@@ -96,8 +114,22 @@ PREGUNTAS = {
             "abierta": {"comentario": "Algo mais que queira nos dizer?"},
         },
         "gracias": "Obrigado. Sua resposta vai direto para a equipe de operações.",
+        "ya_contestada": "Essa pesquisa já foi respondida. Obrigado.",
+        "ya_vencio": "O link dessa pesquisa já venceu.",
+        "faltan": "Faltam perguntas por responder.",
+        "sobran": "Essas perguntas não fazem parte desta pesquisa.",
+        "calificacion_1_5": "A nota vai de 1 a 5.",
+        "escala_1_5": "As respostas de escala vão de 1 a 5.",
+        "abierta_texto": "Essa pergunta se responde com texto.",
+        "no_se_pudo": "Não foi possível enviar sua resposta. Tente de novo.",
     },
 }
+
+# Las respuestas de escala: enteros de 1 a 5, como la calificacion
+# general (seccion 101). Antes entraba cualquier entero y un 1000 en
+# "puntualidad" se volvia el promedio del consultor.
+ESCALA_MIN = 1
+ESCALA_MAX = 5
 
 
 def _textos(idioma: str | None) -> dict:
@@ -171,17 +203,27 @@ def generar(db: Session, servicio_id: int,
 
 # ---------------------------------------------------------------- respuesta
 
+def _no_disponible(encuesta: m.Encuesta, codigo: int, clave: str,
+                   texto: str) -> HTTPException:
+    """La contestada y la vencida se dicen en el idioma en que salio la
+    encuesta (seccion 101): el principal que la recibio en ingles volvia
+    a abrir el enlace y leia "ya fue contestada" en espanol. La clave
+    viaja para quien quiera distinguirlas sin leer el texto."""
+    return HTTPException(codigo, {"mensaje": _textos(encuesta.idioma)[texto],
+                                  "clave": clave})
+
+
 def por_token(db: Session, token: str) -> m.Encuesta:
     encuesta = db.query(m.Encuesta).filter_by(token=token).first()
     if not encuesta:
         raise HTTPException(404, "Esa encuesta no existe")
     if encuesta.estatus == m.EstatusEncuesta.RESPONDIDA:
-        raise HTTPException(409, "Esa encuesta ya fue contestada. Gracias.")
+        raise _no_disponible(encuesta, 409, "contestada", "ya_contestada")
     if datetime.now() > encuesta.expira_en:
         if encuesta.estatus != m.EstatusEncuesta.EXPIRADA:
             encuesta.estatus = m.EstatusEncuesta.EXPIRADA
             db.commit()
-        raise HTTPException(410, "El enlace de esa encuesta ya vencio")
+        raise _no_disponible(encuesta, 410, "vencida", "ya_vencio")
     return encuesta
 
 
@@ -208,37 +250,60 @@ def formulario(encuesta: m.Encuesta) -> dict:
     return base
 
 
-def _preguntas_esperadas(encuesta: m.Encuesta, calificacion: int) -> tuple[set, set]:
-    """(obligatorias, permitidas) segun la rama que toca."""
+def _preguntas_esperadas(encuesta: m.Encuesta,
+                         calificacion: int) -> tuple[set, set, set]:
+    """(obligatorias, permitidas, de escala) segun la rama que toca."""
     t = _textos(encuesta.idioma)[encuesta.tipo.value]
     if encuesta.tipo == m.TipoEncuesta.EJECUTIVO:
         if calificacion > UMBRAL_MALA:
-            return set(), set(t["bien"])
+            return set(), set(t["bien"]), set()
         # Cuando algo salio mal si se pide el detalle: es la unica
         # oportunidad de saber que arreglar.
         escala = {"puntualidad", "trato", "vehiculo"}
-        return escala, escala | {"molestia"}
+        return escala, escala | {"molestia"}, escala
     permitidas = set(t["siempre"]) | set(t["abierta"])
-    return set(t["siempre"]), permitidas
+    return set(t["siempre"]), permitidas, set(t["siempre"])
+
+
+def _fuera_de_escala(valor) -> bool:
+    """Un entero de verdad --no un booleano-- entre 1 y 5."""
+    return (not isinstance(valor, int) or isinstance(valor, bool)
+            or not ESCALA_MIN <= valor <= ESCALA_MAX)
 
 
 def responder(db: Session, token: str, calificacion: int,
               respuestas: dict) -> dict:
     encuesta = por_token(db, token)
-    if not 1 <= calificacion <= 5:
-        raise HTTPException(400, "La calificacion va del 1 al 5")
+    textos = _textos(encuesta.idioma)
+    if not ESCALA_MIN <= calificacion <= ESCALA_MAX:
+        raise HTTPException(400, {"mensaje": textos["calificacion_1_5"],
+                                  "clave": "calificacion"})
 
-    obligatorias, permitidas = _preguntas_esperadas(encuesta, calificacion)
+    obligatorias, permitidas, escalas = _preguntas_esperadas(encuesta,
+                                                             calificacion)
     sobran = set(respuestas) - permitidas
     if sobran:
         raise HTTPException(400, {
-            "mensaje": "Esas preguntas no van en esta encuesta",
+            "mensaje": textos["sobran"],
             "preguntas": sorted(sobran)})
     faltan = obligatorias - set(respuestas)
     if faltan:
         raise HTTPException(400, {
-            "mensaje": "Faltan preguntas por contestar",
+            "mensaje": textos["faltan"],
             "preguntas": sorted(faltan)})
+    # Las de escala van de 1 a 5 y las abiertas con texto (seccion 101):
+    # un 1000 en "puntualidad" entraba y se volvia el promedio del
+    # consultor; con negativos, lo hundia.
+    mal = sorted(p for p, v in respuestas.items()
+                 if p in escalas and _fuera_de_escala(v))
+    if mal:
+        raise HTTPException(422, {"mensaje": textos["escala_1_5"],
+                                  "preguntas": mal})
+    mal = sorted(p for p, v in respuestas.items()
+                 if p not in escalas and not isinstance(v, str))
+    if mal:
+        raise HTTPException(422, {"mensaje": textos["abierta_texto"],
+                                  "preguntas": mal})
 
     encuesta.calificacion = calificacion
     encuesta.estatus = m.EstatusEncuesta.RESPONDIDA
@@ -281,6 +346,90 @@ def quien_la_revisa(db: Session, encuesta: m.Encuesta) -> m.Persona | None:
     # `Servicio` guarda el id del consultor, no la relacion.
     return (db.get(m.Persona, encuesta.servicio.consultor_id)
             if encuesta.servicio.consultor_id else None)
+
+
+def es_juez_y_parte(usuario: m.Usuario, encuesta: m.Encuesta) -> bool:
+    """Si a esta persona no le toca clasificar esta encuesta (seccion 101).
+
+    La del solicitante califica al consultor, y la regla de arriba dice
+    que esa la decide direccion de operaciones. El candado no existia:
+    Ana veia en #/encuestas la queja que era sobre ella y la cerraba
+    "sin incidencia". Ningun consultor la clasifica --ni el titular ni
+    quien lo cubre--, y tampoco el calificado si llegara con otro rol.
+    """
+    if encuesta.tipo != m.TipoEncuesta.SOLICITANTE:
+        return False
+    if usuario.rol == m.Rol.CONSULTOR:
+        return True
+    calificado = encuesta.consultor_id or (
+        encuesta.servicio.consultor_id if encuesta.servicio else None)
+    return calificado is not None and usuario.persona_id == calificado
+
+
+def sin_encuesta(servicio: m.Servicio, tipo: m.TipoEncuesta) -> dict:
+    """La encuesta que no nacio, para la tarjeta del servicio (seccion
+    101): con la misma forma que una de verdad, sin id, y diciendo por
+    que no salio. Sin correo del principal --frecuente: se consigue
+    despues-- la encuesta no se crea, y la pantalla no tenia como decir
+    que faltaba ni como mandarla."""
+    ejecutivo = tipo == m.TipoEncuesta.EJECUTIVO
+    nombre = (servicio.ejecutivo_completo if ejecutivo
+              else servicio.solicitante_completo)
+    correo = servicio.ejecutivo_correo if ejecutivo else servicio.solicitante_correo
+    return {
+        "id": None, "servicio_id": servicio.id, "folio": servicio.folio,
+        "cliente": servicio.cliente.nombre if servicio.cliente else None,
+        "tipo": tipo.value, "para": nombre or correo,
+        "correo": correo,
+        "estatus": "sin_enviar",
+        "motivo": None if correo else "sin_correo",
+        "calificacion": None, "respondida_en": None, "expira_en": None,
+        "requiere_clasificacion": False, "clasificada": False,
+        "incidencia_id": None, "consultor_id": None, "respuestas": [],
+    }
+
+
+def reenviar(db: Session, encuesta: m.Encuesta) -> m.Notificacion:
+    """El mismo correo otra vez, con el mismo enlace (seccion 101).
+
+    Para la encuesta viva que no llego --el correo estaba mal y ya se
+    corrigio, o se fue a la carpeta de no deseados--. No se genera un
+    token nuevo, por lo mismo que en `recordar`: dos enlaces vivos para
+    lo mismo es la forma mas facil de que alguien conteste dos veces.
+    Solo escribe; quien llama anota la bitacora y guarda.
+    """
+    if encuesta.estatus == m.EstatusEncuesta.RESPONDIDA:
+        raise HTTPException(409, {
+            "mensaje": "Esa encuesta ya fue contestada: no hay nada que reenviar.",
+            "que_hacer": "Lo que contestó el cliente está en la pantalla "
+                         "de encuestas."})
+    if (encuesta.estatus == m.EstatusEncuesta.EXPIRADA
+            or datetime.now() > encuesta.expira_en):
+        raise HTTPException(409, {
+            "mensaje": "El enlace de esa encuesta ya venció: no se reenvía.",
+            "que_hacer": "La encuesta vive quince días desde que sale; "
+                         "vencida, ya no se contesta."})
+    if not encuesta.destinatario_correo:
+        raise HTTPException(409, {
+            "mensaje": "Esa encuesta no tiene correo a dónde ir.",
+            "que_hacer": "Corrige el correo en «Corregir los contactos» y "
+                         "vuelve a intentarlo."})
+    servicio = encuesta.servicio
+    lengua = encuesta.idioma
+    aviso = m.Notificacion(
+        servicio_id=servicio.id,
+        destinatario=(m.Destinatario.EJECUTIVO
+                      if encuesta.tipo == m.TipoEncuesta.EJECUTIVO
+                      else m.Destinatario.SOLICITANTE),
+        canal=m.Canal.CORREO, correo=encuesta.destinatario_correo,
+        idioma=lengua,
+        asunto=f"{servicio.folio}: {_textos(lengua)[encuesta.tipo.value]['general']}",
+        cuerpo=_textos(lengua)["gracias"],
+        enlace_seguimiento=f"/encuestas/pagina/{encuesta.token}",
+        plantilla="encuesta",
+        expira_en=encuesta.expira_en)
+    db.add(aviso)
+    return aviso
 
 
 def avisar_mala_calificacion(db: Session, encuesta: m.Encuesta,

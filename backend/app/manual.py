@@ -597,6 +597,10 @@ AREA_DE_ARCHIVO = {
     "hoja_implantado.py": "implantados", "cierre_mes.py": "implantados",
     "cierre.py": "cierre", "revision.py": "cierre", "revisor.py": "cierre",
     "historial.py": "cierre", "facturacion.py": "cierre",
+    # El cierre y las encuestas ganaron sus "que hacer" (seccion 101):
+    # justificar una desviacion, mandar la encuesta que falta.
+    "routers/cierre.py": "cierre", "encuestas.py": "cierre",
+    "routers/encuestas.py": "cierre",
     "comisiones.py": "nomina", "nomina.py": "nomina",
     "routers/nomina.py": "nomina", "routers/bonos.py": "nomina",
     "bonos.py": "nomina",
@@ -604,6 +608,9 @@ AREA_DE_ARCHIVO = {
     "routers/tarifarios.py": "cotizacion",
     "routers/servicios.py": "servicios", "routers/tasksheet.py": "servicios",
     "routers/contingencia.py": "servicios",
+    # El choque al mover un dia y el motor del cambio por contingencia,
+    # que dice que hacer con la hora del relevo y con deshacer (seccion 101).
+    "disponibilidad.py": "servicios", "contingencia.py": "servicios",
     "routers/crud.py": "catalogos", "routers/bitacora_admin.py": "catalogos",
     "routers/odoo.py": "odoo",
     "routers/archivo.py": "archivo",

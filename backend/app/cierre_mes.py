@@ -233,11 +233,19 @@ def abrir_los_que_terminaron(db: Session,
     cierre, con T0 = ahora. Mira solo el mes en curso y el anterior, los
     que no tienen cierre: un mes viejo sin nada que cerrar no se vuelve a
     revisar cada cinco minutos para siempre. Devuelve los que abrio.
+
+    Que mes es "el en curso" lo dice cada pais con su reloj (seccion
+    101): la ventana va del mes anterior al del pais mas atrasado al mes
+    del mas adelantado, y cada contrato se juzga con la hora de su pais.
     """
-    referencia = (ahora or datetime.now()).date()
-    anterior = (referencia.replace(day=1) - timedelta(days=1))
+    relojes = reloj.Relojes(db, ahora)
+    hoys = [relojes.hoy(p.id) for p in
+            db.query(m.Pais).filter(m.Pais.activo.is_(True)).all()]
+    if not hoys:
+        hoys = [relojes.hoy(None)]
+    anterior = (min(hoys).replace(day=1) - timedelta(days=1))
     desde = anterior.year * 100 + anterior.month
-    hasta = referencia.year * 100 + referencia.month
+    hasta = max(hoys).year * 100 + max(hoys).month
     clave = m.ContratoImplantado.anio * 100 + m.ContratoImplantado.mes
     candidatos = (db.query(m.ContratoImplantado)
                   .outerjoin(m.Cierre,
@@ -247,7 +255,7 @@ def abrir_los_que_terminaron(db: Session,
                   .all())
     abiertos = []
     for contrato in candidatos:
-        momento = reloj.ahora_del_servicio(db, contrato.servicio, ahora)
+        momento = relojes.del_servicio(contrato.servicio)
         if terminar_si_cerro_el_mes(db, contrato, registrado=momento):
             abiertos.append(f"{contrato.servicio.folio} {periodo(contrato)}")
     db.commit()
@@ -699,6 +707,11 @@ def enviar_a_finanzas(db: Session, cierre: m.Cierre, usuario: m.Usuario,
     if motor.avanzar(db, cierre, momento):
         db.commit()
 
+    # La fila del mes, tomada hasta guardar (seccion 101): dos vistos
+    # buenos del mismo mes a la vez duplicaban los ajustes de nomina,
+    # igual que en el eventual. El segundo ve "ya tiene visto bueno".
+    cierre = motor.tomar(db, cierre.id)
+
     if cierre.estatus not in (m.EstatusCierre.SIN_VISTO_BUENO,
                               m.EstatusCierre.DEVUELTO_A_OPERACION):
         raise HTTPException(409, {
@@ -819,7 +832,10 @@ def aprobar(db: Session, cierre: m.Cierre, usuario: m.Usuario) -> dict:
     moneda.
     """
     cierre.estatus = m.EstatusCierre.APROBADO
-    cierre.aprobado_en = datetime.now()
+    # En hora del pais del servicio (seccion 101): de aqui sale el mes
+    # de la comision; con la del servidor, la aprobacion de un mes de
+    # Brasil a fin de mes caia en el mes anterior.
+    cierre.aprobado_en = reloj.ahora_del_servicio(db, cierre.servicio)
     cierre.aprobado_por_id = usuario.persona_id
     auditoria.registrar(db, usuario, cierre.servicio, "aprobar cierre",
                         f"{periodo(cierre.contrato)}, validado por finanzas")

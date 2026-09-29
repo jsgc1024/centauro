@@ -116,7 +116,8 @@ function renglon(e, recargar) {
             nota: texto.value.trim(),
             incidencia_id: incidencia.value ? Number(incidencia.value) : null,
           });
-          mensaje(r.nota);
+          // La nota del servidor, en el idioma de la consola (seccion 101).
+          mensaje(r.clave ? t(r.clave) : r.nota);
           recargar();
         } catch (err) { mensaje(err.message, "grave"); }
       } }, t("enc_guardar_revision"))));
@@ -132,15 +133,19 @@ function renglon(e, recargar) {
       nota(e)),
     loQueDijo(e),
     /* Clasificar es decidir si la queja le cuesta a alguien: lo hace el
-       consultor titular o direccion, no el JR (seccion 73). Y al
-       servicio solo se le ofrece ir a quien tiene la cartera en su
-       menu. */
+       consultor titular o direccion, no el JR (seccion 73). La del
+       solicitante califica al consultor y la decide direccion de
+       operaciones: a un consultor no se le ofrece el boton, se le dice
+       de quien es (seccion 101). Y al servicio solo se le ofrece ir a
+       quien tiene la cartera en su menu. */
     h("div", { clase: "acciones" },
-      tiene(sesion.usuario, "encuestas.clasificar")
-        ? h("button", { clase: "chico", type: "button",
-            onclick: () => { formulario.hidden = !formulario.hidden; } },
-            t("enc_clasificar"))
-        : "",
+      e.juez_y_parte
+        ? h("span", { clase: "chico gris" }, t("enc_la_clasifica_operaciones"))
+        : tiene(sesion.usuario, "encuestas.clasificar")
+          ? h("button", { clase: "chico", type: "button",
+              onclick: () => { formulario.hidden = !formulario.hidden; } },
+              t("enc_clasificar"))
+          : "",
       abre(sesion.usuario, "servicios", CONSULTA)
         ? h("a", { clase: "enlace", href: `#/servicio/${e.servicio_id}` },
             t("enc_ver_servicio"))

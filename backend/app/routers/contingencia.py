@@ -128,12 +128,18 @@ def reportar(datos: s.AlertaIn, db: Session = Depends(get_db),
 
 @router.get("/alertas", response_model=list[s.AlertaOut],
             summary="Tablero de alertas de la central")
-def listar(abiertas: bool = True, db: Session = Depends(get_db),
-           _=Depends(LECTURA)):
+def listar(abiertas: bool = True, servicio_id: int | None = None,
+           db: Session = Depends(get_db), _=Depends(LECTURA)):
+    """`servicio_id` es para la pantalla del servicio (seccion 101): el
+    panel del cambio por contingencia busca la alerta abierta de ese
+    servicio para ligarla al cambio."""
     consulta = db.query(m.AlertaIncidencia)
     if abiertas:
         consulta = consulta.filter(
             m.AlertaIncidencia.estatus != m.EstatusAlerta.CERRADA)
+    if servicio_id is not None:
+        consulta = consulta.filter(
+            m.AlertaIncidencia.servicio_id == servicio_id)
     filas = consulta.order_by(m.AlertaIncidencia.reportada_en.desc()).all()
 
     # Que paso despues de la alerta. Una alerta atendida que dejo un
@@ -142,17 +148,7 @@ def listar(abiertas: bool = True, db: Session = Depends(get_db),
     cambios = {}
     for r in (db.query(m.ReemplazoRecurso)
               .filter(m.ReemplazoRecurso.alerta_id.isnot(None)).all()):
-        if r.tipo == m.TipoRecurso.PERSONAL:
-            sale = db.get(m.Persona, r.sale_persona_id)
-            entra = db.get(m.Persona, r.entra_persona_id)
-            nombres = (sale.nombre if sale else "?",
-                       entra.nombre if entra else "?")
-        else:
-            sale = db.get(m.Vehiculo, r.sale_vehiculo_id)
-            entra = db.get(m.Vehiculo, r.entra_vehiculo_id)
-            nombres = (sale.placa if sale else "?",
-                       entra.placa if entra else "?")
-        cambios[r.alerta_id] = f"{nombres[1]} entra por {nombres[0]}"
+        cambios[r.alerta_id] = motor.quien_entra_por_quien(db, r)
 
     for fila in filas:
         fila.cambio = cambios.get(fila.id)
@@ -240,21 +236,39 @@ def _contarle_al_cliente(db: Session, jornada: m.Jornada, quien: str,
         return None
 
 
+def _hoja_por_publicar(db: Session, jornada: m.Jornada,
+                       cliente_avisado: bool | None) -> bool:
+    """Si la hoja que el cliente ya tiene se quedo con el nombre viejo.
+
+    Un cambio para otro dia no manda correo: "viaja en el task sheet".
+    Pero la hoja que se publico es una foto de ese momento, y nadie la
+    volvia a publicar ni se lo decia al consultor (seccion 101): el
+    cliente llegaba el jueves con el nombre y el telefono de quien ya no
+    va. Solo cuando no hubo correo --con correo el cliente ya tiene al
+    equipo como queda-- y solo si hay hoja publicada que corregir.
+    """
+    from app import tasksheet
+    return (cliente_avisado is False
+            and tasksheet.vigente(db, jornada.equipo_id) is not None)
 
 
 @router.post("/reemplazos/personal",
              summary="Cambiar a una persona del equipo por contingencia")
 def reemplazo_personal(datos: s.ReemplazoPersonalIn,
                        db: Session = Depends(get_db),
+                       ahora: datetime | None = None,
                        usuario: m.Usuario = Depends(CONSULTOR)):
     """Cambia a la persona de esa jornada en adelante y mueve los viaticos:
-    quien sale entra a comprobacion con su plazo, quien entra recibe nuevos."""
+    quien sale entra a comprobacion con su plazo, quien entra recibe nuevos.
+
+    `ahora` es el reloj del servidor para las pruebas (seccion 101): la
+    hora del relevo se revisa contra el; en produccion se ignora."""
     resultado = motor.reemplazar_personal(
         db, datos.desde_jornada_id, datos.sale_persona_id,
         datos.entra_persona_id, datos.motivo,
         hecho_por_id=usuario.persona_id, alerta_id=datos.alerta_id,
         motivo_tipo=datos.motivo_tipo, hasta_jornada_id=datos.hasta_jornada_id,
-        relevado_en=datos.relevado_en)
+        relevado_en=datos.relevado_en, ahora=reloj.de_prueba(ahora))
 
     jornada = db.get(m.Jornada, datos.desde_jornada_id)
     sale = db.get(m.Persona, datos.sale_persona_id)
@@ -281,6 +295,10 @@ def reemplazo_personal(datos: s.ReemplazoPersonalIn,
     resultado["cliente_avisado"] = _contarle_al_cliente(
         db, jornada, entra.nombre,
         puesto=nueva.rol.nombre if nueva and nueva.rol else None)
+    # Sin correo, la hoja publicada se quedo con el nombre viejo: la
+    # pantalla le dice al consultor que la vuelva a publicar.
+    resultado["hoja_por_publicar"] = _hoja_por_publicar(
+        db, jornada, resultado["cliente_avisado"])
     # `avisar` apaga las suscripciones de los telefonos que ya no
     # existen. Sin este guardado ese apagado se perdia y se les seguia
     # mandando a un telefono desinstalado para siempre.
@@ -292,13 +310,14 @@ def reemplazo_personal(datos: s.ReemplazoPersonalIn,
              summary="Cambiar la unidad por contingencia")
 def reemplazo_vehiculo(datos: s.ReemplazoVehiculoIn,
                        db: Session = Depends(get_db),
+                       ahora: datetime | None = None,
                        usuario: m.Usuario = Depends(CONSULTOR)):
     resultado = motor.reemplazar_vehiculo(
         db, datos.desde_jornada_id, datos.sale_vehiculo_id,
         datos.entra_vehiculo_id, datos.motivo,
         hecho_por_id=usuario.persona_id, alerta_id=datos.alerta_id,
         motivo_tipo=datos.motivo_tipo, hasta_jornada_id=datos.hasta_jornada_id,
-        relevado_en=datos.relevado_en)
+        relevado_en=datos.relevado_en, ahora=reloj.de_prueba(ahora))
 
     jornada = db.get(m.Jornada, datos.desde_jornada_id)
     sale = db.get(m.Vehiculo, datos.sale_vehiculo_id)
@@ -318,6 +337,8 @@ def reemplazo_vehiculo(datos: s.ReemplazoVehiculoIn,
         db, jornada,
         f"{categoria + ' · ' if categoria else ''}{entra.placa}",
         clase="unidad")
+    resultado["hoja_por_publicar"] = _hoja_por_publicar(
+        db, jornada, resultado["cliente_avisado"])
     db.commit()
     return resultado
 
@@ -326,6 +347,7 @@ def reemplazo_vehiculo(datos: s.ReemplazoVehiculoIn,
              summary="El titular vuelve: cierra el cambio")
 def regreso(reemplazo_id: int, datos: s.RegresoIn,
             db: Session = Depends(get_db),
+            ahora: datetime | None = None,
             usuario: m.Usuario = Depends(CONSULTOR)):
     """Marta se recupera y regresa el 25; Luis trabaja hasta el 24.
 
@@ -335,7 +357,8 @@ def regreso(reemplazo_id: int, datos: s.RegresoIn,
     """
     resultado = motor.regresar(db, reemplazo_id, datos.desde,
                                hecho_por_id=usuario.persona_id,
-                               relevado_en=datos.relevado_en)
+                               relevado_en=datos.relevado_en,
+                               ahora=reloj.de_prueba(ahora))
     servicio = db.get(m.Servicio, resultado["servicio_id"])
     partidos = resultado["jornadas_partidas"]
     auditoria.registrar(
@@ -344,6 +367,21 @@ def regreso(reemplazo_id: int, datos: s.RegresoIn,
         f"{resultado['desde']} al {resultado['hasta']}"
         + (f"; dia partido: {', '.join(partidos)}" if partidos else ""))
     db.commit()
+
+    # A los dos, al telefono, en el momento (seccion 101). Igual que en
+    # el cambio: el recordatorio de la vispera solo mira manana, y sin
+    # esto el que cubria podia presentarse el dia del regreso a un
+    # servicio que ya no era suyo, y el titular solo se enteraba si
+    # abria la app. Es de personal: una unidad no tiene telefono.
+    reemplazo = db.get(m.ReemplazoRecurso, reemplazo_id)
+    if reemplazo and reemplazo.tipo == m.TipoRecurso.PERSONAL:
+        titular = db.get(m.Persona, reemplazo.sale_persona_id)
+        cubre = db.get(m.Persona, reemplazo.entra_persona_id)
+        resultado["avisado"] = (push.avisar_regreso(db, titular, cubre,
+                                                    resultado)
+                                if titular and cubre else None)
+        # `avisar` apaga los telefonos que ya no existen: se guarda.
+        db.commit()
     return resultado
 
 
@@ -351,6 +389,7 @@ def regreso(reemplazo_id: int, datos: s.RegresoIn,
              summary="Que pasaria con este regreso, sin guardarlo")
 def regreso_previa(reemplazo_id: int, datos: s.RegresoIn,
                    db: Session = Depends(get_db),
+                   ahora: datetime | None = None,
                    _: m.Usuario = Depends(CONSULTOR)):
     """Hasta que dia se queda el que cubria, si ese dia se parte y a que
     hora, y que pasa con el dinero de los dos.
@@ -362,7 +401,8 @@ def regreso_previa(reemplazo_id: int, datos: s.RegresoIn,
     try:
         return motor.regresar(db, reemplazo_id, datos.desde,
                               hecho_por_id=None,
-                              relevado_en=datos.relevado_en)
+                              relevado_en=datos.relevado_en,
+                              ahora=reloj.de_prueba(ahora))
     finally:
         db.rollback()
 
@@ -370,6 +410,7 @@ def regreso_previa(reemplazo_id: int, datos: s.RegresoIn,
 @router.post("/reemplazos/personal/vista-previa",
              summary="Que pasaria con este cambio, sin guardarlo")
 def vista_previa(datos: s.ReemplazoPersonalIn, db: Session = Depends(get_db),
+                 ahora: datetime | None = None,
                  _: m.Usuario = Depends(CONSULTOR)):
     """Los dias que se mueven, los que chocan y —sobre todo— los viaticos.
 
@@ -383,7 +424,7 @@ def vista_previa(datos: s.ReemplazoPersonalIn, db: Session = Depends(get_db),
         sale_persona_id=datos.sale_persona_id,
         entra_persona_id=datos.entra_persona_id, motivo=datos.motivo,
         motivo_tipo=datos.motivo_tipo, hasta_jornada_id=datos.hasta_jornada_id,
-        relevado_en=datos.relevado_en)
+        relevado_en=datos.relevado_en, ahora=reloj.de_prueba(ahora))
 
 
 @router.post("/reemplazos/{reemplazo_id}/deshacer",
@@ -520,5 +561,8 @@ def historial(servicio_id: int, db: Session = Depends(get_db),
             # consultor no la haya escrito. Despues de esa fecha hay que
             # volver a pedirlo.
             "se_vuelve_a_pedir": implantado and hasta is not None,
+            # La hoja que el cliente tiene se publico antes de este
+            # cambio: trae el nombre de quien ya no va (seccion 101).
+            "hoja_por_publicar": motor.hoja_anterior_al_cambio(db, r),
         })
     return salida

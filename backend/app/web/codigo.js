@@ -29,23 +29,29 @@ export async function pantallaCodigo(main) {
      tecla: el que escribe rapido dispararia ocho busquedas para una
      sola palabra. */
   let pendiente = null;
+  // Solo se pinta la respuesta de lo ultimo que se escribio (seccion 101).
+  let peticion = 0;
   function buscar(texto) {
     clearTimeout(pendiente);
     zona.replaceChildren();
     if (texto.trim().length < 2) {
+      peticion += 1;
       return resultados.replaceChildren(
         h("div", { clase: "gris chico", style: "margin-top:10px" },
           t("cod_dos_letras")));
     }
     pendiente = setTimeout(async () => {
+      const mia = ++peticion;
       try {
         const gente = await api.get(
           `/auth/campo/buscar?q=${encodeURIComponent(texto.trim())}`);
+        if (mia !== peticion) return;
         resultados.replaceChildren(gente.length
           ? h("div", {}, ...gente.map(p => renglon(p, zona)))
           : h("div", { clase: "gris chico", style: "margin-top:10px" },
               t("cod_nadie")));
       } catch (err) {
+        if (mia !== peticion) return;
         resultados.replaceChildren(aviso(err.message, "grave"));
       }
     }, 250);

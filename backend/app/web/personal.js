@@ -85,14 +85,24 @@ const TONO_CAPACITACION = {
   sin_registro: "",
 };
 
+/* Solo se pinta la respuesta del ultimo pais pedido (seccion 101): con
+   dos cambios seguidos de pais, la tabla lenta del primero llegaba al
+   final y salia con el pais equivocado en el selector. */
+let peticion = 0;
+
 async function pintar(zona) {
   zona.replaceChildren(h("p", { clase: "gris" }, t("per_cargando")));
+  const mia = ++peticion;
+  let filas;
   try {
-    ultimas = await api.get(`/profesionalismo?pais_id=${paisActual}`);
+    filas = await api.get(`/profesionalismo?pais_id=${paisActual}`);
   } catch (err) {
+    if (mia !== peticion) return;
     ultimas = [];
     return zona.replaceChildren(aviso(err.message, "grave"));
   }
+  if (mia !== peticion) return;
+  ultimas = filas;
   dibujar(zona);
 }
 
@@ -215,8 +225,28 @@ function renglon(f, zona) {
                   .replace("{curso}", cap.curso))
         : null),
 
-    h("td", { clase: "chico gris" }, f.incidencias || "—"),
+    h("td", { clase: "chico gris" }, fraseDe(f.incidencias_frase, f.incidencias) || "—"),
     h("td", { clase: "num" }, `${f.horas_en_centauro.toLocaleString()} h`));
+}
+
+/* La frase de una dimension, armada aqui en el idioma de la consola: el
+   servidor manda la clave y los numeros (`frase`), y su version en
+   espanol (`detalle`) por si llega una clave que no se conoce. */
+function fraseDe(frase, detalle) {
+  if (!frase || !frase.clave) return detalle || "";
+  const clave = `prof_d_${frase.clave}`;
+  let texto = t(clave);
+  if (texto === clave) return detalle || "";
+  const datos = { ...(frase.datos || {}) };
+  if (frase.clave === "incidencias") {
+    datos.lista = (datos.por_gravedad || [])
+      .map(x => `${x.n} ${t(`prof_g_${x.g}`)}`).join(", ");
+    delete datos.por_gravedad;
+  }
+  for (const [k, v] of Object.entries(datos)) {
+    texto = texto.split(`{${k}}`).join(typeof v === "number" ? v.toLocaleString() : String(v));
+  }
+  return texto;
 }
 
 /* -------------------------------------------------------------- la ficha */
@@ -275,8 +305,9 @@ function dimension(d) {
     h("div", { clase: "cuerpo" },
       h("div", { clase: "nombre" }, t(`prof_${d.dimension}`)),
       /* La frase que explica. Es lo que convierte un 87.4 en algo que se
-         puede discutir, y ya la escribia el motor. */
-      h("div", { clase: "gris chico" }, d.detalle || "")),
+         puede discutir, y ya la escribia el motor; aqui se dice en el
+         idioma de la consola (seccion 101). */
+      h("div", { clase: "gris chico" }, fraseDe(d.frase, d.detalle))),
     h("div", { clase: "aporte" },
       d.aplica ? String(d.aporte) : "—",
       h("span", { clase: "de" },

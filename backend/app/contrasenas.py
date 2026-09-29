@@ -117,8 +117,11 @@ def cambiar(db: Session, usuario: m.Usuario, actual: str, nueva: str) -> dict:
     sesion robada se convierte en una cuenta robada para siempre. Con
     esto, el ladron tiene la sesion hasta que expire y nada mas.
     """
+    # 403 y no 401 (seccion 101): la consola toma cualquier 401 como
+    # sesion vencida y saca a la persona; aqui la sesion esta bien, lo
+    # que fallo es la contrasena que escribio.
     if not auth.verificar(actual, usuario.hash_contrasena):
-        raise HTTPException(401, "La contrasena actual no es correcta")
+        raise HTTPException(403, "La contraseña actual no es correcta")
     if actual == nueva:
         raise HTTPException(400, "La contrasena nueva es la misma de antes")
     validar(nueva, usuario)

@@ -167,9 +167,16 @@ ACTIVIDADES: dict[str, dict] = {
         "roles": {R.FINANZAS, R.DIRECTOR_GENERAL},
     },
 
+    # Es el corte de todos: el tabulador, cada recibo, los ajustes y lo
+    # que va juntandose. El consultor y la central lo traian de fabrica
+    # (seccion 101) y con eso bajaban por la API lo que se le paga a
+    # cada persona por dia, aunque la pantalla no se los ensenara. Lo
+    # suyo --su comision-- sigue siendo `comisiones.ver`, que ya le
+    # manda al consultor solo su renglon; la central no tiene nada aqui.
     "nomina.ver": {
-        "descripcion": "Ver los cortes de nomina y lo que entrara al proximo",
-        "roles": {R.FINANZAS, R.CONSULTOR, R.CENTRAL, R.DIRECTOR_OPERACIONES},
+        "descripcion": "Ver los cortes de nomina de todo el personal, el "
+                       "tabulador, los recibos y lo que entrara al proximo",
+        "roles": {R.FINANZAS, R.DIRECTOR_OPERACIONES},
     },
     "nomina.tabulador": {
         "descripcion": "Cambiar lo que se paga por dia, por rol y modalidad",

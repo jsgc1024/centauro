@@ -310,8 +310,11 @@ function marcaOrigen(origen) {
    peticion. Si el archivo viajara aparte, un corte de red a medio
    camino dejaria un deposito registrado sin su comprobante. */
 function ventanaDeposito(f, moneda, repintar) {
+  /* La referencia es la prueba del pago: se guarda tal cual se escribio,
+     sin la regla de mayusculas (seccion 101). "SPEI 7F3A9B0C" se
+     volvia "Spei 7f3a9b0c" y asi no se encuentra en el estado de cuenta. */
   const referencia = entrada("referencia", {
-    placeholder: t("fin_ref_banco") });
+    placeholder: t("fin_ref_banco"), "data-crudo": "" });
   const archivo = h("input", { type: "file", accept: "image/*" });
   const zonaError = h("div");
 
@@ -416,7 +419,7 @@ function tarjetaCompra(c, repintar) {
 
 function formularioRespuesta(c, repintar) {
   const confirmacion = entrada("confirmacion", {
-    placeholder: t("fin_reserva") });
+    placeholder: t("fin_reserva"), "data-crudo": "" });
   const montoReal = entrada("monto_real", {
     type: "number", step: "0.01", min: "0", placeholder: t("fin_costo") });
   const nota = h("textarea", { name: "respuesta", rows: "3",

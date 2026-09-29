@@ -1,15 +1,18 @@
 """Alta de servicios, equipos, jornadas y asignacion de recursos."""
+import unicodedata
 from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+from sqlalchemy import func, or_
+from sqlalchemy.orm import Session, selectinload
 
 from app import accesos
 from app import auditoria
 from app import auth
 from app import contactos_servicio
+from app import cotizacion
 from app import programacion
 from app import push
 from app import reloj
@@ -133,6 +136,25 @@ def _obtener_jornada(db: Session, jornada_id: int) -> m.Jornada:
     if not jornada:
         raise HTTPException(404, f"No existe la jornada {jornada_id}")
     return jornada
+
+
+def _candado_del_recurso(db: Session, tipo: str, id_: int) -> None:
+    """Una asignacion de ese recurso a la vez, hasta que confirme
+    (seccion 101).
+
+    Dos consultores asignando al mismo tiempo a la misma persona pasaban
+    los dos la revision de disponibilidad --revisar y luego insertar, sin
+    candado-- y los dos insertaban: el empalme se veia despues en la
+    central. Con el candado, el segundo espera a que el primero confirme
+    y su revision ya encuentra el dia ocupado. Vive en la transaccion,
+    como el de Odoo.
+    """
+    import zlib
+
+    from sqlalchemy import text
+
+    db.execute(text("SELECT pg_advisory_xact_lock(:llave)"),
+               {"llave": zlib.crc32(f"asignar:{tipo}:{id_}".encode())})
 
 
 # ---------------------------------------------------------------- alta
@@ -277,21 +299,85 @@ def crear_servicio(datos: s.ServicioIn, db: Session = Depends(get_db),
     return servicio
 
 
+# Lo que ya no esta vivo en la cartera: se pide por partes.
+CERRADOS_DE_LA_CARTERA = (m.EstatusServicio.CERRADO, m.EstatusServicio.CANCELADO)
+PAGINA_DE_LA_CARTERA = 50
+
+
+def _sin_tildes(columna):
+    """La columna en minusculas y sin acentos, para buscar como busca la
+    consola: «munoz» encuentra a Munoz."""
+    return func.translate(func.lower(columna),
+                          "áéíóúüñàâãçêôõ", "aeiouunaaaceoo")
+
+
+def _patron_de(q: str) -> str:
+    """El texto buscado como patron de LIKE: `%` y `_` son comodines y
+    aqui se buscan tal cual (seccion 101)."""
+    limpio = unicodedata.normalize("NFD", q.strip().lower())
+    limpio = "".join(c for c in limpio if unicodedata.category(c) != "Mn")
+    for comodin in ("\\", "%", "_"):
+        limpio = limpio.replace(comodin, "\\" + comodin)
+    return f"%{limpio}%"
+
+
+def _con_busqueda(consulta, q: str):
+    """Por folio, cliente, principal o quien solicita: lo mismo que
+    busca la cartera sobre lo que ya tiene en pantalla."""
+    patron = _patron_de(q)
+    nombre = func.concat_ws(" ", m.Servicio.ejecutivo_nombre,
+                            m.Servicio.ejecutivo_apellidos)
+    solicita = func.concat_ws(" ", m.Servicio.solicitante_nombre,
+                              m.Servicio.solicitante_apellidos)
+    return (consulta.join(m.Cliente, m.Servicio.cliente_id == m.Cliente.id)
+            .filter(or_(_sin_tildes(m.Servicio.folio).like(patron, escape="\\"),
+                        _sin_tildes(m.Cliente.nombre).like(patron, escape="\\"),
+                        _sin_tildes(nombre).like(patron, escape="\\"),
+                        _sin_tildes(solicita).like(patron, escape="\\"))))
+
+
 @router.get("", response_model=list[s.ServicioOut], summary="Listar servicios")
-def listar_servicios(db: Session = Depends(get_db), limite: int = 100,
+def listar_servicios(db: Session = Depends(get_db), limite: int | None = None,
                      tipo: m.TipoServicio = m.TipoServicio.EVENTUAL,
-                     todos: bool = False,
+                     todos: bool = False, vivos: bool | None = None,
+                     antes_de: int | None = None, q: str | None = None,
                      _=Depends(auth.puede("servicios.ver"))):
     """Eventuales por omision.
 
     El implantado se opera en su propia pantalla —se captura por mes, no
     por dias— y revuelto en esta lista solo estorbaba. Con todos=true
     salen los dos, para quien necesite ver la operacion completa.
+
+    La cartera ya no tiene tope (seccion 101): con 600 servicios al mes,
+    los ultimos 100 dejaban fuera servicios vivos y el buscador solo
+    buscaba entre esos. `vivos=true` trae todo lo que no esta cerrado ni
+    cancelado, sin tope; `vivos=false` trae los cerrados y cancelados
+    por paginas (`limite`, y `antes_de` con el ultimo id de la pagina
+    anterior); `q` busca en el servidor, por folio, cliente, principal
+    o quien solicita. Sin nada de eso contesta los ultimos 100, como
+    siempre.
     """
-    consulta = db.query(m.Servicio)
+    # Los equipos y sus dias, de una vez: uno por uno era una consulta
+    # por servicio y otra por equipo.
+    consulta = db.query(m.Servicio).options(
+        selectinload(m.Servicio.equipos).selectinload(m.Equipo.jornadas))
     if not todos:
         consulta = consulta.filter(m.Servicio.tipo == tipo)
-    return consulta.order_by(m.Servicio.id.desc()).limit(limite).all()
+    if vivos is True:
+        consulta = consulta.filter(m.Servicio.estatus.notin_(CERRADOS_DE_LA_CARTERA))
+    elif vivos is False:
+        consulta = consulta.filter(m.Servicio.estatus.in_(CERRADOS_DE_LA_CARTERA))
+    if antes_de:
+        consulta = consulta.filter(m.Servicio.id < antes_de)
+    if q and q.strip():
+        consulta = _con_busqueda(consulta, q)
+    consulta = consulta.order_by(m.Servicio.id.desc())
+    if limite is None:
+        limite = (None if vivos else
+                  PAGINA_DE_LA_CARTERA if vivos is False else 100)
+    if limite:
+        consulta = consulta.limit(limite)
+    return consulta.all()
 
 
 @router.get("/{servicio_id}/programacion",
@@ -381,6 +467,7 @@ def asignar_personal(jornada_id: int, datos: s.AsignarPersonalIn,
         raise HTTPException(404, f"No existe la persona {datos.persona_id}")
     rol = _rol(db, datos.rol_id)
 
+    _candado_del_recurso(db, "persona", persona.id)
     hallazgos = disp.revisar_persona(
         db, persona.id, jornada.inicio_programado, jornada.fin_programado,
         jornada.modalidad.bloquea_dia_completo, excluir_jornada_id=jornada.id)
@@ -437,6 +524,7 @@ def asignar_vehiculo(jornada_id: int, datos: s.AsignarVehiculoIn,
     if not vehiculo:
         raise HTTPException(404, f"No existe el vehiculo {datos.vehiculo_id}")
 
+    _candado_del_recurso(db, "unidad", vehiculo.id)
     hallazgos = disp.revisar_vehiculo(
         db, vehiculo.id, jornada.inicio_programado, jornada.fin_programado,
         jornada.modalidad.bloquea_dia_completo, excluir_jornada_id=jornada.id)
@@ -521,6 +609,7 @@ def corregir_dia(jornada_id: int, datos: s.DiaIn, db: Session = Depends(get_db),
     vuelve a calcular: de ella dependen los empalmes y las horas extra."""
     jornada = _obtener_jornada(db, jornada_id)
     cambios = datos.model_dump(exclude_unset=True)
+    forzar = cambios.pop("forzar", False)
 
     # Un dia que ya arranco tiene horas reales: su fecha, su modalidad y
     # su hora ya no se mueven desde aqui (seccion 65). Moverlas cambiaba
@@ -576,11 +665,22 @@ def corregir_dia(jornada_id: int, datos: s.DiaIn, db: Session = Depends(get_db),
         jornada.inicio_programado = datetime.combine(jornada.fecha, hora)
         jornada.fin_programado = (jornada.inicio_programado
                                   + timedelta(hours=float(modalidad.horas)))
+        # Con la ventana nueva se vuelven a revisar los empalmes de la
+        # gente y las unidades que ya traia el dia (seccion 101), como
+        # al asignar: el cliente de B adelanta el servicio al 8 y Juan
+        # ya esta en A ese dia. Si choca, no se guarda nada.
+        bloqueos, riesgos = disp.de_la_jornada(
+            db, jornada, jornada.inicio_programado, jornada.fin_programado,
+            modalidad.bloquea_dia_completo)
+        disp.frenar_si_choca(bloqueos, riesgos, forzar, "mover el día")
+    else:
+        riesgos = []
 
     servicio = jornada.equipo.servicio
     programacion.evaluar(servicio)
     auditoria.registrar(db, usuario, servicio, "corregir dia",
-                        f"{jornada.fecha} {hora.strftime('%H:%M')}",
+                        f"{jornada.fecha} {hora.strftime('%H:%M')}"
+                        + (" (forzado sobre alerta)" if riesgos else ""),
                         jornada_id=jornada.id)
     db.commit()
     # Quien ya confirmo lo hizo sobre una hora. Si esa hora cambia y
@@ -592,7 +692,8 @@ def corregir_dia(jornada_id: int, datos: s.DiaIn, db: Session = Depends(get_db),
             "fecha": jornada.fecha.isoformat(),
             "inicio": jornada.inicio_programado.isoformat(),
             "fin": jornada.fin_programado.isoformat(),
-            "estatus_servicio": servicio.estatus.value}
+            "estatus_servicio": servicio.estatus.value,
+            "alertas_aceptadas": riesgos}
 
 
 @router.delete("/jornadas/{jornada_id}", summary="Quitar un dia del servicio")
@@ -822,26 +923,24 @@ def recomendaciones_equipo(equipo_id: int, categoria_id: int,
         raise HTTPException(409, "El equipo no tiene dias que cubrir")
 
     plaza_id = equipo.ciudad_id
-    por_dia = [
-        (j, disp.recomendar_personal(db, plaza_id, perfil_id,
-                                     j.inicio_programado, j.fin_programado,
-                                     j.modalidad.bloquea_dia_completo),
-         disp.recomendar_vehiculos(db, plaza_id, categoria_id,
-                                   j.inicio_programado, j.fin_programado,
-                                   j.modalidad.bloquea_dia_completo,
-                                   servicio_id=equipo.servicio_id))
-        for j in dias
-    ]
+    # Todos los dias de un golpe (seccion 101): dia por dia, cada uno
+    # volvia a calcular la ficha de cada persona del pais y a preguntar
+    # por sus jornadas; con 200 personas y el historial de un mes era
+    # cada clic en "Asignar recursos" esperando decenas de segundos.
+    ventanas = [(j.inicio_programado, j.fin_programado,
+                 j.modalidad.bloquea_dia_completo) for j in dias]
+    personal = disp.recomendar_personal_por_dia(db, plaza_id, perfil_id,
+                                                ventanas)
+    vehiculos = disp.recomendar_vehiculos_por_dia(
+        db, plaza_id, categoria_id, ventanas, servicio_id=equipo.servicio_id)
 
     return {
         "equipo": {"id": equipo.id, "alias": equipo.alias,
                    "dias": len(dias),
                    "desde": dias[0].fecha.isoformat(),
                    "hasta": dias[-1].fecha.isoformat()},
-        "personal": _juntar([p for _, p, _ in por_dia],
-                            [j.fecha for j in dias], "persona_id"),
-        "vehiculos": _juntar([v for _, _, v in por_dia],
-                             [j.fecha for j in dias], "vehiculo_id"),
+        "personal": _juntar(personal, [j.fecha for j in dias], "persona_id"),
+        "vehiculos": _juntar(vehiculos, [j.fecha for j in dias], "vehiculo_id"),
     }
 
 
@@ -921,6 +1020,7 @@ def asignar_personal_equipo(equipo_id: int, datos: s.AsignarPersonalIn,
     if not dias:
         raise HTTPException(409, "El equipo no tiene dias pendientes que cubrir")
 
+    _candado_del_recurso(db, "persona", persona.id)
     bloqueos, riesgos = [], []
     for jornada in dias:
         for hallazgo in disp.revisar_persona(
@@ -988,6 +1088,7 @@ def asignar_vehiculo_equipo(equipo_id: int, datos: s.AsignarVehiculoIn,
     if not dias:
         raise HTTPException(409, "El equipo no tiene dias pendientes que cubrir")
 
+    _candado_del_recurso(db, "unidad", vehiculo.id)
     bloqueos, riesgos = [], []
     for jornada in dias:
         for hallazgo in disp.revisar_vehiculo(
@@ -1852,9 +1953,18 @@ def eliminar_equipo(equipo_id: int, datos: s.EliminarIn | None = None,
     db.expire(servicio, ["equipos"])
 
     # Los alias son por posicion: si se fue Beta, Gamma pasa a ser Beta.
+    renombres = {}
     for posicion, quedan in enumerate(
             sorted(servicio.equipos, key=lambda e: e.id)):
-        quedan.alias = alias_de_equipo(posicion)
+        nuevo = alias_de_equipo(posicion)
+        if quedan.alias != nuevo:
+            renombres[quedan.alias] = nuevo
+        quedan.alias = nuevo
+    # Y la cotizacion sigue a sus equipos en el mismo paso (seccion
+    # 101): sus renglones van por alias, y sin esto los de "Beta"
+    # quedaban apuntando al que era Gamma y el comparativo del cierre
+    # marcaba dias de menos de un equipo que ya no existia.
+    renglones = cotizacion.al_eliminar_equipo(db, servicio, alias, renombres)
 
     # El auto de renta que se queda sin un solo dia ya no se ocupa: se
     # devuelve. Se da de baja y deja de ofrecerse, pero no se borra
@@ -1870,10 +1980,13 @@ def eliminar_equipo(equipo_id: int, datos: s.EliminarIn | None = None,
     programacion.evaluar(servicio)
     auditoria.registrar(db, usuario, servicio, "eliminar equipo",
                         f"{alias}: {len(jornada_ids)} dia(s)"
-                        + (f" · {datos.motivo}" if datos and datos.motivo else ""))
+                        + (f" · {datos.motivo}" if datos and datos.motivo else "")
+                        + (f" · cotización ajustada ({renglones} renglones)"
+                           if renglones else ""))
     db.commit()
     return {"resultado": "equipo eliminado", "equipo": alias,
             "equipos_restantes": [e.alias for e in servicio.equipos],
+            "renglones_de_cotizacion_ajustados": renglones,
             "estatus_servicio": servicio.estatus.value,
             "transferencias_por_detener": en_camino,
             "nota": ("Avisa a finanzas: habia instrucciones de transferencia "

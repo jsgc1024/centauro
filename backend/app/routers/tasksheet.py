@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
-from app import auditoria, auth, imagenes
+from app import auditoria, auth, imagenes, reloj
 from app import senal as senal_motor
 from app import implantado
 from app import hoja_implantado as hoja_imp
@@ -357,6 +357,7 @@ def hoja_cobertura(servicio_id: int, fecha: date, idioma: str | None = None,
 @router.post("/task-sheets/implantado/{servicio_id}/liberar",
              summary="Liberar la hoja del implantado")
 def liberar_implantado(servicio_id: int, db: Session = Depends(get_db),
+                       ahora: datetime | None = None,
                        usuario: m.Usuario = Depends(PUBLICAR)):
     """Liberar la hoja es decir que el servicio ya esta armado.
 
@@ -364,6 +365,9 @@ def liberar_implantado(servicio_id: int, db: Session = Depends(get_db),
     construir es que algo falta, y se dice aqui en vez de mandarla a
     medias. Al liberarla el servicio pasa a asignado: tiene acuerdo,
     tiene plantilla y el cliente ya sabe quien llega.
+
+    `ahora` es el reloj de prueba (`reloj.de_prueba`): fuera de
+    produccion mueve el dia desde el que se buscan los dias en ambar.
     """
     servicio = db.get(m.Servicio, servicio_id)
     if not servicio or servicio.tipo != m.TipoServicio.IMPLANTADO:
@@ -373,8 +377,12 @@ def liberar_implantado(servicio_id: int, db: Session = Depends(get_db),
 
     # Un fin de semana contratado y sin nadie no se manda al cliente: la
     # hoja diria que el equipo llega el sabado y el sabado no llega
-    # nadie. Se resuelve antes, dia por dia, desde el calendario.
-    ambar = implantado.dias_en_ambar(db, servicio)
+    # nadie. Se resuelve antes, dia por dia, desde el calendario. De hoy
+    # en adelante, con el hoy del pais del servicio (seccion 101).
+    ambar = implantado.dias_en_ambar(
+        db, servicio,
+        desde=reloj.ahora_del_servicio(db, servicio,
+                                       reloj.de_prueba(ahora)).date())
     if ambar:
         raise HTTPException(409, {
             "mensaje": f"Faltan {len(ambar)} dias por cubrir",
