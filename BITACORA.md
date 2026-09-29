@@ -7674,6 +7674,35 @@ Por dentro: `routers/campo.py` (`mi_foto`), `web/campo/app.js`
 el armazón de la app va en `centauro-campo-v18` (la misma versión que
 subió la sección 101). Pruebas: `tests/test_campo_mi_foto.py` (5).
 
+## 103. Las fotos de la ficha del servicio, en grande
+
+Decisión de Salvador del 29 de septiembre (opción B de tres): en la
+tarjeta de recursos del servicio la persona y la unidad salían en un
+cuadro de 38 px y no se reconocía a nadie. Resuelto en otra sesión
+(rama `fotos-grandes`, pull request #2) y unido aquí después de la
+sección 102. Sin migración.
+
+- **La persona va tipo credencial** (120 × 150) y **la unidad a lo
+  ancho** (200 × 125), con los datos a un lado. En pantalla angosta la
+  foto va arriba (la unidad a lo ancho de la columna, hasta 320 × 180).
+- **De Odoo se lee la foto de 512 px** y no la de 128, que en ese tamaño
+  se veía borrosa (`odoo_personal.CAMPO_FOTO`). Solo viaja en fichas de
+  una persona o de un equipo, nunca en listas largas.
+- **La gente que ya estaba se relee una vez.** La sincronización de cada
+  hora solo vuelve a pedir la foto de quien RH toca, así que para el
+  resto está `odoo_personal.releer_fotos` y el script
+  `backend/fotos_grandes.py`, que se corre una vez después de actualizar:
+  primero sin `--aplicar` (ensayo: lee Odoo, dice cuántas cambiarían y
+  no guarda nada) y luego con `--aplicar`. Nunca escribe en Odoo;
+  correrlo dos veces no hace daño. Los pasos van en el chat de esta
+  actualización.
+
+Por dentro: `odoo_personal.py` (`CAMPO_FOTO`, `releer_fotos`),
+`web/servicio.js`, `web/estilo.css`, `fotos_grandes.py`. Pruebas: dos
+nuevas en `tests/test_odoo_personal.py`. La hoja congelada del task
+sheet, que lleva estas fotos incrustadas, ya no tiene tope desde la
+sección 101 (migración `b4d6f8a0c2e4`): con las de 512 px lo pasaba.
+
 ## 14. Lo que falta
 
 ### Abierto

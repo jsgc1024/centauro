@@ -40,7 +40,8 @@ class OdooFalso:
         for e in filas:
             fila = {"id": e["id"]}
             for c in campos:
-                fila[c] = (self.fotos.get(e["id"], SVG) if c == "image_128"
+                fila[c] = (self.fotos.get(e["id"], SVG)
+                           if c == odoo_personal.CAMPO_FOTO
                            else e.get(c, False))
             salida.append(fila)
         return salida
@@ -189,7 +190,7 @@ def test_la_segunda_lectura_no_cambia_nada(db):
     assert informe["sin_cambio"] == 2
     # Si Odoo no toco la ficha, la foto no se vuelve a pedir.
     assert informe["fotos"]["revisadas"] == 0
-    assert odoo.lecturas.count(["image_128"]) == 1
+    assert odoo.lecturas.count([odoo_personal.CAMPO_FOTO]) == 1
 
 
 def test_solo_entra_el_personal_de_seguridad(db):
@@ -588,3 +589,35 @@ def test_la_conexion_no_escribe_en_odoo():
     for metodo in ("write", "create", "unlink"):
         with pytest.raises(RuntimeError):
             odoo.llamar("hr.employee", metodo, ids=[1], vals={})
+
+
+# ------------------------------------------------ la foto grande (29 sep)
+
+JPG = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8U"
+
+
+def test_la_foto_se_lee_en_grande():
+    """La ficha del servicio la ensena en 120 x 150: la de 128 se veia
+    borrosa. Decision de Salvador, 29 sep."""
+    assert odoo_personal.CAMPO_FOTO == "image_512"
+
+
+def test_releer_fotos_trae_la_grande_a_quien_ya_estaba(db):
+    """La sincronizacion de cada hora no vuelve a pedir la foto de quien
+    RH no toco; releer_fotos se la pide a todos, una vez."""
+    leer(db, OdooFalso(empleado(1), empleado(2), fotos={ODOO0 + 1: PNG}))
+    odoo = OdooFalso(empleado(1), empleado(2), fotos={ODOO0 + 1: JPG})
+
+    ensayo = odoo_personal.releer_fotos(db, odoo, ensayo=True)
+    assert ensayo == {"revisadas": 2, "reales": 1, "cambian": 1}
+    db.expire_all()
+    assert persona(db, 1).foto_url == "data:image/png;base64," + PNG
+
+    informe = odoo_personal.releer_fotos(db, odoo, ensayo=False)
+    assert informe["cambian"] == 1
+    db.expire_all()
+    assert persona(db, 1).foto_url == "data:image/jpeg;base64," + JPG
+    # Quien en Odoo solo tiene iniciales se queda como estaba.
+    assert persona(db, 2).foto_url is None
+    # Correrla otra vez ya no encuentra nada.
+    assert odoo_personal.releer_fotos(db, odoo, ensayo=False)["cambian"] == 0

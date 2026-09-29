@@ -2,6 +2,9 @@
 
 O que há de novo em cada atualização, escrito para quem usa o sistema. A mais nova fica em cima.
 
+## 103 · 2026-09-29 · As fotos da ficha do serviço, em tamanho grande
+No cartão de recursos do serviço a pessoa e a unidade apareciam em um quadro de 38 px e não se reconhecia ninguém. A pessoa aparece como uma credencial e a unidade na horizontal, com os dados ao lado; em tela estreita a foto vai em cima. Do Odoo se lê a foto de 512 px, não a de 128, que ficava borrada; quem já estava é relido uma vez ao atualizar.
+
 ## 102 · 2026-09-29 · Três casos do app de campo
 Os três relatórios de Alberto Arredondo pelo app, resolvidos. O sinal de identificação se lê na horizontal: com o telefone em pé ele aparece deitado e, ao virar o telefone, se lê inteiro («Henkel» não se parte mais em dois), e a letra é medida na largura e na altura. Ao relatar uma falha, «Enviar» fica dentro do cartão do relatório, longe do botão vermelho de emergência, que ganha espaço em cima em todas as telas. E a foto de cada um —a do cadastro, a mesma da task sheet— aparece em cima do seu cargo no cartão de hoje e de amanhã.
 

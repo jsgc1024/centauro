@@ -421,6 +421,21 @@ body:has(.entrada) { background: #120e33; }
 .persona { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px; }
 .foto { width: 38px; height: 38px; border-radius: 6px; background: #e7e9ec;
         object-fit: cover; flex: 0 0 38px; }
+/* En la tarjeta de recursos del servicio, en grande (opcion B, 29 sep):
+   la persona tipo credencial y la unidad a lo ancho. Los datos a un
+   lado; en una columna angosta, la foto arriba. */
+.persona.recurso { gap: 14px; margin-bottom: 14px; }
+.persona.recurso .foto { border-radius: 10px; }
+.persona.recurso .foto.retrato { width: 120px; height: 150px; flex: 0 0 120px; }
+.persona.recurso .foto.de-unidad { width: 200px; height: 125px; flex: 0 0 200px; }
+.persona.recurso > div:last-child { min-width: 0; }
+@media (max-width: 560px) {
+  .persona.recurso { flex-direction: column; }
+  /* En columna, el flex-basis mediria el alto: se suelta. */
+  .persona.recurso .foto.retrato,
+  .persona.recurso .foto.de-unidad { flex: none; }
+  .persona.recurso .foto.de-unidad { width: 100%; max-width: 320px; height: 180px; }
+}
 
 /* --------------------------------------------- alta de servicio
    La lista de arriba dice, en todo momento, que falta para que el

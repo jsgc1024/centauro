@@ -2,6 +2,9 @@
 
 Lo nuevo de cada actualización, escrito para quien usa el sistema. La más nueva va arriba.
 
+## 103 · 2026-09-29 · Las fotos de la ficha del servicio, en grande
+En la tarjeta de recursos del servicio la persona y la unidad salían en un cuadro de 38 px y no se reconocía a nadie. La persona va tipo credencial y la unidad a lo ancho, con los datos a un lado; en pantalla angosta la foto va arriba. De Odoo se lee la foto de 512 px, no la de 128 que se veía borrosa; la gente que ya estaba se relee una vez al actualizar.
+
 ## 102 · 2026-09-29 · Tres casos de la app de campo
 Los tres reportes de Alberto Arredondo desde la app, resueltos. La señal de identificación se lee a lo ancho: con el teléfono derecho se pinta acostada y al voltearlo se lee completa («Henkel» ya no se parte en dos), y la letra se mide a lo ancho y a lo alto. Al reportar una falla, «Mandar» va dentro de la tarjeta del reporte, lejos del botón rojo de emergencia, que lleva aire arriba en todas las pantallas. Y la foto de cada quien —la del expediente, la misma del task sheet— sale encima de su puesto en la tarjeta de hoy y de mañana.
 
