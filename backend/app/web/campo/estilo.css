@@ -62,7 +62,11 @@ p { margin: 0 0 10px; }
   box-shadow: var(--sombra);
 }
 .caja.principal { border-top: 4px solid var(--centauro); }
-.caja.urgente { border-left: 4px solid var(--grave); }
+/* El boton rojo va al final de todas las pantallas, justo debajo del
+   ultimo boton de cada una (Mandar, Guardar). Pegados, el pulgar que
+   iba por uno tocaba el otro (caso de Alberto Arredondo, 28 sep). El
+   aire de arriba los separa en todas las pantallas a la vez. */
+.caja.urgente { border-left: 4px solid var(--grave); margin-top: 36px; }
 
 a { color: var(--centauro); }
 
@@ -100,6 +104,16 @@ button.chico { min-height: 42px; padding: 10px 14px; font-size: 14px;
 .marca.ok { background: #e6f4ec; color: var(--ok); }
 .marca.alerta { background: #fdf6e3; color: #7a5c07; }
 .marca.grave { background: #fdecea; color: #8f2b20; }
+/* Su foto encima de su puesto, en la esquina de la tarjeta del dia. */
+.mi-puesto {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  flex: 0 0 auto; max-width: 120px; text-align: center;
+}
+.mi-foto {
+  width: 56px; height: 56px; border-radius: 50%; object-fit: cover;
+  border: 2px solid var(--linea); background: var(--suave);
+}
+.mi-foto[hidden] { display: none; }
 
 .dato { margin-bottom: 12px; }
 .dato .clave {
@@ -134,14 +148,29 @@ label { display: block; font-size: 13px; color: var(--gris);
   padding-bottom: max(12px, env(safe-area-inset-bottom));
 }
 body.senal-abierta { overflow: hidden; }
+/* Lo que se ensena vive en esta caja. Con el telefono derecho la caja
+   se acuesta: mide lo alto por lo ancho (lo pone app.js, en pixeles) y
+   gira un cuarto de vuelta, para que la senal se lea a lo ancho. */
+.senal-giro {
+  width: 100%; height: 100%; min-height: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 10px;
+}
+.senal-pantalla.girada .senal-giro {
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%) rotate(90deg);
+}
 .senal-imagen {
   max-width: 100%; max-height: 100%; min-height: 0;
   object-fit: contain;
 }
 .senal-imagen.con-texto { max-height: 72%; }
+/* Las palabras no se parten a la mitad: si no cabe, se achica la letra
+   (app.js), y si son varias bajan de renglon entre una y otra. */
 .senal-texto {
   width: 100%; text-align: center;
-  font-weight: 800; line-height: 1; word-break: break-word;
+  font-weight: 800; line-height: 1;
+  word-break: normal; overflow-wrap: normal;
   font-size: clamp(36px, 15vw, 220px);
 }
 .senal-texto.con-imagen { font-size: clamp(24px, 9vw, 80px); }

@@ -581,7 +581,7 @@ function tarjetaHoy(f) {
         h("div", { clase: "chico gris" },
           t("cmp_estar_punto").replace("{hora}", hora(f.presentacion))
           + (f.contra_vuelo ? " · " + t("cmp_contra_vuelo") : ""))),
-      f.mi_rol ? h("span", { clase: "marca" }, f.mi_rol) : null),
+      miPuesto(f)),
 
     /* Confirmar tambien vive aqui, no solo en la tarjeta de manana.
 
@@ -853,7 +853,7 @@ function tarjetaManana(f) {
                       t("cmp_abrir_mapa")))
                 : null)
           : null),
-      f.mi_rol ? h("span", { clase: "marca" }, f.mi_rol) : null),
+      miPuesto(f)),
     /* La vestimenta vive aqui y no solo en la de hoy: la noche anterior
        es cuando de verdad se usa. */
     f.vestimenta
@@ -1214,6 +1214,47 @@ function guardarSenales(fichas) {
   }
 }
 
+/* Su foto, junto a su puesto en la tarjeta del dia. Caso de Alberto
+   Arredondo, 28 sep: "no se ve la foto del conductor en la app".
+
+   Se baja una vez por arranque de la app, con la sesion puesta --una
+   etiqueta <img> no manda el token-- y vive solo en memoria: es la cara
+   de alguien, y al salir de la sesion no se queda en el telefono. Sin
+   senal o sin foto en su expediente, no se pinta nada. Mientras baja,
+   las etiquetas esperan escondidas y se llenan solas al llegar. */
+let miFotoUrl = null;
+let miFotoPedida = false;
+
+async function cargarMiFoto() {
+  if (miFotoPedida) return;
+  miFotoPedida = true;
+  try {
+    const cab = sesion.token ? { Authorization: `Bearer ${sesion.token}` } : {};
+    const r = await fetch("/campo/mi-foto", { headers: cab });
+    if (!r.ok) return;
+    miFotoUrl = URL.createObjectURL(await r.blob());
+    for (const img of document.querySelectorAll("img.mi-foto")) {
+      img.src = miFotoUrl;
+      img.hidden = false;
+    }
+  } catch {
+    miFotoPedida = false;            // sin senal: se intenta en la siguiente
+  }
+}
+
+function miFoto() {
+  cargarMiFoto();
+  return h("img", { clase: "mi-foto", alt: "", src: miFotoUrl || null,
+                    hidden: !miFotoUrl });
+}
+
+/* Su puesto con su foto encima, en la esquina de la tarjeta. */
+function miPuesto(f) {
+  if (!f.mi_rol) return null;
+  return h("div", { clase: "mi-puesto" },
+    miFoto(), h("span", { clase: "marca" }, f.mi_rol));
+}
+
 /* El renglon de la tarjeta: el icono, y debajo la nota del consultor
    --"a la salida del filtro"-- o, si no dejo nota, cuando se usa. */
 function senalDelDia(f) {
@@ -1237,21 +1278,32 @@ function senalDelDia(f) {
 let senalAbierta = null;
 
 /* A pantalla completa: blanco, y la imagen ocupando todo lo que el
-   telefono de, vertical u horizontal. Si solo hay palabra, la palabra
-   en letras enormes; si hay las dos, la imagen arriba y la palabra
-   abajo. Mientras esta abierta la pantalla no se apaga: el equipo la
-   sostiene en alto esperando a que salga el principal. */
+   telefono de. Si solo hay palabra, la palabra en letras enormes; si
+   hay las dos, la imagen arriba y la palabra abajo. Mientras esta
+   abierta la pantalla no se apaga: el equipo la sostiene en alto
+   esperando a que salga el principal.
+
+   Siempre en HORIZONTAL. Caso de Alberto Arredondo, 28 sep: "la senal
+   aparece en vertical y deberia ser en horizontal". Un letrero de
+   recepcion se lee a lo ancho, y en vertical "Henkel" partia en
+   "Henk / el". La app instalada esta fija en vertical (el manifiesto)
+   y el telefono no gira, asi que la senal gira sola: con el telefono
+   derecho, lo de adentro se pinta de lado para que al voltearlo se lea
+   a lo ancho. Si el telefono ya esta de lado --el navegador sin
+   instalar si gira--, se pinta derecho. */
 async function abrirSenal(f) {
   cerrarSenal();
   const pantalla = h("div", { clase: "senal-pantalla", onclick: cerrarSenal });
   const cerrar = h("button", {
     clase: "senal-cerrar", "aria-label": t("cmp_senal_cerrar"),
     onclick: (e) => { e.stopPropagation(); cerrarSenal(); } }, "✕");
-  pantalla.append(cerrar);
+  const giro = h("div", { clase: "senal-giro" });
+  pantalla.append(giro, cerrar);
   document.body.append(pantalla);
   document.body.classList.add("senal-abierta");
   const abierta = { nodo: pantalla, url: null, candado: null, alGirar: null };
   senalAbierta = abierta;
+  acostar(pantalla, giro);
 
   /* El color llena la pantalla; la letra encima viene decidida con el
      color, para que se lea sobre amarillo igual que sobre morado. */
@@ -1269,7 +1321,7 @@ async function abrirSenal(f) {
   const partes = [];
   if (f.senal.imagen) {
     const espera = h("div", { clase: "senal-texto chico" }, t("cmp_senal_cargando"));
-    pantalla.append(espera);
+    giro.append(espera);
     const blob = await traerSenal(f.servicio_id);
     if (senalAbierta !== abierta) return;        // la cerraron mientras cargaba
     espera.remove();
@@ -1286,24 +1338,49 @@ async function abrirSenal(f) {
     partes.push(h("div", {
       clase: "senal-texto" + (f.senal.imagen ? " con-imagen" : "") }, f.senal.texto));
   }
-  pantalla.append(...partes);
+  giro.append(...partes);
 
-  if (f.senal.texto && !f.senal.imagen) {
-    const texto = pantalla.querySelector(".senal-texto");
-    abierta.alGirar = () => ajustarSenal(texto);
-    window.addEventListener("resize", abierta.alGirar);
-    ajustarSenal(texto);
+  /* Al girar el telefono (o cambiar el tamano) se vuelve a acostar y,
+     si es solo palabra, se vuelve a medir. */
+  const texto = f.senal.texto && !f.senal.imagen
+    ? giro.querySelector(".senal-texto") : null;
+  abierta.alGirar = () => {
+    acostar(pantalla, giro);
+    if (texto) ajustarSenal(texto, giro);
+  };
+  window.addEventListener("resize", abierta.alGirar);
+  if (texto) ajustarSenal(texto, giro);
+}
+
+/* Con el telefono derecho, la caja de adentro mide lo alto por lo
+   ancho y se gira un cuarto de vuelta: al voltear el telefono, queda a
+   lo ancho y derecha. Se mide en pixeles y no en vh/vw porque en
+   Android la barra del navegador los descuadra. */
+function acostar(pantalla, giro) {
+  const derecho = window.innerHeight > window.innerWidth;
+  pantalla.classList.toggle("girada", derecho);
+  if (derecho) {
+    giro.style.width = `${window.innerHeight - 24}px`;
+    giro.style.height = `${window.innerWidth - 24}px`;
+  } else {
+    giro.style.width = "";
+    giro.style.height = "";
   }
 }
 
-/* La palabra lo mas grande que quepa, y no mas. */
-function ajustarSenal(nodo) {
-  if (!nodo) return;
-  let tam = Math.round(Math.min(window.innerWidth, window.innerHeight) * 0.34);
+/* La palabra lo mas grande que quepa, y no mas. Se mide a lo ancho y a
+   lo alto de la caja: medir solo lo alto dejaba que una palabra larga
+   se partiera a la mitad. Las palabras no se parten; si son varias,
+   bajan de renglon entre una y otra. */
+function ajustarSenal(nodo, caja) {
+  if (!nodo || !caja) return;
+  const ancho = caja.clientWidth;
+  const alto = caja.clientHeight;
+  let tam = Math.round(alto * 0.8);
   nodo.style.fontSize = `${tam}px`;
-  const cabe = () => nodo.scrollHeight <= window.innerHeight * 0.88;
+  const cabe = () => nodo.scrollWidth <= ancho && nodo.scrollHeight <= alto * 0.92;
   while (!cabe() && tam > 28) {
-    tam -= 4;
+    tam = Math.max(28, Math.floor(tam * 0.94));
     nodo.style.fontSize = `${tam}px`;
   }
 }
@@ -1670,7 +1747,11 @@ function pantallaFalla() {
     pintarFoto();
   });
 
-  const mandar = h("button", { style: "margin-top:4px" }, t("cmp_falla_mandar"));
+  /* Mandar va DENTRO de la tarjeta, bajo lo que se escribe. Suelto al
+     final quedaba pegado al boton rojo de Emergencia, que se pinta
+     justo despues en todas las pantallas (caso de Alberto Arredondo,
+     28 sep). */
+  const mandar = h("button", { style: "margin-top:14px" }, t("cmp_falla_mandar"));
   mandar.addEventListener("click", async () => {
     if (quePaso.value.trim().length < 3) {
       quePaso.focus();
@@ -1711,8 +1792,8 @@ function pantallaFalla() {
     h("div", { clase: "caja" },
       h("label", {}, t("fal_que_paso")), quePaso,
       botonFoto, archivo, vistaFoto,
-      h("p", { clase: "chico gris", style: "margin:12px 0 0" }, t("cmp_falla_solo"))),
-    mandar);
+      h("p", { clase: "chico gris", style: "margin:12px 0 0" }, t("cmp_falla_solo")),
+      mandar));
 }
 
 /* Salir vive ARRIBA y chico, en el encabezado, lejos del pulgar.

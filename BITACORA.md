@@ -7647,6 +7647,33 @@ cada idioma.
   seguridad, Consultor JR, Supervisor de central y Monitorista (los
   puestos que se creen desde ahora ya no la traen).
 
+## 102. Tres casos de la app de campo: la señal, el botón de mandar y la foto
+
+Los tres reportes de Alberto Arredondo desde la app (Casos 4, 5 y 6, 28
+de septiembre), resueltos en otra sesión (rama `fallas-app-campo`,
+pull request #1) y unidos aquí después de la sección 101. Sin
+migración.
+
+- **La señal se lee a lo ancho.** La app instalada está fija en
+  vertical y el teléfono no gira, y la palabra se medía solo a lo
+  alto: «Henkel» partía en «Henk / el». Ahora la señal se pinta
+  acostada con el teléfono derecho —al voltearlo se lee a lo ancho—, la
+  letra se mide a lo ancho y a lo alto y las palabras no se parten. Con
+  el teléfono ya de lado se pinta derecha.
+- **«Mandar» lejos de «Emergencia».** Al reportar una falla el botón de
+  mandar quedaba pegado al botón rojo. Mandar va dentro de la tarjeta
+  del reporte y el botón rojo lleva aire arriba en todas las pantallas.
+- **La foto del conductor en la app.** Su foto —la del expediente, la
+  misma del task sheet— sale encima de su puesto en la tarjeta de hoy y
+  de mañana. Baja aparte, como imagen (`GET /campo/mi-foto`), y vive
+  solo en memoria: «mi día» no crece y no se guarda una cara en el
+  teléfono.
+
+Por dentro: `routers/campo.py` (`mi_foto`), `web/campo/app.js`
+(`miPuesto`, `miFoto`, `cargarMiFoto`, `acostar`), `web/campo/estilo.css`;
+el armazón de la app va en `centauro-campo-v18` (la misma versión que
+subió la sección 101). Pruebas: `tests/test_campo_mi_foto.py` (5).
+
 ## 14. Lo que falta
 
 ### Abierto

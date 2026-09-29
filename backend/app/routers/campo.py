@@ -336,6 +336,31 @@ def imagen_de_la_senal(servicio_id: int, db: Session = Depends(get_db),
                     headers={"Cache-Control": "private, no-store"})
 
 
+@router.get("/mi-foto", summary="La foto de quien usa la app")
+def mi_foto(db: Session = Depends(get_db),
+            usuario: m.Usuario = Depends(CAMPO)):
+    """Su foto, la de su expediente (la de Odoo, la misma del task sheet).
+
+    Caso de Alberto Arredondo, 28 sep: "no se ve la foto del conductor
+    en la app". La tarjeta del dia decia su puesto y no su cara, y la
+    consola si la ensena. Va junto a su puesto.
+
+    Aparte y como imagen de verdad, igual que la senal: `mi-dia` se
+    consulta seguido y se guarda en el telefono; la foto se baja una vez
+    y la app la guarda ella misma. Sin foto, 404 y la app no pinta nada.
+    """
+    persona = usuario.persona
+    foto = persona.foto_url if persona else None
+    if not foto:
+        raise HTTPException(404, "No tienes foto en tu expediente")
+    if not foto.startswith("data:"):
+        return RedirectResponse(foto, status_code=307)
+    tipo, _, contenido = foto.partition(";base64,")
+    return Response(content=base64.b64decode(contenido),
+                    media_type=tipo[len("data:"):] or "image/jpeg",
+                    headers={"Cache-Control": "private, no-store"})
+
+
 @router.get("/mi-dia", summary="El dia del equipo, completo")
 def mi_dia(db: Session = Depends(get_db), ahora: datetime | None = None,
            usuario: m.Usuario = Depends(CAMPO)):
