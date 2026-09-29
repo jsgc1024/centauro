@@ -319,9 +319,13 @@ async function pintarRecursos(caja, servicio, equipo, cat, zona, zonaCambio) {
       } }, t("srv_quitar"));
   };
 
-  const ficha = (x, titulo, cuerpo, boton) => h("div", { clase: "persona" },
-    x.foto ? h("img", { clase: "foto", src: x.foto, alt: "" })
-           : h("div", { clase: "foto" }),
+  /* La foto en grande: la persona tipo credencial y la unidad a lo
+     ancho, porque es una camioneta. Decision de Salvador, 29 sep
+     (opcion B): en 38 px no se reconocia a nadie ni a ninguna unidad. */
+  const ficha = (x, titulo, cuerpo, boton, tipo = "retrato") => h("div", {
+    clase: "persona recurso" },
+    x.foto ? h("img", { clase: `foto ${tipo}`, src: x.foto, alt: "" })
+           : h("div", { clase: `foto ${tipo}` }),
     h("div", {}, h("h4", { style: "margin:0 0 1px" }, titulo), ...cuerpo,
       /* Lo normal es que este todos los dias. Si no, es que hubo un
          cambio a media semana y eso hay que verlo. */
@@ -456,7 +460,7 @@ async function pintarRecursos(caja, servicio, equipo, cat, zona, zonaCambio) {
                 .join(" · "))
           : "",
       ], quitar(`/servicios/equipos/${equipo.id}/vehiculos/${v.vehiculo_id}`,
-                v.placa, v)));
+                v.placa, v), "de-unidad"));
     }
   } else {
     flota.append(h("span", { clase: "gris" }, t("srv_por_asignar")));

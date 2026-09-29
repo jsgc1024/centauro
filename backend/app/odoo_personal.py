@@ -157,12 +157,55 @@ def _dar_de_baja(db: Session, baja: dict, ahora: datetime,
                                    persona.nombre)
 
 
+# La foto de 512 px y no la de 128. Decision de Salvador, 29 sep: la
+# ficha del servicio la ensena en 120 x 150 y la de 128 se veia borrosa.
+# Pesa unas decenas de KB por persona y solo viaja en fichas de una
+# persona o de un equipo, nunca en listas largas.
+CAMPO_FOTO = "image_512"
+
+
 def _contar_fotos(odoo, ids: list) -> tuple:
     """(filas leidas, cuantas son foto de verdad). Una sola lectura."""
     if not ids:
         return [], 0
-    filas = odoo.leer("hr.employee", [["id", "in", ids]], ["image_128"])
-    return filas, sum(1 for f in filas if reglas.foto_de(f.get("image_128")))
+    filas = odoo.leer("hr.employee", [["id", "in", ids]], [CAMPO_FOTO])
+    return filas, sum(1 for f in filas if reglas.foto_de(f.get(CAMPO_FOTO)))
+
+
+def releer_fotos(db: Session, odoo, ensayo: bool = True,
+                 tanda: int = 40) -> dict:
+    """Vuelve a leer de Odoo la foto de todo el personal ligado.
+
+    Para una sola vez, al pasar de la foto de 128 a la de 512: la
+    sincronizacion de cada hora solo pide la foto de quien RH toco
+    despues de la ultima lectura, asi que la gente que ya estaba se
+    quedaria con la chica. Por tandas, para no pedir decenas de megas de
+    un golpe. Quien en Odoo solo tiene el circulo de iniciales conserva
+    lo que ya tenia. Nunca escribe en Odoo.
+    """
+    personas = (db.query(m.Persona)
+                .filter(m.Persona.odoo_id.isnot(None),
+                        m.Persona.activo.is_(True))
+                .all())
+    por_odoo = {p.odoo_id: p for p in personas}
+    ids = sorted(por_odoo)
+    informe = {"revisadas": len(ids), "reales": 0, "cambian": 0}
+    for i in range(0, len(ids), tanda):
+        filas = odoo.leer("hr.employee", [["id", "in", ids[i:i + tanda]]],
+                          [CAMPO_FOTO])
+        for fila in filas:
+            foto = reglas.foto_de(fila.get(CAMPO_FOTO))
+            persona = por_odoo.get(fila["id"])
+            if not foto or persona is None:
+                continue
+            informe["reales"] += 1
+            if foto != persona.foto_url:
+                informe["cambian"] += 1
+                if not ensayo:
+                    persona.foto_url = foto
+    if not ensayo:
+        db.commit()
+    return informe
 
 
 def sincronizar(db: Session, odoo, ensayo: bool = True,
@@ -275,7 +318,7 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
             m.Persona.odoo_id.in_(plan["fotos"])).all()}
         for fila in filas_de_foto:
             persona = por_odoo.get(fila["id"])
-            foto = reglas.foto_de(fila.get("image_128"))
+            foto = reglas.foto_de(fila.get(CAMPO_FOTO))
             if persona is not None and foto and foto != persona.foto_url:
                 persona.foto_url = foto
                 informe["fotos"]["actualizadas"] += 1
