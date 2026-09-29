@@ -20,9 +20,9 @@ Un servicio eventual pasa por los mismos pasos siempre. Saber en qué paso está
 
 6. **Próxima a iniciar.** Dos horas antes, el reloj la pasa a próxima a iniciar y la central toma el seguimiento.
 7. **El camino al punto.** Cada cinco minutos el reloj revisa quién va en camino y a quién hay que tocarle la puerta.
-8. **La llegada.** El personal marca su llegada dentro del punto. El día pasa a **arribado**, y el ejecutivo y el solicitante reciben el aviso de que el equipo está en el lugar, con sus teléfonos. La marca que llega más de 15 minutos después de la hora citada la revisa la central.
+8. **La llegada.** El personal marca su llegada dentro del punto. El día pasa a **arribado**, y el ejecutivo y el solicitante reciben el aviso de que el equipo está en el lugar, con sus teléfonos. La marca que llega más de 15 minutos después de la hora citada la revisa la central. El servicio de madrugada acepta la llegada desde tres horas antes de la hora de estar en el punto, aunque sea desde la víspera; el día que todavía no llega no acepta marcas.
 9. **El contacto.** El meet and greet **arranca el día**: pasa a **en curso** y desde esa hora corren las horas. Si se les pasó marcarlo, la central lo registra a mano.
-10. **En curso.** Si el servicio pasa dos horas sin reportar, la central recibe una alerta de silencio.
+10. **En curso.** Si el servicio pasa dos horas sin reportar, la central recibe una alerta de silencio; esperando al principal, el equipo puede decir **En espera** para que no salte. La alerta se cierra sola cuando el equipo vuelve a reportar, con quién y a qué hora. El servicio que cruza la medianoche sigue en la app hasta que termina. A quien relevaron por contingencia la app se lo dice y su día ya no le sale: lo que marque después de la hora del relevo no entra.
 11. **Las horas extra.** Treinta minutos antes de que se cumplan las horas contratadas, sale el aviso.
 12. **El fin.** El personal marca el fin del servicio. El solicitante recibe el aviso con las horas extra del día y a qué hora es el siguiente.
 

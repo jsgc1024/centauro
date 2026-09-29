@@ -205,7 +205,7 @@ def test_lo_de_manana_armado_despues_de_las_cinco_tambien_avisa(
     asignar(cliente, h, j["id"], persona_id=juan)
 
     assert len(salieron) == 1, salieron
-    assert "Trabajas manana" in str(salieron[0]["data"])
+    assert "Trabajas ma\\u00f1ana" in str(salieron[0]["data"])
 
 
 def test_al_asignar_un_servicio_de_otro_dia_no_se_avisa_todavia(

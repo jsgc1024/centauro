@@ -13,6 +13,7 @@ import math
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app import correo_html
@@ -350,7 +351,11 @@ def _cierre_del_dia(db: Session, jornada: m.Jornada, ahora: datetime,
 def registrar_hito(db: Session, jornada_id: int, persona_id: int,
                    tipo: m.TipoHito, lat=None, lon=None,
                    marcado_en: datetime | None = None,
-                   nota: str | None = None) -> dict:
+                   nota: str | None = None,
+                   recibido_en: datetime | None = None) -> dict:
+    """`recibido_en` es el "ahora" del servidor, solo para las pruebas
+    (pasa por `reloj.de_prueba` en la ruta): en produccion el servidor
+    pone su hora y nadie se la dicta."""
     jornada = db.get(m.Jornada, jornada_id)
     if not jornada:
         raise HTTPException(404, f"No existe la jornada {jornada_id}")
@@ -386,7 +391,24 @@ def registrar_hito(db: Session, jornada_id: int, persona_id: int,
     # `inicio_programado`, que guarda hora de pared de alla: con el
     # reloj del servidor, un conductor en Brasil que marcaba puntual
     # caia fuera de la ventana por tres horas y le levantaba alerta.
-    recibido = reloj.ahora_de_la_jornada(db, jornada)
+    recibido = reloj.ahora_de_la_jornada(db, jornada, recibido_en)
+    # Un dia cuya fecha no ha llegado no se marca (seccion 99). Parado
+    # en el punto de hoy, con su propia sesion, un conductor podia
+    # marcar llegada, contacto y fin del dia de MAÑANA con hora de
+    # mañana a las 23:00: cuatro horas extra, servicio terminado, cierre
+    # y encuestas disparados hoy. Se mide con la hora del servidor, que
+    # es la que nadie dicta, y con el mismo margen que el meet and greet
+    # a mano: un servicio que arranca a las 00:30 se marca desde las
+    # 21:30 de la vispera, que es cuando el equipo de verdad llega.
+    if (jornada.fecha > recibido.date()
+            and recibido < jornada.inicio_programado
+            - timedelta(hours=HORAS_ANTES_DEL_INICIO)):
+        raise HTTPException(409, {
+            "mensaje": "Ese dia todavia no llega: no se marca",
+            "que_hacer": ("Las marcas son del dia en que pasan. Si hoy es "
+                          "el dia del servicio, revisa su fecha con tu "
+                          "consultor."),
+            "fecha": jornada.fecha.isoformat()})
     # La app manda el instante con su zona (seccion 65). Mandaba la hora
     # UTC sin decirlo, y aqui se leia como hora de pared: en Mexico cada
     # marca llegaba "seis horas en el futuro" --se cambiaba por la del
@@ -428,6 +450,39 @@ def registrar_hito(db: Session, jornada_id: int, persona_id: int,
             > MINUTOS_FUTURO_TOLERADO):
         del_futuro = ahora
         ahora = recibido
+
+    # A quien ya relevaron no le toca marcar lo que pase despues del
+    # relevo (seccion 99): su app seguia ofreciendo "Fin de servicio" y,
+    # si lo tocaba desde su casa, el dia terminaba con el relevo todavia
+    # con el principal. Lo de antes del relevo --la llegada que se quedo
+    # en la cola-- si entra: es suyo.
+    if asignacion.relevado_en and ahora > asignacion.relevado_en:
+        raise HTTPException(409, {
+            "mensaje": "Ya te relevaron de este dia: esa marca no es tuya",
+            "que_hacer": ("El dia sigue con quien te relevo. Si estas de "
+                          "vuelta en el servicio, hablale a tu consultor."),
+            "relevado_en": asignacion.relevado_en.isoformat()})
+
+    # La misma marca dos veces es una sola (seccion 99). La cola del
+    # telefono reintenta cuando la respuesta se pierde o tarda mas de
+    # 25 s: el servidor ya la habia guardado y mandado sus correos, y
+    # volvia a guardar otra llegada y a mandar otros dos correos. La
+    # repetida es la de la misma persona, el mismo paso y exactamente
+    # la misma hora --la que sello el telefono--; una segunda marca con
+    # otra hora se guarda y la revisa la central, como hasta hoy.
+    repetida = (db.query(m.Hito)
+                .filter(m.Hito.jornada_id == jornada.id,
+                        m.Hito.persona_id == persona_id,
+                        m.Hito.tipo == tipo,
+                        m.Hito.marcado_en == ahora,
+                        m.Hito.anulado_en.is_(None))
+                .first()) if marcado_en is not None else None
+    if repetida:
+        db.commit()
+        return _respuesta_de(repetida, ["Esa marca ya estaba registrada"],
+                             manana=(_manana_del_equipo(jornada)
+                                     if tipo == m.TipoHito.FIN_SERVICIO
+                                     else None))
 
     atraso = (recibido - ahora).total_seconds() / 60
     # Una marca de las horas que llega con el visto bueno ya dado --la
@@ -587,7 +642,15 @@ def registrar_hito(db: Session, jornada_id: int, persona_id: int,
         # alguien marca su llegada despues del contacto (dos personas
         # del mismo equipo marcando en desorden), el dia se queda en
         # curso.
-        if jornada.estatus != m.EstatusJornada.EN_CURSO:
+        #
+        # Y solo hacia adelante (seccion 99): la llegada que salio tarde
+        # de la cola del segundo del equipo regresaba a "arribado" un
+        # dia ya terminado --con el servicio terminado y su cierre
+        # abierto--, la nomina no lo pagaba y solo salia cerrandolo a
+        # mano. Un dia que ya arranco, o ya termino, no regresa.
+        if jornada.estatus in (m.EstatusJornada.PLANEADA,
+                               m.EstatusJornada.CONFIRMADA,
+                               m.EstatusJornada.PROXIMA_A_INICIAR):
             jornada.estatus = m.EstatusJornada.ARRIBADO
         # Y el servicio con el, para que la cartera diga que el equipo ya
         # esta alla. Solo hacia adelante: un servicio que ya arranco de
@@ -601,20 +664,24 @@ def registrar_hito(db: Session, jornada_id: int, persona_id: int,
         # Cada uno en su idioma: el principal suele ser extranjero y
         # quien pidio el servicio suele ser del pais. Son dos correos
         # distintos, no el mismo mandado dos veces.
-        del_principal = ta.idioma_de(db, servicio, m.Destinatario.EJECUTIVO)
-        del_solicitante = ta.idioma_de(db, servicio,
-                                       m.Destinatario.SOLICITANTE)
-        _notificar(db, jornada, m.Destinatario.EJECUTIVO, m.Canal.AMBOS,
-                   ta.t(del_principal, "punto_asunto_principal"),
-                   ta.t(del_principal, "punto_cuerpo"),
-                   pares=_pares_del_equipo(jornada, del_principal))
-        _notificar(db, jornada, m.Destinatario.SOLICITANTE, m.Canal.AMBOS,
-                   ta.t(del_solicitante, "punto_asunto_solicitante",
-                        folio=servicio.folio),
-                   ta.t(del_solicitante, "punto_cuerpo"),
-                   pares=_pares_del_equipo(jornada, del_solicitante)
-                   + [(ta.t(del_solicitante, "presentacion"),
-                       f"{jornada.inicio_programado:%H:%M}")])
+        #
+        # Y una vez por dia, no por marca (seccion 99): la llegada del
+        # segundo del equipo mandaba otro "su equipo esta en el lugar".
+        if not _ya_marcado(db, jornada, tipo, salvo=hito):
+            del_principal = ta.idioma_de(db, servicio, m.Destinatario.EJECUTIVO)
+            del_solicitante = ta.idioma_de(db, servicio,
+                                           m.Destinatario.SOLICITANTE)
+            _notificar(db, jornada, m.Destinatario.EJECUTIVO, m.Canal.AMBOS,
+                       ta.t(del_principal, "punto_asunto_principal"),
+                       ta.t(del_principal, "punto_cuerpo"),
+                       pares=_pares_del_equipo(jornada, del_principal))
+            _notificar(db, jornada, m.Destinatario.SOLICITANTE, m.Canal.AMBOS,
+                       ta.t(del_solicitante, "punto_asunto_solicitante",
+                            folio=servicio.folio),
+                       ta.t(del_solicitante, "punto_cuerpo"),
+                       pares=_pares_del_equipo(jornada, del_solicitante)
+                       + [(ta.t(del_solicitante, "presentacion"),
+                           f"{jornada.inicio_programado:%H:%M}")])
 
     elif tipo == m.TipoHito.CONTACTO_EJECUTIVO:
         # El meet and greet es el primero: si dos del equipo lo marcan, el
@@ -651,21 +718,22 @@ def registrar_hito(db: Session, jornada_id: int, persona_id: int,
             servicio.estatus = m.EstatusServicio.EN_CURSO
         # Solo el aviso de que ya hubo contacto, sin enlace de
         # seguimiento en vivo: no se desarrolla por ahora (decision de
-        # Salvador, 23 sep).
-        del_principal = ta.idioma_de(db, servicio, m.Destinatario.EJECUTIVO)
-        del_solicitante = ta.idioma_de(db, servicio,
-                                       m.Destinatario.SOLICITANTE)
-        _notificar(db, jornada, m.Destinatario.SOLICITANTE, m.Canal.AMBOS,
-                   ta.t(del_solicitante, "inicio_asunto_solicitante",
-                        folio=servicio.folio),
-                   ta.t(del_solicitante, "inicio_cuerpo_solicitante",
-                        hora=f"{ahora:%H:%M}"),
-                   pares=_pares_del_equipo(jornada, del_solicitante))
-        _notificar(db, jornada, m.Destinatario.EJECUTIVO, m.Canal.AMBOS,
-                   ta.t(del_principal, "inicio_asunto_principal"),
-                   ta.t(del_principal, "inicio_cuerpo_principal",
-                        hora=f"{ahora:%H:%M}"),
-                   pares=_pares_del_equipo(jornada, del_principal))
+        # Salvador, 23 sep). Y una vez por dia (seccion 99).
+        if not _ya_marcado(db, jornada, tipo, salvo=hito):
+            del_principal = ta.idioma_de(db, servicio, m.Destinatario.EJECUTIVO)
+            del_solicitante = ta.idioma_de(db, servicio,
+                                           m.Destinatario.SOLICITANTE)
+            _notificar(db, jornada, m.Destinatario.SOLICITANTE, m.Canal.AMBOS,
+                       ta.t(del_solicitante, "inicio_asunto_solicitante",
+                            folio=servicio.folio),
+                       ta.t(del_solicitante, "inicio_cuerpo_solicitante",
+                            hora=f"{ahora:%H:%M}"),
+                       pares=_pares_del_equipo(jornada, del_solicitante))
+            _notificar(db, jornada, m.Destinatario.EJECUTIVO, m.Canal.AMBOS,
+                       ta.t(del_principal, "inicio_asunto_principal"),
+                       ta.t(del_principal, "inicio_cuerpo_principal",
+                            hora=f"{ahora:%H:%M}"),
+                       pares=_pares_del_equipo(jornada, del_principal))
 
     elif tipo == m.TipoHito.FIN_SERVICIO:
         # El dia termina con el ultimo del equipo: la marca que llega
@@ -685,34 +753,89 @@ def registrar_hito(db: Session, jornada_id: int, persona_id: int,
             _termino_del_implantado(db, jornada, ahora, recibido)
         terminar_si_cerro_el_ultimo_dia(db, servicio, termino=ahora,
                                         registrado=recibido)
-        del_solicitante = ta.idioma_de(db, servicio,
-                                       m.Destinatario.SOLICITANTE)
-        cuerpo, pares = _cierre_del_dia(db, jornada, ahora, del_solicitante)
-        _notificar(db, jornada, m.Destinatario.SOLICITANTE, m.Canal.CORREO,
-                   ta.t(del_solicitante, "fin_asunto", folio=servicio.folio),
-                   cuerpo, pares=pares)
+        # El correo de "servicio terminado" sale con el primer fin del
+        # dia (seccion 99): con dos en el equipo salian dos. Si el
+        # segundo cierra mas tarde, la hora real la ve la central.
+        if not _ya_marcado(db, jornada, tipo, salvo=hito):
+            del_solicitante = ta.idioma_de(db, servicio,
+                                           m.Destinatario.SOLICITANTE)
+            cuerpo, pares = _cierre_del_dia(db, jornada, ahora, del_solicitante)
+            _notificar(db, jornada, m.Destinatario.SOLICITANTE, m.Canal.CORREO,
+                       ta.t(del_solicitante, "fin_asunto", folio=servicio.folio),
+                       cuerpo, pares=pares)
+
+    # El equipo volvio a reportar: la alerta de silencio del dia se
+    # cierra sola (seccion 99). Se quedaba abierta --nadie de la central
+    # la atendia porque el hecho la habia contestado-- y mientras
+    # estuviera abierta tapaba el siguiente silencio.
+    _resolver_silencio(db, jornada, persona_id, ahora)
 
     db.commit()
     db.refresh(hito)
 
+    return _respuesta_de(hito, alertas,
+                         # Al cerrar el dia, si el equipo tiene otro por
+                         # delante: es el momento en que el principal acaba
+                         # de decir a que hora se ven manana, y quien lo
+                         # escucho tiene el telefono en la mano. Mientras
+                         # nadie lo capture, ese dia vive con la hora
+                         # heredada del primero, que no es un dato.
+                         manana=(_manana_del_equipo(jornada)
+                                 if tipo == m.TipoHito.FIN_SERVICIO
+                                 else None))
+
+
+def _respuesta_de(hito: m.Hito, avisos: list[str], manana=None) -> dict:
     return {
         "hito_id": hito.id,
-        "tipo": tipo.value,
+        "tipo": hito.tipo.value,
         "marcado_en": hito.marcado_en.isoformat(),
         "recibido_en": hito.recibido_en.isoformat() if hito.recibido_en else None,
         "diferido": hito.diferido,
         "distancia_origen_m": hito.distancia_origen_m,
         "dentro_geocerca": hito.dentro_geocerca,
         "requiere_revision": hito.requiere_revision,
-        "avisos": alertas,
-        # Al cerrar el dia, si el equipo tiene otro por delante: es el
-        # momento en que el principal acaba de decir a que hora se ven
-        # manana, y quien lo escucho tiene el telefono en la mano.
-        # Mientras nadie lo capture, ese dia vive con la hora heredada
-        # del primero, que no es un dato.
-        "manana": _manana_del_equipo(jornada) if tipo == m.TipoHito.FIN_SERVICIO
-                  else None,
+        "avisos": avisos,
+        "manana": manana,
     }
+
+
+def _ya_marcado(db: Session, jornada: m.Jornada, tipo: m.TipoHito,
+                salvo: m.Hito | None = None) -> bool:
+    """Si ese paso ya lo marco alguien del equipo antes de esta marca."""
+    consulta = (db.query(m.Hito)
+                .filter(m.Hito.jornada_id == jornada.id,
+                        m.Hito.tipo == tipo,
+                        m.Hito.anulado_en.is_(None)))
+    if salvo is not None and salvo.id is not None:
+        consulta = consulta.filter(m.Hito.id != salvo.id)
+    return consulta.first() is not None
+
+
+def _resolver_silencio(db: Session, jornada: m.Jornada, persona_id: int,
+                       cuando: datetime) -> int:
+    """Las alertas de silencio del dia se cierran con el reporte que
+    llego, como el camino cierra las suyas: con quien y a que hora."""
+    # Las del dia entero (sin nombre) y las de esta persona. La de otro
+    # del equipo que no contesta sigue siendo verdad. Con lo que ya
+    # cerro el camino en esta misma sesion escrito antes de preguntar.
+    db.flush()
+    abiertas = (db.query(m.Alerta)
+                .filter(m.Alerta.jornada_id == jornada.id,
+                        m.Alerta.tipo == m.TipoAlerta.SIN_REPORTE,
+                        m.Alerta.atendida.is_(False),
+                        or_(m.Alerta.persona_id.is_(None),
+                            m.Alerta.persona_id == persona_id))
+                .all())
+    if not abiertas:
+        return 0
+    quien = db.get(m.Persona, persona_id)
+    nombre = quien.nombre if quien else f"persona {persona_id}"
+    for alerta in abiertas:
+        alerta.atendida = True
+        alerta.resolucion = (f"Se resolvio sola: {nombre} marco a las "
+                             f"{cuando:%H:%M}.")[:400]
+    return len(abiertas)
 
 
 def _manana_del_equipo(jornada: m.Jornada) -> dict | None:
@@ -1057,9 +1180,16 @@ def avisar_horas_extra(db: Session, ahora: datetime | None = None) -> list[dict]
     # greet fue antes de la presentacion, las horas corren desde ahi
     # (seccion 65)--, asi que la consulta se abre tambien por ese lado.
     adelanto = timedelta(hours=horas_extra.HORAS_ANTES_DEL_INICIO)
+    # Y hacia atras hasta las horas de gracia (seccion 99): el aviso
+    # era una ventana de treinta minutos que el reloj tenia que atinar.
+    # Con el worker caido de 18:25 a 19:05 y el tope a las 19:00,
+    # ninguna vuelta caia en la ventana y el cliente nunca se enteraba.
+    # Ahora se manda mientras no exista: pasado el tope, dice que el
+    # servicio ya entro en horas extra.
+    gracia = timedelta(hours=HORAS_DE_GRACIA)
     jornadas = (db.query(m.Jornada)
                 .filter(m.Jornada.estatus.in_(m.ARRANCADAS),
-                        m.Jornada.fin_programado >= ahora - margen,
+                        m.Jornada.fin_programado >= ahora - margen - gracia,
                         m.Jornada.fin_programado
                         <= ahora + timedelta(minutes=AVISO_HORAS_EXTRA_MINUTOS)
                         + margen + adelanto)
@@ -1069,8 +1199,8 @@ def avisar_horas_extra(db: Session, ahora: datetime | None = None) -> list[dict]
     for j in jornadas:
         suyo = relojes.de_la_jornada(j)
         tope = horas_extra.limite(j)
-        if not (suyo <= tope
-                <= suyo + timedelta(minutes=AVISO_HORAS_EXTRA_MINUTOS)):
+        if not (tope - timedelta(minutes=AVISO_HORAS_EXTRA_MINUTOS)
+                <= suyo <= tope + gracia):
             continue
         if not horas_extra.aplica(j):
             continue
@@ -1083,6 +1213,7 @@ def avisar_horas_extra(db: Session, ahora: datetime | None = None) -> list[dict]
         # Con el reloj de alla: con el del servidor, en Brasil decia
         # "faltan 199 minutos" cuando faltaban 19.
         minutos = int((tope - suyo).total_seconds() / 60)
+        pasado = minutos < 0
         servicio = j.equipo.servicio
         for destinatario in (m.Destinatario.SOLICITANTE,
                              m.Destinatario.EJECUTIVO):
@@ -1090,16 +1221,24 @@ def avisar_horas_extra(db: Session, ahora: datetime | None = None) -> list[dict]
             horas = f"{j.modalidad.horas}"
             _notificar(
                 db, j, destinatario, m.Canal.AMBOS,
-                ta.t(lengua, "extra_asunto", minutos=minutos),
-                ta.t(lengua, "extra_cuerpo", horas=horas,
-                     hora=f"{tope:%H:%M}"),
+                (ta.t(lengua, "extra_asunto_ya")
+                 if pasado else
+                 ta.t(lengua, "extra_asunto", minutos=minutos)),
+                (ta.t(lengua, "extra_cuerpo_ya", horas=horas,
+                      hora=f"{tope:%H:%M}")
+                 if pasado else
+                 ta.t(lengua, "extra_cuerpo", horas=horas,
+                      hora=f"{tope:%H:%M}")),
                 pares=[(ta.t(lengua, "cierre_programado"),
                         f"{tope:%H:%M}"),
                        (ta.t(lengua, "contratado"),
                         f"{horas} {ta.t(lengua, 'horas')}")])
         _alertar(db, j.id, m.TipoAlerta.HORAS_EXTRA_PROXIMAS,
-                 f"Aviso de horas extra enviado. Las horas contratadas se "
-                 f"cumplen a las {tope:%H:%M}.")
+                 (f"Aviso de horas extra enviado tarde: las horas "
+                  f"contratadas se cumplieron a las {tope:%H:%M}."
+                  if pasado else
+                  f"Aviso de horas extra enviado. Las horas contratadas se "
+                  f"cumplen a las {tope:%H:%M}."))
         avisos.append({"jornada_id": j.id, "servicio": j.equipo.servicio.folio,
                        "faltan_minutos": minutos})
 

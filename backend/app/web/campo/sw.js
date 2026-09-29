@@ -21,7 +21,7 @@
 // v13: Reportar una falla desde «Yo», y la caja negra (seccion 92).
 // v14: el icono de Android con su filo dorado, dentro de la zona que
 //      ningun telefono recorta (seccion 97).
-const CACHE = "centauro-campo-v15";
+const CACHE = "centauro-campo-v16";
 const ARMAZON = [
   "/app/",
   "/app/index.html",
@@ -94,10 +94,13 @@ self.addEventListener("push", (e) => {
   /* Un boton en la propia notificacion. Confirmar que vas eran cuatro
      toques --desbloquear, abrir, buscar el servicio, confirmar-- a las
      seis de la manana y con una mano. */
+  /* El titulo del boton viene en la carga, en el idioma de quien lo
+     recibe (seccion 99): aqui no hay diccionario. */
+  const botones = d.botones || {};
   const acciones = d.accion === "confirmar"
-    ? [{ action: "confirmar", title: "Confirmo de enterado" }]
+    ? [{ action: "confirmar", title: botones.confirmar || "Confirmo de enterado" }]
     : d.accion === "en_camino"
-      ? [{ action: "en_camino", title: "Voy en camino" }]
+      ? [{ action: "en_camino", title: botones.en_camino || "Voy en camino" }]
       : [];
 
   e.waitUntil(self.registration.showNotification(d.titulo || "Centauro", {

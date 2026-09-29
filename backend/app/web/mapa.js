@@ -50,7 +50,7 @@ export function buscadorDeLugar({
   const GEOCERCA_NORMAL = 500;
 
   const metros = h("input", { name: "geocerca_metros", type: "number",
-                              min: "50", step: "50",
+                              min: "50", max: "5000", step: "50",
                               value: valores.metros || GEOCERCA_NORMAL,
                               oninput: () => {
                                 metros.dataset.suyo = "1";

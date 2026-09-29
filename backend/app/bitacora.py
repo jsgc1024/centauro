@@ -204,12 +204,15 @@ def del_dia(db: Session, jornada_id: int) -> dict:
         })
 
     # ----------------------------------------------------- las alertas
+    # Con su resolucion, cuando la tiene: la que escribio la central o
+    # la que puso el sistema cuando la marca llego sola. Sin ella el
+    # renglon decia "atendida" y nadie sabia como.
     for alerta in (db.query(m.Alerta).filter_by(jornada_id=jornada_id).all()):
         renglones.append({
             "fuente": ALERTA,
             "momento": _hora_del_pais(db, alerta.creada_en, jornada),
             "titulo": alerta.tipo.value,
-            "detalle": alerta.mensaje,
+            "detalle": " · ".join(x for x in (alerta.mensaje, alerta.resolucion) if x),
             "marca": "atendida" if alerta.atendida else None,
             "tono": "ok" if alerta.atendida else "alerta",
         })

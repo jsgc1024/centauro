@@ -126,7 +126,9 @@ function bloqueReabrir(d, refrescar) {
   const zonaAviso = h("div", {});
   const boton = h("button", { clase: "chico claro", type: "button",
     onclick: async () => {
-      if (motivo.value.trim().length < 5) {
+      /* Diez letras, las mismas que pide el servidor: con cinco la
+         pantalla dejaba pasar lo que el servidor rebotaba (seccion 99). */
+      if (motivo.value.trim().length < 10) {
         return zonaAviso.replaceChildren(
           aviso(t("bit_reabrir_falta"), "alerta"));
       }

@@ -194,8 +194,14 @@ def evaluar(datos: EvaluarIn, db: Session = Depends(get_db),
 def ver_evaluacion(persona_id: int, anio: int, mes: int,
                    db: Session = Depends(get_db),
                    usuario: m.Usuario = Depends(auth.usuario_actual)):
-    if usuario.rol == m.Rol.PERSONAL_SEGURIDAD and usuario.persona_id != persona_id:
-        raise HTTPException(403, "Solo puedes ver tu propia evaluacion")
+    if usuario.rol == m.Rol.PERSONAL_SEGURIDAD:
+        if usuario.persona_id != persona_id:
+            raise HTTPException(403, "Solo puedes ver tu propia evaluacion")
+    elif not auth.puede_el_usuario(db, usuario, "bonos.ver"):
+        # Pedir sesion no es pedir permiso (seccion 99).
+        raise HTTPException(403, {
+            "mensaje": "Tu puesto no ve las evaluaciones del bono",
+            "que_hacer": "Pide la actividad «ver bonos» a administracion."})
     evaluacion = (db.query(m.EvaluacionMensual)
                   .filter_by(persona_id=persona_id, anio=anio, mes=mes).first())
     if not evaluacion:

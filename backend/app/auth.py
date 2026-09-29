@@ -294,3 +294,14 @@ def es_su_propia_jornada(db: Session, usuario: m.Usuario, jornada_id: int) -> bo
     return (db.query(m.AsignacionPersonal)
             .filter_by(jornada_id=jornada_id, persona_id=usuario.persona_id)
             .first() is not None)
+
+
+def es_su_jornada_vigente(db: Session, usuario: m.Usuario,
+                          jornada_id: int) -> bool:
+    """Asignado y sin haber sido relevado (seccion 99): lo que se decide
+    para manana o para el camino lo decide quien sigue en el dia."""
+    return (db.query(m.AsignacionPersonal)
+            .filter(m.AsignacionPersonal.jornada_id == jornada_id,
+                    m.AsignacionPersonal.persona_id == usuario.persona_id,
+                    m.AsignacionPersonal.relevado_en.is_(None))
+            .first() is not None)

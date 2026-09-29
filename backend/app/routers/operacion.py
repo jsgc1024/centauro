@@ -40,10 +40,12 @@ ATENDER = auth.puede("operacion.atender")
               summary="Configurar el punto de origen y su geocerca")
 def configurar_origen(jornada_id: int, datos: s.OrigenIn,
                       db: Session = Depends(get_db),
-                      _=Depends(PLANEAR)):
+                      usuario: m.Usuario = Depends(PLANEAR)):
     jornada = db.get(m.Jornada, jornada_id)
     if not jornada:
         raise HTTPException(404, f"No existe la jornada {jornada_id}")
+    antes = (jornada.origen_lat, jornada.origen_lon, jornada.geocerca_metros,
+             jornada.origen_aeropuerto)
     # Solo se pisa lo que viene: mandar el pin no borra la direccion, y
     # mandar la direccion no borra el pin. Pero mandar un campo en nulo a
     # proposito si lo limpia: es como se quita un pin mal puesto.
@@ -66,6 +68,19 @@ def configurar_origen(jornada_id: int, datos: s.OrigenIn,
     # nadie fijo un radio a mano, el radio se acomoda solo.
     if "origen_aeropuerto" in cambios and "geocerca_metros" not in cambios:
         jornada.geocerca_metros = geocercas.radio_de(jornada.origen_aeropuerto)
+    # El pin y el radio deciden contra que se prueba la llegada: si se
+    # mueven, queda quien y a que (seccion 99). Antes no dejaba rastro.
+    despues = (jornada.origen_lat, jornada.origen_lon, jornada.geocerca_metros,
+               jornada.origen_aeropuerto)
+    if despues != antes and antes[0] is not None:
+        auditoria.registrar(
+            db, usuario, jornada.equipo.servicio, "mover geocerca",
+            f"{jornada.fecha}: radio {antes[2]} -> {despues[2]} m"
+            + (", pin movido" if (antes[0], antes[1]) != (despues[0], despues[1])
+               else "")
+            + (f", aeropuerto {'si' if despues[3] else 'no'}"
+               if antes[3] != despues[3] else ""),
+            jornada_id=jornada.id)
     db.commit()
     programacion.evaluar(jornada.equipo.servicio)
     db.commit()
@@ -217,15 +232,20 @@ def confirmar_a_mano(jornada_id: int, datos: s.ConfirmarAManoIn,
 @router.post("/jornadas/{jornada_id}/hitos", summary="Marcar un hito desde la app")
 def marcar_hito(jornada_id: int, datos: s.HitoIn,
                 db: Session = Depends(get_db),
+                ahora: datetime | None = None,
                 usuario: m.Usuario = Depends(CAMPO)):
-    """El hito se registra a nombre del usuario de la sesion: nadie marca por otro."""
+    """El hito se registra a nombre del usuario de la sesion: nadie marca por otro.
+
+    `ahora` es el reloj del servidor para las pruebas --las que marcan
+    dias de dentro de un ano--; en produccion se ignora."""
     if not auth.es_su_propia_jornada(db, usuario, jornada_id):
         raise HTTPException(403, "No estas asignado a esa jornada")
 
     return motor.registrar_hito(
         db, jornada_id, usuario.persona_id, datos.tipo,
         lat=datos.lat, lon=datos.lon,
-        marcado_en=datos.marcado_en, nota=datos.nota)
+        marcado_en=datos.marcado_en, nota=datos.nota,
+        recibido_en=reloj.de_prueba(ahora))
 
 
 @router.post("/hitos/{hito_id}/ajustar",
@@ -385,7 +405,7 @@ def dias_sin_cerrar(db: Session = Depends(get_db),
     del mas viejo al mas nuevo: el mas viejo es el que mas cerca esta de
     convertirse en un reclamo.
     """
-    dias = motor.dias_sin_cerrar(db, ahora, pais_id)
+    dias = motor.dias_sin_cerrar(db, reloj.de_prueba(ahora), pais_id)
     return {"dias": dias, "cuantos": len(dias),
             "horas_de_gracia": motor.HORAS_DE_GRACIA}
 
@@ -409,9 +429,12 @@ def cerrar_a_mano(jornada_id: int, datos: s.CierreAManoIn,
             "mensaje": "No puedes cerrar a mano un dia que trabajaste",
             "que_hacer": "Que lo cierre otra persona de la central."})
 
+    # `ahora` solo mueve el reloj en las pruebas (seccion 99): con el
+    # permiso de corregir se podia cerrar hoy un dia de la semana que
+    # entra mandando la hora en la direccion.
     resultado = motor.cerrar_a_mano(db, jornada_id, usuario.persona_id,
                                     datos.justificacion, datos.fin_real,
-                                    datos.inicio_real, ahora)
+                                    datos.inicio_real, reloj.de_prueba(ahora))
     auditoria.registrar(db, usuario, jornada.equipo.servicio,
                         "cerrar dia a mano",
                         f"{jornada.fecha}: {datos.justificacion}",
@@ -447,7 +470,7 @@ def hito_a_mano(jornada_id: int, datos: s.HitoAManoIn,
     tipo = m.TipoHito(datos.tipo)
     resultado = motor.registrar_hito_a_mano(
         db, jornada_id, datos.persona_id, usuario.persona_id, tipo,
-        datos.momento, datos.justificacion, ahora)
+        datos.momento, datos.justificacion, reloj.de_prueba(ahora))
     auditoria.registrar(db, usuario, jornada.equipo.servicio,
                         "marca a mano",
                         f"{jornada.fecha} {tipo.value} "
@@ -565,19 +588,19 @@ def reabrir_dia(jornada_id: int, datos: s.ReabrirDiaIn,
 def tablero(db: Session = Depends(get_db), ahora: datetime | None = None,
             _=Depends(VER)):
     """Valida confirmacion del recurso, viatico transferido y vehiculo asignado."""
-    return motor.tablero_proximos(db, ahora)
+    return motor.tablero_proximos(db, reloj.de_prueba(ahora))
 
 
 @router.post("/revisar-standby", summary="Detectar servicios sin reporte")
 def revisar_standby(db: Session = Depends(get_db), ahora: datetime | None = None,
                     _=Depends(VER)):
-    return {"alertas_generadas": motor.revisar_standby(db, ahora)}
+    return {"alertas_generadas": motor.revisar_standby(db, reloj.de_prueba(ahora))}
 
 
 @router.post("/avisar-horas-extra", summary="Aviso preventivo de horas extra")
 def avisar_horas_extra(db: Session = Depends(get_db), ahora: datetime | None = None,
                        _=Depends(VER)):
-    return {"avisos": motor.avisar_horas_extra(db, ahora)}
+    return {"avisos": motor.avisar_horas_extra(db, reloj.de_prueba(ahora))}
 
 
 @router.get("/jornadas/{jornada_id}/bitacora", summary="Bitacora de la jornada")
@@ -587,10 +610,16 @@ def bitacora(jornada_id: int, db: Session = Depends(get_db),
     if not jornada:
         raise HTTPException(404, f"No existe la jornada {jornada_id}")
 
-    # El personal de seguridad solo ve la bitacora de sus propias jornadas.
-    if usuario.rol == m.Rol.PERSONAL_SEGURIDAD and \
-            not auth.es_su_propia_jornada(db, usuario, jornada_id):
-        raise HTTPException(403, "No estas asignado a esa jornada")
+    # El personal de seguridad solo ve la bitacora de sus propias jornadas;
+    # la oficina, con «ver operacion» (seccion 99): pedir sesion no es
+    # pedir permiso, y aqui van los correos del cliente.
+    if usuario.rol == m.Rol.PERSONAL_SEGURIDAD:
+        if not auth.es_su_propia_jornada(db, usuario, jornada_id):
+            raise HTTPException(403, "No estas asignado a esa jornada")
+    elif not auth.puede_el_usuario(db, usuario, "operacion.ver"):
+        raise HTTPException(403, {
+            "mensaje": "Tu puesto no ve la bitacora del dia",
+            "que_hacer": "Pide la actividad «ver operacion» a administracion."})
 
     hitos = (db.query(m.Hito).filter_by(jornada_id=jornada_id)
              .order_by(m.Hito.marcado_en).all())

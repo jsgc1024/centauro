@@ -273,7 +273,19 @@ def publicar_servicio(servicio_id: int, datos: s.PublicarTaskSheetIn,
 
 
 def _puede_ver(db: Session, usuario: m.Usuario, equipo: m.Equipo) -> None:
+    """El personal ve su equipo; la oficina, con «ver task sheet».
+
+    Pedir sesion no es pedir permiso (seccion 99): estas rutas solo
+    frenaban al personal de campo, y un puesto de nomina o de recursos
+    humanos alcanzaba el itinerario de cualquier protegido recorriendo
+    numeros.
+    """
     if usuario.rol != m.Rol.PERSONAL_SEGURIDAD:
+        if not auth.puede_el_usuario(db, usuario, "tasksheet.ver"):
+            raise HTTPException(403, {
+                "mensaje": "Tu puesto no ve el task sheet",
+                "que_hacer": "Pide la actividad «ver task sheet» a "
+                             "administracion."})
         return
     jornadas = [j.id for j in equipo.jornadas]
     participa = (db.query(m.AsignacionPersonal)

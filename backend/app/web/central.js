@@ -402,6 +402,20 @@ function botonDeMarca(q, tipo, donde) {
   return boton;
 }
 
+/* De que dia es la hora que dicto el agente. En un servicio que cruza
+   la medianoche --de 20:00 a 08:00--, un contacto a las 00:30 es de la
+   madrugada del dia siguiente, no de la madrugada anterior al inicio
+   (seccion 99): armado sobre la fecha del dia caia diecinueve horas
+   antes y el servidor lo rechazaba como "demasiado antes". */
+function fechaDeLaMarca(q, horaTexto) {
+  if (!q.cruza_medianoche || !q.inicio_programado) return q.fecha;
+  const inicio = q.inicio_programado.slice(11, 16);
+  if (horaTexto >= inicio) return q.fecha;
+  const siguiente = new Date(`${q.fecha}T12:00:00`);
+  siguiente.setDate(siguiente.getDate() + 1);
+  return siguiente.toISOString().slice(0, 10);
+}
+
 function formularioDeMarca(q, tipo, boton) {
   const cuando = h("input", { type: "time", required: "required" });
   cuando.value = new Date().toTimeString().slice(0, 5);
@@ -428,7 +442,7 @@ function formularioDeMarca(q, tipo, boton) {
       await api.post(`/operacion/jornadas/${q.jornada_id}/marca-a-mano`, {
         tipo,
         persona_id: Number(quien ? quien.value : gente[0].persona_id),
-        momento: `${q.fecha}T${cuando.value}:00`,
+        momento: `${fechaDeLaMarca(q, cuando.value)}T${cuando.value}:00`,
         justificacion: porque.value.trim(),
       });
       mensaje(t(tipo === "contacto_ejecutivo" ? "cen_marca_principal_ok"

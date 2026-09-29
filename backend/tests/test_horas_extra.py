@@ -736,7 +736,9 @@ def test_la_marca_con_zona_se_dice_en_la_hora_de_alla(cliente, sesion, datos):
     llegada = inicio - timedelta(minutes=10)
     # Ciudad de Mexico va seis horas detras de UTC.
     en_utc = (llegada + timedelta(hours=6)).isoformat() + "Z"
-    r = cliente.post(f"/operacion/jornadas/{j['id']}/hitos",
+    # El reloj del servidor parado en ese dia: un dia que no ha llegado
+    # no se marca (seccion 99).
+    r = cliente.post(f"/operacion/jornadas/{j['id']}/hitos?ahora={llegada.isoformat()}",
                      headers=sesion("juan"),
                      json={"tipo": "llegada_origen", "marcado_en": en_utc,
                            "lat": "19.4272", "lon": "-99.1679"})

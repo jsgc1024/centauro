@@ -6888,6 +6888,177 @@ del día; los accesos, el correo, el reloj y el servidor (con el
 subdominio `www` que hoy no existe); la consola, el implantado, la
 nómina y los detalles; y al final las 14 decisiones de Salvador.
 
+## 99. La app de campo y el ciclo del día
+
+La **segunda tanda** de la revisión del 28 de septiembre (sección 98):
+lo de la app del equipo y del día en la calle que tampoco necesitaba
+decisión de Salvador. Salvador, al anunciarla: «de acuerdo».
+
+### El día en la calle
+
+- **El servicio nocturno sigue en la app después de medianoche.** De
+  20:00 a 08:00, a la 01:00 el «hoy» del agente ya es otra fecha y la
+  app decía «no tienes servicios»: sin botón de contacto, de espera ni
+  de fin; la alerta de silencio saltaba cada vuelta y el día solo se
+  cerraba a mano desde la central. Ahora Hoy trae también los días de
+  ayer que siguen en la calle. Solo los de ayer: uno de hace una
+  semana que nadie cerró es de «Días sin cerrar» en la central, y si
+  saliera en la app un «Fin de servicio» tocado hoy le pondría la
+  hora de hoy.
+- **Esperando al principal se puede decir «En espera».** Entre la
+  llegada y el contacto el único botón era el contacto; con el vuelo
+  retrasado, a las dos horas saltaba la alerta de silencio sin que el
+  equipo pudiera evitarla.
+- **La alerta de silencio se cierra sola con la marca**, como ya lo
+  hacía la del camino: «Se resolvió sola: Carlos marcó a las 01:35».
+  Antes seguía abierta hasta que alguien la atendiera a mano aunque el
+  equipo ya estuviera reportando, y el siguiente silencio no levantaba
+  otra porque la primera seguía viva. La bitácora del día muestra la
+  resolución de cada alerta —la que escribió la central o la que puso
+  el sistema—; solo decía «atendida».
+- **A quien relevaron se le dice, y su día ya no está.** El relevado
+  seguía viendo el día con «Fin de servicio» como siguiente paso —si
+  lo tocaba desde su casa cerraba el día del equipo— y sus marcas
+  después del relevo entraban como si siguiera ahí. Ahora Hoy trae el
+  aviso con quién entró y a qué hora, el día ya no le sale, sus
+  compañeros ya no lo listan, y una marca suya posterior a la hora del
+  relevo se rechaza («Ya te relevaron de este día: esa marca no es
+  tuya»). Las de antes del relevo sí entran, aunque lleguen tarde por
+  falta de señal. Fijar la hora de mañana también pide la asignación
+  vigente.
+- **El servicio de madrugada se atiende desde la víspera.** Un día de
+  mañana no aceptaba ninguna marca hasta la medianoche: quien recogía
+  a las 00:30 no podía decir que ya iba. Ahora la app ofrece «Voy en
+  camino» a los días de mañana que están a menos de dos horas, y el
+  servidor acepta la llegada desde tres horas antes de la hora de
+  estar en el punto. Y al revés: el día que de verdad no ha llegado
+  contesta «Ese día todavía no llega: no se marca». La hora se mide
+  con el reloj del servidor en el país de la jornada, no con la del
+  teléfono.
+- **La misma marca dos veces es una sola.** Un doble toque, o la cola
+  sin señal que reintentaba, registraba dos hitos iguales y mandaba
+  dos avisos al cliente. La misma persona, jornada, tipo y hora es la
+  marca que ya estaba, y contesta como si fuera la primera. Los avisos
+  de llegada, contacto y fin salen solo con la primera marca de su
+  tipo.
+- **La llegada tardía no reabre un día terminado**: solo el planeado,
+  confirmado o próximo a iniciar pasa a arribado.
+- **La anticipación para estar en el punto es la del país** (30
+  minutos, 45 en aeropuerto), en la app y en la central. Cada una
+  traía la suya escrita. `presentacion.llegada_de_la_jornada`.
+- **La central pone la fecha correcta al marcar a mano** en un
+  servicio que cruza la medianoche: la marca de las 01:35 iba con la
+  fecha de la jornada, es decir, de ayer. La tarjeta del pulso trae
+  `inicio_programado` y `cruza_medianoche`.
+- **Cerrar a mano, la bitácora, el tablero y las vueltas** aceptan la
+  hora de prueba solo fuera de producción (`reloj.de_prueba`), como
+  el resto; en producción `?ahora=` no cuenta.
+
+### La app
+
+- **La cola sin señal ya no tira marcas.** Al vaciarla reescribía la
+  lista entera con lo que quedaba: si dos marcas salían a la vez, o
+  el usuario marcaba mientras se vaciaba, una desaparecía. Ahora cada
+  marca se quita por su nombre cuando el servidor la aceptó; con la
+  sesión vencida se detiene y avisa en vez de descartarlas; con la
+  red caída espera; la rechazada de plano se aparta. «Deshacer» sobre
+  una marca que ya salió lo dice («Esa marca ya salió») en vez de
+  fingir que se deshizo.
+- **Salir de la app da de baja el teléfono** de los avisos; volver a
+  entrar lo reengancha (la suscripción del navegador se vuelve a
+  mandar con la sesión nueva). Antes el teléfono de quien salió
+  seguía recibiendo los avisos del siguiente que entrara con él.
+- **Los avisos al teléfono hablan el idioma del país** de la plaza de
+  cada persona (español o portugués) y traen sus botones —«Confirmo»,
+  «Voy en camino», «Abrir»— desde el servidor: el trabajador de fondo
+  los pintaba en español fijo. `push.TEXTOS_PUSH`, `push.tx`,
+  `push.idioma_de`.
+- **El recordatorio de la víspera se repone.** Salía solo en la vuelta
+  exacta de las cinco de cada país; si el reloj estaba parado a esa
+  hora, nadie recibía el recordatorio ese día. Ahora cada vuelta
+  posterior a las cinco lo manda si ese día no ha salido, país por
+  país, con una vuelta sintética (`campo.recordar_la_vispera/{país}`)
+  que anota el día mandado.
+- **El aviso de horas extra sale aunque llegue tarde.** Se buscaba
+  solo en la ventana exacta de treinta minutos antes del tope; con el
+  reloj parado o tres horas de diferencia con Brasil, no salía nunca.
+  Ahora sale hasta las horas de gracia después del tope, con el texto
+  de «ya se cumplieron» si ya pasó, y no se repite.
+- **Los errores de la foto** de la app se traducen (`foto.js` usaba
+  textos fijos en español).
+- **Las alertas de silencio se resuelven en la bitácora** con su
+  texto, y reabrir un día desde la bitácora de la consola pide la
+  misma justificación (10 letras) que el servidor: la consola dejaba
+  pasar 5 y el servidor la rechazaba sin explicar.
+
+### Los accesos y los límites
+
+- **Las rutas que solo pedían sesión** ahora piden su actividad: la
+  bitácora del día (`operacion.ver` para la oficina; el campo sigue
+  con su propia jornada), las revisiones de la unidad
+  (`servicios.ver`), el task sheet (`tasksheet.ver`) y la evaluación
+  del bono (`bonos.ver`).
+- **La geocerca tiene tope**: de 50 a 5,000 metros en el servidor y en
+  la consola; y mover el pin o el radio de un origen que ya existía
+  queda en la bitácora del servicio («mover geocerca: radio 250 ->
+  1500 m»). Una geocerca de 500 km hacía que cualquier marca «cayera
+  dentro».
+- **Una nota larga se rechaza con mensaje** (300 letras la de la marca,
+  400 la justificación de un ajuste) en vez de reventar en la base.
+
+### Por dentro
+
+- `operacion.py`: `registrar_hito` con `recibido_en` y el candado del
+  día que no llega (`HORAS_ANTES_DEL_INICIO`), el relevado, la marca
+  repetida (`_respuesta_de`), `_ya_marcado`, `_resolver_silencio`;
+  `avisar_horas_extra` con la gracia. `bitacora.py`: la resolución en
+  el renglón de la alerta.
+- `routers/campo.py`: `_arrancadas_de` (solo ayer), `_relevos_de`,
+  `relevado_hoy`, `sueltos` con `standby` esperando al principal,
+  `auth.es_su_jornada_vigente`. `presentacion.llegada_de_la_jornada`
+  en `central.py`, `trayecto.py` y la app.
+- `push.py`: `TEXTOS_PUSH`, `tx`, `idioma_de`, `botones` en la carga,
+  la víspera con `_vispera_ya_mandada` y `_anotar_vispera`.
+  `textos_aviso.py`: `extra_asunto_ya`, `extra_cuerpo_ya`.
+- App: `cola.js` reescrita (`quitar`, `anotarIntento`, `porSesion`,
+  `vaciar` sin reescribir la lista), `app.js` (`salir`,
+  `reengancharAvisos`, `relevado_hoy`, `porArrancar` con el momento
+  del servidor), `sw.js` con los botones del servidor (caché
+  `centauro-campo-v16`), `foto.js` con `t()`. Consola: `central.js`
+  (`fechaDeLaMarca`), `bitacora.js` (10 letras), `mapa.js` (tope).
+- `schemas.py`: `geocerca_metros` con `ge=50, le=5000`, `HitoIn.nota`
+  y `AjusteHitoIn.justificacion` con tope. `routers/operacion.py`:
+  `configurar_origen` con rastro; `hito_a_mano`, `cerrar_a_mano`,
+  `dias_sin_cerrar`, `tablero`, `revisar_standby` y
+  `avisar_horas_extra` con `reloj.de_prueba`.
+- Sin migración.
+
+### Las pruebas
+
+- `tests/test_revision_99.py`, 19 pruebas: cada regla de arriba con su
+  escenario. `tests/ayudas.marcar` acepta `ahora` (y lo pone solo
+  cuando la marca es de un día futuro): las pruebas mueven el reloj
+  del servidor con `?ahora=` en vez de esperar que el día llegue.
+  Cuatro pruebas viejas cambiaron con la regla: la marca «del futuro»
+  ya no se prueba contra el reloj del servidor, sino con el candado
+  del día que no llega; el título del aviso de la víspera lleva su
+  eñe; y las dos que marcaban un día futuro ahora le dicen al
+  servidor qué hora es.
+- La batería completa en verde.
+
+### Para subirlo
+
+- **Sin migración**: el bloque de siempre (`alembic upgrade head` no
+  cambia nada). Cambian la consola y la app de campo.
+
+### Lo que queda para las decisiones
+
+De esta tanda quedaron para la lista de decisiones, como estaba
+previsto: el camino del segundo del equipo (decisión 4), la hora de
+mañana con aprobación (decisión 5), el fin rechazado por la unidad, el
+segundo aviso al cliente, y cancelar con un día en la calle
+(decisión 1).
+
 ## 14. Lo que falta
 
 ### Abierto
@@ -6895,12 +7066,12 @@ nómina y los detalles; y al final las 14 decisiones de Salvador.
 - **La revisión del sistema** (sección 98). Salvador, 28 de
   septiembre: una revisada completa, profunda y con calma. 112
   hallazgos en `REVISION_2026_09_28.md`. La primera tanda —el dinero
-  y los días trabajados— quedó en la sección 98. Faltan las otras
-  tres: la app de campo y el ciclo del día; los accesos, el correo,
-  el reloj y el servidor (con el subdominio `www`, que hoy no existe
-  en Cloud DNS ni en Caddy); y la consola, el implantado, la nómina y
-  los detalles. Y las 14 decisiones, que se le llevan juntas al
-  final.
+  y los días trabajados— quedó en la sección 98; la segunda —la app
+  de campo y el ciclo del día— en la 99. Faltan las otras dos: los
+  accesos, el correo, el reloj y el servidor (con el subdominio
+  `www`, que hoy no existe en Cloud DNS ni en Caddy); y la consola,
+  el implantado, la nómina y los detalles. Y las 14 decisiones, que
+  se le llevan juntas al final.
 - **El puesto de administración del sistema y calidad**: Aridiai
   Morales. Aprobado el 27 de septiembre con sus pantallas. Hechos los
   cuatro pasos: los candados de Accesos (sección 83), el puesto con sus

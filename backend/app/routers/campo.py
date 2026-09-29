@@ -33,7 +33,7 @@ from app import viaticos as viaticos_motor
 from app.config import settings
 from app.db import get_db
 from app.operacion import MINUTOS_ANTES_PERMITIDOS, MINUTOS_DESPUES_PERMITIDOS
-from app.presentacion import llegada_del_equipo
+from app.presentacion import llegada_de_la_jornada
 
 router = APIRouter(prefix="/campo", tags=["App del personal"])
 
@@ -64,15 +64,62 @@ SUELTOS = [
 ]
 
 
+ARRANCADAS = [e.value for e in m.ARRANCADAS]
+
+
 def _jornadas_de(db: Session, persona_id: int, desde: date,
                  hasta: date) -> list[m.Jornada]:
+    """Sus dias entre dos fechas. Sin los que ya dejo por un relevo
+    (seccion 99): a quien relevaron a las once su app le seguia
+    ensenando el dia con "Fin de servicio" como siguiente paso."""
     return (db.query(m.Jornada)
             .join(m.AsignacionPersonal,
                   m.AsignacionPersonal.jornada_id == m.Jornada.id)
             .filter(m.AsignacionPersonal.persona_id == persona_id,
+                    m.AsignacionPersonal.relevado_en.is_(None),
                     m.Jornada.fecha >= desde, m.Jornada.fecha <= hasta,
                     m.Jornada.estatus != m.EstatusJornada.CANCELADA)
             .order_by(m.Jornada.inicio_programado).all())
+
+
+def _arrancadas_de(db: Session, persona_id: int, hoy: date) -> list[m.Jornada]:
+    """Sus dias de ayer que siguen en la calle.
+
+    Solo los de ayer: un servicio de 20:00 a 08:00 es de ayer por fecha
+    y esta corriendo hoy. Uno de hace una semana que nadie cerro tambien
+    sigue EN_CURSO, pero ya no es de nadie en la calle: ese lo recoge
+    "Dias sin cerrar" en la central, y si saliera aqui un "Fin de
+    servicio" tocado hoy le pondria la hora de hoy.
+    """
+    return (db.query(m.Jornada)
+            .join(m.AsignacionPersonal,
+                  m.AsignacionPersonal.jornada_id == m.Jornada.id)
+            .filter(m.AsignacionPersonal.persona_id == persona_id,
+                    m.AsignacionPersonal.relevado_en.is_(None),
+                    m.Jornada.fecha == hoy - timedelta(days=1),
+                    m.Jornada.estatus.in_(m.ARRANCADAS))
+            .order_by(m.Jornada.inicio_programado).all())
+
+
+def _relevos_de(db: Session, persona_id: int, hoy: date) -> list[dict]:
+    """De que dias de hoy lo relevaron, y quien entro en su lugar."""
+    filas = (db.query(m.AsignacionPersonal)
+             .join(m.Jornada, m.AsignacionPersonal.jornada_id == m.Jornada.id)
+             .filter(m.AsignacionPersonal.persona_id == persona_id,
+                     m.AsignacionPersonal.relevado_en.isnot(None),
+                     m.Jornada.fecha == hoy)
+             .all())
+    salida = []
+    for a in filas:
+        entra = (db.get(m.Persona, a.relevado_por_id)
+                 if getattr(a, "relevado_por_id", None) else None)
+        salida.append({
+            "jornada_id": a.jornada_id,
+            "folio": a.jornada.equipo.servicio.folio,
+            "relevado_en": a.relevado_en.isoformat(),
+            "por": entra.nombre if entra else None,
+        })
+    return salida
 
 
 def _ficha(db: Session, jornada: m.Jornada, persona_id: int,
@@ -94,8 +141,7 @@ def _ficha(db: Session, jornada: m.Jornada, persona_id: int,
     # de la manana.
     siguiente = next((t for t in SECUENCIA if t not in hechos), None)
 
-    llega, minutos, contra_vuelo = llegada_del_equipo(
-        jornada.inicio_programado, jornada.vuelo_hora, jornada.vuelo_tipo)
+    llega, minutos, contra_vuelo = llegada_de_la_jornada(db, jornada)
 
     # La ventana en que ese paso se puede marcar sin que la central
     # tenga que revisarlo. Se dice en la pantalla para que nadie marque
@@ -179,7 +225,8 @@ def _ficha(db: Session, jornada: m.Jornada, persona_id: int,
                         "rol": a.rol.nombre if a.rol else None,
                         "telefono": a.persona.telefono}
                        for a in jornada.personal
-                       if a.persona_id != persona_id and a.persona],
+                       if a.persona_id != persona_id and a.persona
+                       and a.relevado_en is None],
         # Si la unidad tiene GPS y si es la suya (seccion 60): la app le
         # dice a quien la trae que su GPS acompana el servicio, y para
         # que. Lo que la central ve de su camioneta no puede ser sorpresa.
@@ -211,8 +258,17 @@ def _ficha(db: Session, jornada: m.Jornada, persona_id: int,
         },
         "ventana": {"abre": abre.isoformat(), "cierra": cierra.isoformat()},
         "siguiente": siguiente.value if siguiente else None,
-        "sueltos": [t.value for t in SUELTOS] if siguiente is None
-                   or siguiente == m.TipoHito.FIN_SERVICIO else [],
+        # Los movimientos sueltos, una vez arrancado el dia. Esperando al
+        # principal --llego y el vuelo viene retrasado-- se puede decir
+        # "sigo en espera" (seccion 99): antes el unico boton era el
+        # contacto, y a las dos horas saltaba la alerta de silencio sin
+        # que el equipo pudiera evitarla.
+        "sueltos": ([t.value for t in SUELTOS]
+                    if siguiente is None or siguiente == m.TipoHito.FIN_SERVICIO
+                    else [m.TipoHito.STANDBY.value]
+                    if (siguiente == m.TipoHito.CONTACTO_EJECUTIVO
+                        and m.TipoHito.LLEGADA_ORIGEN in hechos)
+                    else []),
         "marcados": [{"tipo": h.tipo.value,
                       "marcado_en": h.marcado_en.isoformat(),
                       "diferido": h.diferido,
@@ -290,10 +346,21 @@ def mi_dia(db: Session = Depends(get_db), ahora: datetime | None = None,
     """
     # El hoy del agente, no el del contenedor: cerca de la medianoche
     # son dias distintos, y esta es la pantalla que abre cada manana.
-    ahora = reloj.ahora_de_la_persona(db, usuario.persona, ahora)
+    ahora = reloj.ahora_de_la_persona(db, usuario.persona,
+                                      reloj.de_prueba(ahora))
     hoy = ahora.date()
     jornadas = _jornadas_de(db, usuario.persona_id, hoy,
                             hoy + timedelta(days=1))
+    # Y lo que sigue en la calle aunque su fecha ya paso (seccion 99):
+    # un servicio de 20:00 a 08:00 desaparecia de la app a medianoche
+    # --el "hoy" cambiaba de fecha-- y el equipo se quedaba sin boton
+    # de fin ni de standby, la alerta de silencio saltaba cada vuelta y
+    # el dia solo se cerraba a mano desde la central.
+    vistas = {j.id for j in jornadas}
+    en_la_calle = [j for j in _arrancadas_de(db, usuario.persona_id, hoy)
+                   if j.id not in vistas]
+    jornadas = sorted(jornadas + en_la_calle,
+                      key=lambda j: j.inicio_programado)
 
     fichas = [_ficha(db, j, usuario.persona_id, ahora) for j in jornadas]
 
@@ -311,13 +378,17 @@ def mi_dia(db: Session = Depends(get_db), ahora: datetime | None = None,
         # "ya cerraste" y no "no tienes servicios", que se leeria como
         # que el dia nunca existio.
         "hoy": [f for f in fichas
-                if f["fecha"] == hoy.isoformat()
+                if (f["fecha"] == hoy.isoformat()
+                    or f["estatus"] in ARRANCADAS)
                 and f["estatus"] != m.EstatusJornada.TERMINADA.value],
         "cerrados_hoy": len([f for f in fichas
                              if f["fecha"] == hoy.isoformat()
                              and f["estatus"]
                              == m.EstatusJornada.TERMINADA.value]),
-        "manana": [f for f in fichas if f["fecha"] != hoy.isoformat()],
+        "manana": [f for f in fichas if f["fecha"] > hoy.isoformat()],
+        # A quien relevaron hoy: su dia ya no es suyo, y la app lo dice
+        # en vez de seguir ofreciendole el fin de servicio (seccion 99).
+        "relevado_hoy": _relevos_de(db, usuario.persona_id, hoy),
         "proximos": [{
             "jornada_id": j.id,
             "fecha": j.fecha.isoformat(),
@@ -325,8 +396,7 @@ def mi_dia(db: Session = Depends(get_db), ahora: datetime | None = None,
             "equipo": j.equipo.alias,
             "cliente": (j.equipo.servicio.cliente.nombre
                         if j.equipo.servicio.cliente else None),
-            "llegar_a_las": llegada_del_equipo(
-                j.inicio_programado, j.vuelo_hora, j.vuelo_tipo)[0].isoformat(),
+            "llegar_a_las": llegada_de_la_jornada(db, j)[0].isoformat(),
             "punto": j.origen_direccion,
             # Solo el dia 1 trae hora capturada. Los demas la heredan del
             # primero mientras su agenda no diga otra cosa: sirve para
@@ -371,7 +441,8 @@ def una(jornada_id: int, db: Session = Depends(get_db),
         raise HTTPException(404, f"No existe la jornada {jornada_id}")
     if not any(a.persona_id == usuario.persona_id for a in jornada.personal):
         raise HTTPException(403, "No estas asignado a esa jornada")
-    return _ficha(db, jornada, usuario.persona_id, ahora or datetime.now())
+    return _ficha(db, jornada, usuario.persona_id,
+                  reloj.ahora_de_la_jornada(db, jornada, reloj.de_prueba(ahora)))
 
 
 # ==================================================================
@@ -849,8 +920,9 @@ def hora_de_manana_campo(jornada_id: int, datos: ManianaDeCampoIn,
     tanto, el dia de manana vivia con la hora heredada del primero.
 
     Solo sobre un dia suyo, y solo hacia el dia siguiente de SU equipo.
+    A quien ya relevaron no le toca (seccion 99).
     """
-    if not auth.es_su_propia_jornada(db, usuario, jornada_id):
+    if not auth.es_su_jornada_vigente(db, usuario, jornada_id):
         raise HTTPException(403, "No estas asignado a esa jornada")
     jornada = db.get(m.Jornada, jornada_id)
 
@@ -1058,7 +1130,7 @@ def probar(db: Session = Depends(get_db),
     from app import push
 
     r = push.avisar(db, usuario.persona_id, "Centauro",
-                    "Los avisos están funcionando en este teléfono.",
+                    push.tx(push.idioma_de(db, usuario.persona_id), "prueba"),
                     etiqueta="prueba")
     db.commit()
     if not r["enviados"]:

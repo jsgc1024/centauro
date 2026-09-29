@@ -233,6 +233,9 @@ function entrada() {
       /* El logo se pide de nuevo aqui: quien abre la app por primera
          vez no tenia sesion cuando se pidio al arrancar. */
       cargarLogo();
+      if (sesion.usuario && sesion.usuario.rol === "personal_seguridad") {
+        reengancharAvisos();
+      }
     } catch (err) {
       error.replaceChildren(aviso(err.message, "grave"));
       boton.disabled = false;
@@ -307,6 +310,9 @@ function conCodigo(correoPrevio) {
       /* El logo se pide de nuevo aqui: quien abre la app por primera
          vez no tenia sesion cuando se pidio al arrancar. */
       cargarLogo();
+      if (sesion.usuario && sesion.usuario.rol === "personal_seguridad") {
+        reengancharAvisos();
+      }
     } catch (err) {
       error.replaceChildren(aviso(err.message, "grave"));
       boton.disabled = false;
@@ -361,6 +367,9 @@ async function sincronizar(silencioso = false) {
   sincronizando = true;
   try {
     const r = await vaciar(mandarHito);
+    /* La sesion vencio a media jornada: las marcas se quedan con su
+       hora y su ubicacion, y salen solas al volver a entrar. */
+    if (r.detenida === "sesion") return;
     if (r.rechazados.length) {
       /* Se guardan ANTES de avisar: si el aviso salta con el telefono
          en el bolsillo --o si nadie lo lee-- la marca rechazada sigue a
@@ -451,7 +460,7 @@ async function pantallaHoy() {
      central sabe si se está moviendo hacia el punto. */
   if (location.hash.includes("en_camino=1")) {
     history.replaceState(null, "", "#/hoy");
-    return vozEnCamino(hoy);
+    return vozEnCamino([...hoy, ...manana], datos.momento);
   }
 
   const cuerpo = [
@@ -467,12 +476,28 @@ async function pantallaHoy() {
     r.de_memoria ? sinLinea(r.en) : null,
   ];
 
+  /* A quien relevaron hoy su dia ya no esta aqui, y se le dice por que
+     (seccion 99): antes seguia viendo el dia con "Fin de servicio" como
+     siguiente paso, y si lo tocaba desde su casa cerraba el dia del
+     equipo. */
+  for (const r_ of (datos.relevado_hoy || [])) {
+    cuerpo.push(h("div", { clase: "pendientes" },
+      h("div", {}, t("cmp_te_relevaron")
+        .replace("{quien}", r_.por || t("cmp_alguien"))
+        .replace("{hora}", hora(r_.relevado_en))
+        .replace("{folio}", r_.folio || "")),
+      h("div", { clase: "chico", style: "font-weight:400;margin-top:4px" },
+        t("cmp_te_relevaron_pie"))));
+  }
+
   if (!hoy.length && !manana.length) {
     /* Cerrar el dia lo saca de aqui. Si el hueco dijera "no tienes
        servicios", quien acaba de trabajar doce horas leeria que su dia
        nunca existio. */
     cuerpo.push(h("div", { clase: "vacio" },
-      datos.cerrados_hoy ? t("cmp_dia_cerrado") : t("cmp_sin_servicios")));
+      datos.cerrados_hoy ? t("cmp_dia_cerrado")
+        : (datos.relevado_hoy || []).length ? t("cmp_dia_relevado")
+        : t("cmp_sin_servicios")));
   }
 
   for (const f of hoy) cuerpo.push(tarjetaHoy(f));
@@ -841,6 +866,17 @@ function tarjetaManana(f) {
                      style: "margin-top:8px;text-align:center" },
             t("cmp_rev_pie_manana")))
       : null,
+    /* Un servicio que arranca despues de medianoche se sale de casa
+       hoy: el "voy en camino" tambien vive aqui cuando ya faltan menos
+       de dos horas para estar en el punto (seccion 99). */
+    f.hora_confirmada && f.siguiente === "llegada_origen"
+      && new Date(f.llegar_a_las).getTime() - Date.now() < 2 * 3600 * 1000
+      ? h("div", { clase: "marco" },
+          h("button", { clase: "claro", onclick: (e) => decirQueVoy(e, f) },
+            t("cmp_voy_en_camino")),
+          h("div", { clase: "chico gris", style: "margin-top:8px;text-align:center" },
+            t("cmp_voy_en_camino_pie")))
+      : null,
     h("div", { clase: "marco" }, boton));
 }
 
@@ -877,9 +913,21 @@ async function decirQueVoy(e, f) {
 }
 
 
-async function vozEnCamino(hoy) {
-  const suya = (hoy || []).find(f => f.siguiente === "llegada_origen")
-    || (hoy || [])[0];
+/* A cual dia le toca el "voy en camino": el de hoy que espera la
+   llegada o, si el servicio arranca de madrugada, el de manana al que
+   ya le faltan menos de dos horas (seccion 99). El toque de las 22:30
+   abria la app y no encontraba la jornada: estaba en "Manana". */
+function porArrancar(fichas, momento) {
+  const ahora = momento ? new Date(momento).getTime() : Date.now();
+  const cerca = (f) => f.llegar_a_las
+    && new Date(f.llegar_a_las).getTime() - ahora < 2 * 3600 * 1000;
+  return (fichas || []).find(f => f.siguiente === "llegada_origen" && cerca(f))
+    || (fichas || []).find(f => f.siguiente === "llegada_origen")
+    || (fichas || [])[0];
+}
+
+async function vozEnCamino(fichas, momento) {
+  const suya = porArrancar(fichas, momento);
   if (!suya) return pintar();
 
   const donde = await ubicacion();
@@ -1029,8 +1077,9 @@ function franjaDeshacer() {
 
   const deshacer = h("button", { clase: "claro chico",
     onclick: () => {
-      sacar(suya.id);
-      mensajeCorto(t("cmp_marca_deshecha"));
+      /* Si ya va en vuelo no se deshace: el servidor puede estar
+         guardandola, y fingir que no paso es peor que decirlo. */
+      mensajeCorto(t(sacar(suya.id) ? "cmp_marca_deshecha" : "cmp_marca_ya_salio"));
       pintar();
     } }, t("cmp_deshacer"));
 
@@ -1676,10 +1725,50 @@ function botonSalir() {
         && !confirm(t("cmp_salir_con_pendientes")
                       .replace("{n}", pendientes().length))) return;
     if (!confirm(t("cmp_confirmar_salir"))) return;
-    olvidar();
-    limpiar();
-    sesion.token = null; sesion.usuario = null; location.hash = ""; pintar();
+    salir();
   } }, t("cmp_salir"));
+}
+
+/* Salir de verdad: el telefono deja de recibir los avisos de quien se
+   va ANTES de tirar la sesion (seccion 99). Se quedaba suscrito con su
+   nombre: el «mañana trabajas» de Juan le llegaba al telefono que ya
+   traia Luis, y el boton de confirmar confirmaba los dias de quien
+   estuviera adentro. Es lo mejor que se puede: sin senal no se avisa
+   al servidor, y entonces la baja la hace el siguiente al entrar. */
+async function salir() {
+  try {
+    if (soportaAvisos() && navigator.serviceWorker) {
+      const reg = await navigator.serviceWorker.ready;
+      const sus = await reg.pushManager.getSubscription();
+      if (sus) {
+        await api.borrar("/campo/push/suscribir?endpoint="
+                         + encodeURIComponent(sus.endpoint));
+      }
+    }
+  } catch { /* sin senal: la baja la hace el siguiente al entrar */ }
+  olvidar();
+  limpiar();
+  sesion.token = null; sesion.usuario = null; location.hash = ""; pintar();
+}
+
+/* Al entrar, el telefono se vuelve a colgar de quien entro. Si el
+   navegador ya trae su suscripcion --el permiso se dio una vez y no se
+   vuelve a pedir--, se registra a nombre de esta persona: asi el
+   telefono que cambio de manos sin salir bien deja de avisarle al
+   anterior, y a quien entra le llegan los suyos sin volver a encender
+   nada. */
+async function reengancharAvisos() {
+  try {
+    if (!soportaAvisos() || Notification.permission !== "granted") return;
+    const reg = await navigator.serviceWorker.ready;
+    const sus = await reg.pushManager.getSubscription();
+    if (!sus) return;
+    const j = sus.toJSON();
+    await api.post("/campo/push/suscribir", {
+      endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth,
+      agente: navigator.userAgent,
+    });
+  } catch { /* sin senal, o sin llaves: se intenta en «Yo» */ }
 }
 
 /* ---------------------------------------------------------- armazon */
@@ -2151,6 +2240,7 @@ const nombreRol = () => ({
   director_operaciones: t("cmp_rol_dir_operaciones"),
   director_general: t("cmp_rol_dir_general"), admin: t("cmp_rol_admin"),
   recursos_humanos: t("cmp_rol_rrhh"),
+  sistema_calidad: t("rol_sistema_calidad"),
 });
 
 function otraCuenta() {
@@ -2167,10 +2257,7 @@ function otraCuenta() {
       if (pendientes().length
           && !confirm(t("cmp_salir_con_pendientes")
                         .replace("{n}", pendientes().length))) return;
-      olvidar();
-      limpiar();
-      sesion.token = null; sesion.usuario = null;
-      location.hash = ""; pintar();
+      salir();
     } }, t("cmp_entrar_otra")),
     /* La consola vive en otra direccion (seccion 71): /consola/ la
        abre en el mismo servidor y, desde appep., el proxy la manda a

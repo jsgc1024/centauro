@@ -25,3 +25,23 @@ def llegada_del_equipo(inicio_programado: datetime,
                 minutos_aeropuerto, True)
     return (inicio_programado - timedelta(minutes=minutos_normal),
             minutos_normal, False)
+
+
+def llegada_de_la_jornada(db, jornada) -> tuple[datetime, int, bool]:
+    """Lo mismo, con los minutos del pais del servicio.
+
+    La app, la central y el camino usaban los 45/30 de siempre mientras
+    el task sheet ya leia los del pais (seccion 99): si un pais los
+    cambiaba en Catalogos, la hoja decia una hora y la app otra.
+    """
+    from app import models as m
+
+    equipo = getattr(jornada, "equipo", None)
+    servicio = getattr(equipo, "servicio", None)
+    pais = (db.get(m.Pais, servicio.pais_id)
+            if db is not None and servicio is not None and servicio.pais_id
+            else None)
+    return llegada_del_equipo(
+        jornada.inicio_programado, jornada.vuelo_hora, jornada.vuelo_tipo,
+        getattr(pais, "anticipacion_aeropuerto_min", 45) or 45,
+        getattr(pais, "anticipacion_min", 30) or 30)

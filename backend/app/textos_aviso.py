@@ -94,6 +94,10 @@ TEXTOS = {
         "extra_cuerpo": ("The service completes its {horas} contracted "
                          "hours at {hora}. Overtime starts from that "
                          "moment."),
+        "extra_asunto_ya": "The service is now in overtime",
+        "extra_cuerpo_ya": ("The service completed its {horas} contracted "
+                            "hours at {hora}. Overtime is running since "
+                            "that moment."),
         # --- fin del dia
         "fin_asunto": "{folio}: service ended",
         "fin_cuerpo": "The {dia} service ended at {hora}.",
@@ -229,6 +233,10 @@ TEXTOS = {
         "extra_cuerpo": ("El servicio cumple sus {horas} horas contratadas "
                          "a las {hora}. A partir de ese momento se generan "
                          "horas extra."),
+        "extra_asunto_ya": "El servicio ya está en horas extra",
+        "extra_cuerpo_ya": ("El servicio cumplió sus {horas} horas "
+                            "contratadas a las {hora}. Desde ese momento "
+                            "corren horas extra."),
         "fin_asunto": "{folio}: servicio terminado",
         "fin_cuerpo": "El servicio del {dia} terminó a las {hora}.",
         "fin_con_extra": ("Se generaron {horas} horas extra sobre el "
@@ -360,6 +368,10 @@ TEXTOS = {
         "extra_cuerpo": ("O serviço completa suas {horas} horas contratadas "
                          "às {hora}. A partir desse momento começam as "
                          "horas extras."),
+        "extra_asunto_ya": "O serviço já está em horas extras",
+        "extra_cuerpo_ya": ("O serviço completou suas {horas} horas "
+                            "contratadas às {hora}. Desde esse momento "
+                            "correm horas extras."),
         "fin_asunto": "{folio}: serviço encerrado",
         "fin_cuerpo": "O serviço de {dia} terminou às {hora}.",
         "fin_con_extra": ("Foram geradas {horas} horas extras além do "

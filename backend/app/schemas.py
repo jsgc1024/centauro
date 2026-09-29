@@ -373,7 +373,7 @@ class JornadaIn(Base):
     origen_direccion: str | None = None
     origen_lat: Decimal | None = None
     origen_lon: Decimal | None = None
-    geocerca_metros: int | None = None
+    geocerca_metros: int | None = Field(None, ge=50, le=5000)
     origen_aeropuerto: bool = False
     # Lo que dijo Google del lugar, aparte de lo que decidio el consultor.
     origen_google_aeropuerto: bool | None = None
@@ -738,7 +738,10 @@ class OrigenIn(Base):
     La geocerca se dibuja sobre ese mismo pin, no sobre otro punto."""
     origen_lat: Decimal | None = None
     origen_lon: Decimal | None = None
-    geocerca_metros: int | None = None
+    # Con tope (seccion 99): el campo aceptaba 50,000 m --la llegada
+    # "probaba" desde cualquier lado de la ciudad-- o un negativo, con
+    # el que nadie podia marcar. De 50 m a 5 km: el aeropuerto usa 2 km.
+    geocerca_metros: int | None = Field(None, ge=50, le=5000)
     origen_direccion: str | None = None
     # Cuando se dice, el radio se ajusta solo: 2 km en aeropuerto, 500 m
     # en cualquier otro lado.
@@ -767,12 +770,15 @@ class HitoIn(Base):
     lat: Decimal | None = None
     lon: Decimal | None = None
     marcado_en: datetime | None = None
-    nota: str | None = None
+    # Con el tope de su columna (seccion 99): un texto mas largo
+    # reventaba en la base con error 500 y la cola del telefono lo
+    # reintentaba para siempre.
+    nota: str | None = Field(None, max_length=300)
 
 
 class AjusteHitoIn(Base):
     nuevo_momento: datetime
-    justificacion: str
+    justificacion: str = Field(max_length=400)
 
 
 class CierreAManoIn(Base):

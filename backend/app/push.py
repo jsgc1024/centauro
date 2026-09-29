@@ -74,9 +74,15 @@ def avisar(db: Session, persona_id: int, titulo: str, cuerpo: str,
 
     from pywebpush import WebPushException, webpush
 
+    # Los botones de la notificacion, en el idioma de quien la recibe:
+    # el trabajador de fondo no tiene diccionario (seccion 99).
+    lengua = idioma_de(db, persona_id)
     carga = json.dumps({"titulo": titulo, "cuerpo": cuerpo, "url": url,
                         "etiqueta": etiqueta or "centauro",
-                        "accion": accion})
+                        "accion": accion,
+                        "botones": {"confirmar": tx(lengua, "accion_confirmar"),
+                                    "en_camino": tx(lengua, "accion_en_camino"),
+                                    "abrir": tx(lengua, "accion_abrir")}})
     enviados, apagadas = 0, 0
 
     for fila in filas:
@@ -111,6 +117,94 @@ def avisar(db: Session, persona_id: int, titulo: str, cuerpo: str,
         db.flush()
     return {"enviados": enviados, "telefonos": len(filas),
             "apagadas": apagadas}
+
+
+# ==================================================================
+# En que idioma se le habla a cada quien
+#
+# Los avisos iban en espanol fijo, tambien a Brasil (seccion 99). Como
+# la app: el idioma sale del pais de la plaza de la persona.
+# ==================================================================
+
+TEXTOS_PUSH = {
+    "es": {
+        "vispera_titulo": "Mañana trabajas",
+        "vispera_cuerpo": "Mañana a las {hora}{mas}. Abre la app y confirma de enterado.",
+        "vispera_mas": " y {n} servicio(s) más",
+        "relevo_entra_titulo": "Entras a un servicio",
+        "relevo_entra_cuerpo": "Cubres a {quien}: {cuando}{dias}. Abre la app y confirma de enterado.",
+        "relevo_sale_titulo": "Ya no vas a este servicio",
+        "relevo_sale_cuerpo": "{quien} te cubre: {cuando}{dias}. No te presentes; revisa tu día en la app.",
+        "relevo_dias": " · {n} días",
+        "relevo_rango": "{desde} al {hasta}",
+        "asignacion_titulo": "Trabajas {dia}",
+        "asignacion_cuerpo": "Te acaban de asignar {folio}: {dia} a las {hora}. Abre la app y confirma.",
+        "hoy": "hoy", "manana": "mañana",
+        "deposito_titulo": "Ya te depositaron",
+        "deposito_cuerpo": "{monto} de viáticos.{referencia} Ya lo puedes ver en la app.",
+        "deposito_referencia": " Referencia {ref}.",
+        "devolucion_titulo": "Tu devolución no se pudo confirmar",
+        "comprobante_titulo": "Te rechazaron un comprobante",
+        "comprobante_de": "{concepto} de {monto}.",
+        "falta_con_plazo": "Te faltan {monto} por comprobar hasta el {limite}.",
+        "falta_sin_plazo": "Te faltan {monto} por comprobar. El plazo de 24 horas corre cuando termine el servicio.",
+        "cancelacion_titulo": "Se canceló un servicio",
+        "cancelacion_cuerpo": "{folio}: {rango} ya no va. No te presentes; revisa tu día en la app.",
+        "cambio_hora_titulo": "Cambió tu hora",
+        "cambio_hora_cuerpo": "{fecha}: ahora es a las {hora} (antes {antes}). Revisa tu día en la app.",
+        "prueba": "Los avisos están funcionando en este teléfono.",
+        "accion_confirmar": "Confirmo que voy",
+        "accion_en_camino": "Voy en camino",
+        "accion_abrir": "Abrir",
+    },
+    "pt": {
+        "vispera_titulo": "Amanhã você trabalha",
+        "vispera_cuerpo": "Amanhã às {hora}{mas}. Abra o app e confirme.",
+        "vispera_mas": " e mais {n} serviço(s)",
+        "relevo_entra_titulo": "Você entra em um serviço",
+        "relevo_entra_cuerpo": "Você cobre {quien}: {cuando}{dias}. Abra o app e confirme.",
+        "relevo_sale_titulo": "Você já não vai a este serviço",
+        "relevo_sale_cuerpo": "{quien} cobre você: {cuando}{dias}. Não se apresente; veja o seu dia no app.",
+        "relevo_dias": " · {n} dias",
+        "relevo_rango": "{desde} a {hasta}",
+        "asignacion_titulo": "Você trabalha {dia}",
+        "asignacion_cuerpo": "Acabaram de designar você para {folio}: {dia} às {hora}. Abra o app e confirme.",
+        "hoy": "hoje", "manana": "amanhã",
+        "deposito_titulo": "Já depositaram para você",
+        "deposito_cuerpo": "{monto} de diárias.{referencia} Já pode ver no app.",
+        "deposito_referencia": " Referência {ref}.",
+        "devolucion_titulo": "A sua devolução não pôde ser confirmada",
+        "comprobante_titulo": "Rejeitaram um comprovante seu",
+        "comprobante_de": "{concepto} de {monto}.",
+        "falta_con_plazo": "Faltam {monto} para comprovar até {limite}.",
+        "falta_sin_plazo": "Faltam {monto} para comprovar. O prazo de 24 horas corre quando o serviço terminar.",
+        "cancelacion_titulo": "Um serviço foi cancelado",
+        "cancelacion_cuerpo": "{folio}: {rango} já não acontece. Não se apresente; veja o seu dia no app.",
+        "cambio_hora_titulo": "O seu horário mudou",
+        "cambio_hora_cuerpo": "{fecha}: agora é às {hora} (antes {antes}). Veja o seu dia no app.",
+        "prueba": "Os avisos estão funcionando neste telefone.",
+        "accion_confirmar": "Confirmo que vou",
+        "accion_en_camino": "Estou a caminho",
+        "accion_abrir": "Abrir",
+    },
+}
+
+
+def idioma_de(db: Session, persona_id: int | None) -> str:
+    """El idioma del pais de la plaza de la persona; espanol si no hay."""
+    from app import reloj
+
+    persona = db.get(m.Persona, persona_id) if persona_id else None
+    pais_id = reloj.pais_de_la_persona(persona)
+    pais = db.get(m.Pais, pais_id) if pais_id else None
+    codigo = (getattr(pais, "idioma", None) or "es").lower()
+    return codigo if codigo in TEXTOS_PUSH else "es"
+
+
+def tx(idioma: str, clave: str, **datos) -> str:
+    plantilla = TEXTOS_PUSH.get(idioma, TEXTOS_PUSH["es"]).get(
+        clave, TEXTOS_PUSH["es"].get(clave, clave))
+    return plantilla.format(**datos) if datos else plantilla
 
 
 # ==================================================================
@@ -169,12 +263,21 @@ def recordar_la_vispera(db: Session, dia=None,
         # a proposito, no el calendario.
         toca = [(p, dia) for p in activos] or [(None, dia)]
     elif activos:
-        toca = [(p, reloj.hoy_en(p) + timedelta(days=1)) for p in activos
-                if reloj.ahora_en(p, ahora).hour == HORA_DEL_RECORDATORIO]
+        # Desde las cinco, en la primera vuelta que no lo haya mandado
+        # (seccion 99). Antes era "a las cinco en punto": si el reloj se
+        # saltaba esa vuelta --un despliegue, el worker caido--, la tarea
+        # corria a las 18:05 y ese dia nadie recibia el recordatorio.
+        toca = []
+        for p in activos:
+            local = reloj.ahora_en(p, ahora)
+            manana = local.date() + timedelta(days=1)
+            if (local.hour >= HORA_DEL_RECORDATORIO
+                    and not _vispera_ya_mandada(db, p, manana)):
+                toca.append((p, manana))
     else:
         # Sin paises dados de alta queda el reloj de la casa.
         toca = ([(None, date.today() + timedelta(days=1))]
-                if reloj.ahora_en(None, ahora).hour == HORA_DEL_RECORDATORIO
+                if reloj.ahora_en(None, ahora).hour >= HORA_DEL_RECORDATORIO
                 else [])
 
     if not toca:
@@ -197,20 +300,53 @@ def recordar_la_vispera(db: Session, dia=None,
         jornadas.sort(key=lambda j: j.inicio_programado)
         primera = jornadas[0]
         cuantos = len(jornadas)
-        cuerpo = (f"Mañana a las {primera.inicio_programado:%H:%M}"
-                  + (f" y {cuantos - 1} servicio(s) más" if cuantos > 1 else "")
-                  + ". Abre la app y confirma de enterado.")
-        r = avisar(db, persona_id, "Manana trabajas", cuerpo,
+        lengua = idioma_de(db, persona_id)
+        cuerpo = tx(lengua, "vispera_cuerpo",
+                    hora=f"{primera.inicio_programado:%H:%M}",
+                    mas=(tx(lengua, "vispera_mas", n=cuantos - 1)
+                         if cuantos > 1 else ""))
+        r = avisar(db, persona_id, tx(lengua, "vispera_titulo"), cuerpo,
                    etiqueta="vispera", horas=HORAS_DE_ESPERA_VISPERA,
                    accion="confirmar")
         if r["enviados"]:
             avisados.append({"persona_id": persona_id,
                              "servicios": cuantos})
+    # Queda anotado por pais para que la siguiente vuelta no lo repita:
+    # el recordatorio es uno por noche, aunque el reloj pase cada hora.
+    if dia is None:
+        for pais, cada in toca:
+            if pais is not None:
+                _anotar_vispera(db, pais, cada)
     db.commit()
     return {"dias": sorted({d.isoformat() for _, d in toca}),
             "paises": [p.codigo for p, _ in toca if p is not None],
             "avisados": avisados,
             "sin_telefono": len(por_persona) - len(avisados)}
+
+
+def _clave_vispera(pais) -> str:
+    return f"campo.recordar_la_vispera/{pais.codigo}"
+
+
+def _vispera_ya_mandada(db: Session, pais, manana) -> bool:
+    """Si el recordatorio de ese pais para ese dia ya salio.
+
+    Vive en la ultima vuelta del reloj, con una fila por pais: el dia al
+    que le toco queda en la nota. El manual no la ensena --no es una
+    tarea del calendario-- y las pruebas la vacian con lo demas.
+    """
+    fila = db.get(m.VueltaDelReloj, _clave_vispera(pais))
+    return fila is not None and fila.nota == manana.isoformat()
+
+
+def _anotar_vispera(db: Session, pais, manana) -> None:
+    from datetime import datetime, timezone
+
+    from app import manual
+
+    manual.anotar_vuelta(_clave_vispera(pais),
+                         termino=datetime.now(timezone.utc),
+                         nota=manana.isoformat(), db=db)
 
 
 # ==================================================================
@@ -234,24 +370,29 @@ def avisar_relevo(db: Session, entra: m.Persona, sale: m.Persona,
         return {"enviados": 0, "motivo": "sin dias"}
 
     cuantos = len(dias)
-    cuando = dias[0] if cuantos == 1 else f"{dias[0]} al {dias[-1]}"
+
+    def _texto(lengua, clave, quien):
+        cuando = (dias[0] if cuantos == 1
+                  else tx(lengua, "relevo_rango", desde=dias[0], hasta=dias[-1]))
+        return tx(lengua, clave, quien=quien, cuando=cuando,
+                  dias=(tx(lengua, "relevo_dias", n=cuantos)
+                        if cuantos > 1 else ""))
+
+    de_entra = idioma_de(db, entra.id)
     r = avisar(
         db, entra.id,
-        titulo="Entras a un servicio",
-        cuerpo=(f"Cubres a {sale.nombre}: {cuando}"
-                + (f" · {cuantos} dias" if cuantos > 1 else "")
-                + ". Abre la app y confirma de enterado."),
+        titulo=tx(de_entra, "relevo_entra_titulo"),
+        cuerpo=_texto(de_entra, "relevo_entra_cuerpo", sale.nombre),
         etiqueta="relevo", urgente=True, accion="confirmar")
 
     # Y al que sale. Era el mismo aviso y faltaba la mitad: quien se
     # quedo fuera se enteraba por telefono, o se presentaba a las seis
     # de la manana a un servicio que ya no era suyo.
+    de_sale = idioma_de(db, sale.id)
     avisar(
         db, sale.id,
-        titulo="Ya no vas a este servicio",
-        cuerpo=(f"{entra.nombre} te cubre: {cuando}"
-                + (f" · {cuantos} dias" if cuantos > 1 else "")
-                + ". No te presentes; revisa tu dia en la app."),
+        titulo=tx(de_sale, "relevo_sale_titulo"),
+        cuerpo=_texto(de_sale, "relevo_sale_cuerpo", entra.nombre),
         etiqueta="relevo", urgente=True)
     return r
 
@@ -301,13 +442,13 @@ def avisar_asignacion_sin_vispera(db: Session, jornadas: list,
     urgentes.sort(key=lambda par: par[0].inicio_programado)
     primera, cuando = urgentes[0]
     servicio = primera.equipo.servicio
-    dia = "hoy" if cuando == "hoy" else "manana"
+    lengua = idioma_de(db, persona_id)
+    dia = tx(lengua, "hoy" if cuando == "hoy" else "manana")
     return avisar(
         db, persona_id,
-        titulo=f"Trabajas {dia}",
-        cuerpo=(f"Te acaban de asignar {servicio.folio}: {dia} a las "
-                f"{primera.inicio_programado:%H:%M}. "
-                f"Abre la app y confirma."),
+        titulo=tx(lengua, "asignacion_titulo", dia=dia),
+        cuerpo=tx(lengua, "asignacion_cuerpo", folio=servicio.folio, dia=dia,
+                  hora=f"{primera.inicio_programado:%H:%M}"),
         etiqueta="asignacion-urgente", urgente=True, accion="confirmar")
 
 
@@ -338,12 +479,14 @@ def avisar_deposito(db: Session, deposito) -> dict:
     ejecutivo de cuenta.
     """
     referencia = (deposito.referencia or "").strip()
+    lengua = idioma_de(db, deposito.persona_id)
     return avisar(
         db, deposito.persona_id,
-        titulo="Ya te depositaron",
-        cuerpo=(f"{_peso(deposito.monto, deposito.moneda)} de viaticos."
-                + (f" Referencia {referencia}." if referencia else "")
-                + " Ya lo puedes ver en la app."),
+        titulo=tx(lengua, "deposito_titulo"),
+        cuerpo=tx(lengua, "deposito_cuerpo",
+                  monto=_peso(deposito.monto, deposito.moneda),
+                  referencia=(tx(lengua, "deposito_referencia", ref=referencia)
+                              if referencia else "")),
         etiqueta="deposito")
 
 
@@ -356,7 +499,7 @@ def avisar_devolucion_rechazada(db: Session, devolucion) -> dict:
     viatico = devolucion.asignacion
     return avisar(
         db, viatico.persona_id,
-        titulo="Tu devolucion no se pudo confirmar",
+        titulo=tx(idioma_de(db, viatico.persona_id), "devolucion_titulo"),
         cuerpo=(f"{_peso(devolucion.monto, devolucion.moneda)}: "
                 f"{devolucion.motivo_rechazo}"),
         etiqueta="devolucion", urgente=True)
@@ -383,21 +526,23 @@ def avisar_comprobante_rechazado(db: Session, viatico, comprobante) -> dict:
     motivo = (comprobante.motivo_rechazo or "").strip()
     concepto = getattr(comprobante.concepto, "value", comprobante.concepto)
 
-    partes = [f"{concepto} de {_peso(comprobante.monto, viatico.moneda)}."]
+    lengua = idioma_de(db, viatico.persona_id)
+    partes = [tx(lengua, "comprobante_de", concepto=concepto,
+                 monto=_peso(comprobante.monto, viatico.moneda))]
     if motivo:
         partes.append(f"{motivo}.")
     if falta > 0:
         # Sin limite el servicio no ha terminado: decir que el plazo
         # "sigue corriendo" era falso y asustaba de mas.
-        partes.append(f"Te faltan {_peso(falta, viatico.moneda)} por "
-                      f"comprobar hasta el {limite:%d/%m a las %H:%M}."
+        partes.append(tx(lengua, "falta_con_plazo",
+                         monto=_peso(falta, viatico.moneda),
+                         limite=f"{limite:%d/%m %H:%M}")
                       if limite else
-                      f"Te faltan {_peso(falta, viatico.moneda)} por "
-                      "comprobar. El plazo de 24 horas corre cuando "
-                      "termine el servicio.")
+                      tx(lengua, "falta_sin_plazo",
+                         monto=_peso(falta, viatico.moneda)))
     return avisar(
         db, viatico.persona_id,
-        titulo="Te rechazaron un comprobante",
+        titulo=tx(lengua, "comprobante_titulo"),
         cuerpo=" ".join(partes),
         # Urgente de verdad: lo que esta corriendo es un plazo, y lo que
         # hay del otro lado es un descuento de su pago.
@@ -433,11 +578,12 @@ def _asignados(db: Session, jornadas: list) -> dict:
     return por_persona
 
 
-def _rango(jornadas: list) -> str:
+def _rango(jornadas: list, idioma: str = "es") -> str:
     dias = sorted({j.fecha for j in jornadas})
     if len(dias) == 1:
         return f"{dias[0]:%d/%m}"
-    return f"{dias[0]:%d/%m} al {dias[-1]:%d/%m}"
+    return tx(idioma, "relevo_rango", desde=f"{dias[0]:%d/%m}",
+              hasta=f"{dias[-1]:%d/%m}")
 
 
 def avisar_cancelacion(db: Session, jornadas: list, folio: str) -> dict:
@@ -450,10 +596,11 @@ def avisar_cancelacion(db: Session, jornadas: list, folio: str) -> dict:
     """
     avisados = []
     for persona_id, suyas in _asignados(db, jornadas).items():
+        lengua = idioma_de(db, persona_id)
         r = avisar(db, persona_id,
-                   titulo="Se cancelo un servicio",
-                   cuerpo=(f"{folio}: {_rango(suyas)} ya no va. "
-                           f"No te presentes; revisa tu dia en la app."),
+                   titulo=tx(lengua, "cancelacion_titulo"),
+                   cuerpo=tx(lengua, "cancelacion_cuerpo", folio=folio,
+                             rango=_rango(suyas, lengua)),
                    etiqueta="cancelacion", urgente=True)
         if r["enviados"]:
             avisados.append(persona_id)
@@ -473,11 +620,13 @@ def avisar_cambio_de_hora(db: Session, jornada, antes) -> dict:
 
     avisados = []
     for persona_id in _asignados(db, [jornada]):
+        lengua = idioma_de(db, persona_id)
         r = avisar(db, persona_id,
-                   titulo="Cambio tu hora",
-                   cuerpo=(f"{jornada.fecha:%d/%m}: ahora es a las "
-                           f"{jornada.inicio_programado:%H:%M} "
-                           f"(antes {antes:%H:%M}). Revisa tu dia en la app."),
+                   titulo=tx(lengua, "cambio_hora_titulo"),
+                   cuerpo=tx(lengua, "cambio_hora_cuerpo",
+                             fecha=f"{jornada.fecha:%d/%m}",
+                             hora=f"{jornada.inicio_programado:%H:%M}",
+                             antes=f"{antes:%H:%M}"),
                    etiqueta="cambio-hora", urgente=True)
         if r["enviados"]:
             avisados.append(persona_id)

@@ -20,9 +20,9 @@ Um serviço eventual passa sempre pelos mesmos passos. Saber em que passo ele es
 
 6. **Prestes a começar.** Duas horas antes, o relógio passa o dia para prestes a começar e a central assume o acompanhamento.
 7. **O caminho até o ponto.** A cada cinco minutos o relógio revisa quem está a caminho e a quem é preciso chamar.
-8. **A chegada.** O pessoal marca a chegada dentro do ponto. O dia passa a **No ponto**, e o executivo e o solicitante recebem o aviso de que a equipe está no local, com os seus telefones. A marcação que chega mais de 15 minutos depois da hora marcada é revisada pela central.
+8. **A chegada.** O pessoal marca a chegada dentro do ponto. O dia passa a **No ponto**, e o executivo e o solicitante recebem o aviso de que a equipe está no local, com os seus telefones. A marcação que chega mais de 15 minutos depois da hora marcada é revisada pela central. O serviço de madrugada aceita a chegada desde três horas antes da hora de estar no ponto, mesmo na véspera; o dia que ainda não chegou não aceita marcações.
 9. **O contato.** O meet and greet **inicia o dia**: passa a **Em curso** e a partir dessa hora contam as horas. Se esqueceram de marcá-lo, a central o registra à mão.
-10. **Em curso.** Se o serviço passa duas horas sem reportar, a central recebe um alerta de silêncio.
+10. **Em curso.** Se o serviço passa duas horas sem reportar, a central recebe um alerta de silêncio; esperando o principal, a equipe pode dizer **Em espera** para que não dispare. O alerta se fecha sozinho quando a equipe volta a reportar, com quem e a que hora. O serviço que atravessa a meia-noite continua no app até terminar. A quem foi substituído por contingência o app avisa e o seu dia já não aparece: o que marcar depois da hora da substituição não entra.
 11. **As horas extras.** Trinta minutos antes de completar as horas contratadas, sai o aviso.
 12. **O fim.** O pessoal marca o fim do serviço. O solicitante recebe o aviso com as horas extras do dia e a que horas é o seguinte.
 

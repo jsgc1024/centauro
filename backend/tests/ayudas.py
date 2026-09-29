@@ -73,12 +73,28 @@ def configurar_origen(cliente, headers, jornada_id):
                          json=ORIGEN, headers=headers)
 
 
-def marcar(cliente, headers, jornada_id, tipo, cuando=None, ubicacion=None):
+def marcar(cliente, headers, jornada_id, tipo, cuando=None, ubicacion=None,
+           ahora=None):
+    """Una marca desde la app.
+
+    `ahora` es el reloj del servidor, que fuera de produccion se puede
+    mover (seccion 99): un dia cuya fecha no ha llegado ya no se marca,
+    y media bateria marca dias de dentro de un ano con `cuando`. Por
+    omision, una marca de mas de tres horas en el futuro se manda con el
+    reloj parado en su propia hora, como si el dia hubiera llegado;
+    `ahora=False` deja el reloj del servidor donde esta --para probar
+    justo un telefono con la hora adelantada--.
+    """
     cuerpo = {"tipo": tipo, **(ubicacion or DENTRO)}
     if cuando:
         cuerpo["marcado_en"] = cuando.isoformat()
-    return cliente.post(f"/operacion/jornadas/{jornada_id}/hitos",
-                        json=cuerpo, headers=headers)
+    if ahora is None and cuando and cuando.tzinfo is None \
+            and cuando > datetime.now() + timedelta(hours=3):
+        ahora = cuando
+    ruta = f"/operacion/jornadas/{jornada_id}/hitos"
+    if ahora:
+        ruta += f"?ahora={ahora.isoformat()}"
+    return cliente.post(ruta, json=cuerpo, headers=headers)
 
 
 # Una imagen de un pixel y una firma que lo parezca. Lo que importa en

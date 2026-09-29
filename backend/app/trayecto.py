@@ -33,7 +33,7 @@ from app import programacion
 from app import push
 from app import reloj
 from app.operacion import distancia_metros
-from app.presentacion import llegada_del_equipo
+from app.presentacion import llegada_de_la_jornada
 
 # Minutos antes de la hora de estar en el punto. El primero manda: ver
 # el docstring.
@@ -61,8 +61,7 @@ MINUTOS_DE_GRACIA_POR_TELEFONO = 30
 
 def hora_de_estar(db: Session, jornada: m.Jornada) -> datetime:
     """A que hora tiene que estar el equipo en el punto."""
-    llega, _minutos, _contra = llegada_del_equipo(
-        jornada.inicio_programado, jornada.vuelo_hora, jornada.vuelo_tipo)
+    llega, _minutos, _contra = llegada_de_la_jornada(db, jornada)
     return llega
 
 

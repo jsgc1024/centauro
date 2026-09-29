@@ -25,7 +25,7 @@ from app import horas_extra
 from app import implantado as imp
 from app import models as m
 from app import reloj
-from app.presentacion import llegada_del_equipo
+from app.presentacion import llegada_de_la_jornada
 
 # ------------------------------------------------------------- reglas
 
@@ -278,8 +278,7 @@ def revision_del_dia(db: Session, jornada: m.Jornada) -> list[dict]:
 def _ficha_del_dia(db: Session, jornada: m.Jornada, ahora: datetime,
                    ciudades: dict, nombres: dict) -> dict:
     servicio = jornada.equipo.servicio
-    llega, minutos, contra_vuelo = llegada_del_equipo(
-        jornada.inicio_programado, jornada.vuelo_hora, jornada.vuelo_tipo)
+    llega, minutos, contra_vuelo = llegada_de_la_jornada(db, jornada)
     revision = revision_del_dia(db, jornada)
     faltan = [p for p in revision if not p["listo"]]
 
@@ -474,6 +473,13 @@ def _en_curso(db: Session, jornada: m.Jornada, ahora: datetime,
         # agente se arma sobre esta fecha, y un servicio de Sao Paulo
         # puede estar en otro dia que el navegador de quien captura.
         "fecha": jornada.fecha.isoformat(),
+        # Y si el dia cruza la medianoche (seccion 99): el contacto de
+        # las 00:30 de un servicio de 20:00 a 08:00 es del dia siguiente,
+        # y armado sobre `fecha` caia diecinueve horas antes del inicio.
+        "inicio_programado": jornada.inicio_programado.isoformat(),
+        "cruza_medianoche": (jornada.fin_programado is not None
+                             and jornada.fin_programado.date()
+                             > jornada.fecha),
         # Con telefono: lo primero que hace quien lee un renglon en rojo
         # es llamar, y buscar el numero en otra pantalla es el rato en
         # que el servicio sigue callado.

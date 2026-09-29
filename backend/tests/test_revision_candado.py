@@ -50,9 +50,8 @@ def _fin(cliente, headers, j):
     marcar(cliente, headers, j["id"], "llegada_origen",
            inicio - timedelta(minutes=10))
     marcar(cliente, headers, j["id"], "contacto_ejecutivo", inicio)
-    return cliente.post(f"/operacion/jornadas/{j['id']}/hitos", headers=headers,
-                        json={"tipo": "fin_servicio", "marcado_en": fin.isoformat(),
-                              "lat": 19.4326, "lon": -99.1332})
+    return marcar(cliente, headers, j["id"], "fin_servicio", fin,
+                  ubicacion={"lat": 19.4326, "lon": -99.1332})
 
 
 def _servicio(cliente, sesion, datos, dias=1, quien="Juan Ramirez"):

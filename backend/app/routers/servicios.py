@@ -2251,6 +2251,12 @@ def revisiones_del_servicio(servicio_id: int, fotos: bool = False,
                 .first())
         if not suyo:
             raise HTTPException(403, "No participas en ese servicio")
+    elif not auth.puede_el_usuario(db, usuario, "servicios.ver"):
+        # Pedir sesion no es pedir permiso (seccion 99): las fotos y las
+        # firmas de la unidad las ve quien opera el servicio.
+        raise HTTPException(403, {
+            "mensaje": "Tu puesto no ve las revisiones de la unidad",
+            "que_hacer": "Pide la actividad «ver servicios» a administracion."})
     filas = (db.query(m.RevisionUnidad)
              .filter_by(servicio_id=servicio.id)
              .order_by(m.RevisionUnidad.momento).all())

@@ -9,16 +9,18 @@
    Se hace en el telefono y no en el servidor a proposito: lo que no se
    sube, no se espera. */
 
+import { t } from "/consola/idioma.js";
+
 const LADO_MAXIMO = 1600;
 const CALIDAD = 0.7;
 
 export function reducir(archivo) {
   return new Promise((listo, falla) => {
     const lector = new FileReader();
-    lector.onerror = () => falla(new Error("No se pudo leer la foto"));
+    lector.onerror = () => falla(new Error(t("cmp_foto_no_se_lee")));
     lector.onload = () => {
       const img = new Image();
-      img.onerror = () => falla(new Error("Esa imagen no se puede abrir"));
+      img.onerror = () => falla(new Error(t("cmp_imagen_no_abre")));
       img.onload = () => {
         const escala = Math.min(1, LADO_MAXIMO / Math.max(img.width,
                                                           img.height));

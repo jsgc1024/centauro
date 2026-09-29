@@ -17,7 +17,7 @@ ejecutivo pedía un hito previo; el fin de servicio no pedía nada.
 """
 from datetime import datetime, timedelta
 
-from ayudas import (DENTRO, asignar, configurar_origen, crear_servicio,
+from ayudas import (asignar, configurar_origen, crear_servicio,
                     jornada, manana, marcar)
 
 
@@ -50,7 +50,8 @@ def test_una_marca_del_futuro_no_se_toma_como_buena(cliente, sesion, datos):
     # cualquier huso, sin depender de a qué hora sea la jornada.
     del_futuro = datetime.now() + timedelta(hours=12)
 
-    r = marcar(cliente, sesion("juan"), j["id"], "llegada_origen", del_futuro)
+    r = marcar(cliente, sesion("juan"), j["id"], "llegada_origen", del_futuro,
+               ahora=False)
     assert r.status_code == 200, r.text
     cuerpo = r.json()
 
@@ -67,10 +68,7 @@ def test_el_dia_no_se_cierra_sin_haber_llegado(cliente, sesion, datos):
     servicio, j = _dia(cliente, sesion, datos, 640)
     fin = datetime.fromisoformat(j["fin_programado"])
 
-    r = cliente.post(f"/operacion/jornadas/{j['id']}/hitos",
-                     headers=sesion("juan"),
-                     json={"tipo": "fin_servicio", "marcado_en": fin.isoformat(),
-                           **DENTRO})
+    r = marcar(cliente, sesion("juan"), j["id"], "fin_servicio", fin)
     assert r.status_code == 409, r.text
     detalle = r.json()["detail"]
     assert "llegada" in detalle["mensaje"]

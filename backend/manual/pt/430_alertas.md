@@ -10,7 +10,7 @@ buscar: alerta silencio sem reportar standby cerca longe do ponto marcacao fora 
 A central tem alertas abertos, ou a revisão do fechamento diz que há alertas sem atender.
 
 ### Por que acontece
-- **Silêncio**: o serviço em curso está há duas horas sem reportar.
+- **Silêncio**: o serviço em curso está há duas horas sem reportar. Fecha-se sozinho quando a equipe volta a reportar, com quem e a que hora; se ninguém reporta, a central o atende.
 - **Marcação longe do ponto**: alguém tentou marcar fora da cerca. Fica salva e quem a valida é o seu supervisor.
 - **Marcação fora do horário**: chegou mais de 15 minutos depois da hora marcada, ou chegou ao servidor muito depois do que diz. Quem a revisa é a central.
 - **Pânico**: pelo app, ou pelo GPS da unidade. Também o bloqueador de sinal e a corrente cortada que o GPS lê.
