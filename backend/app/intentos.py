@@ -56,10 +56,26 @@ def _redis():
     return _cliente
 
 
+# Cada puerta cuenta su propia direccion. Con un solo contador por IP,
+# cuarenta "olvide mi contrasena" con correos distintos --sin ninguna
+# credencial-- dejaban sin entrar a todo lo que saliera por esa
+# direccion: la oficina entera detras de su proxy, quince minutos. El
+# carril viene en el nombre ("recuperar:...", "codigo:..."); lo demas
+# es entrar (seccion 100).
+CARRILES = ("recuperar", "codigo")
+
+
+def _carril(correo: str) -> str:
+    for nombre in CARRILES:
+        if (correo or "").startswith(nombre + ":"):
+            return nombre
+    return "entrar"
+
+
 def _claves(correo: str, ip: str | None) -> list[tuple[str, int]]:
     llaves = [(f"intentos:correo:{(correo or '').strip().lower()}", MAXIMO)]
     if ip:
-        llaves.append((f"intentos:ip:{ip}", MAXIMO_POR_IP))
+        llaves.append((f"intentos:ip:{_carril(correo)}:{ip}", MAXIMO_POR_IP))
     return llaves
 
 

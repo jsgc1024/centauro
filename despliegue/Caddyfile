@@ -17,8 +17,23 @@
 	email operaciones@centauro.lat
 }
 
+# www va a la consola. El registro A de www.{$DOMINIO} tiene que existir
+# en Cloud DNS antes de levantar esto: sin el, Let's Encrypt no puede
+# dar el certificado y Caddy lo reintenta en silencio (seccion 100).
+www.{$DOMINIO} {
+	redir https://{$DOMINIO}{uri} 302
+}
+
 {$DOMINIO} {$DOMINIO_CAMPO} {
 	encode zstd gzip
+
+	# Lo mas que pesa una peticion. Las fotos ya se recortan a 3 o 4 MB
+	# en la API; sin este tope, cualquiera sin sesion podia mandar
+	# gigabytes a /auth/token y la API los cargaba en memoria antes de
+	# rechazarlos (seccion 100).
+	request_body {
+		max_size 20MB
+	}
 
 	# Dos puertas y un solo servidor (seccion 71). mycentauro.lat es la
 	# consola --Centauro Connect--, del personal administrativo y los

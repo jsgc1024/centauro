@@ -47,10 +47,15 @@ def anotar(db: Session, actor: m.Usuario, accion: str, objeto: str,
     El rol del actor se guarda tal como era en este momento: si manana lo
     cambian, el renglon sigue diciendo con que sombrero actuo.
     """
+    # Al largo de la columna: un motivo de 401 letras reventaba el
+    # renglon --y la pantalla-- con un error del servidor (seccion 100).
+    # El texto largo se pierde por el final, que es donde menos importa.
     db.add(m.RegistroAdmin(
         usuario_id=actor.id, persona_id=actor.persona_id, rol=actor.rol,
-        accion=accion, objeto=objeto, objeto_id=objeto_id,
-        antes=antes, despues=despues, detalle=detalle))
+        accion=accion[:80], objeto=objeto, objeto_id=objeto_id,
+        antes=antes[:200] if antes else antes,
+        despues=despues[:200] if despues else despues,
+        detalle=detalle[:400] if detalle else detalle))
 
 
 # ------------------------------------------- quien lleva un servicio
@@ -494,8 +499,11 @@ def cambiar_rol(db: Session, usuario_id: int, rol: m.Rol, actor: m.Usuario,
     if rol in ALTOS or usuario.rol in ALTOS:
         solo_direccion(actor, "Hacer a alguien Dirección general o "
                                "administración, o quitárselo,")
-    if usuario.categoria_id is None and (reparte_de_fabrica(rol)
-                                         or reparte_de_fabrica(usuario.rol)):
+    # Con puesto o sin el: el rol queda debajo del puesto, y en cuanto
+    # el puesto se quite manda el rol. Revisado solo sin puesto, un
+    # puesto sin rol servia de escondite para cambiar el rol a uno que
+    # reparte y quitar el puesto despues (seccion 100).
+    if reparte_de_fabrica(rol) or reparte_de_fabrica(usuario.rol):
         solo_direccion(actor, "Darle o quitarle a alguien el poder de "
                                "repartir accesos")
     if rol not in ALTOS:
@@ -673,6 +681,35 @@ def crear_categoria(db: Session, actor: m.Usuario, nombre: str,
     return _ficha_categoria(db, categoria)
 
 
+def _ni_con_los_permisos_de_su_gente(db: Session, categoria: m.CategoriaAcceso,
+                                     nuevas: set) -> None:
+    """Las dos manos tampoco se juntan por este camino (seccion 100).
+
+    Se cuidaban al armar el puesto, al repartirlo y al dar un permiso
+    de mas; faltaba al EDITAR un puesto que alguien ya trae: con
+    "autorizar bonos" como permiso de mas, agregarle "pagar bonos" al
+    puesto dejaba a esa persona autorizando y depositando el bono.
+    """
+    from app import permisos
+    gente = (db.query(m.Usuario)
+             .filter(m.Usuario.categoria_id == categoria.id,
+                     m.Usuario.activo.is_(True)).all())
+    for usuario in gente:
+        extras = {x.actividad for x in db.query(m.PermisoExtra)
+                  .filter_by(usuario_id=usuario.id).all()}
+        for suelto in sorted(extras):
+            choque = permisos.choca_con(suelto) & nuevas
+            if choque:
+                quien = usuario.persona.nombre if usuario.persona else usuario.correo
+                raise HTTPException(409, {
+                    "mensaje": (f"'{sorted(choque)[0]}' no puede convivir con "
+                                f"'{suelto}', que {quien} trae como permiso "
+                                f"de mas con este puesto."),
+                    "que_hacer": "Quitale primero ese permiso de mas, o "
+                                 "deja el puesto como esta.",
+                })
+
+
 def cambiar_categoria(db: Session, actor: m.Usuario, categoria_id: int,
                       **cambios) -> dict:
     """Cambia una categoria. Lo que no se manda, no se toca."""
@@ -721,6 +758,7 @@ def cambiar_categoria(db: Session, actor: m.Usuario, categoria_id: int,
         for a in actividades:
             _existe(a)
         _no_juntarlas_en_un_puesto(set(actividades))
+        _ni_con_los_permisos_de_su_gente(db, categoria, set(actividades))
         for fila in list(categoria.actividades):
             db.delete(fila)
         db.flush()
@@ -767,9 +805,13 @@ def poner_categoria(db: Session, actor: m.Usuario, usuario_id: int,
         if not categoria:
             raise HTTPException(404, f"No existe la categoria {categoria_id}")
     # Seccion 83: dar el puesto que reparte accesos, o cambiarle el suyo a
-    # quien ya los reparte.
+    # quien ya los reparte. Y lo que QUEDARIA pudiendo (seccion 100): sin
+    # puesto vuelve a su rol, y si ese rol reparte de fabrica --recursos
+    # humanos-- quitarle el puesto es darle el poder. Mirando solo lo que
+    # podia antes, se esquivaba dandole Capacitacion y quitandoselo.
     if ((categoria is not None and trae_reparte(categoria))
-            or (not recien_dado and reparte(db, usuario))):
+            or (not recien_dado and reparte(db, usuario))
+            or (categoria is None and reparte_de_fabrica(usuario.rol))):
         solo_direccion(actor, "Darle o quitarle a alguien el poder de "
                                "repartir accesos")
     if categoria is not None:

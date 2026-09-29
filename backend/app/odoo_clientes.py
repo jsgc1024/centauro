@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app import accesos, odoo_tarifarios
+from app import accesos, odoo_api, odoo_tarifarios
 from app import models as m
 from app import odoo_clientes_reglas as reglas
 from app.config import settings
@@ -73,6 +73,8 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
                 quien: m.Usuario | None = None,
                 automatica: bool = False) -> dict:
     """Lee los clientes de Odoo y, si no es ensayo, los guarda."""
+    if not ensayo:
+        odoo_api.candado(db, TIPO)
     ahora = _utc()
     etiqueta_id = etiqueta(odoo)
     if etiqueta_id is None:
@@ -169,11 +171,18 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
 
 
 def resumen(informe: dict) -> dict:
-    return {"leidos": informe["leidos"], "altas": len(informe["altas"]),
-            "vinculadas": len(informe["vinculadas"]),
-            "cambios": len(informe["cambios"]), "bajas": len(informe["bajas"]),
-            "sin_rfc": len(informe["sin_rfc"]),
-            "pendientes": len(informe["pendientes"])}
+    salida = {"leidos": informe["leidos"], "altas": len(informe["altas"]),
+              "vinculadas": len(informe["vinculadas"]),
+              "cambios": len(informe["cambios"]), "bajas": len(informe["bajas"]),
+              "sin_rfc": len(informe["sin_rfc"]),
+              "pendientes": len(informe["pendientes"])}
+    # Sin la etiqueta en Odoo no se leyo a nadie: la vuelta lo dice como
+    # error, en vez de terminar "ok" sin nota y dejar el estado del
+    # sistema en "sin lecturas recientes" sin decir por que (seccion 100).
+    if informe.get("sin_etiqueta"):
+        salida["error"] = (f"Odoo no tiene la etiqueta "
+                           f"«{informe['sin_etiqueta']}»: no se leyo a nadie")
+    return salida
 
 
 def sincronizar_si_toca(db: Session, odoo=None) -> dict:

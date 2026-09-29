@@ -3,7 +3,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -62,12 +62,12 @@ class EnlaceIn(BaseModel):
 class MotivoIn(BaseModel):
     """Por que se cierra o se abre una puerta. Opcional, pero si se
     escribe queda en la bitacora y es lo que se lee un ano despues."""
-    motivo: str | None = None
+    motivo: str | None = Field(None, max_length=400)
 
 
 class CambioRolIn(BaseModel):
     rol: m.Rol
-    motivo: str | None = None
+    motivo: str | None = Field(None, max_length=400)
 
 
 class EstablecerContrasenaIn(BaseModel):
@@ -124,12 +124,12 @@ class PonerCategoriaIn(BaseModel):
     """`categoria_id` en nulo le quita la categoria: vuelve a los
     permisos de su rol, que es de donde salio."""
     categoria_id: int | None = None
-    motivo: str | None = None
+    motivo: str | None = Field(None, max_length=400)
 
 
 class PermisoIn(BaseModel):
     actividad: str
-    motivo: str | None = None
+    motivo: str | None = Field(None, max_length=400)
 
 
 class CodigoCampoIn(BaseModel):
@@ -715,18 +715,22 @@ def iniciar_sesion(peticion: Request,
     # con --proxy-headers (ver docker-compose.prod.yml). Sin eso, todos
     # los intentos cuentan como uno solo y el tope por IP no sirve.
     ip = peticion.client.host if peticion.client else None
-    intentos.revisar(formulario.username, ip)
+    # El correo como se guarda, para entrar y para contar los intentos:
+    # con la mayuscula del telefono no entraba nadie, y cada variante
+    # del mismo correo tenia su propio tope.
+    llave = auth.llave_de_correo(formulario.username)
+    intentos.revisar(llave, ip)
 
-    usuario = db.query(m.Usuario).filter_by(correo=formulario.username).first()
+    usuario = auth.usuario_por_correo(db, llave)
     if not usuario or not auth.verificar(formulario.password, usuario.hash_contrasena):
-        intentos.fallo(formulario.username, ip)
+        intentos.fallo(llave, ip)
         # El mismo mensaje exista o no la cuenta: decir "ese correo no
         # existe" regala la mitad del trabajo a quien esta probando.
         raise HTTPException(401, "Correo o contrasena incorrectos")
     if not usuario.activo:
         raise HTTPException(403, "Ese acceso esta desactivado")
 
-    intentos.exito(formulario.username, ip)
+    intentos.exito(llave, ip)
     usuario.ultimo_acceso = datetime.now()
     db.commit()
     return {"access_token": auth.crear_token(usuario), "token_type": "bearer",

@@ -10,7 +10,7 @@ buscar: app campo no puede entrar codigo cuatro digitos contraseña correo perso
 Alguien del personal de seguridad dice que no puede entrar a EP Connect.
 
 ### Por qué pasa · de lo más común a lo menos
-1. **Está usando otro correo.** Entra con su **correo personal**, el que está en Odoo, no con el de trabajo.
+1. **Está usando otro correo.** Entra con su **correo personal**, el que está en Odoo, no con el de trabajo. Las mayúsculas y los espacios no importan: el teclado del teléfono puede poner la primera letra en mayúscula y entra igual.
 2. **No tiene contraseña o la olvidó.** No recibe invitación: pone su contraseña con un código de cuatro dígitos, que vale 10 minutos.
 3. **Su acceso está cerrado** porque Odoo lo dio de baja.
 4. **Todavía no llega de Odoo**: la lectura del personal no lo trae —ver [una persona no aparece](#/manual/leer/sintoma-persona-no-aparece)—.

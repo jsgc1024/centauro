@@ -29,7 +29,7 @@ Las decisiones que viven aqui:
 import collections
 import re
 
-from app.odoo_personal_reglas import (CORREO_VALIDO, DOMINIOS_RAROS,
+from app.odoo_personal_reglas import (CORREO_VALIDO, DOMINIOS_RAROS, corto,
                                       es_de_seguridad, nombre_de, normal,
                                       plaza_de, texto)
 
@@ -126,9 +126,9 @@ def planear(empleados: list, personas: list, plazas: dict,
                                    "falta": faltas})
 
     for e in elegidos:
-        nombre = texto(e.get("name"))
+        nombre = corto(e.get("name"), 160)
         correo = correo_de(e)
-        puesto, area = puesto_de(e), area_de(e)
+        puesto, area = puesto_de(e)[:120].rstrip(), area_de(e)[:120].rstrip()
         problema = (None if not correo
                     else "correo de trabajo repetido en Odoo"
                     if correo in repetidos else problema_de_correo(correo))

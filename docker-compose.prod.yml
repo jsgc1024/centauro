@@ -99,6 +99,11 @@ services:
     environment:
       TZ: America/Mexico_City
     command: celery -A app.celery_app.celery worker --loglevel=warning --concurrency=2
+    # Al reiniciar, la tarea que va a media vuelta termina antes de que
+    # Docker mate el proceso: con los diez segundos de fabrica, un
+    # despliegue durante el despacho del correo dejaba sin marcar los ya
+    # entregados y salian otra vez (seccion 100).
+    stop_grace_period: 120s
     env_file: .env
     # El archivo de los comprobantes (seccion 69) dice como le fue cada
     # noche en el syslog de la maquina, igual que el respaldo: de ahi lo

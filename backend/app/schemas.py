@@ -402,10 +402,10 @@ class EquipoIn(Base):
     # Donde opera. Vacio: la ciudad del servicio.
     plaza_id: int | None = None
     # A quien cuida este equipo. Si viene vacio, hereda el del servicio.
-    ejecutivo_nombre: str | None = None
-    ejecutivo_apellidos: str | None = None
-    ejecutivo_correo: str | None = None
-    ejecutivo_telefono: str | None = None
+    ejecutivo_nombre: str | None = Field(None, max_length=160)
+    ejecutivo_apellidos: str | None = Field(None, max_length=160)
+    ejecutivo_correo: str | None = Field(None, max_length=160)
+    ejecutivo_telefono: str | None = Field(None, max_length=40)
     jornadas: list[JornadaIn] = []
 
     _capturado = capturado("ejecutivo_nombre", "ejecutivo_apellidos")
@@ -420,17 +420,17 @@ class ServicioIn(Base):
     # Se elige de la lista del cliente, o se capturan los datos y se da de
     # alta solo.
     solicitante_id: int | None = None
-    solicitante_nombre: str | None = None
-    solicitante_apellidos: str | None = None
-    solicitante_correo: str | None = None
-    solicitante_telefono: str | None = None
-    ejecutivo_nombre: str | None = None
-    ejecutivo_apellidos: str | None = None
-    ejecutivo_correo: str | None = None
-    ejecutivo_telefono: str | None = None
+    solicitante_nombre: str | None = Field(None, max_length=160)
+    solicitante_apellidos: str | None = Field(None, max_length=160)
+    solicitante_correo: str | None = Field(None, max_length=160)
+    solicitante_telefono: str | None = Field(None, max_length=40)
+    ejecutivo_nombre: str | None = Field(None, max_length=160)
+    ejecutivo_apellidos: str | None = Field(None, max_length=160)
+    ejecutivo_correo: str | None = Field(None, max_length=160)
+    ejecutivo_telefono: str | None = Field(None, max_length=40)
     # Vacio en el solicitante: el idioma de su pais. Ver models.Servicio.
-    idioma_ejecutivo: str = "en"
-    idioma_solicitante: str | None = None
+    idioma_ejecutivo: Literal["es", "en", "pt"] = "en"
+    idioma_solicitante: Literal["es", "en", "pt"] | None = None
     # Casual, semiformal o formal. Solo el eventual la lleva.
     vestimenta: CodigoVestimenta | None = None
     servicio_origen_id: int | None = None
@@ -910,9 +910,9 @@ class HospedajeIn(Base):
     desde: date | None = None
     hasta: date | None = None
     hotel_id: int | None = None
-    nombre_libre: str | None = None
-    direccion_libre: str | None = None
-    telefono_libre: str | None = None
+    nombre_libre: str | None = Field(None, max_length=160)
+    direccion_libre: str | None = Field(None, max_length=300)
+    telefono_libre: str | None = Field(None, max_length=40)
     # El pin del hotel, cuando viene de Google. Sirve para los hospitales
     # cercanos el dia que el hotel sea el punto de origen.
     hotel_lat: Decimal | None = None
@@ -962,9 +962,9 @@ class PublicarTaskSheetIn(Base):
 class SenalIn(Base):
     """La senal: un color de la paleta (con palabra encima o sin ella),
     una palabra sola, o una imagen."""
-    texto: str | None = None
+    texto: str | None = Field(None, max_length=80)
     imagen: str | None = None      # data URI o URL
-    nota: str | None = None
+    nota: str | None = Field(None, max_length=200)
     color: str | None = None       # clave de la paleta (app/senal.py)
 
 
@@ -1037,7 +1037,7 @@ class AlertaIn(Base):
     jornada_id: int | None = None
     servicio_id: int | None = None
     reporta_persona_id: int | None = None
-    descripcion: str | None = None
+    descripcion: str | None = Field(None, max_length=600)
     lat: Decimal | None = None
     lon: Decimal | None = None
 
@@ -1065,18 +1065,18 @@ class AlertaOut(Base):
 
 class TomarAlertaIn(Base):
     equipo_respuesta_enviado: bool = False
-    nota: str | None = None
+    nota: str | None = Field(None, max_length=300)
 
 
 class CerrarAlertaIn(Base):
-    resolucion: str
+    resolucion: str = Field(max_length=600)
 
 
 class ReemplazoPersonalIn(Base):
     desde_jornada_id: int
     sale_persona_id: int
     entra_persona_id: int
-    motivo: str
+    motivo: str = Field(max_length=600)
     alerta_id: int | None = None
     # Por que cambio. Con nombre y no como texto libre porque de aqui
     # salen dos cuentas que la direccion va a pedir: cuanto ausentismo
@@ -1106,7 +1106,7 @@ class ReemplazoVehiculoIn(Base):
     desde_jornada_id: int
     sale_vehiculo_id: int
     entra_vehiculo_id: int
-    motivo: str
+    motivo: str = Field(max_length=600)
     alerta_id: int | None = None
     motivo_tipo: MotivoCambio | None = None
     hasta_jornada_id: int | None = None

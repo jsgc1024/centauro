@@ -32,7 +32,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app import accesos
+from app import accesos, odoo_api
 from app import models as m
 from app import odoo_tarifarios_reglas as reglas
 from app import tipo_cambio
@@ -427,6 +427,8 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
                 quien: m.Usuario | None = None,
                 automatica: bool = False) -> dict:
     """Lee las listas de precios de Odoo y, si no es ensayo, las guarda."""
+    if not ensayo:
+        odoo_api.candado(db, TIPO)
     ahora = _utc()
     datos = _leer_odoo(db, odoo)
     if not ensayo:

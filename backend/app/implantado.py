@@ -8,6 +8,7 @@ El procedimiento diario es identico al eventual. Lo que cambia:
   - El cierre de viaticos y la facturacion son mensuales.
 """
 import calendar
+import logging
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
@@ -19,6 +20,8 @@ from app import disponibilidad
 from app import models as m
 from app import reloj
 from app import viaticos as motor_viaticos
+
+registro = logging.getLogger("centauro.implantado")
 
 
 # Hasta que dia de la semana llega cada esquema. weekday(): lunes es 0.
@@ -1742,6 +1745,16 @@ def abrir_los_que_toquen(db: Session, hoy: date | None = None) -> dict:
             fallados.append({"servicio_id": servicio.id,
                              "folio": servicio.folio,
                              "detalle": str(error.detail)})
+        except Exception as error:                        # noqa: BLE001
+            # Tampoco por uno que reviente con algo que no es un 409 --el
+            # consultor abrio ese mes a mano a las 6:30, una hora mal
+            # guardada--: antes salia de la tarea sin deshacer y a los
+            # demas no se les abria el mes ese dia (seccion 100).
+            db.rollback()
+            registro.exception("no se pudo abrir el mes de %s", servicio.folio)
+            fallados.append({"servicio_id": servicio.id,
+                             "folio": servicio.folio,
+                             "detalle": str(error)[:200]})
     return {"abiertos": hechos, "fallados": fallados}
 
 

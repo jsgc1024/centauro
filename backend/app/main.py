@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DataError, IntegrityError
 
 from app import models  # noqa: F401  (registra las tablas en Base)
 from app import auth
@@ -46,6 +46,40 @@ app = FastAPI(
     # `puertas_de_la_api`.
     **puertas_de_la_api(settings),
 )
+
+# Lo mas que pesa una peticion: 20 MB. Las fotos ya se recortan a 3 o 4
+# MB en su ruta; esto es la puerta de afuera, para que un cuerpo de
+# gigabytes a /auth/token --publico-- no se cargue en memoria antes de
+# rechazarse. El proxy (despliegue/Caddyfile) pone el mismo tope antes
+# de que llegue aqui; este es por si algun dia la API se asoma sin el
+# (seccion 100).
+TOPE_DE_CUERPO = 20 * 1024 * 1024
+
+
+class CuerpoConTope:
+    """Rechaza con 413 lo que declara pesar mas del tope, sin leerlo."""
+
+    def __init__(self, app, tope: int = TOPE_DE_CUERPO):
+        self.app = app
+        self.tope = tope
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            for nombre, valor in scope.get("headers", []):
+                if nombre == b"content-length" and valor.isdigit() \
+                        and int(valor) > self.tope:
+                    respuesta = JSONResponse(status_code=413, content={"detail": {
+                        "mensaje": "La peticion pesa demasiado",
+                        "que_hacer": f"Lo mas que se acepta son "
+                                     f"{self.tope // (1024 * 1024)} MB. Si es "
+                                     "una foto, tomala con menos resolucion.",
+                    }})
+                    await respuesta(scope, receive, send)
+                    return
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(CuerpoConTope)
 
 app.include_router(acceso.router)
 app.include_router(catalogos.router, prefix="/catalogos")
@@ -95,6 +129,32 @@ def choque_con_la_base(request: Request, exc: IntegrityError):
     return JSONResponse(status_code=409,
                         content={"detail": {"mensaje": mensaje,
                                             "detalle": detalle[:300]}})
+
+
+@app.exception_handler(DataError)
+def dato_que_no_cabe(request: Request, exc: DataError):
+    """Un texto mas largo que su columna, o un numero fuera de rango.
+
+    Los esquemas ya topan lo que mas se escribe; esto es la red de
+    abajo: sin ella, lo que se escapara salia como error del servidor,
+    la consola decia "Error 500" y la app de campo reintentaba la marca
+    para siempre (seccion 100). Es un dato del usuario, asi que es 400
+    con que hacer, no 500.
+    """
+    original = getattr(exc, "orig", None)
+    texto = str(original or exc).lower()
+    if "too long" in texto or "truncat" in texto:
+        mensaje = "Un texto es mas largo de lo que cabe"
+        que_hacer = "Acortalo: el detalle largo va en la bitacora o en una nota."
+    elif "out of range" in texto or "overflow" in texto:
+        mensaje = "Un numero esta fuera de rango"
+        que_hacer = "Revisa el monto o la cantidad."
+    else:
+        mensaje = "Un dato no tiene la forma que la base espera"
+        que_hacer = "Revisa lo que escribiste y vuelve a intentar."
+    return JSONResponse(status_code=400,
+                        content={"detail": {"mensaje": mensaje,
+                                            "que_hacer": que_hacer}})
 
 
 @app.get("/api", tags=["Sistema"], summary="Ficha de la API")

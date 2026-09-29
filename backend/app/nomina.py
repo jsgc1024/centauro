@@ -20,6 +20,7 @@ persona queda en cero y lo que falta pasa a su siguiente corte, las
 veces que haga falta, hasta saldarse.
 """
 import calendar
+import logging
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
@@ -29,6 +30,8 @@ from sqlalchemy.orm import Session
 from app import models as m
 from app import reloj
 from app.cierre import _horas_extra, factor_festivo, limite_vigente
+
+registro = logging.getLogger("centauro.nomina")
 
 CERO = Decimal("0")
 
@@ -662,15 +665,24 @@ def reloj_del_lunes(db: Session, ahora: datetime | None = None) -> list[dict]:
             continue
         try:
             resultado = calcular(db, pais.id, lunes)
+            if cierra:
+                db.get(m.NominaSemanal, resultado["nomina_id"]).lista_en = local
+            db.commit()
         except HTTPException as e:
             db.rollback()
             detalle = e.detail if isinstance(e.detail, dict) else {}
             hechos.append({"pais": pais.codigo, "resultado": "no_salio",
                            "sin_tarifa": len(detalle.get("sin_tarifa", []))})
             continue
-        if cierra:
-            db.get(m.NominaSemanal, resultado["nomina_id"]).lista_en = local
-        db.commit()
+        except Exception as error:                        # noqa: BLE001
+            # Un pais no tumba al otro (seccion 100): con Mexico reventando
+            # por algo que no era un 409, Brasil, que viene despues, se
+            # quedaba sin corte en esa vuelta y en todas.
+            db.rollback()
+            registro.exception("el corte de %s revento", pais.codigo)
+            hechos.append({"pais": pais.codigo, "resultado": "error",
+                           "error": str(error)[:200]})
+            continue
         hechos.append({"pais": pais.codigo, "nomina_id": resultado["nomina_id"],
                        "resultado": "listo" if cierra else "borrador",
                        "total": str(resultado["total"])})

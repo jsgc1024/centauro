@@ -18,6 +18,7 @@ from app import textos_aviso as ta
 # Un mes alcanza para reinscribir a alguien en un curso sin sacarlo de
 # servicios. El dia cero es el ultimo recordatorio, no el primero.
 DIAS_DE_AVISO = (30, 0)
+DIAS_ANTES = max(DIAS_DE_AVISO)
 
 
 def por_vencer(db: Session, persona_id: int, hoy: date | None = None) -> dict:
@@ -86,15 +87,24 @@ def revisar_vencimientos(db: Session, hoy: date | None = None) -> dict:
                       m.Capacitacion.vigencia_hasta.isnot(None)).all())
     for curso in cursos:
         dias = (curso.vigencia_hasta - hoy).days
-        if dias not in DIAS_DE_AVISO:
+        if dias > DIAS_ANTES:
             continue
-        if curso.avisado_en == hoy:
+        # El primero, en cuanto entra en la ventana de treinta dias; el
+        # segundo, al vencer. Cada uno una sola vez, y sin exigir que el
+        # reloj haya corrido justo ese dia: con `dias in (30, 0)`, un
+        # reinicio a las 7:30 dejaba ese certificado sin aviso para
+        # siempre, porque manana faltan 29 (seccion 100).
+        ya = curso.avisado_en
+        if dias > 0:
+            if ya is not None and (curso.vigencia_hasta - ya).days <= DIAS_ANTES:
+                continue
+        elif ya is not None and (ya >= curso.vigencia_hasta or ya == hoy):
             continue
         persona = curso.persona
         if not persona or not persona.activo:
             continue
 
-        vence_hoy = dias == 0
+        vence_hoy = dias <= 0
         push.avisar(
             db, persona.id,
             titulo=("Tu certificado vence hoy" if vence_hoy

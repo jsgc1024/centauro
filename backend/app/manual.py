@@ -231,12 +231,16 @@ TAREAS = {
                "do sistema."),
     },
     "correo-pendiente": {
-        "es": ("Correo: saca los avisos que esperan. Los que tienen más de "
-               "24 horas ya no salen.",
+        "es": ("Correo: saca los avisos que esperan. Los operativos de más "
+               "de 24 horas ya no salen; la invitación y la encuesta viven lo "
+               "que vive su enlace. Si el proveedor no contesta, espera y "
+               "vuelve a intentar.",
                "El correo en el estado del sistema: si está apagado, no sale "
                "ninguno."),
-        "pt": ("E-mail: envia os avisos que estão esperando. Os que têm mais "
-               "de 24 horas já não saem.",
+        "pt": ("E-mail: envia os avisos que estão esperando. Os operacionais "
+               "com mais de 24 horas já não saem; o convite e a pesquisa vivem "
+               "o que vive o seu link. Se o provedor não responde, espera e "
+               "tenta de novo.",
                "O e-mail no estado do sistema: se estiver desligado, não sai "
                "nenhum."),
     },
@@ -357,6 +361,16 @@ TAREAS = {
                "faturado há três meses. Sem o seu destino no servidor, não "
                "faz nada.",
                "O destino do arquivo no servidor."),
+    },
+    "reloj-reponer-diarias": {
+        "es": ("La red de las diarias: cada media hora revisa cuál de las "
+               "de una vez al día no corrió a su hora —el reloj reiniciado "
+               "en ese minuto— y la vuelve a mandar.",
+               "El reloj, en el estado del sistema."),
+        "pt": ("A rede das diárias: a cada meia hora revisa qual das de uma "
+               "vez por dia não rodou na sua hora —o relógio reiniciado nesse "
+               "minuto— e a manda de novo.",
+               "O relógio, no estado do sistema."),
     },
     "implantados-mes-siguiente": {
         "es": ("Implantados: abre el mes siguiente cuando al mes en curso le "
@@ -1053,10 +1067,17 @@ def _estado_correo(db, T) -> dict:
     if not e["listo"]:
         return _tile("correo", T, "grave", T["sin_proveedor"],
                      T["sin_proveedor_t"], ir)
-    fallidas = avisos.get("fallida", 0)
-    return _tile("correo", T, "alerta" if fallidas else "ok",
+    # Las fallidas de las ultimas 24 horas deciden el tono; las viejas
+    # solo se cuentan. Y con fallidas hay boton para regresarlas a la
+    # cola (seccion 100).
+    fallidas = e.get("fallidas_recientes", 0)
+    tile = _tile("correo", T, "alerta" if fallidas else "ok",
                  T["con_fallas"] if fallidas else T["encendido"],
                  T["encendido_t"].format(n=esperando, f=fallidas), ir)
+    if avisos.get("fallida"):
+        tile["accion"] = {"ruta": "/manual/correo/reintentar",
+                          "clave": "man_reintentar_correo"}
+    return tile
 
 
 def _estado_odoo(db, T, idioma, ahora) -> dict:

@@ -24,8 +24,8 @@ Las decisiones de Salvador (23 de septiembre) que viven aqui:
 import collections
 import re
 
-from app.odoo_personal_reglas import (ALIAS_PLAZA, fecha, nombre_de, normal,
-                                      texto)
+from app.odoo_personal_reglas import (ALIAS_PLAZA, corto, fecha, nombre_de,
+                                      normal, texto)
 
 ETIQUETAS = frozenset({"proteccion ejecutiva", "pe"})
 # El nombre de la categoria en Odoo, como codigo de Centauro. Lo que no
@@ -130,8 +130,8 @@ def planear(unidades: list, etiquetas: dict, vehiculos: list,
         categoria = (categorias.get(codigo_de_categoria(nombre_cat))
                      if nombre_cat else None)
         plaza, lugar = plaza_de(u.get("location"), plazas)
-        datos = {"marca_modelo": marca_modelo_de(u.get("model_id")) or None,
-                 "color": texto(u.get("color")) or None,
+        datos = {"marca_modelo": marca_modelo_de(u.get("model_id"))[:80].rstrip() or None,
+                 "color": corto(u.get("color"), 40) or None,
                  "modelo_anio": anio_de(u.get("model_year"))}
 
         vehiculo, vinculo = por_odoo.get(u["id"]), False
@@ -163,7 +163,7 @@ def planear(unidades: list, etiquetas: dict, vehiculos: list,
                 continue
             tomadas.add(placa)
             plan["altas"].append({"odoo_id": u["id"],
-                                  "placa": texto(u.get("license_plate")).upper(),
+                                  "placa": corto(u.get("license_plate"), 20).upper(),
                                   "categoria_id": categoria["id"],
                                   "categoria": categoria["nombre"],
                                   "plaza_id": plaza["id"], "plaza": plaza["nombre"],

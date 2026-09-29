@@ -505,7 +505,13 @@ def pais_de_la_lista(lista: dict, paises_de_clientes: set, paises: dict,
         return (de_grupos[0] if len(de_grupos) == 1 else None), de_grupos
     if len(paises_de_clientes) == 1:
         return next(iter(paises_de_clientes)), []
+    if len(paises_de_clientes) > 1:
+        # Clientes en dos paises: la lista no es de uno solo. Lo dudoso
+        # no se adivina (seccion 100): queda pendiente, sin pais.
+        return None, []
     por_moneda = {"MXN": "MX", "BRL": "BR", "VES": "VE"}.get(lista.get("moneda"))
     if por_moneda in paises:
         return paises[por_moneda], []
-    return paises.get("MX"), []
+    # Sin grupo, sin clientes y con una moneda que no dice pais (dolares):
+    # antes se tomaba como de Mexico sin decirlo.
+    return None, []

@@ -175,7 +175,7 @@ def tomar(alerta_id: int, datos: s.TomarAlertaIn, db: Session = Depends(get_db),
     alerta.equipo_respuesta_enviado = datos.equipo_respuesta_enviado
     if datos.nota:
         alerta.descripcion = " · ".join(filter(None, [alerta.descripcion,
-                                                     datos.nota]))
+                                                     datos.nota]))[:600]
 
     servicio = _servicio_de(db, alerta)
     if servicio:

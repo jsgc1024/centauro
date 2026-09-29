@@ -1157,8 +1157,8 @@ ANGULOS_MINIMOS = ("frente", "atras", "izquierdo", "derecho", "odometro")
 
 class FotoIn(BaseModel):
     angulo: m.AnguloFoto
-    imagen: str
-    nota: str | None = None
+    imagen: str = Field(max_length=6_000_000)
+    nota: str | None = Field(None, max_length=200)
     lat: Decimal | None = None
     lon: Decimal | None = None
 
@@ -1176,15 +1176,17 @@ class RevisionIn(BaseModel):
     # El tanque como se lee en el tablero: octavos, de 0 a 8. Pedir
     # litros es pedir que alguien invente un numero.
     combustible_octavos: int | None = Field(default=None, ge=0, le=8)
-    nota: str | None = None
+    nota: str | None = Field(None, max_length=2000)
     # La declaracion de dano. Va como opcional en el esquema y se exige
     # abajo, para poder decir por que falta: un 422 de validacion es una
     # pantalla en blanco con un renglon rojo, y del otro lado hay alguien
     # con una mano y media barra de senal.
     hubo_dano: bool | None = None
     dano_tipo: m.TipoDano | None = None
-    dano_nota: str | None = None
-    firma: str | None = None
+    dano_nota: str | None = Field(None, max_length=2000)
+    # La firma es un dibujo chico; un tope generoso solo cierra la
+    # puerta a que pese lo que sea (seccion 100).
+    firma: str | None = Field(None, max_length=400_000)
     lat: Decimal | None = None
     lon: Decimal | None = None
     fotos: list[FotoIn] = []

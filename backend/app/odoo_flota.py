@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app import accesos
+from app import accesos, odoo_api
 from app import models as m
 from app import odoo_flota_reglas as reglas
 from app import reloj
@@ -150,6 +150,8 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
                 quien: m.Usuario | None = None,
                 automatica: bool = False) -> dict:
     """Lee la flota y el taller de Odoo y, si no es ensayo, los guarda."""
+    if not ensayo:
+        odoo_api.candado(db, TIPO)
     ahora = _utc()
     relojes = reloj.Relojes(db)
     etiquetas = {t["id"]: t.get("name")
@@ -175,6 +177,12 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
     existentes = _del_taller(db)
 
     def plan_del_taller():
+        # Con error al leer el taller no se toca nada (seccion 100): un
+        # plan sobre cero registros "borraba" todas las entradas
+        # guardadas y las unidades en el taller salian disponibles.
+        if error_taller:
+            return {"crear": [], "cambiar": [], "borrar": [], "sin_cambio": 0,
+                    "de_otras_unidades": 0, "pendientes": []}
         por_odoo = {v.odoo_id: v.id for v in db.query(m.Vehiculo).filter(
             m.Vehiculo.odoo_id.isnot(None)).all()}
         if ensayo:
@@ -292,13 +300,19 @@ def resumen(informe: dict) -> dict:
                 falta = "taller terminado sin fecha de salida"
             faltas[falta] = faltas.get(falta, 0) + 1
     t = informe["taller"]
-    return {"leidas": informe["leidas"], "altas": len(informe["altas"]),
-            "vinculadas": len(informe["vinculadas"]),
-            "cambios": len(informe["cambios"]), "bajas": len(informe["bajas"]),
-            "sin_cambio": informe["sin_cambio"], "pendientes": faltas,
-            "taller": {k: t[k] for k in ("nuevas", "cambios", "borradas",
-                                         "sin_cambio", "de_otras_unidades",
-                                         "error")}}
+    salida = {"leidas": informe["leidas"], "altas": len(informe["altas"]),
+              "vinculadas": len(informe["vinculadas"]),
+              "cambios": len(informe["cambios"]), "bajas": len(informe["bajas"]),
+              "sin_cambio": informe["sin_cambio"], "pendientes": faltas,
+              "taller": {k: t[k] for k in ("nuevas", "cambios", "borradas",
+                                           "sin_cambio", "de_otras_unidades",
+                                           "error")}}
+    # El error del taller es error de la vuelta: asi el reloj la marca y
+    # el estado del sistema lo dice, en vez de una vuelta "ok" con el
+    # taller sin leer (seccion 100).
+    if t.get("error"):
+        salida["error"] = t["error"]
+    return salida
 
 
 def sincronizar_si_toca(db: Session, odoo=None) -> dict:

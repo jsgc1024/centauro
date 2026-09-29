@@ -27,7 +27,7 @@ Las decisiones que viven aqui:
 import collections
 import re
 
-from app.odoo_personal_reglas import nombre_de, normal, texto
+from app.odoo_personal_reglas import corto, nombre_de, normal, texto
 
 # La razon social no es parte del nombre: con ella o sin ella es la
 # misma empresa. Se quita del final, una o varias.
@@ -105,8 +105,8 @@ def planear(partners: list, clientes: list, paises: dict) -> dict:
                                    "falta": faltas})
 
     for p in partners:
-        nombre = texto(p.get("name"))
-        rfc = rfc_de(p)
+        nombre = corto(p.get("name"), 160)
+        rfc = rfc_de(p)[:30]
         pais, escrito, del_rfc = pais_de(p, paises)
 
         cliente = por_odoo.get(p["id"])

@@ -226,7 +226,7 @@ function entrada() {
     boton.disabled = true;
     error.replaceChildren();
     try {
-      await api.entrar(correo.value.trim(), clave.value);
+      await api.entrar(correo.value.trim().toLowerCase(), clave.value);
       await api.quienSoy();
       location.hash = "#/hoy";
       pintar();
@@ -250,7 +250,7 @@ function entrada() {
     /* Tu contraseña no va por correo: el correo es tuyo y la empresa
        no lo controla. Va por tu consultor, que te reconoce la voz. */
     h("button", { clase: "claro", style: "margin-top:10px",
-      onclick: () => conCodigo(correo.value.trim()) },
+      onclick: () => conCodigo(correo.value.trim().toLowerCase()) },
       t("cmp_olvide"))));
 }
 
@@ -297,13 +297,13 @@ function conCodigo(correoPrevio) {
     error.replaceChildren();
     try {
       await api.post("/auth/campo/contrasena", {
-        correo: correo.value.trim(),
+        correo: correo.value.trim().toLowerCase(),
         codigo: codigo.value.trim(),
         contrasena: clave.value,
       });
       /* Se entra de corrido con la que acaba de poner: a las 5:40 nadie
          quiere escribirla dos veces. */
-      await api.entrar(correo.value.trim(), clave.value);
+      await api.entrar(correo.value.trim().toLowerCase(), clave.value);
       await api.quienSoy();
       location.hash = "#/hoy";
       pintar();

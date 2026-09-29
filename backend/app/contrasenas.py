@@ -176,7 +176,7 @@ def pedir_recuperacion(db: Session, correo: str) -> tuple:
     publico, y devolverlo aqui seria regalar la cuenta a cualquiera que
     escriba un correo ajeno. Viaja por el correo de la persona.
     """
-    usuario = db.query(m.Usuario).filter_by(correo=(correo or "").strip()).first()
+    usuario = auth.usuario_por_correo(db, correo)
     if not usuario or not usuario.activo or usuario.rol not in POR_CORREO:
         return misma_respuesta(), None
 
@@ -522,14 +522,25 @@ def buscar_para_codigo(db: Session, actor: m.Usuario, q: str) -> list[dict]:
             if puede_dar_codigo(db, actor, u.persona_id)][:10]
 
 
-def codigo_vigente(db: Session, usuario_id: int) -> m.Invitacion | None:
-    """El codigo que todavia sirve, si hay uno."""
-    fila = (db.query(m.Invitacion)
-            .filter(m.Invitacion.usuario_id == usuario_id,
-                    m.Invitacion.tipo == m.TipoInvitacion.CODIGO_CAMPO,
-                    m.Invitacion.usado_en.is_(None),
-                    m.Invitacion.anulado_en.is_(None))
-            .order_by(m.Invitacion.id.desc()).first())
+def codigo_vigente(db: Session, usuario_id: int,
+                   bloquear: bool = False) -> m.Invitacion | None:
+    """El codigo que todavia sirve, si hay uno.
+
+    `bloquear` toma la fila hasta confirmar: el contador de fallos vive
+    aqui y no en Redis justo para el dia en que Redis no conteste, y
+    sin el candado dos intentos a la vez leian "1 fallo" y los dos
+    escribian "2". Diez mil codigos en paralelo nunca llegaban a los
+    cinco fallos (seccion 100).
+    """
+    consulta = (db.query(m.Invitacion)
+                .filter(m.Invitacion.usuario_id == usuario_id,
+                        m.Invitacion.tipo == m.TipoInvitacion.CODIGO_CAMPO,
+                        m.Invitacion.usado_en.is_(None),
+                        m.Invitacion.anulado_en.is_(None))
+                .order_by(m.Invitacion.id.desc()))
+    if bloquear:
+        consulta = consulta.with_for_update()
+    fila = consulta.first()
     if fila and fila.expira_en > datetime.now():
         return fila
     return None
@@ -586,10 +597,10 @@ def usar_codigo(db: Session, correo: str, codigo: str, nueva: str) -> dict:
     """El agente pone su contrasena con los cuatro digitos que le dictaron."""
     malo = HTTPException(401, "El codigo no es correcto o ya vencio")
 
-    usuario = db.query(m.Usuario).filter_by(correo=(correo or "").strip()).first()
+    usuario = auth.usuario_por_correo(db, correo)
     if not usuario or not usuario.activo:
         raise malo
-    vigente = codigo_vigente(db, usuario.id)
+    vigente = codigo_vigente(db, usuario.id, bloquear=True)
     if not vigente:
         raise malo
 

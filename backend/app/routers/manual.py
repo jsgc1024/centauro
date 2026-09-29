@@ -73,6 +73,20 @@ def estado(idioma: str | None = None, db: Session = Depends(get_db),
             "tarjetas": manual.estado(db, manual.idioma_de(idioma))}
 
 
+@router.post("/correo/reintentar", summary="Regresar a la cola los avisos fallidos")
+def reintentar_correo(db: Session = Depends(get_db),
+                      usuario: m.Usuario = Depends(LEE)):
+    """Lo fallido vuelve a la cola y sale en la siguiente vuelta (seccion
+    100). Antes no habia forma de reintentarlo sin tocar la base."""
+    from app import accesos, correo
+
+    cuantos = correo.reintentar_fallidas(db)
+    accesos.anotar(db, usuario, "correo reintentado", "notificacion",
+                   despues=str(cuantos))
+    db.commit()
+    return {"reintentados": cuantos}
+
+
 # ------------------------------------------------ el arranque (seccion 97)
 #
 # Lo que falta para operar todo en Connect y apagar OVH, revisandose

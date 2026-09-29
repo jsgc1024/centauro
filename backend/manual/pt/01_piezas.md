@@ -31,7 +31,7 @@ A fonte de verdade do pessoal de segurança, do escritório, da frota e da ofici
 O Pegasus, da Centauro Satelital. Com serviços na rua, a cada dois minutos as unidades são lidas: o pânico, o caminho até o ponto, o bloqueador de sinal, a corrente e a segunda testemunha das marcações. Sem ninguém na rua, a cada quinze, só para saber qual reporta. Cada unidade do Pegasus se liga sozinha à do Centauro **pela placa**, e a placa sai da frota do Odoo: sem a frota lida, nenhuma se liga.
 
 ### O e-mail
-Sai de **connect@mycentauro.lat** pelo Amazon SES, e as respostas chegam em cecc.notification@centauro.lat. Leva os convites e as recuperações de senha, os avisos aos clientes e as pesquisas. É escrito na hora e sai a cada cinco minutos; o que passa de 24 horas sem sair já não sai. Enquanto o e-mail estiver desligado, nada sai e tudo espera.
+Sai de **connect@mycentauro.lat** pelo Amazon SES, e as respostas chegam em cecc.notification@centauro.lat. Leva os convites e as recuperações de senha, os avisos aos clientes e as pesquisas. É escrito na hora e sai a cada cinco minutos; o aviso operacional que passa de 24 horas sem sair já não sai, e o convite, a recuperação e a pesquisa vivem o que vive o seu link. Enquanto o e-mail estiver desligado, nada sai e tudo espera.
 
 ### Os avisos no telefone
 Os lembretes e alertas que chegam ao telefone mesmo com o app fechado. Precisam de duas coisas: as chaves colocadas no servidor, e que cada telefone os tenha aceitado.

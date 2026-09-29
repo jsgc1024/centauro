@@ -479,7 +479,11 @@ def test_el_pais_de_cada_lista():
     # La de un cliente: el pais de sus clientes; sin clientes, su moneda.
     assert pais({"grupos": [], "moneda": "USD"}, {2}, paises, grupos) == (2, [])
     assert pais({"grupos": [], "moneda": "BRL"}, set(), paises, grupos) == (2, [])
-    assert pais({"grupos": [], "moneda": "USD"}, set(), paises, grupos) == (1, [])
+    # En dolares y sin clientes no dice pais: queda pendiente (seccion 100).
+    # Antes se tomaba como de Mexico sin decirlo.
+    assert pais({"grupos": [], "moneda": "USD"}, set(), paises, grupos) == (None, [])
+    # Y con clientes en dos paises, tampoco.
+    assert pais({"grupos": [], "moneda": "MXN"}, {1, 2}, paises, grupos) == (None, [])
 
 
 # ================================================================ la lectura

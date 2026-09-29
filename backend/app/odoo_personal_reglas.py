@@ -67,6 +67,17 @@ def texto(valor) -> str:
     return "" if valor in (False, None) else str(valor).strip()
 
 
+def corto(valor, largo: int) -> str:
+    """El texto de Odoo al largo de su columna en Centauro (seccion 100).
+
+    Una razon social de 170 letras o un modelo largo reventaban la
+    lectura entera, cada hora, hasta que alguien acortara el dato en
+    Odoo, y el informe no decia cual. Se pierde el final, que es lo que
+    menos importa de un nombre largo.
+    """
+    return texto(valor)[:largo].rstrip()
+
+
 def nombre_de(valor) -> str:
     """El nombre de un many2one, venga como [id, nombre] o como dict."""
     if isinstance(valor, (list, tuple)) and len(valor) > 1:
@@ -188,7 +199,7 @@ def planear(empleados: list, personas: list, plazas: dict,
         return None
 
     for e in elegidos:
-        nombre = texto(e.get("name"))
+        nombre = corto(e.get("name"), 160)
         correo = correo_de(e)
         problema = ("correo repetido en Odoo" if correo in repetidos
                     else problema_de_correo(correo))
@@ -231,7 +242,7 @@ def planear(empleados: list, personas: list, plazas: dict,
                 "odoo_id": e["id"], "nombre": nombre, "correo": correo,
                 "plaza_id": plaza["id"], "plaza": plaza["nombre"],
                 "telefono": celular(e, plaza["pais_id"], None, nombre),
-                "referencia": texto(e.get("registration_number")) or None,
+                "referencia": corto(e.get("registration_number"), 40) or None,
                 "fecha_ingreso": fecha(e.get("first_contract_date"))})
             plan["fotos"].append(e["id"])
             continue
@@ -240,6 +251,16 @@ def planear(empleados: list, personas: list, plazas: dict,
         if not persona.get("activo"):
             pendiente(e, persona["id"], ["activo en Odoo pero dado de baja en "
                                          "Centauro: reactivar a mano"])
+            continue
+        if persona.get("oficina"):
+            # Un cambio de puesto no se adivina (seccion 74), tampoco en
+            # este sentido: quien en Centauro es de oficina --finanzas,
+            # una consultora-- y en Odoo aparece de seguridad queda
+            # pendiente. Antes esta lectura se lo llevaba a la calle, le
+            # cambiaba el correo de su acceso al personal y le dejaba su
+            # rol de consola (seccion 100).
+            pendiente(e, persona["id"], ["en Centauro es de oficina; en Odoo "
+                                         "ya es de seguridad"])
             continue
 
         valores, que, avisos = {}, [], []

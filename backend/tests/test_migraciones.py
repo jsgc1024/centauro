@@ -192,3 +192,25 @@ def test_los_depositos_viejos_conservan_su_referencia(base_migrada):
     llaves = [f for f in inspector.get_foreign_keys("solicitud_transferencia")
               if f["referred_table"] == "deposito_bancario"]
     assert llaves, "la solicitud no apunta al deposito"
+
+
+def test_el_modelo_y_las_migraciones_dicen_lo_mismo(base_migrada):
+    """Cero diferencias, tambien en valores por omision e indices.
+
+    Habia 37 --inofensivas, pero el siguiente `alembic revision
+    --autogenerate` las habria propuesto "arreglar" y la bateria corria
+    con indices distintos a los de produccion (seccion 100). Esta prueba
+    es la que no deja que vuelvan a juntarse.
+    """
+    from alembic.autogenerate import compare_metadata
+    from alembic.runtime.migration import MigrationContext
+    from app.db import Base
+
+    with base_migrada.connect() as con:
+        contexto = MigrationContext.configure(
+            con, opts={"compare_type": True, "compare_server_default": True})
+        diferencias = compare_metadata(contexto, Base.metadata)
+    planas = []
+    for d in diferencias:
+        planas.extend(d if isinstance(d, list) else [d])
+    assert not planas, "\n".join(str(d)[:200] for d in planas)

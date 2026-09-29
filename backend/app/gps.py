@@ -68,6 +68,58 @@ MINUTOS_ENTRE_BARRIDOS = 15
 # hora en que todos marcan o terminan: lo demas, en la vuelta siguiente.
 TESTIGOS_POR_VUELTA = 8
 DIAS_POR_VUELTA = 10
+# Una vuelta a la vez (seccion 100): una lenta --Pegasus tardando diez
+# segundos por llamada-- se encimaba con la siguiente, y las dos leian
+# lo mismo y levantaban las alertas del inhibidor por duplicado. El
+# candado vive en Redis, como la pausa de Pegasus, y se suelta solo.
+LLAVE_VUELTA = "gps:vuelta_en_curso"
+SEGUNDOS_DE_VUELTA = 110
+# El aviso de Pegasus que llego en los veinte segundos de silencio deja
+# esta bandera: la siguiente vuelta hace barrido completo en vez de
+# esperar hasta quince minutos con un panico de una unidad sin servicio.
+LLAVE_BARRIDO = "gps:barrido_pendiente"
+
+
+def _tomar_vuelta() -> bool:
+    """True si esta vuelta puede leer; False si otra sigue leyendo."""
+    r = conexion._redis()
+    if r is None:
+        return True
+    try:
+        return bool(r.set(LLAVE_VUELTA, "1", nx=True, ex=SEGUNDOS_DE_VUELTA))
+    except Exception:                                      # noqa: BLE001
+        return True
+
+
+def _soltar_vuelta() -> None:
+    r = conexion._redis()
+    if r is None:
+        return
+    try:
+        r.delete(LLAVE_VUELTA)
+    except Exception:                                      # noqa: BLE001
+        pass
+
+
+def _pedir_barrido() -> None:
+    r = conexion._redis()
+    if r is None:
+        return
+    try:
+        r.set(LLAVE_BARRIDO, "1", ex=MINUTOS_ENTRE_BARRIDOS * 60)
+    except Exception:                                      # noqa: BLE001
+        pass
+
+
+def _barrido_pedido() -> bool:
+    """Y se consume: la vuelta que lo ve es la que lo hace."""
+    r = conexion._redis()
+    if r is None:
+        return False
+    try:
+        return bool(r.getdel(LLAVE_BARRIDO))
+    except Exception:                                      # noqa: BLE001
+        return False
 VIVAS = (m.EstatusJornada.PLANEADA, m.EstatusJornada.CONFIRMADA,
          m.EstatusJornada.PROXIMA_A_INICIAR, m.EstatusJornada.ARRIBADO,
          m.EstatusJornada.EN_CURSO)
@@ -373,6 +425,21 @@ def leer(db: Session, cliente=None, ahora: datetime | None = None) -> dict:
     if cliente is None:
         return {"conectado": False}
     ahora = ahora or _utc()
+    if not _tomar_vuelta():
+        return {"conectado": True, "omitido": "otra vuelta sigue leyendo"}
+    try:
+        return _leer(db, cliente, ahora)
+    finally:
+        _soltar_vuelta()
+
+
+def _leer(db: Session, cliente, ahora: datetime) -> dict:
+    """La vuelta, en tres fases que se guardan por separado (seccion
+    100): las posiciones con sus panicos y alertas; el camino al punto;
+    y los testigos de las marcas. Antes era una sola transaccion, y si
+    Pegasus fallaba en la consulta de un testigo se perdia la vuelta
+    entera: la posicion leida, el panico ya detectado y las alertas del
+    inhibidor. Ahora lo que ya se leyo se queda, y el error se anota."""
     relojes = reloj.Relojes(db, ahora)
     resultado: dict = {"conectado": True}
     try:
@@ -390,12 +457,13 @@ def leer(db: Session, cliente=None, ahora: datetime | None = None) -> dict:
         db.flush()
         resultado["unidades"] = leidas
         en_servicio = {a.vehiculo_id for j, _ in ventana for a in _vigentes(j)}
-        resultado["panicos"] = _revisar_panicos(db, cliente, grupos, ahora,
-                                                en_servicio)
+        # El aviso de Pegasus que cayo en el silencio de veinte segundos
+        # pidio barrido completo: esta vuelta lo hace.
+        resultado["panicos"] = _revisar_panicos(
+            db, cliente, grupos, ahora,
+            None if _barrido_pedido() else en_servicio)
         resultado["alertas"] = _alertas_de_la_unidad(db, relojes, ventana,
                                                      ahora)
-        resultado["camino"] = _camino(db, relojes, ventana, ahora)
-        resultado["testigos"] = _testimonios(db, cliente, ahora)
         db.commit()
     except conexion.NoResponde as e:
         db.rollback()
@@ -408,6 +476,17 @@ def leer(db: Session, cliente=None, ahora: datetime | None = None) -> dict:
         db.commit()
         registro.warning("Pegasus: %s", e)
         resultado["error"] = str(e)
+        return resultado
+
+    for fase, hacer in (("camino", lambda: _camino(db, relojes, ventana, ahora)),
+                        ("testigos", lambda: _testimonios(db, cliente, ahora))):
+        try:
+            resultado[fase] = hacer()
+            db.commit()
+        except conexion.NoResponde as e:
+            db.rollback()
+            registro.warning("Pegasus (%s): %s", fase, e)
+            resultado["error"] = f"{fase}: {e}"
     return resultado
 
 
@@ -533,6 +612,11 @@ def revisar_panicos(db: Session, cliente=None,
     ultimos = [g.panico_hasta for g in db.query(m.GrupoGps).all()
                if g.panico_hasta]
     if ultimos and (ahora - max(ultimos)).total_seconds() < SEGUNDOS_ENTRE_AVISOS:
+        # No se revisa ahora, pero no se pierde: la siguiente vuelta de
+        # dos minutos hace barrido completo (seccion 100). Antes un
+        # panico de una unidad sin servicio que llegaba diez segundos
+        # despues del barrido esperaba hasta quince minutos.
+        _pedir_barrido()
         return {"conectado": True, "panicos": 0, "reciente": True}
     try:
         grupos = _grupos(db, cliente, ahora)

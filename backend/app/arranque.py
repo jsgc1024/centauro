@@ -369,6 +369,31 @@ def _bono_de_ejemplo(db: Session) -> bool:
     return True
 
 
+def _pago_dia_de_ejemplo(db: Session) -> bool:
+    """Si lo que se paga por dia en Mexico sigue como se sembro. La
+    pantalla de Nominas -> Tabulador no dejaba rastro (seccion 100): lo
+    cargado antes de eso solo se ve comparando los montos."""
+    from app import seed
+
+    mx = db.query(m.Pais).filter_by(codigo="MX").first()
+    if not mx:
+        return True
+    ejemplo = {(perfil, modalidad): Decimal(monto)
+               for perfil, por_mod in seed.COMISIONES_DE_EJEMPLO.items()
+               for modalidad, monto in por_mod.items()}
+    filas = (db.query(m.ComisionPersonal)
+             .filter_by(pais_id=mx.id, tipo_servicio=m.TipoServicio.EVENTUAL)
+             .all())
+    if not filas:
+        return True
+    for fila in filas:
+        perfil = fila.perfil.codigo if fila.perfil else None
+        modalidad = fila.modalidad.codigo.value if fila.modalidad else None
+        if ejemplo.get((perfil, modalidad)) != Decimal(str(fila.monto)):
+            return False
+    return True
+
+
 def _dinero(db: Session, T: dict, idioma: str) -> list:
     donde = {"tabulador": ("#/catalogos", T["d_catalogos"], T["q_dir_op"]),
              "modalidades": ("#/catalogos", T["d_catalogos"], T["q_dir_op"]),
@@ -383,6 +408,8 @@ def _dinero(db: Session, T: dict, idioma: str) -> list:
             tono, como = LISTO, T["cambiado"].format(
                 f=_dia(cambio.creado_en, idioma), p=por)
         elif clave == "bono" and not _bono_de_ejemplo(db):
+            tono, como = LISTO, T["ya_no_ejemplo"]
+        elif clave == "pago_dia" and not _pago_dia_de_ejemplo(db):
             tono, como = LISTO, T["ya_no_ejemplo"]
         else:
             tono, como = FALTA, T["ejemplo_horas" if clave == "modalidades"

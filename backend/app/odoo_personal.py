@@ -40,7 +40,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app import accesos
+from app import accesos, odoo_api
 from app import models as m
 from app import odoo_personal_reglas as reglas
 from app import reloj, telefonos
@@ -175,6 +175,8 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
     nada: lee de Odoo lo mismo, fotos incluidas, para que las cuentas
     sean las de verdad.
     """
+    if not ensayo:
+        odoo_api.candado(db, TIPO)
     ahora = _utc()
     relojes = reloj.Relojes(db)
     empleados = odoo.leer("hr.employee", [], CAMPOS)
@@ -258,9 +260,6 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
         persona = db.get(m.Persona, persona_id)
         persona.odoo_sincronizado_en = ahora
         persona.baja_odoo_en = None
-        # Si venia de la oficina y en Odoo ahora es de seguridad, desde
-        # aqui la lleva esta lectura (seccion 74).
-        persona.oficina = False
         # Quien ya estaba en Centauro sin acceso a la app lo recibe, igual
         # que un alta: sin contrasena, con el codigo que le dictan.
         correo = (persona.correo or "").strip().lower()

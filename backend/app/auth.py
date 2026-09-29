@@ -6,6 +6,7 @@ import bcrypt
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import models as m
@@ -294,6 +295,29 @@ def es_su_propia_jornada(db: Session, usuario: m.Usuario, jornada_id: int) -> bo
     return (db.query(m.AsignacionPersonal)
             .filter_by(jornada_id=jornada_id, persona_id=usuario.persona_id)
             .first() is not None)
+
+
+def llave_de_correo(correo: str | None) -> str:
+    """El correo como se guarda: en minusculas y sin espacios."""
+    return (correo or "").strip().lower()
+
+
+def usuario_por_correo(db: Session, correo: str | None) -> m.Usuario | None:
+    """La cuenta de ese correo, escrito como sea.
+
+    El correo se guarda en minusculas (el alta y Odoo lo normalizan),
+    pero las puertas de entrada lo comparaban exacto: el teclado del
+    telefono pone la primera letra en mayuscula y quien tecleaba
+    "Juan.Ramirez@..." veia "correo o contrasena incorrectos" con todo
+    bien puesto, y cada intento asi le gastaba el tope de intentos
+    (seccion 100).
+    """
+    llave = llave_de_correo(correo)
+    if not llave:
+        return None
+    return (db.query(m.Usuario)
+            .filter(func.lower(func.trim(m.Usuario.correo)) == llave)
+            .first())
 
 
 def es_su_jornada_vigente(db: Session, usuario: m.Usuario,

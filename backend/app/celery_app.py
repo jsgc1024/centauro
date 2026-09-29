@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from celery import Celery
 from celery.schedules import crontab
@@ -16,6 +17,13 @@ celery = Celery(
 celery.conf.update(
     task_track_started=True,
     timezone="America/Mexico_City",
+    # Ninguna tarea vive para siempre (seccion 100): la que se cuelga
+    # --un telefono que no contesta, Pegasus que no suelta-- recibe
+    # aviso a los diez minutos y se mata a los quince, y el proceso
+    # queda libre para la siguiente. La mas larga, el archivo de los
+    # comprobantes, cabe de sobra.
+    task_soft_time_limit=600,
+    task_time_limit=900,
     beat_schedule={
         # Todas las mananas, temprano. La tarea decide sola si toca: solo
         # hace algo cuando al mes en curso le quedan pocos dias.
@@ -152,6 +160,11 @@ celery.conf.update(
         "gps-leer": {
             "task": "gps.leer",
             "schedule": crontab(minute="*/2"),
+            # La vuelta que no arranco antes de que toque la siguiente
+            # se tira: dos vueltas encimadas leian lo mismo dos veces y
+            # levantaban las alertas por duplicado (seccion 100). El
+            # candado entre las que si arrancan vive en gps.leer.
+            "options": {"expires": 110},
         },
         # Lo que recorrio cada unidad en el dia y su manejo, cuando ya se
         # guardo: dos horas despues del fin. Cada hora, a los 41.
@@ -167,8 +180,35 @@ celery.conf.update(
             "task": "archivo.archivar",
             "schedule": crontab(hour=1, minute=30),
         },
+        # La red de las diarias (seccion 100): cada media hora mira cual
+        # de las de arriba no corrio a su hora --beat reiniciado en ese
+        # minuto, worker caido esa manana-- y la vuelve a mandar. Ver
+        # DIARIAS.
+        "reloj-reponer-diarias": {
+            "task": "reloj.reponer_diarias",
+            "schedule": crontab(minute="*/30"),
+        },
     },
 )
+
+# Las diarias que no pueden perderse: a que hora de Mexico tocan y, si
+# es de un solo dia del mes, cual. El calendario de arriba las dispara;
+# `reponer_diarias` repone la que no termino desde esa hora. Las cinco
+# son idempotentes: la que ya hizo lo suyo no lo hace dos veces (el
+# certificado avisado no se avisa otra vez, el mes abierto no se abre,
+# la encuesta recordada no se recuerda, el bono autorizado no se toca).
+DIARIAS = {
+    "archivo.archivar": (1, 30, None),
+    "bonos.calcular_el_mes": (5, 0, 3),
+    "implantados.abrir_mes_siguiente": (6, 30, None),
+    "capacitaciones.revisar_vencimientos": (7, 30, None),
+    "encuestas.pasar_lista": (8, 0, None),
+}
+# Cuanto se le espera a la programada antes de reponerla, y cuanto dura
+# como mucho una que esta corriendo.
+MINUTOS_DE_MARGEN = 20
+MINUTOS_CORRIENDO = 15
+ZONA_DEL_RELOJ = ZoneInfo("America/Mexico_City")
 
 
 # La vuelta de cada tarea, anotada (seccion 90). Hasta aqui nadie sabia
@@ -215,6 +255,47 @@ def _termina(task=None, state=None, retval=None, **_):
 @celery.task(name="ping")
 def ping():
     return "pong"
+
+
+def diarias_que_faltan(db, ahora: datetime | None = None) -> list[str]:
+    """Las diarias que ya debieron correr hoy y no terminaron desde su
+    hora. `ahora` en UTC; la hora de cada una es de Mexico."""
+    from app import models as m
+
+    ahora = ahora or datetime.now(timezone.utc)
+    local = ahora.astimezone(ZONA_DEL_RELOJ)
+    faltan = []
+    for nombre, (hora, minuto, dia) in DIARIAS.items():
+        if dia is not None and local.day != dia:
+            continue
+        toca = local.replace(hour=hora, minute=minuto, second=0, microsecond=0)
+        if local < toca + timedelta(minutes=MINUTOS_DE_MARGEN):
+            continue
+        vuelta = db.get(m.VueltaDelReloj, nombre)
+        termino = vuelta.termino_en if vuelta else None
+        empezo = vuelta.empezo_en if vuelta else None
+        if termino is not None and termino >= toca:
+            continue
+        if (empezo is not None and empezo >= toca
+                and ahora - empezo < timedelta(minutes=MINUTOS_CORRIENDO)):
+            continue                      # esta corriendo ahora mismo
+        faltan.append(nombre)
+    return faltan
+
+
+@celery.task(name="reloj.reponer_diarias")
+def reponer_diarias():
+    """Manda otra vez la diaria que no corrio a su hora (seccion 100)."""
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        faltan = diarias_que_faltan(db)
+    finally:
+        db.close()
+    for nombre in faltan:
+        celery.send_task(nombre)
+    return {"repuestas": faltan}
 
 
 @celery.task(name="campo.recordar_la_vispera")

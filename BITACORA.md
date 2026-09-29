@@ -7059,6 +7059,237 @@ mañana con aprobación (decisión 5), el fin rechazado por la unidad, el
 segundo aviso al cliente, y cancelar con un día en la calle
 (decisión 1).
 
+## 100. Accesos, correo, reloj y servidor
+
+La **tercera tanda** de la revisión del 28 de septiembre (sección 98):
+los accesos, el correo, el reloj, Odoo, el GPS y el servidor. Como las
+dos anteriores, nada de esto necesitaba decisión de Salvador.
+
+### Los accesos
+
+- **El correo entra como sea que se escriba.** Se guarda en minúsculas
+  (el alta y Odoo lo normalizan) pero las puertas lo comparaban exacto:
+  el teclado del teléfono pone la primera letra en mayúscula y quien
+  tecleaba «Juan.Ramirez@…» veía «correo o contraseña incorrectos» con
+  todo bien puesto, y cada intento así le gastaba el tope de intentos.
+  Son 200 personas el 2 de noviembre. Ahora las cuatro puertas —entrar,
+  el código de campo, recuperar y el enlace— usan la misma llave
+  (`auth.llave_de_correo`, `auth.usuario_por_correo`), y la consola y
+  la app la bajan a minúsculas antes de mandarla.
+- **Recursos Humanos ya no fabrica un repartidor de accesos.** La
+  sección 83 dejó ese poder solo a Dirección general, pero se esquivaba
+  por dos rodeos: darle Capacitación (recursos humanos sin repartir) y
+  quitarle el puesto —el candado miraba lo que la persona podía antes,
+  no lo que quedaría pudiendo—, o un puesto sin rol y un cambio de rol.
+  Ahora quitar el puesto revisa el rol al que vuelve, y cambiar el rol
+  revisa siempre si reparte, con puesto o sin él.
+- **El tope de intentos por dirección es por puerta.** Con un solo
+  contador, cuarenta «olvidé mi contraseña» con correos distintos desde
+  una dirección —sin ninguna credencial— dejaban sin entrar quince
+  minutos a todo lo que saliera por esa dirección: la oficina entera
+  detrás de su proxy. Cada carril (entrar, recuperar, código) cuenta su
+  propia dirección.
+- **El código de campo cuenta bien sus cinco fallos.** El contador vive
+  en la base justo para el día en que Redis no conteste, y sin bloquear
+  la fila dos intentos a la vez leían «1 fallo» y los dos escribían
+  «2»: diez mil códigos en paralelo nunca llegaban a cinco. La fila se
+  toma (`with_for_update`) al contar.
+- **Lo que se paga por día deja rastro.** Nóminas → Tabulador guardaba
+  el tabulador sin escribir en la bitácora de administración: no
+  quedaba quién, cuándo ni de cuánto a cuánto, y el arranque seguía
+  diciendo «montos de ejemplo» con los reales cargados. Ahora cada
+  cambio queda con antes y después («conductor · full day 700 (+90) →
+  750 (+95)»), guardar lo mismo no escribe nada, y el arranque además
+  compara contra los montos de ejemplo de la semilla, como con el bono.
+- **Editar un puesto no junta las dos manos.** Se cuidaban al armar el
+  puesto, al repartirlo y al dar un permiso de más; faltaba al editar
+  las actividades de un puesto que alguien ya trae: con «autorizar
+  bonos» como permiso de más, agregarle «pagar bonos» al puesto dejaba a
+  esa persona autorizando y depositando el bono. Se rechaza con quién y
+  con qué choca.
+- **La baja desde Catálogos cierra el acceso.** Las bajas de Odoo y la
+  del panel de accesos lo cerraban; esta puerta dejaba a la persona
+  entrando como si nada. Con `activo` en falso la sesión abierta muere
+  en el siguiente clic. Deshacer esa baja (reactivar a la persona desde
+  Catálogos) reabre el acceso solo si fue la propia baja la que lo
+  cerró; el que se cerró a propósito desde Accesos sigue cerrado.
+- **Los textos largos ya no revientan.** Los motivos de accesos, la
+  descripción y la resolución de una alerta, el motivo de un cambio por
+  contingencia, la señal, los contactos y el idioma del alta, la firma
+  y las notas de la revisión de unidad tienen tope en el esquema (422
+  con qué corregir), la bitácora de administración recorta al largo de
+  su columna, y lo que se escape lo traduce una red de abajo: el
+  `DataError` de la base sale como 400 «un texto es más largo de lo que
+  cabe», no como error del servidor. Antes la consola decía «Error 500»
+  y la app reintentaba la marca para siempre.
+- **Las peticiones tienen tope: 20 MB.** Cualquiera, sin sesión, podía
+  mandar gigabytes a `/auth/token` y la API los cargaba en memoria antes
+  de rechazarlos. El tope vive en el proxy (`request_body` en el
+  `Caddyfile`) y también en la API (`CuerpoConTope`), por si un día se
+  asoma sin él. Las fotos ya se recortan a 3 o 4 MB en su ruta.
+
+### El correo
+
+- **Cada aviso vive lo que tiene que vivir.** La invitación de acceso
+  (72 h), el enlace de «olvidé mi contraseña», la encuesta y su
+  recordatorio (15 días) viven lo que vive su enlace; los operativos
+  siguen muriendo a las 24 horas (decisión del 20 sep). Con el correo
+  apagado y los accesos repartiéndose, las invitaciones de hace dos días
+  morían en la cola al encender aunque su enlace siguiera vigente, y
+  Accesos había dicho que saldrían. Lo vencido se marca de un golpe
+  antes de tomar el lote (`vencer_lo_viejo`): el día que se encienda el
+  correo, los cientos de avisos viejos ya no gastan el cupo de las
+  vueltas ni retrasan al aviso operativo de hoy.
+- **Tres fallas distintas.** El destinatario que rechaza (dirección que
+  no existe) es fallida a la primera: insistir no la crea. El proveedor
+  caído o la red se reintenta con espera creciente —5, 15, 45 minutos y
+  luego cada dos horas— mientras el aviso viva (`reintentar_en`, nueva
+  columna). Lo demás cuenta cinco intentos como antes. Con cinco
+  intentos parejos, una caída de veinticinco minutos dejaba toda la cola
+  fallida, sin forma de reintentar y con la tarjeta «Con fallas» para
+  siempre. Ahora la tarjeta del estado del sistema cuenta las fallidas
+  de las últimas 24 horas y trae el botón **«Reintentar los que
+  fallaron»** (`POST /manual/correo/reintentar`), que regresa a la cola
+  lo que no venció y deja en la bitácora cuántos.
+- **Uno por uno, no al final del lote.** El despacho confirmaba tras
+  hasta cincuenta envíos: un reinicio del worker a media vuelta —el
+  despliegue lo mata a los diez segundos— dejaba sin marcar los ya
+  entregados y salían otra vez. Ahora confirma cada aviso, y el worker
+  tiene `stop_grace_period` de dos minutos en `docker-compose.prod.yml`.
+- **El certificado de Amazon se comprueba.** `starttls()` sin `context`
+  no verifica con quién habla; la llave SMTP era la única credencial del
+  sistema que salía así.
+
+### El reloj y el servidor
+
+- **Ninguna tarea vive para siempre.** El envío de un aviso al teléfono
+  no tenía tiempo límite: un teléfono que aceptaba la conexión y no
+  contestaba dejaba la tarea esperando, y con dos así los dos procesos
+  del worker quedaban ocupados —sin correos, sin cierres, sin Odoo ni
+  GPS— hasta reiniciar a mano. `webpush` espera diez segundos, y Celery
+  avisa a los diez minutos y mata a los quince (`task_soft_time_limit`,
+  `task_time_limit`).
+- **La diaria que no corrió se repone.** Las de una vez al día (el
+  archivo de comprobantes, el bono del día 3, el mes del implantado,
+  los certificados, la lista de encuestas) se disparaban en su minuto y
+  nada más: un `beat` reiniciado en ese minuto, o el worker caído esa
+  mañana, y ese día no pasaban. `reloj.reponer_diarias` mira cada media
+  hora cuál no terminó desde su hora y la vuelve a mandar; las cinco
+  son idempotentes. Y el aviso del certificado por vencer sale en cuanto
+  entra en la ventana de treinta días y al vencer, una vez cada uno,
+  sin exigir que el reloj haya corrido justo ese día.
+- **Un país o un servicio que revienta no tumba a los demás.** El corte
+  del lunes solo atrapaba el 409: con México reventando por otra cosa,
+  Brasil se quedaba sin corte. Lo mismo en el proceso de la mañana del
+  implantado. Ahora cada uno se deshace solo y queda anotado.
+- **El GPS se guarda por fases.** La vuelta era una sola transacción:
+  si Pegasus fallaba en la consulta del testigo de una marca, se perdía
+  la vuelta entera con la posición leída, el pánico ya detectado y las
+  alertas del inhibidor. Ahora las posiciones con sus pánicos y alertas
+  se guardan primero, el camino y los testigos después, cada fase por
+  su cuenta y con su error. Dos vueltas no se enciman (candado en Redis
+  `gps:vuelta_en_curso` y `expires` en el calendario): una lenta se
+  encimaba con la siguiente y las alertas del inhibidor salían por
+  duplicado. Y el aviso de Pegasus que caía en los veinte segundos de
+  silencio tras un barrido se tiraba: un pánico de una unidad sin
+  servicio esperaba hasta quince minutos. Ahora deja pedido el barrido
+  y la siguiente vuelta de dos minutos lo hace completo.
+- **El respaldo compara contra su propia foto.** `pg_dump` toma la foto
+  al empezar y las cuentas y el md5 se hacían minutos después contra la
+  base viva: a las 2:30 de México son las 5:30 en São Paulo, y una
+  revisión con fotos en ese rato daba «no se restaura completo», la
+  alerta, y esa noche no subía copia a Google aunque el respaldo
+  estuviera bien. Ahora una sesión de `psql` exporta su instantánea
+  (`pg_export_snapshot`), `pg_dump --snapshot` la usa y las cuentas se
+  piden a esa misma sesión.
+- **www.mycentauro.lat lleva a la consola.** No existía ni en Cloud DNS
+  ni en Caddy. El `Caddyfile` trae su bloque; el registro A se crea con
+  el comando de la guía (va en los pasos de esta actualización), antes
+  de recargar el proxy.
+
+### Odoo
+
+- **Si Odoo pierde los campos del taller, no se toca el taller.** La
+  lectura decía «no se leyó el taller» pero planeaba sobre cero
+  registros: borraba todas las entradas guardadas y las unidades en el
+  taller salían disponibles. Ahora no toca nada y la vuelta lo marca
+  como error.
+- **Quien pasa de oficina a seguridad queda pendiente.** La sección 74
+  lo decía y el código no lo hacía: la lectura del personal se lo
+  llevaba a la calle, le cambiaba el correo de su acceso al personal y
+  le dejaba su rol de consola.
+- **Los textos largos se recortan al largo de su columna** al leer:
+  una razón social de 170 letras o un modelo largo revertían la lectura
+  entera cada hora, sin decir cuál. Los clientes sin la etiqueta en
+  Odoo son un error de la vuelta y no una vuelta «ok» sin nota. Una
+  lista de precios con clientes en dos países, o en dólares sin
+  clientes, queda pendiente sin país en vez de tomarse como de México.
+  Y dos lecturas del mismo tipo no se pisan: `pg_advisory_xact_lock`
+  por tipo, para que «Aplicar» a mano mientras corre la de cada hora
+  espere y encuentre todo hecho.
+
+### Los modelos y las migraciones
+
+Treinta y siete diferencias inofensivas entre el modelo y la base
+migrada: diez valores por omisión que la base tenía y el modelo no
+declaraba, once índices con otro nombre, cuatro que solo existían en la
+base y el token de la encuesta con restricción en vez de índice único.
+El modelo declara los valores por omisión y los cuatro índices; la
+migración `a3b5c7d9e1f2` renombra los once y deja el token como el
+modelo; y `test_migraciones` exige cero diferencias desde ahora. La
+guía de despliegue ya no manda a correr `sincronizar_flota.py`, que
+nunca existió: la flota se lee desde la consola.
+
+### Por dentro
+
+- `auth.py`: `llave_de_correo`, `usuario_por_correo`. `intentos.py`:
+  `_carril` y la llave por puerta. `contrasenas.py`: `codigo_vigente`
+  con `bloquear`. `accesos.py`: `poner_categoria` y `cambiar_rol` con
+  lo que quedaría pudiendo, `_ni_con_los_permisos_de_su_gente`,
+  `anotar` recorta. `routers/crud.py`: la baja cierra el acceso.
+  `routers/nomina.py`: `guardar_tabulador` anota; `arranque.py`:
+  `_pago_dia_de_ejemplo`; `seed.py`: `COMISIONES_DE_EJEMPLO`.
+  `bitacora_admin.py`: la frase del tabulador y del reintento.
+- `main.py`: `CuerpoConTope` y el manejador de `DataError`.
+  `schemas.py` y `routers/acceso.py`, `routers/campo.py`: los topes.
+- `correo.py`: `CON_VIDA_PROPIA`, `ESPERAS_MINUTOS`, `_anotar_falla`,
+  `_rechazo_del_destinatario`, `_proveedor_caido`, `vencer_lo_viejo`,
+  `reintentar_fallidas`, `estado` con `fallidas_recientes`. `manual.py`
+  y `web/manual.js`: la acción de la tarjeta. `routers/manual.py`:
+  `/correo/reintentar`.
+- `push.py`: `SEGUNDOS_DE_ESPERA`. `celery_app.py`: los límites, el
+  `expires` del GPS, `DIARIAS`, `diarias_que_faltan`,
+  `reponer_diarias`. `capacitaciones.py`: `DIAS_ANTES` y la ventana.
+  `nomina.reloj_del_lunes` e `implantado.abrir_los_que_toquen` con
+  `except Exception`.
+- `gps.py`: `_tomar_vuelta`/`_soltar_vuelta`, `_pedir_barrido`/
+  `_barrido_pedido`, `_leer` por fases. `odoo_api.candado`;
+  `odoo_flota` con el error del taller; `odoo_personal_reglas` con el
+  pendiente de oficina y `corto`; `odoo_clientes.resumen` con la
+  etiqueta; `odoo_tarifarios_reglas.pais_de_la_lista`.
+- `despliegue/Caddyfile` (www y `request_body`), `despliegue/respaldo.sh`
+  (la instantánea), `despliegue/LEEME.md` (www, el reload de Caddy),
+  `docker-compose.prod.yml` (`stop_grace_period`).
+- Migraciones `f2c4a6e8b0d1` (`notificacion.reintentar_en`) y
+  `a3b5c7d9e1f2` (los índices y el token).
+
+### Las pruebas
+
+- `tests/test_revision_100.py`, 32 pruebas: cada regla de arriba con su
+  escenario, adaptadas de las que reprodujeron los hallazgos en la
+  revisión. `test_migraciones` gana la de cero diferencias. Dos
+  pruebas viejas cambiaron con la regla: el SMTP de mentiras recibe el
+  contexto del certificado, y una lista de precios en dólares sin
+  clientes ya no es de México.
+- La batería completa en verde.
+
+### Para subirlo
+
+- **Con migración** (`a3b5c7d9e1f2`): el bloque de siempre, con
+  `alembic upgrade head`, y además el registro `www` en Cloud DNS y la
+  recarga del proxy. Cambian la consola, la app de campo, el
+  `docker-compose.prod.yml` y el `Caddyfile`.
+
 ## 14. Lo que falta
 
 ### Abierto
@@ -7067,11 +7298,10 @@ segundo aviso al cliente, y cancelar con un día en la calle
   septiembre: una revisada completa, profunda y con calma. 112
   hallazgos en `REVISION_2026_09_28.md`. La primera tanda —el dinero
   y los días trabajados— quedó en la sección 98; la segunda —la app
-  de campo y el ciclo del día— en la 99. Faltan las otras dos: los
-  accesos, el correo, el reloj y el servidor (con el subdominio
-  `www`, que hoy no existe en Cloud DNS ni en Caddy); y la consola,
-  el implantado, la nómina y los detalles. Y las 14 decisiones, que
-  se le llevan juntas al final.
+  de campo y el ciclo del día— en la 99; la tercera —accesos, correo,
+  reloj y servidor, con el subdominio `www`— en la 100. Falta la
+  cuarta: la consola, el implantado, la nómina y los detalles. Y las
+  14 decisiones, que se le llevan juntas al final.
 - **El puesto de administración del sistema y calidad**: Aridiai
   Morales. Aprobado el 27 de septiembre con sus pantallas. Hechos los
   cuatro pasos: los candados de Accesos (sección 83), el puesto con sus

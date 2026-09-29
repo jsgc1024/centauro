@@ -117,7 +117,7 @@ async function pantallaEntrada() {
     const boton = f.querySelector("button");
     boton.disabled = true;
     try {
-      await api.entrar(d.correo, d.contrasena);
+      await api.entrar((d.correo || "").trim().toLowerCase(), d.contrasena);
       await api.quienSoy();
       location.hash = destinoDe(sesion.usuario);
       pintar();

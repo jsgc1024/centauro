@@ -82,6 +82,7 @@ limpiar() {
 }
 al_salir() {
   local salida=$?
+  cerrar_la_foto 2>/dev/null || true
   limpiar
   if [ "$PROBANDO" = "0" ] && command -v logger >/dev/null 2>&1; then
     if [ "$salida" = "0" ]; then
@@ -97,10 +98,52 @@ trap al_salir EXIT
 mkdir -p "$DESTINO"
 
 # ---------------------------------------------------------------- sacar
+#
+# La foto contra la que se compara es LA MISMA que se respalda (seccion
+# 100). Antes el dump tomaba su foto al empezar y las cuentas y el md5
+# se hacian minutos despues contra la base en uso: a las 2:30 de Mexico
+# son las 5:30 en Sao Paulo, y una revision con fotos en ese rato
+# disparaba "no se restaura completo", la alerta, y esa noche no subia
+# copia a Google aunque el respaldo estuviera bien.
+#
+# Se abre una sesion de psql que exporta su instantanea y se queda
+# abierta: pg_dump la usa (--snapshot) y las cuentas de referencia se
+# piden a esa misma sesion. Es un coproceso porque la instantanea solo
+# vive mientras viva la transaccion que la exporto.
 decir "Sacando el respaldo…"
+coproc FOTO { $COMPOSE exec -T db psql -U centauro -d centauro -qAt -v ON_ERROR_STOP=1 2>&1; }
+
+# Manda una orden a la sesion de la foto y devuelve su ultima linea. El
+# centinela dice donde termina: psql en silencio (-q) no contesta nada a
+# un BEGIN, y un `read` a secas se quedaria esperando para siempre.
+en_la_foto() {
+  printf '%s\n\\echo __FIN__\n' "$1" >&"${FOTO[1]}"
+  local linea salida=""
+  while IFS= read -r linea <&"${FOTO[0]}"; do
+    [ "$linea" = "__FIN__" ] && break
+    salida="$linea"
+  done
+  printf '%s' "$salida"
+}
+cerrar_la_foto() {
+  if [ -n "${FOTO[1]:-}" ]; then
+    printf 'COMMIT;\n' >&"${FOTO[1]}" 2>/dev/null || true
+    exec {FOTO[1]}>&- 2>/dev/null || true
+    wait "${FOTO_PID:-}" 2>/dev/null || true
+  fi
+}
+
+en_la_foto "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;" >/dev/null
+INSTANTANEA=$(en_la_foto "SELECT pg_export_snapshot();")
+if [ -z "$INSTANTANEA" ]; then
+  decir "ERROR: no se pudo abrir la instantanea de la base."
+  cerrar_la_foto
+  exit 1
+fi
+
 # Formato custom (-Fc): comprimido y restaurable por partes. El .sql
 # plano de una base con imagenes dentro pesa el triple y tarda lo mismo.
-$COMPOSE exec -T db pg_dump -U centauro -Fc centauro > "$ARCHIVO"
+$COMPOSE exec -T db pg_dump -U centauro -Fc --snapshot="$INSTANTANEA" centauro > "$ARCHIVO"
 
 PESO=$(du -h "$ARCHIVO" | cut -f1)
 if [ ! -s "$ARCHIVO" ]; then
@@ -131,11 +174,20 @@ contar() {
   $COMPOSE exec -T db psql -U centauro -d "$1" -tAc \
     "SELECT count(*) FROM $2" 2>/dev/null | tr -d '[:space:]' || echo "x"
 }
+# Lo de la base viva se pregunta en la sesion de la foto: es lo que el
+# dump vio, ni una fila mas.
+contar_en_la_foto() {
+  # Sin tuberia: en una tuberia la funcion corre en un subproceso y ahi
+  # los descriptores del coproceso no existen.
+  local n
+  n=$(en_la_foto "SELECT count(*) FROM $1;")
+  printf '%s' "${n//[[:space:]]/}"
+}
 
 FALLAS=0
 # Las tres que de verdad duelen: los servicios, el dinero y las fotos.
 for TABLA in servicio asignacion_viatico foto_revision nomina_semanal; do
-  VIVA=$(contar centauro "$TABLA")
+  VIVA=$(contar_en_la_foto "$TABLA")
   COPIA=$(contar "$PRUEBA" "$TABLA")
   if [ "$VIVA" = "$COPIA" ] && [ "$VIVA" != "x" ]; then
     decir "  $TABLA: $VIVA filas ✓"
@@ -155,14 +207,17 @@ done
 #
 # Se saca un md5 por fila y un md5 del conjunto: comparar los datos
 # completos de las dos bases no cabria en memoria.
+HUELLA="SELECT coalesce(md5(string_agg(md5(imagen), '' ORDER BY id)), 'vacia') FROM foto_revision"
 huella() {
-  $COMPOSE exec -T db psql -U centauro -d "$1" -tAc \
-    "SELECT coalesce(md5(string_agg(md5(imagen), '' ORDER BY id)), 'vacia')
-       FROM foto_revision" 2>/dev/null | tr -d '[:space:]' || echo "x"
+  $COMPOSE exec -T db psql -U centauro -d "$1" -tAc "$HUELLA" 2>/dev/null \
+    | tr -d '[:space:]' || echo "x"
 }
 
-VIVAS=$(huella centauro)
+VIVAS=$(en_la_foto "$HUELLA;")
+VIVAS="${VIVAS//[[:space:]]/}"
 COPIAS=$(huella "$PRUEBA")
+# La foto ya dio todo lo que tenia que dar.
+cerrar_la_foto
 if [ "$VIVAS" = "vacia" ] && [ "$COPIAS" = "vacia" ]; then
   # Sin fotos no hay nada que comparar, y eso NO es una verificacion
   # buena: es una que no se hizo. Decirlo con palomita seria decir que

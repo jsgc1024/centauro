@@ -4,7 +4,7 @@ from datetime import date, datetime, time
 
 from sqlalchemy import (
     Boolean, Date, DateTime, Enum, ForeignKey, Index, Integer,
-    Numeric, String, Text, Time, UniqueConstraint, func, text,
+    Numeric, String, Text, Time, UniqueConstraint, false, func, text, true,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -316,7 +316,8 @@ class Solicitante(Base):
     correo: Mapped[str | None] = mapped_column(String(160), nullable=True)
     telefono: Mapped[str | None] = mapped_column(String(40), nullable=True)
     puesto: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    activo: Mapped[bool] = mapped_column(Boolean, default=True)
+    activo: Mapped[bool] = mapped_column(Boolean, default=True,
+                                         server_default=true())
 
     cliente: Mapped["Cliente"] = relationship(back_populates="solicitantes")
 
@@ -1352,7 +1353,8 @@ class DevolucionViatico(Base):
     referencia: Mapped[str | None] = mapped_column(String(120), nullable=True)
     comprobante: Mapped[str | None] = mapped_column(Text, nullable=True)
     estatus: Mapped[EstatusDevolucion] = mapped_column(
-        Enum(EstatusDevolucion), default=EstatusDevolucion.DECLARADA)
+        Enum(EstatusDevolucion), default=EstatusDevolucion.DECLARADA,
+        server_default="DECLARADA")
     # Quien dijo que transfirio. Es la propia persona desde su app, o
     # finanzas capturandola cuando la vio llegar sin que nadie avisara.
     declarada_por_id: Mapped[int | None] = mapped_column(
@@ -1524,6 +1526,7 @@ class CompraEspecial(Base):
     gestionan para todo el equipo de una vez, no agente por agente.
     """
     __tablename__ = "compra_especial"
+    __table_args__ = (Index("ix_compra_especial_equipo", "equipo_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     equipo_id: Mapped[int] = mapped_column(
@@ -1536,7 +1539,8 @@ class CompraEspecial(Base):
         Numeric(12, 2), nullable=True)
     moneda: Mapped[Moneda] = mapped_column(Enum(Moneda))
     estatus: Mapped[EstatusCompra] = mapped_column(
-        Enum(EstatusCompra), default=EstatusCompra.SOLICITADA)
+        Enum(EstatusCompra), default=EstatusCompra.SOLICITADA,
+        server_default="SOLICITADA")
 
     solicitada_por_id: Mapped[int | None] = mapped_column(
         ForeignKey("persona.id"), nullable=True)
@@ -1765,6 +1769,7 @@ class NotaBitacora(Base):
     escribe otra nota --y las dos se leen, en orden.
     """
     __tablename__ = "nota_bitacora"
+    __table_args__ = (Index("ix_nota_bitacora_jornada", "jornada_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     jornada_id: Mapped[int] = mapped_column(ForeignKey("jornada.id"))
@@ -1819,7 +1824,8 @@ class Trayecto(Base):
     jornada_id: Mapped[int] = mapped_column(ForeignKey("jornada.id"), index=True)
     persona_id: Mapped[int] = mapped_column(ForeignKey("persona.id"), index=True)
     estado: Mapped[EstadoTrayecto] = mapped_column(
-        String(14), default=EstadoTrayecto.ESPERANDO)
+        String(14), default=EstadoTrayecto.ESPERANDO,
+        server_default="esperando")
     # Cuantas veces se le pregunto. Tres y ya: mas toques no dan mas
     # informacion, solo ensenan a ignorar los avisos.
     toques: Mapped[int] = mapped_column(Integer, default=0,
@@ -2012,6 +2018,10 @@ class Notificacion(Base):
     # porque "no salio" no le sirve a nadie: lo que se necesita saber es
     # si fue la direccion, la clave o que el buzon esta lleno.
     ultimo_error: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # Cuando se vuelve a intentar, si el proveedor no contesto: la espera
+    # crece con cada intento (correo.ESPERAS_MINUTOS). Vacio: en la
+    # siguiente vuelta.
+    reintentar_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     servicio: Mapped[Servicio | None] = relationship()
 
@@ -2158,7 +2168,8 @@ class RevisionUnidad(Base):
     # quien recibe una camioneta golpeada con prisa no va a documentar
     # por su cuenta un dano que no hizo --que es justo donde le hara
     # falta tres semanas despues--.
-    hubo_dano: Mapped[bool] = mapped_column(Boolean, default=False)
+    hubo_dano: Mapped[bool] = mapped_column(Boolean, default=False,
+                                            server_default=false())
     dano_tipo: Mapped[TipoDano | None] = mapped_column(String(12),
                                                        nullable=True)
     dano_nota: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -2241,7 +2252,8 @@ class CategoriaAcceso(Base):
     # vuelve a entrar a media jornada, y una computadora de oficina que
     # se queda prendida sigue abierta toda la tarde.
     horas_sesion: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    activa: Mapped[bool] = mapped_column(Boolean, default=True)
+    activa: Mapped[bool] = mapped_column(Boolean, default=True,
+                                         server_default=true())
     creado_en: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
 
@@ -2345,7 +2357,8 @@ class Invitacion(Base):
     # digitos: a los cinco fallos el codigo se muere y hay que pedir
     # otro. Vive aqui y no en Redis porque `intentos.py` se abre si Redis
     # no contesta, y eso dejaria diez mil combinaciones sin candado.
-    fallos: Mapped[int] = mapped_column(Integer, default=0)
+    fallos: Mapped[int] = mapped_column(Integer, default=0,
+                                        server_default=text("0"))
 
     usuario: Mapped[Usuario] = relationship()
 
@@ -2686,7 +2699,8 @@ class ContratoImplantado(Base):
     anio: Mapped[int] = mapped_column(Integer)
     mes: Mapped[int] = mapped_column(Integer)
     dias_servicio: Mapped[DiasServicio] = mapped_column(
-        Enum(DiasServicio), default=DiasServicio.LUNES_VIERNES)
+        Enum(DiasServicio), default=DiasServicio.LUNES_VIERNES,
+        server_default="LUNES_VIERNES")
     esquema: Mapped[EsquemaCotizacionImplantado] = mapped_column(
         Enum(EsquemaCotizacionImplantado),
         default=EsquemaCotizacionImplantado.POR_DIA)
@@ -2845,7 +2859,8 @@ class AcuerdoImplantado(Base):
     origen_direccion: Mapped[str | None] = mapped_column(String(300), nullable=True)
     origen_lat: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
     origen_lon: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
-    geocerca_metros: Mapped[int] = mapped_column(Integer, default=500)
+    geocerca_metros: Mapped[int] = mapped_column(Integer, default=500,
+                                                 server_default=text("500"))
 
     # Con quien se reporta el conductor al llegar, y a quien le avisa si
     # algo cambia. En un eventual lo resuelve el consultor por telefono;
@@ -2891,7 +2906,8 @@ class Capacitacion(Base):
     institucion: Mapped[str | None] = mapped_column(String(160), nullable=True)
     obtenida_en: Mapped[date | None] = mapped_column(Date, nullable=True)
     vigencia_hasta: Mapped[date | None] = mapped_column(Date, nullable=True)
-    activo: Mapped[bool] = mapped_column(Boolean, default=True)
+    activo: Mapped[bool] = mapped_column(Boolean, default=True,
+                                         server_default=true())
     # El dia en que se aviso por ultima vez. La tarea corre diario y hay
     # dos momentos que avisan --treinta dias antes y el dia que vence--,
     # asi que sin esto un solo aviso se manda cada vez que alguien
@@ -4171,6 +4187,9 @@ class CasoResuelto(Base):
     cambiar un proceso lleva primero su propuesta (Salvador, 27 sep).
     """
     __tablename__ = "caso_resuelto"
+    __table_args__ = (Index("ix_caso_resuelto_estado", "estado"),
+                      Index("ix_caso_resuelto_reportado", "reportado_por_id",
+                            "reportado_en"))
 
     id: Mapped[int] = mapped_column(primary_key=True)
     titulo: Mapped[str] = mapped_column(String(160))

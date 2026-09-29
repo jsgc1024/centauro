@@ -490,7 +490,9 @@ class _SmtpFalso:
     def __exit__(self, *_):
         return False
 
-    def starttls(self):
+    def starttls(self, context=None):
+        # Con el certificado comprobado (seccion 100): el contexto viene.
+        assert context is not None
         self.pasos.append("cifrado")
 
     def login(self, usuario, clave):

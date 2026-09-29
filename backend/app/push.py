@@ -26,6 +26,10 @@ from sqlalchemy.orm import Session
 from app import models as m
 from app.config import settings
 
+# Lo mas que se espera a un telefono. Diez segundos sobran para un
+# servidor de avisos que contesta; el que no contesta no va a contestar.
+SEGUNDOS_DE_ESPERA = 10
+
 registro = logging.getLogger("centauro.push")
 
 
@@ -97,6 +101,11 @@ def avisar(db: Session, persona_id: int, titulo: str, cuerpo: str,
                 vapid_claims={"sub": settings.vapid_contacto},
                 ttl=horas * 3600,
                 headers={"Urgency": "high" if urgente else "normal"},
+                # Sin tope, un telefono que acepta la conexion y no
+                # contesta dejaba la tarea esperando para siempre, y con
+                # dos asi el reloj entero se paraba (seccion 100). Los
+                # demas clientes ya tenian el suyo.
+                timeout=SEGUNDOS_DE_ESPERA,
             )
             enviados += 1
         except WebPushException as error:

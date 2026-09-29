@@ -240,14 +240,8 @@ def sembrar() -> dict:
         # Igual que los precios: los cuatro roles llevan comision. Sin
         # ella el corte de nomina se detiene, que es lo correcto, pero
         # detenerlo por un rol que nunca se cargo seria absurdo.
-        comisiones = {
-            "conductor_seguridad":  {"full_day": "700", "medio_dia": "400", "transfer": "250"},
-            "agente_seguridad":     {"full_day": "800", "medio_dia": "450", "transfer": "300"},
-            "coordinador_seguridad": {"full_day": "1100", "medio_dia": "600", "transfer": "400"},
-            "consultor_seguridad":  {"full_day": "1500", "medio_dia": "850", "transfer": "550"},
-        }
-        comision_he = {"conductor_seguridad": "90", "agente_seguridad": "100",
-                       "coordinador_seguridad": "140", "consultor_seguridad": "190"}
+        comisiones = COMISIONES_DE_EJEMPLO
+        comision_he = COMISION_HE_DE_EJEMPLO
         # Las dos tablas arrancan con los mismos numeros. De ahi en
         # adelante cada operacion ajusta la suya: un dia de implantado no
         # se paga igual que un dia suelto que arranca en un aeropuerto.
@@ -279,6 +273,19 @@ def sembrar() -> dict:
     finally:
         db.close()
     return creados
+
+
+# Lo que se paga por dia, de ejemplo. Viven aqui afuera para que el
+# arranque pueda decir si siguen siendo estos (seccion 100), igual que
+# con los criterios del bono.
+COMISIONES_DE_EJEMPLO = {
+    "conductor_seguridad":  {"full_day": "700", "medio_dia": "400", "transfer": "250"},
+    "agente_seguridad":     {"full_day": "800", "medio_dia": "450", "transfer": "300"},
+    "coordinador_seguridad": {"full_day": "1100", "medio_dia": "600", "transfer": "400"},
+    "consultor_seguridad":  {"full_day": "1500", "medio_dia": "850", "transfer": "550"},
+}
+COMISION_HE_DE_EJEMPLO = {"conductor_seguridad": "90", "agente_seguridad": "100",
+                          "coordinador_seguridad": "140", "consultor_seguridad": "190"}
 
 
 def sembrar_recursos() -> dict:

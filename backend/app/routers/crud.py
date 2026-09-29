@@ -40,6 +40,7 @@ DE_ODOO = {
 # Los precios de una lista de Odoo tampoco se tocan aqui: la siguiente
 # lectura los volveria a poner como estan alla.
 TARIFAS = (m.TarifaRecurso, m.TarifaVehiculo)
+BAJA_POR_CATALOGOS = "baja del personal desde Catálogos"
 LISTA_DE_ODOO = {
     "mensaje": "Este tarifario viene de Odoo: se corrige en Odoo.",
     "que_hacer": "Facturacion lo cambia en Odoo, en Ventas -> Listas de "
@@ -254,6 +255,18 @@ def crud_router(
             accesos.anotar(db, actor, "catalogo desactivado", clave, obj.id,
                            antes="activo", despues="desactivado",
                            detalle=_como_se_llama(obj))
+            # La baja cierra el acceso (regla 4), tambien por esta puerta:
+            # las de Odoo y la del panel de accesos lo cerraban, esta
+            # dejaba a la persona dada de baja entrando como si nada
+            # (seccion 100). Con `activo` en falso la sesion abierta
+            # muere en el siguiente clic.
+            if modelo is m.Persona:
+                cuenta = db.query(m.Usuario).filter_by(persona_id=obj.id).first()
+                if cuenta is not None and cuenta.activo:
+                    cuenta.activo = False
+                    accesos.anotar(db, actor, "acceso cerrado", "usuario", cuenta.id,
+                                   antes="activo", despues="desactivado",
+                                   detalle=BAJA_POR_CATALOGOS)
         else:
             # Sin columna `activo` no hay a que volver: el renglon se va de
             # verdad, asi que el nombre se guarda antes de perderlo.
@@ -273,9 +286,11 @@ def crud_router(
         desactivada por error se quedaba fuera de todas las listas para
         siempre.
 
-        No reabre el acceso al sistema de nadie. Si esta persona ademas
-        tenia usuario, ese se reabre desde el panel de accesos, que es
-        donde se ve a quien se le esta abriendo la puerta.
+        Reabre el acceso al sistema solo si fue la propia baja la que lo
+        cerro (seccion 100): deshacer una baja hecha por error deja a la
+        persona como estaba. El acceso que se cerro a proposito desde
+        el panel de accesos se reabre alla, que es donde se ve a quien
+        se le esta abriendo la puerta.
         """
         obj = db.get(modelo, item_id)
         if not obj:
@@ -289,6 +304,20 @@ def crud_router(
         accesos.anotar(db, actor, "catalogo reactivado", clave, obj.id,
                        antes="desactivado", despues="activo",
                        detalle=_como_se_llama(obj))
+        if modelo is m.Persona:
+            cuenta = db.query(m.Usuario).filter_by(persona_id=obj.id).first()
+            if cuenta is not None and not cuenta.activo:
+                ultimo = (db.query(m.RegistroAdmin)
+                          .filter_by(objeto="usuario", objeto_id=cuenta.id)
+                          .filter(m.RegistroAdmin.accion.in_(
+                              ["acceso cerrado", "acceso desactivado",
+                               "acceso reactivado"]))
+                          .order_by(m.RegistroAdmin.id.desc()).first())
+                if ultimo is not None and ultimo.detalle == BAJA_POR_CATALOGOS:
+                    cuenta.activo = True
+                    accesos.anotar(db, actor, "acceso reactivado", "usuario", cuenta.id,
+                                   antes="desactivado", despues="activo",
+                                   detalle="se deshizo la baja desde Catálogos")
         db.commit()
         db.refresh(obj)
         return obj

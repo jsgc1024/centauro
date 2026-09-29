@@ -215,13 +215,12 @@ después de ver el ensayo; las tareas de cada hora no arrancan hasta que
 exista esa primera. Se hacen desde la consola —*Gestión Administrativa →
 Odoo*, con administración o dirección general—, que también dice lo que
 falta corregir en Odoo y cuándo corrió la última de cada hora. Quien tenga
-la terminal del servidor puede hacer lo mismo así:
+la terminal del servidor puede hacer lo mismo con el personal así (la
+flota, los clientes y los tarifarios solo desde la consola):
 
 ```bash
 docker compose -f docker-compose.prod.yml run --rm api python sincronizar_personal.py
 docker compose -f docker-compose.prod.yml run --rm api python sincronizar_personal.py --aplicar
-docker compose -f docker-compose.prod.yml run --rm api python sincronizar_flota.py
-docker compose -f docker-compose.prod.yml run --rm api python sincronizar_flota.py --aplicar
 ```
 
 Para la flota, el usuario de la conexión también necesita leer
@@ -244,19 +243,27 @@ de levantar el proxy: Caddy pide el certificado al arrancar y Let's
 Encrypt verifica que el dominio sea tuyo. El dominio es `mycentauro.lat`,
 comprado en Akky, con el DNS en Google Cloud DNS (zona `mycentauro-lat`;
 en Akky van sus cuatro servidores, `ns-cloud-e1` a `ns-cloud-e4` de
-`googledomains.com`). Dos registros **A** hacia `34.51.121.227`, uno
-por puerta (sección 71): `mycentauro.lat`, la consola —*Centauro
+`googledomains.com`). Tres registros **A** hacia `34.51.121.227`: uno
+por puerta (sección 71) —`mycentauro.lat`, la consola —*Centauro
 Connect*, del personal administrativo y los consultores—, y
 `appep.mycentauro.lat`, la app del personal de seguridad —*Protección
-Ejecutiva Connect App*—. Las dos llegan al mismo servidor; el `Caddyfile`
-manda a cada quien a la suya: la raíz de `appep.` abre la app, la
-consola que se pide ahí se abre en `mycentauro.lat`, y la app que se pide
-en `mycentauro.lat` se abre en `appep.`. La app de otra área, el día que
-exista, es un registro más y su propio bloque en el `Caddyfile`:
+Ejecutiva Connect App*—— y `www.mycentauro.lat`, que el `Caddyfile`
+manda a la consola (sección 100: quien escribe «www» delante no llegaba
+a ningún lado). Las tres llegan al mismo servidor; el `Caddyfile` manda a
+cada quien a la suya: la raíz de `appep.` abre la app, la consola que se
+pide ahí se abre en `mycentauro.lat`, y la app que se pide en
+`mycentauro.lat` se abre en `appep.`. El registro de `www` se crea así, y
+la app de otra área, el día que exista, es un registro más y su propio
+bloque en el `Caddyfile`:
 
 ```bash
+gcloud dns record-sets create www.mycentauro.lat. --zone=mycentauro-lat --type=A --ttl=300 --rrdatas=34.51.121.227
 gcloud dns record-sets create appXX.mycentauro.lat. --zone=mycentauro-lat --type=A --ttl=300 --rrdatas=34.51.121.227
 ```
+
+Un cambio en el `Caddyfile` se aplica sin bajar nada: `docker compose -f
+docker-compose.prod.yml exec -T proxy caddy reload --config
+/etc/caddy/Caddyfile`.
 
 **4. Levantar, todavía sin la puerta a internet.**
 

@@ -11,7 +11,7 @@ El ejecutivo o quien pidió el servicio dice que no le llegó el aviso: el equip
 
 ### Por qué pasa · de lo más común a lo menos
 1. **El correo está apagado.** Mientras no se encienda no sale ninguno: los avisos esperan.
-2. **Pasaron más de 24 horas.** Un aviso que no salió en 24 horas ya no sale, y tampoco el que lleva un enlace que ya venció. Un «su equipo está en el lugar» de hace días hace dudar de todo el sistema.
+2. **Pasaron más de 24 horas.** Un aviso operativo que no salió en 24 horas ya no sale, y tampoco el que lleva un enlace que ya venció. Un «su equipo está en el lugar» de hace días hace dudar de todo el sistema. La invitación de acceso, la recuperación de contraseña y la encuesta viven lo que vive su enlace (72 horas, 2 horas y 15 días): salen aunque el correo se encienda dos días después. Si el proveedor no contesta, el aviso espera y vuelve a intentar mientras viva; lo que sí falló se regresa a la cola con «Reintentar los que fallaron», en el estado del sistema.
 3. **No tenía a dónde ir.** Al servicio le falta el correo del ejecutivo o el de quien lo pidió: el aviso se aparta.
 4. **La dirección está mal escrita** o el servidor del cliente lo rechazó. Se intenta cinco veces y queda como fallido, con lo último que dijo el proveedor.
 5. **Le llegó a otra carpeta**: correo no deseado o promociones.

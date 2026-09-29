@@ -274,12 +274,30 @@ function lasRespuestas(d, q) {
 
 /* ------------------------------------------------ cuando algo se atora */
 
-function tarjetaEstado(x) {
+function tarjetaEstado(x, refrescar) {
+  /* La tarjeta que trae algo que hacer --regresar a la cola el correo
+     que fallo-- trae su boton (seccion 100). */
+  let boton = null;
+  if (x.accion) {
+    boton = h("button", { clase: "claro chico", type: "button",
+      onclick: async () => {
+        boton.disabled = true;
+        try {
+          const r = await api.post(x.accion.ruta);
+          mensaje(llenar("man_reintento_hecho", { n: r.reintentados }));
+          if (refrescar) await refrescar();
+        } catch (err) {
+          mensaje(err.message, "grave");
+        }
+        boton.disabled = false;
+      } }, t(x.accion.clave));
+  }
   return h("div", { clase: "tarjeta lisa man-tile man-tile-" + x.tono },
     h("h3", {}, x.titulo),
     etiqueta(x.etiqueta, x.tono === "ok" ? "ok" : x.tono === "grave" ? "grave" : "alerta"),
     h("p", { clase: "chico gris" }, x.texto),
-    x.ir ? h("a", { href: x.ir, clase: "chico" }, t("man_que_hacer_ir")) : null);
+    x.ir ? h("a", { href: x.ir, clase: "chico" }, t("man_que_hacer_ir")) : null,
+    boton ? h("div", { style: "margin-top:10px" }, boton) : null);
 }
 
 async function atorado(main, d) {
@@ -289,7 +307,7 @@ async function atorado(main, d) {
     tablero.replaceChildren(h("p", { clase: "gris" }, t("man_revisando")));
     try {
       const e = await api.get(`/manual/estado?idioma=${idioma()}`);
-      tablero.replaceChildren(...e.tarjetas.map(tarjetaEstado));
+      tablero.replaceChildren(...e.tarjetas.map(x => tarjetaEstado(x, revisar)));
       cuando.textContent = llenar("man_revisado", { h: hora(e.ahora) });
     } catch (err) {
       tablero.replaceChildren(aviso(err.message, "grave"));

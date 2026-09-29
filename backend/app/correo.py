@@ -38,12 +38,15 @@ al lado, y deja de gastar la cola.
 import base64
 import re
 import smtplib
+import socket
+import ssl
 import time
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from email.utils import make_msgid, parseaddr
 
 import httpx
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app import correo_html
@@ -52,9 +55,20 @@ from app import models as m
 from app import textos_aviso as ta
 from app.config import settings
 
-# Cuantas veces se intenta antes de darlo por perdido. Cinco cubre el
-# proveedor que se cae un rato; mas que eso ya no es el proveedor.
+# Cuantas veces se intenta antes de darlo por perdido, cuando la falla
+# no es del proveedor ni del destinatario (un error nuestro al armar el
+# correo). Las otras dos tienen su regla propia (seccion 100): el
+# destinatario que rechaza es fallida a la primera --volver a mandar a
+# una direccion que no existe no la crea--, y el proveedor caido se
+# reintenta con espera creciente mientras el aviso viva. Con cinco
+# intentos parejos, una caida de veinticinco minutos dejaba toda la
+# cola fallida y nadie podia reintentarla.
 TOPE_INTENTOS = 5
+
+# La espera antes de volver a intentar con el proveedor caido, por
+# intento: 5, 15, 45 minutos y luego cada dos horas, hasta que el aviso
+# venza.
+ESPERAS_MINUTOS = (5, 15, 45, 120)
 
 # Cuantos se despachan por vuelta. La cola se vacia en varias pasadas en
 # vez de en una sola que tarda diez minutos y bloquea al worker.
@@ -74,6 +88,15 @@ POR_VUELTA = 50
 # saldrian todos de golpe a clientes reales. Y despues, cada vez que el
 # proveedor se caiga mas de un dia.
 HORAS_DE_VIDA = 24
+
+# Los avisos que viven lo que vive su enlace, y no las 24 horas: la
+# invitacion de acceso (72 h), el enlace de "olvide mi contrasena", la
+# encuesta y su recordatorio (15 dias). Con el correo apagado y los
+# accesos repartiendose, las invitaciones de hace dos dias morian en la
+# cola al encender aunque su enlace siguiera vigente (seccion 100). La
+# decision del 20 sep fue sobre los avisos operativos, no sobre estos.
+CON_VIDA_PROPIA = {"acceso_invitacion", "acceso_recuperacion",
+                   "encuesta", "encuesta_recordatorio"}
 
 
 # Microsoft Graph: de donde sale el permiso y a donde se entrega.
@@ -194,7 +217,10 @@ def entregar(destino: str, asunto: str, cuerpo: str,
         return
     with smtplib.SMTP(settings.correo_host, settings.correo_puerto,
                       timeout=20) as servidor:
-        servidor.starttls()
+        # Con el certificado comprobado: sin `context`, starttls no
+        # verifica con quien habla y la llave SMTP de Amazon era la unica
+        # credencial del sistema que salia asi (seccion 100).
+        servidor.starttls(context=ssl.create_default_context())
         if settings.correo_usuario:
             servidor.login(settings.correo_usuario, settings.correo_clave)
         servidor.send_message(mensaje)
@@ -380,6 +406,9 @@ def vencio(aviso: m.Notificacion, ahora: datetime | None = None) -> bool:
         # misma vara con la que se escribio.
         if aviso.expira_en < ahora.astimezone().replace(tzinfo=None):
             return True
+        # Y para estos, esa es toda su vida (ver CON_VIDA_PROPIA).
+        if aviso.plantilla in CON_VIDA_PROPIA:
+            return False
     nacio = aviso.enviada_en
     if nacio is None:
         return False
@@ -401,7 +430,10 @@ def pendientes(db: Session, limite: int = POR_VUELTA, solo=None,
     dos veces. Cada uno se queda con los que el otro no tiene tomados.
     """
     consulta = db.query(m.Notificacion).filter(
-        m.Notificacion.estado == "pendiente")
+        m.Notificacion.estado == "pendiente",
+        # El que espera su reintento no se toma antes de tiempo.
+        or_(m.Notificacion.reintentar_en.is_(None),
+            m.Notificacion.reintentar_en <= datetime.now()))
     if solo is not None:
         consulta = consulta.filter(m.Notificacion.id.in_(list(solo)))
     consulta = consulta.order_by(m.Notificacion.id).limit(limite)
@@ -420,7 +452,14 @@ def despachar(db: Session, limite: int = POR_VUELTA, solo=None) -> dict:
                                 .filter(m.Notificacion.estado == "pendiente")
                                 .count()}
 
-    enviados, fallidos, sin_correo, vencidos = 0, 0, 0, 0
+    # Lo vencido se marca de una vez, sin gastar el cupo de la vuelta:
+    # el dia que se encienda el correo hay cientos de avisos viejos, y
+    # el operativo escrito hoy esperaba dieciseis vueltas detras de
+    # ellos (seccion 100).
+    vencidos = vencer_lo_viejo(db) if solo is None else 0
+    db.commit()
+
+    enviados, fallidos, sin_correo = 0, 0, 0
     for aviso in pendientes(db, limite, solo=solo, bloquear=True):
         if vencio(aviso):
             # No se borra: queda dicho que se escribio y no salio. "No
@@ -428,33 +467,130 @@ def despachar(db: Session, limite: int = POR_VUELTA, solo=None) -> dict:
             # distintas, y la pantalla tiene que poder separarlas.
             aviso.estado = "vencida"
             vencidos += 1
-            continue
-        if not aviso.correo:
+        elif not aviso.correo:
             # Un aviso sin direccion no es un error del proveedor: es un
             # aviso que no tenia a donde ir. Se aparta para que no ande
             # dando vueltas en la cola para siempre.
             aviso.estado = "sin_correo"
             sin_correo += 1
-            continue
-        aviso.intentos = (aviso.intentos or 0) + 1
-        try:
-            texto, html = versiones(db, aviso)
-            entregar(aviso.correo, aviso.asunto, texto, html)
-            aviso.estado = "enviada"
-            aviso.salio_en = datetime.now()
-            aviso.ultimo_error = None
-            enviados += 1
-        except Exception as falla:               # noqa: BLE001
-            aviso.ultimo_error = str(falla)[:300]
-            if aviso.intentos >= TOPE_INTENTOS:
-                aviso.estado = "fallida"
-                fallidos += 1
-    db.commit()
+        else:
+            aviso.intentos = (aviso.intentos or 0) + 1
+            try:
+                texto, html = versiones(db, aviso)
+                entregar(aviso.correo, aviso.asunto, texto, html)
+                aviso.estado = "enviada"
+                aviso.salio_en = datetime.now()
+                aviso.ultimo_error = None
+                aviso.reintentar_en = None
+                enviados += 1
+            except Exception as falla:               # noqa: BLE001
+                if _anotar_falla(aviso, falla):
+                    fallidos += 1
+        # Uno por uno, no al final del lote: un reinicio del worker a
+        # media vuelta --el despliegue lo mata a los diez segundos--
+        # dejaba sin marcar los ya entregados, y al levantar salian
+        # otra vez (seccion 100). El candado por fila sigue valiendo.
+        db.commit()
     return {"configurado": True, "enviados": enviados, "fallidos": fallidos,
             "sin_correo": sin_correo, "vencidos": vencidos,
             "pendientes": db.query(m.Notificacion)
                             .filter(m.Notificacion.estado == "pendiente")
                             .count()}
+
+
+def _anotar_falla(aviso: m.Notificacion, falla: Exception) -> bool:
+    """Que hacer con un aviso que no salio. True si quedo fallido.
+
+    Tres fallas distintas (seccion 100). El destinatario que rechaza:
+    fallida a la primera, porque volver a mandar a una direccion que no
+    existe no la crea. El proveedor caido o la red: se reintenta con
+    espera creciente mientras el aviso viva. Lo demas --un error
+    nuestro al armar el correo-- cuenta intentos como siempre.
+    """
+    aviso.ultimo_error = str(falla)[:300]
+    if _rechazo_del_destinatario(falla):
+        aviso.estado = "fallida"
+        return True
+    if _proveedor_caido(falla):
+        paso = min(aviso.intentos or 1, len(ESPERAS_MINUTOS)) - 1
+        aviso.reintentar_en = (datetime.now()
+                               + timedelta(minutes=ESPERAS_MINUTOS[paso]))
+        return False
+    if aviso.intentos >= TOPE_INTENTOS:
+        aviso.estado = "fallida"
+        return True
+    return False
+
+
+def _rechazo_del_destinatario(falla: Exception) -> bool:
+    """El servidor de correo dijo que no a ESTA direccion."""
+    if isinstance(falla, (smtplib.SMTPRecipientsRefused,
+                          smtplib.SMTPSenderRefused)):
+        return True
+    if isinstance(falla, smtplib.SMTPDataError):
+        return 500 <= falla.smtp_code < 600
+    texto = str(falla).lower()
+    # Microsoft contesta con un 4xx propio cuando el buzon no existe.
+    return isinstance(falla, RuntimeError) and (
+        "recipient" in texto or "destinatario" in texto
+        or "invalid" in texto and "address" in texto)
+
+
+def _proveedor_caido(falla: Exception) -> bool:
+    """No se pudo hablar con el proveedor, o contesto que ahora no."""
+    if isinstance(falla, (smtplib.SMTPConnectError,
+                          smtplib.SMTPServerDisconnected,
+                          smtplib.SMTPHeloError,
+                          smtplib.SMTPAuthenticationError,
+                          httpx.HTTPError, socket.timeout, OSError)):
+        return True
+    if isinstance(falla, smtplib.SMTPResponseException):
+        return 400 <= falla.smtp_code < 500
+    texto = str(falla).lower()
+    return isinstance(falla, RuntimeError) and (
+        "(5" in texto or "(429" in texto or "timeout" in texto)
+
+
+def vencer_lo_viejo(db: Session, ahora: datetime | None = None) -> int:
+    """Marca vencido de un golpe lo pendiente que ya no tiene sentido.
+
+    La misma regla de `vencio`, escrita en una sola consulta: por su
+    enlace los que viven lo que el vive, y por edad los demas.
+    """
+    ahora = ahora or datetime.now(timezone.utc)
+    pared = ahora.astimezone().replace(tzinfo=None)
+    N = m.Notificacion
+    por_enlace = (db.query(N).filter(N.estado == "pendiente",
+                                     N.expira_en.isnot(None),
+                                     N.expira_en < pared)
+                  .update({"estado": "vencida"}, synchronize_session=False))
+    por_edad = (db.query(N).filter(N.estado == "pendiente",
+                                   or_(N.plantilla.is_(None),
+                                       N.plantilla.notin_(CON_VIDA_PROPIA)),
+                                   N.enviada_en < ahora - timedelta(hours=HORAS_DE_VIDA))
+                .update({"estado": "vencida"}, synchronize_session=False))
+    return por_enlace + por_edad
+
+
+def reintentar_fallidas(db: Session) -> int:
+    """Lo fallido vuelve a la cola, desde la pantalla (seccion 100).
+
+    Sale en la siguiente vuelta; lo que ya vencio se marca vencido ahi
+    mismo en vez de salir tarde. Se aparta lo que rechazo el propio
+    destinatario: la direccion no va a existir por insistir.
+    """
+    filas = (db.query(m.Notificacion)
+             .filter(m.Notificacion.estado == "fallida").all())
+    cuantos = 0
+    for aviso in filas:
+        if vencio(aviso):
+            aviso.estado = "vencida"
+            continue
+        aviso.estado = "pendiente"
+        aviso.intentos = 0
+        aviso.reintentar_en = None
+        cuantos += 1
+    return cuantos
 
 
 def estado(db: Session) -> dict:
@@ -469,7 +605,16 @@ def estado(db: Session) -> dict:
     # hay que mirar la cola antes de poner las credenciales.
     en_espera = pendientes(db, limite=1000)
     viejos = sum(1 for a in en_espera if vencio(a))
+    # Las fallidas que cuentan son las de hoy: una direccion mal escrita
+    # de hace tres meses no es una falla de hoy, y la tarjeta decia "con
+    # fallas" de por vida (seccion 100).
+    recientes = (db.query(m.Notificacion)
+                 .filter(m.Notificacion.estado == "fallida",
+                         m.Notificacion.enviada_en
+                         >= datetime.now(timezone.utc) - timedelta(hours=24))
+                 .count())
     return {
+        "fallidas_recientes": recientes,
         "configurado": configurado(),
         "listo": listo(),
         "encendido": encendido(),

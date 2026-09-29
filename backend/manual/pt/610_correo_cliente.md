@@ -11,7 +11,7 @@ O executivo ou quem pediu o serviço diz que não chegou o aviso: a equipe no po
 
 ### Por que acontece · do mais comum ao menos comum
 1. **O e-mail está desligado.** Enquanto não for ligado não sai nenhum: os avisos esperam.
-2. **Passaram mais de 24 horas.** Um aviso que não saiu em 24 horas já não sai, e também não o que leva um link que já venceu. Um «a sua equipe está no local» de dias atrás faz duvidar de todo o sistema.
+2. **Passaram mais de 24 horas.** Um aviso operacional que não saiu em 24 horas já não sai, e também não o que leva um link que já venceu. Um «a sua equipe está no local» de dias atrás faz duvidar de todo o sistema. O convite de acesso, a recuperação de senha e a pesquisa vivem o que vive o seu link (72 horas, 2 horas e 15 dias): saem mesmo que o e-mail seja ligado dois dias depois. Se o provedor não responde, o aviso espera e tenta de novo enquanto vive; o que de fato falhou volta para a fila com «Tentar de novo os que falharam», no estado do sistema.
 3. **Não tinha para onde ir.** Falta no serviço o e-mail do executivo ou o de quem o pediu: o aviso é deixado de lado.
 4. **O endereço está mal escrito**, ou o servidor do cliente o rejeitou. Tenta-se cinco vezes e fica como falha, com o último que o provedor disse.
 5. **Chegou em outra pasta**: spam ou promoções.

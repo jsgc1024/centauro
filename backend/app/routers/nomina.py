@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app import auth
+from app import accesos, auth
 from app import comisiones as motor_comisiones
 from app import models as m
 from app import nomina as motor
@@ -121,6 +121,22 @@ def ver_tabulador(pais_id: int, db: Session = Depends(get_db),
     }
 
 
+def _renglon_corto(db: Session, perfil_id: int, modalidad_id: int,
+                   montos: tuple | None) -> str:
+    """"conductor/full_day 700 (+90)" para la bitacora."""
+    perfil = db.get(m.PerfilPersonal, perfil_id)
+    modalidad = db.get(m.Modalidad, modalidad_id)
+    quien = f"{perfil.codigo if perfil else perfil_id}/" \
+            f"{modalidad.codigo.value if modalidad else modalidad_id}"
+    if montos is None:
+        return f"{quien} —"
+    monto, extra = montos
+
+    def limpio(x):
+        return format(Decimal(str(x)).normalize(), "f")
+    return f"{quien} {limpio(monto)}" + (f" (+{limpio(extra)})" if extra is not None else "")
+
+
 @router.put("/tabulador", summary="Guardar una de las dos tablas")
 def guardar_tabulador(datos: TabuladorComisionIn,
                       db: Session = Depends(get_db),
@@ -140,6 +156,7 @@ def guardar_tabulador(datos: TabuladorComisionIn,
         raise HTTPException(404, f"No existe el pais {datos.pais_id}")
 
     tocados = 0
+    cambios = []
     for r in datos.renglones:
         fila = (db.query(m.ComisionPersonal)
                 .filter_by(pais_id=datos.pais_id,
@@ -152,10 +169,28 @@ def guardar_tabulador(datos: TabuladorComisionIn,
                 perfil_id=r.perfil_id, modalidad_id=r.modalidad_id,
                 moneda=pais.moneda_local, monto=0)
             db.add(fila)
+            antes = None
+        else:
+            antes = (fila.monto, fila.monto_hora_extra)
         fila.monto = r.monto
         fila.monto_hora_extra = r.monto_hora_extra
+        if antes != (r.monto, r.monto_hora_extra):
+            cambios.append((r.perfil_id, r.modalidad_id, antes,
+                            (r.monto, r.monto_hora_extra)))
         tocados += 1
 
+    # Es dinero de configuracion: queda en la bitacora de administracion
+    # con quien, cuando y de cuanto a cuanto, como el bono y el tipo de
+    # cambio. Sin esto el arranque seguia diciendo "montos de ejemplo"
+    # con los reales ya cargados (seccion 100).
+    if cambios:
+        accesos.anotar(
+            db, usuario, "tabulador de comisiones cambiado", "comisiones",
+            None,
+            antes="; ".join(_renglon_corto(db, p_, m_, a) for p_, m_, a, _ in cambios),
+            despues="; ".join(_renglon_corto(db, p_, m_, d) for p_, m_, _, d in cambios),
+            detalle=f"{pais.codigo} {datos.tipo_servicio.value}: "
+                    f"{len(cambios)} renglon(es)")
     db.commit()
     return {"resultado": "tabulador guardado",
             "tipo_servicio": datos.tipo_servicio.value,

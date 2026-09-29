@@ -18,6 +18,7 @@ Queretaro -> Monterrey", no "plaza_id: 3 -> 5"--. Se arma aqui y no en
 la pantalla porque el Excel dice lo mismo que la pantalla, y dos copias
 de la misma frase se separan.
 """
+import re
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
@@ -106,6 +107,8 @@ TEXTOS = {
             "foto de categoria": "Puso la foto de «{nombre}», {color}",
             "foto de categoria quitada": "Quitó la foto de «{nombre}», {color}",
             "tipo de cambio": "{antes} → {despues} pesos por dólar",
+            "tabulador de comisiones cambiado": "{detalle}: {antes} → {despues}",
+            "correo reintentado": "Regresó a la cola {despues} avisos de correo que habían fallado",
             "criterio del bono cambiado": "«{detalle}»: {antes} → {despues}",
             "arranque confirmado": "Confirmó a mano: {detalle}",
             "arranque sin confirmar": "Quitó la confirmación: {detalle}",
@@ -201,6 +204,8 @@ TEXTOS = {
             "foto de categoria": "Set the photo of “{nombre}”, {color}",
             "foto de categoria quitada": "Removed the photo of “{nombre}”, {color}",
             "tipo de cambio": "{antes} → {despues} pesos per dollar",
+            "tabulador de comisiones cambiado": "{detalle}: {antes} → {despues}",
+            "correo reintentado": "Sent {despues} failed emails back to the queue",
             "criterio del bono cambiado": "«{detalle}»: {antes} → {despues}",
             "arranque confirmado": "Confirmed by hand: {detalle}",
             "arranque sin confirmar": "Removed the confirmation: {detalle}",
@@ -296,6 +301,8 @@ TEXTOS = {
             "foto de categoria": "Pôs a foto de “{nombre}”, {color}",
             "foto de categoria quitada": "Tirou a foto de “{nombre}”, {color}",
             "tipo de cambio": "{antes} → {despues} pesos por dólar",
+            "tabulador de comisiones cambiado": "{detalle}: {antes} → {despues}",
+            "correo reintentado": "Devolveu à fila {despues} e-mails que tinham falhado",
             "criterio del bono cambiado": "«{detalle}»: {antes} → {despues}",
             "arranque confirmado": "Confirmou à mão: {detalle}",
             "arranque sin confirmar": "Retirou a confirmação: {detalle}",
@@ -529,6 +536,29 @@ def _actividad(codigo: str | None) -> str:
     return datos["descripcion"] if datos else codigo
 
 
+PERFILES_CORTOS = {"conductor_seguridad": "conductor", "agente_seguridad": "agente",
+                   "coordinador_seguridad": "coordinador",
+                   "consultor_seguridad": "consultor"}
+MODALIDADES_CORTAS = {"es": {"full_day": "full day", "medio_dia": "medio día", "transfer": "transfer"},
+                      "en": {"full_day": "full day", "medio_dia": "half day", "transfer": "transfer"},
+                      "pt": {"full_day": "full day", "medio_dia": "meio dia", "transfer": "transfer"}}
+
+
+def _tabulador(texto: str, idioma: str) -> str:
+    """"conductor_seguridad/full_day 700 (+90)" -> "conductor · full day 700 (+90)"."""
+    partes = []
+    for renglon in (texto or "").split(";"):
+        renglon = renglon.strip()
+        m_ = re.match(r"(\w+)/(\w+) (.*)", renglon)
+        if not m_:
+            partes.append(renglon)
+            continue
+        perfil, modalidad, montos = m_.groups()
+        partes.append(f"{PERFILES_CORTOS.get(perfil, perfil)} · "
+                      f"{MODALIDADES_CORTAS.get(idioma, {}).get(modalidad, modalidad)} {montos}")
+    return "; ".join(partes)
+
+
 def que_cambio(r: m.RegistroAdmin, idioma: str, nombres: _Nombres) -> str:
     """El renglon contado en una frase."""
     t = _t(idioma)
@@ -566,6 +596,9 @@ def que_cambio(r: m.RegistroAdmin, idioma: str, nombres: _Nombres) -> str:
     if r.accion == "tipo de cambio":
         antes = _tasa(antes) if antes else t["ninguno"]
         despues = _tasa(despues)
+    if r.accion == "tabulador de comisiones cambiado":
+        antes, despues = _tabulador(antes, idioma), _tabulador(despues, idioma)
+        detalle = detalle.split(":")[0].replace("MX", "México").replace("BR", "Brasil")
     if r.accion == "acceso cerrado" and detalle == "baja en Odoo":
         detalle = t["baja_odoo"]
     if r.accion == "permiso de mas dado":

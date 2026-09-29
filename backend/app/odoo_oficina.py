@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app import accesos
+from app import accesos, odoo_api
 from app import models as m
 from app import odoo_oficina_reglas as reglas
 from app import odoo_personal_reglas
@@ -79,6 +79,8 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
                 quien: m.Usuario | None = None,
                 automatica: bool = False) -> dict:
     """Lee el personal de oficina de Odoo y, si no es ensayo, lo guarda."""
+    if not ensayo:
+        odoo_api.candado(db, TIPO)
     ahora = _utc()
     empleados = odoo.leer("hr.employee", [], CAMPOS)
     plazas, personas, correos = _fotos_fijas(db)

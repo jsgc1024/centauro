@@ -30,6 +30,23 @@ class NoResponde(Exception):
     """Odoo no contesto, o rechazo la llave."""
 
 
+def candado(db, tipo: str) -> None:
+    """Una lectura de este tipo a la vez, hasta que confirme (seccion 100).
+
+    "Aplicar" a mano a las :17:05, mientras corre la de cada hora,
+    calculaba las mismas altas; la que llegaba segunda reventaba con
+    "ese registro ya existe" y su vuelta entera se revertia. Con el
+    candado, la segunda espera y encuentra todo hecho. Vive en la
+    transaccion: se suelta solo al confirmar o deshacer.
+    """
+    import zlib
+
+    from sqlalchemy import text
+
+    db.execute(text("SELECT pg_advisory_xact_lock(:llave)"),
+               {"llave": zlib.crc32(f"odoo:{tipo}".encode())})
+
+
 def hay_conexion() -> bool:
     return bool(settings.odoo_base and settings.odoo_api_key)
 
