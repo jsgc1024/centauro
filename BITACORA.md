@@ -8274,6 +8274,110 @@ renglón como «implantado/hospedaje/full_day_foraneo»),
 `seed.py`. Pruebas: `tests/test_revision_109_tabulador_implantado.py`
 (3).
 
+## 110. Entrar con huella o cara
+
+Decisión de Salvador, 30 de septiembre: en la consola y en la app de
+campo se entra con la huella o la cara del teléfono —o el Touch ID o el
+PIN de la computadora— en vez de escribir la contraseña cada vez. Los
+teléfonos son de cada quien y no se prestan, así que va también para el
+personal de seguridad. Lo construyó el asistente 1 en la rama
+`entrar-con-huella` (pull request #4, tres commits); Salvador vio las
+pantallas antes. Aquí se unió, se revisó y se numeró.
+
+**Cómo funciona.** Llaves de acceso (WebAuthn). Al activarla, el
+teléfono crea un par de llaves para este sistema: la privada no sale del
+teléfono y solo se usa tras la huella, la cara o el PIN; la pública se
+guarda en `llave_acceso`. Al entrar, el sistema manda un reto, el
+teléfono lo firma y aquí se comprueba la firma. La huella nunca viaja.
+La llave se ata a `mycentauro.lat` (el dominio de `URL_PUBLICA` sin
+`www.`), que cubre la consola y `appep.mycentauro.lat`
+(`DOMINIO_CAMPO`, que ya estaba en el `.env` para el proxy y la API ya
+recibía por `env_file`): una misma huella vale en las dos.
+
+- **Se ofrece una vez**, al entrar con la contraseña: «Sí, activar» o
+  «Ahora no», que no vuelve a preguntar en 30 días. Después la entrada
+  saluda por el nombre y basta un botón; «Usar mi contraseña» y «No soy
+  …» quedan a un clic. La contraseña sigue sirviendo siempre.
+- **Activarla pide la contraseña** (la pone sola la pantalla que acaba
+  de entrar con ella): una sesión abierta ajena no puede dar de alta
+  otro teléfono. Se exige la huella (verificación del usuario), el reto
+  va firmado, vence en cinco minutos y se usa una vez (Redis), solo
+  valen las direcciones de la empresa, y la llave de alguien dado de
+  baja no abre nada.
+- **Dónde se ve y se quita:** consola, menú del nombre → «Entrar con
+  huella o cara»; app de campo, tarjeta en «Yo». Hasta diez equipos por
+  persona.
+- Rutas `/auth/llaves` (alta/opciones, alta, entrada/opciones, entrada,
+  listar, quitar). Tabla nueva `llave_acceso`, migración
+  `f1b3d5a7c9e2` (después de `f0b2d4e6a8c0`). Dependencia nueva
+  `webauthn==3.0.1`: hay que reconstruir la imagen de la API. El armazón
+  de la app sube a `centauro-campo-v22` y guarda `/consola/huella.js`,
+  para que la app siga abriendo sin señal.
+- De paso (asistente 1): la entrada de la consola pintaba la palabra
+  «null» encima del correo (`append` no filtra los null como `h`).
+
+**Lo que se arregló en la revisión, antes de subirlo** (bugs de
+sistema, sin cambio de proceso):
+
+1. **La contraseña nueva quita las huellas.** Quien se quedó con la
+   contraseña podía activar su propio teléfono, y cambiarla lo sacaba de
+   la sesión pero no de la puerta. `contrasenas._asentar` —por donde
+   pasan el cambio, la recuperación, la invitación y el código de
+   campo— borra las llaves de la persona, igual que tira sus sesiones
+   (`sesiones_desde`, sección 100).
+2. **El correo no se regala.** Pedir el reto con un correo traía la
+   lista de sus llaves si tenía, y nada si no: probando correos se sabía
+   quién trabaja aquí, al revés de lo que cuida la entrada con
+   contraseña. Ahora el correo sin huella —exista o no la cuenta— recibe
+   una llave inventada, siempre la misma para ese correo
+   (`llaves._de_mentira`, firmada con la clave del sistema), que no abre
+   nada.
+3. **El equipo que ya no tiene huella se entera.** Si la llave se quitó
+   desde otro equipo o la contraseña cambió, la entrada seguía
+   saludando y el botón fallaba siempre; al entrar con la contraseña ya
+   no se volvía a ofrecer. Ahora el equipo que ya entraba con huella
+   escoge su propia llave (así el teléfono firma aunque sea de las que
+   no se ofrecen solas), la entrada contesta con el código
+   `huella_desconocida`, la pantalla olvida la huella de ese equipo, y
+   al entrar con la contraseña se revisa contra el servidor que la de
+   este equipo siga viva antes de decidir si se ofrece.
+4. **«Sí, activar» dejaba atorado en la consola.** Guardaba la llave y
+   luego tronaba: el aviso de «Listo» usaba `mensaje()`, cuya barra es
+   de la consola y en la entrada todavía no existe. La persona se
+   quedaba en la pregunta con «Cannot read properties of null», y si
+   volvía a picar se guardaba otra llave o decía que ya estaba activada.
+   Ahora el «Listo» se dice ahí mismo un momento y se entra (la app de
+   campo usa su propio aviso y no tenía el problema).
+5. **Al salir de la consola la entrada salía doble.** La entrada se
+   pinta dos veces seguidas al salir (el botón y el cambio de
+   dirección), y la espera de «¿este equipo tiene lector?» quedó entre
+   vaciar y pintar: las dos vaciaban primero y luego pintaban las dos, y
+   salían dos saludos, uno debajo del otro. Ahora se pregunta antes de
+   vaciar.
+6. Activarla con la contraseña buena limpia los tropiezos, como la
+   entrada (`intentos.exito`); y los mensajes del servidor llevan sus
+   acentos.
+
+Manual: `06_accesos` (es/pt) con «Con huella o cara»; la huella que ya
+no abre como causa en «El personal de campo no puede entrar» y «Alguien
+de oficina no puede entrar a la consola»; y sus mensajes, en «cuando el
+sistema dice que no» → Accesos (`manual.AREA_DE_ARCHIVO`). Pruebas:
+`tests/test_llaves.py` (15), con un autenticador de mentira que firma
+como un teléfono de verdad: se activa y se entra, también el personal de
+seguridad; activarla pide la contraseña; sin huella no entra; otra llave
+no entra; desde otro sitio no entra; el reto se usa una vez; quien ya no
+trabaja aquí no entra; con el correo solo ofrece las suyas; el correo no
+regala si existe; el mismo teléfono no se activa dos veces; cada quien
+ve y quita las suyas; la contraseña nueva quita las huellas; el sitio es
+el dominio de la empresa. `test_revision_107` ya no pide exactamente la
+v21 del armazón. Y el flujo completo, ya unido, se probó en Chromium con
+un autenticador virtual (el que se usa para probar un teléfono con
+huella): en la consola y en la app, ofrecer, activar, verla en su lista,
+salir y volver a entrar con la huella, la contraseña nueva que la quita
+—el equipo lo dice claro y la vuelve a ofrecer— y el armazón v22 con
+`huella.js` guardado para abrir sin señal. De ahí salieron los puntos 4
+y 5.
+
 ## 14. Lo que falta
 
 ### Abierto

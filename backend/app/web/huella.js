@@ -75,11 +75,20 @@ export async function hayLector() {
 }
 
 /* Se ofrece al entrar con contrasena, una vez: si ya entra con huella en
-   este equipo, o dijo "ahora no" hace menos de un mes, no se pregunta. */
+   este equipo, o dijo "ahora no" hace menos de un mes, no se pregunta.
+   Se llama ya con la sesion puesta. */
 export async function convieneOfrecer(correo) {
   if (!(await hayLector())) return false;
   const r = recordado();
-  if (r && r.correo === correo) return false;
+  if (r && r.correo === correo) {
+    /* Este equipo entraba con huella. Si alla ya no esta --la quito
+       desde otro equipo o cambio su contrasena, que las quita todas--,
+       se olvida aqui y se vuelve a ofrecer (seccion 110). */
+    try {
+      if ((await mias()).some(esDeAqui)) return false;
+    } catch { return false; }
+    olvidar();
+  }
   const dijo = (leer(NO_AHORA) || {})[correo];
   return !(dijo && Date.now() - dijo < DIAS_SIN_PREGUNTAR * 86400000);
 }
@@ -160,14 +169,32 @@ async function publico(ruta, cuerpo) {
 
 /* Entrar. Deja la sesion puesta, igual que entrar con contrasena. */
 export async function entrar(correo = null) {
+  /* Si este equipo ya entra con huella, la llave se escoge aqui: es la
+     suya, y el telefono la encuentra aunque sea de las que no se ofrecen
+     solas. Con el correo, el servidor contesta lo mismo tenga o no huella
+     (seccion 110), y si alla ya no estaba el telefono no encontraba nada y
+     decia "se cancelo"; asi firma, y el servidor dice claro que ya no
+     esta. El correo va solo cuando se escribio en la caja. */
+  const aqui = recordado();
+  const suya = !correo && aqui && aqui.credencial ? aqui.credencial : null;
   const r = await publico("/auth/llaves/entrada/opciones",
-                          { correo: correo || (recordado() || {}).correo || null });
+                          { correo: suya ? null : (correo || (aqui || {}).correo || null) });
+  const opciones = opcionesDe(r.opciones);
+  if (suya) opciones.allowCredentials = [{ type: "public-key", id: aBytes(suya) }];
   let c;
   try {
-    c = await navigator.credentials.get({ publicKey: opcionesDe(r.opciones) });
+    c = await navigator.credentials.get({ publicKey: opciones });
   } catch (err) { throw motivoDe(err); }
-  const d = await publico("/auth/llaves/entrada",
-                          { credencial: credencialJSON(c), estado: r.estado });
+  let d;
+  try {
+    d = await publico("/auth/llaves/entrada",
+                      { credencial: credencialJSON(c), estado: r.estado });
+  } catch (err) {
+    /* La de este equipo ya no existe alla: se olvida aqui, y la entrada
+       vuelve a pedir la contrasena, que la ofrece otra vez (seccion 110). */
+    if (err && err.detalle && err.detalle.codigo === "huella_desconocida") olvidar();
+    throw err;
+  }
   sesion.token = d.access_token;
   recordar(d.correo, d.nombre, c.id);
   return d;

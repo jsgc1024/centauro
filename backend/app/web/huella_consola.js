@@ -85,12 +85,19 @@ export function ofrecer({ cuerpo, puerta, correo, nombre, contrasena }) {
       error.replaceChildren();
       try {
         await huella.activar(contrasena, correo, nombre);
-        mensaje(huella.th("activada"));
-        listo();
       } catch (err) {
         error.replaceChildren(aviso(err.message, "grave"));
         si.disabled = false;
+        return;
       }
+      /* El "listo" se dice aqui mismo, un momento, y se entra. Con
+         mensaje() no: la barra de mensajes es de la consola y en la
+         entrada todavia no existe; tronaba despues de guardar la llave y
+         dejaba a la persona atorada en esta pantalla (seccion 110). */
+      f.replaceChildren(
+        h("div", { style: "text-align:center;margin:6px 0 10px;color:#1B1546" }, icono(54)),
+        aviso(huella.th("activada"), "ok"));
+      setTimeout(listo, 1600);
     } }, huella.th("ofrecer_si"));
     const f = h("form", { onsubmit: (e) => e.preventDefault() },
       h("div", { style: "text-align:center;margin:6px 0 10px;color:#1B1546" }, icono(54)),

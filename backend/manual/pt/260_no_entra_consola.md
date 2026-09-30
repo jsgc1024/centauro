@@ -4,7 +4,7 @@ parte: resolver
 orden: 260
 area: Acessos
 titulo: Alguém do escritório não consegue entrar no console
-buscar: nao consegue entrar console senha muitas tentativas sessao acesso fechado mycentauro
+buscar: nao consegue entrar console senha muitas tentativas sessao acesso fechado mycentauro digital rosto
 ---
 ### O que você vê
 Alguém do escritório não consegue entrar em mycentauro.lat, ou o sistema o tira no meio da tarde.
@@ -15,6 +15,7 @@ Alguém do escritório não consegue entrar em mycentauro.lat, ou o sistema o ti
 3. **A sessão terminou.** Dura 12 horas, a não ser que o cargo diga outra coisa: entra-se de novo.
 4. **O acesso está fechado**, ou o Odoo desligou a pessoa.
 5. **Ainda não tem acesso**: a leitura do escritório traz a pessoa, não o seu acesso. Quem o dá são os Recursos Humanos, em [Acessos](#/accesos).
+6. **A digital já não abre.** Se trocou a senha ou removeu a digital a partir de outro aparelho, a desse computador ou celular já não entra: «Usar minha senha», e ao entrar é oferecido ativá-la de novo.
 
 ### Como se resolve
 - **A senha:** que a recupere na entrada. Com o e-mail desligado, a direção geral ou a administração copiam o link de um convite novo em [Acessos](#/accesos).

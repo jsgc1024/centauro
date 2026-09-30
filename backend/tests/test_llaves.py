@@ -207,12 +207,60 @@ def test_con_el_correo_el_telefono_solo_ofrece_sus_llaves(cliente, sesion):
     alta = _activar(cliente, sesion, "consultor", tel)
     _, opciones = _entrar(cliente, tel, correo=CUENTAS["consultor"])
     assert [c["id"] for c in opciones["allowCredentials"]] == [alta["credencial_id"]]
-    # Un correo que no existe contesta igual, sin llaves: no se regala
-    # si el correo existe.
-    r = cliente.post("/auth/llaves/entrada/opciones",
-                     json={"correo": "nadie@centauro.lat"})
-    assert r.status_code == 200
-    assert not json.loads(r.json()["opciones"]).get("allowCredentials")
+
+
+def test_el_correo_no_regala_si_existe(cliente, sesion):
+    """Revision de la seccion 110: el correo con huella traia su lista y
+    el que no, nada, asi que probando correos se sabia quien trabaja
+    aqui. Ahora el que no tiene --exista o no la cuenta-- recibe una llave
+    inventada, siempre la misma, que no abre nada."""
+    def pedir(correo):
+        r = cliente.post("/auth/llaves/entrada/opciones", json={"correo": correo})
+        assert r.status_code == 200, r.text
+        return [c["id"] for c in json.loads(r.json()["opciones"])["allowCredentials"]]
+
+    nadie = pedir("nadie@centauro.lat")
+    sin_huella = pedir(CUENTAS["central"])          # existe y no la tiene
+    assert len(nadie) == 1 and len(sin_huella) == 1
+    assert nadie != sin_huella
+    # La misma cada vez, como la de verdad: si cambiara, se notaria.
+    assert pedir(" Nadie@Centauro.lat") == nadie
+    assert len(de_b64(nadie[0])) in (16, 20, 32)
+    # Y no abre nada.
+    tel = Telefono()
+    tel.credencial = de_b64(nadie[0])
+    r, _ = _entrar(cliente, tel, correo="nadie@centauro.lat")
+    assert r.status_code == 401
+
+
+def test_la_contrasena_nueva_quita_las_huellas(cliente, sesion, datos):
+    """Revision de la seccion 110: quien se quedo con la contrasena pudo
+    activar su propio telefono. Cambiarla lo saca de la sesion y tambien
+    de la puerta; el equipo que la tenia se entera con su codigo, para
+    olvidarla y volver a ofrecerla."""
+    from test_contrasenas import BUENA, _cabecera, _cuenta
+    cuenta = _cuenta(cliente, sesion, datos)
+    suyo = _cabecera(cliente, cuenta)
+    r = cliente.post("/auth/llaves/alta/opciones", json={"contrasena": BUENA},
+                     headers=suyo)
+    assert r.status_code == 200, r.text
+    ajeno = Telefono()
+    r = cliente.post("/auth/llaves/alta", headers=suyo, json={
+        "credencial": ajeno.crear(json.loads(r.json()["opciones"])),
+        "estado": r.json()["estado"], "nombre": "El del que la robo"})
+    assert r.status_code == 201, r.text
+    r, _ = _entrar(cliente, ajeno)
+    assert r.status_code == 200, r.text
+
+    r = cliente.post("/auth/mi-contrasena", headers=suyo,
+                     json={"actual": BUENA, "nueva": "camino largo a casa"})
+    assert r.status_code == 200, r.text
+
+    r, _ = _entrar(cliente, ajeno)
+    assert r.status_code == 401
+    assert r.json()["detail"]["codigo"] == "huella_desconocida"
+    nueva = _cabecera(cliente, cuenta, "camino largo a casa")
+    assert cliente.get("/auth/llaves", headers=nueva).json() == []
 
 
 def test_el_mismo_telefono_no_se_activa_dos_veces(cliente, sesion):

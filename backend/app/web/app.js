@@ -125,9 +125,14 @@ let correoSugerido = "";
 
 async function pantallaEntrada(conContrasena = false) {
   await traerLogo();
+  /* Antes de vaciar, no despues: de vaciar a pintar no puede haber un
+     await. Al salir, la entrada se pinta dos veces seguidas (el boton y
+     el cambio de direccion); con la espera en medio las dos vaciaban
+     primero y luego pintaban las dos, y salia la entrada doble (seccion
+     110). */
+  const lector = await huella.hayLector();
   const cuerpo = document.getElementById("app");
   vaciar(cuerpo);
-  const lector = await huella.hayLector();
 
   /* Lo que sigue a entrar, con contrasena o con huella: la misma sesion
      y el mismo camino. */

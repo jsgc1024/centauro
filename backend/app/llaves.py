@@ -27,8 +27,18 @@ Lo que se cuida:
   - **La contrasena sigue sirviendo.** La huella es un atajo, no la unica
     puerta: si el telefono se pierde o se cambia, se entra con la
     contrasena y se quita la llave vieja.
+  - **La contrasena nueva quita las huellas** (revision de la seccion
+    110). Quien se quedo con la contrasena pudo activar su propio
+    telefono; cambiarla tiene que sacarlo, igual que a su sesion
+    (`contrasenas._asentar`). El dueno la vuelve a activar al entrar: se
+    le ofrece sola.
+  - **El correo no se regala.** Pedir el reto con un correo contesta lo
+    mismo tenga o no huella, exista o no la cuenta: al que no tiene, una
+    llave inventada que no abre nada (`_de_mentira`).
 """
 import base64
+import hashlib
+import hmac
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -113,7 +123,7 @@ def _leer_reto(estado: str, uso: str) -> dict:
         carga = jwt.decode(estado or "", auth._clave(),
                            algorithms=[auth.ALGORITMO])
     except jwt.ExpiredSignatureError:
-        raise HTTPException(400, "Se tardo demasiado: vuelve a intentar.")
+        raise HTTPException(400, "Se tardó demasiado: vuelve a intentar.")
     except jwt.PyJWTError:
         raise HTTPException(400, "No se reconoce la solicitud: vuelve a intentar.")
     if carga.get("uso") != uso:
@@ -134,7 +144,7 @@ def _gastar_reto(reto: str) -> None:
         registro.warning("no se pudo anotar el reto: %s", error)
         return
     if not nuevo:
-        raise HTTPException(400, "Esa solicitud ya se uso: vuelve a intentar.")
+        raise HTTPException(400, "Esa solicitud ya se usó: vuelve a intentar.")
 
 
 # ------------------------------------------------------------ dar de alta
@@ -154,7 +164,10 @@ def opciones_de_alta(db: Session, usuario: m.Usuario, contrasena: str,
         intentos.fallo(llave, ip)
         # 403 y no 401: con sesion abierta, un 401 le diria a la pantalla
         # que la sesion vencio y la mandaria a la entrada.
-        raise HTTPException(403, "La contrasena no es correcta.")
+        raise HTTPException(403, "La contraseña no es correcta.")
+    # Como en la entrada: la buena limpia los tropiezos. Sin esto, quien
+    # se equivoco al activarla los cargaba a su siguiente entrada.
+    intentos.exito(llave, ip)
     ya = db.query(m.LlaveAcceso).filter_by(usuario_id=usuario.id).all()
     if len(ya) >= MAXIMO_POR_PERSONA:
         raise HTTPException(409, (
@@ -210,11 +223,26 @@ def dar_de_alta(db: Session, usuario: m.Usuario, credencial: dict,
 
 # ------------------------------------------------------------ entrar
 
+def _de_mentira(llave_de: str) -> list[PublicKeyCredentialDescriptor]:
+    """La llave inventada de un correo sin huella, exista o no la cuenta.
+
+    Sin ella, el correo con huella traia su lista y el que no, nada: con
+    probar correos se sabia quien trabaja aqui (revision de la seccion
+    110). Sale siempre la misma para el mismo correo --si cambiara, se
+    notaria al pedirla dos veces--, de un largo que tambien usan los
+    telefonos, y no abre nada: no hay llave guardada con ese nombre."""
+    firma = hmac.new(auth._clave().encode(), f"llave-de-mentira:{llave_de}".encode(),
+                     hashlib.sha256).digest()
+    largo = (16, 20, 32)[firma[0] % 3]
+    return [PublicKeyCredentialDescriptor(id=firma[1:1 + largo]
+                                          if largo < 32 else firma)]
+
+
 def opciones_de_entrada(db: Session, correo: str | None) -> dict:
     """El reto para entrar. Con el correo, el telefono ofrece solo las
     llaves de esa persona; sin el, las que tenga para este sistema. La
-    respuesta es la misma exista o no la cuenta: decir "ese correo no
-    tiene huella" regalaria que el correo existe."""
+    respuesta es la misma exista o no la cuenta, y tenga o no huella:
+    decir "ese correo no tiene huella" regalaria que el correo existe."""
     reto = secrets.token_bytes(32)
     permitidas = []
     llave_de = auth.llave_de_correo(correo) if correo else None
@@ -224,6 +252,7 @@ def opciones_de_entrada(db: Session, correo: str | None) -> dict:
             permitidas = [PublicKeyCredentialDescriptor(id=_de_b64(k.credencial_id))
                           for k in db.query(m.LlaveAcceso)
                                      .filter_by(usuario_id=usuario.id).all()]
+        permitidas = permitidas or _de_mentira(llave_de)
     opciones = generate_authentication_options(
         rp_id=sitio(), challenge=reto, allow_credentials=permitidas or None,
         user_verification=UserVerificationRequirement.REQUIRED)
@@ -237,8 +266,13 @@ def entrar(db: Session, credencial: dict, estado: str) -> m.Usuario:
     credencial_id = (credencial or {}).get("id") or ""
     llave = db.query(m.LlaveAcceso).filter_by(credencial_id=credencial_id).first()
     if not llave:
-        raise HTTPException(401, "Este equipo no tiene la huella activada. "
-                                 "Entra con tu contrasena y vuelve a activarla.")
+        # Con su codigo: la pantalla olvida que este equipo entraba con
+        # huella --se quito desde otro equipo o cambio la contrasena-- y
+        # la vuelve a ofrecer al entrar con la contrasena.
+        raise HTTPException(401, {
+            "mensaje": "Este equipo ya no tiene la huella activada.",
+            "que_hacer": "Entra con tu contraseña y vuelve a activarla.",
+            "codigo": "huella_desconocida"})
     _gastar_reto(carga["reto"])
     try:
         hecho = verify_authentication_response(
@@ -250,7 +284,7 @@ def entrar(db: Session, credencial: dict, estado: str) -> m.Usuario:
     except Exception as error:                            # noqa: BLE001
         registro.info("entrada con llave rechazada: %s", error)
         raise HTTPException(401, "No se pudo comprobar la huella: vuelve a "
-                                 "intentar o entra con tu contrasena.")
+                                 "intentar o entra con tu contraseña.")
     usuario = llave.usuario
     if not usuario or not usuario.activo:
         raise HTTPException(403, "Ese acceso esta desactivado")

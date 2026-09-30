@@ -106,6 +106,11 @@ def _asentar(db: Session, usuario: m.Usuario, nueva: str) -> None:
     usuario.hash_contrasena = auth.cifrar(nueva)
     usuario.sesiones_desde = _ahora()
     _anular_pendientes(db, usuario.id)
+    # Y las huellas (seccion 110). Quien se quedo con la contrasena pudo
+    # activar su propio telefono: sin esto, cambiarla lo sacaba de la
+    # sesion pero no de la puerta. El dueno la vuelve a activar al entrar
+    # con la nueva: la entrada se la ofrece sola.
+    db.query(m.LlaveAcceso).filter_by(usuario_id=usuario.id).delete()
 
 
 # --------------------------------------------------- cambiarla uno mismo

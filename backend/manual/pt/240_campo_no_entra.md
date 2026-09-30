@@ -4,7 +4,7 @@ parte: resolver
 orden: 240
 area: Acessos
 titulo: O pessoal de campo não consegue entrar no app
-buscar: app campo nao consegue entrar codigo quatro digitos senha email pessoal telefone appep desligado
+buscar: app campo nao consegue entrar codigo quatro digitos senha email pessoal telefone appep desligado digital rosto
 ---
 ### O que você vê
 Alguém do pessoal de segurança diz que não consegue entrar no EP Connect.
@@ -16,6 +16,7 @@ Alguém do pessoal de segurança diz que não consegue entrar no EP Connect.
 4. **Ainda não chegou do Odoo**: a leitura do pessoal não o traz —ver [uma pessoa não aparece](#/manual/leer/sintoma-persona-no-aparece)—.
 5. **Errou oito vezes seguidas.** O sistema o faz esperar até 15 minutos: a mensagem, em espanhol, diz quantos.
 6. **Abriu outro endereço.** O app vive em appep.mycentauro.lat; o console, em mycentauro.lat.
+7. **A digital já não abre.** Se trocou a senha ou removeu a digital a partir de outro aparelho, a desse celular já não entra: toque em «Usar minha senha», entre com ela e o app oferece ativá-la de novo.
 
 ### Como se resolve
 O código é ditado por telefone pelo seu consultor —só a quem trabalha nos seus serviços— ou pela central, na tela Código. O que protege esse caminho é que quem o dita reconheça a voz de quem liga.

@@ -4,7 +4,7 @@ parte: resolver
 orden: 260
 area: Accesos
 titulo: Alguien de oficina no puede entrar a la consola
-buscar: no puede entrar consola contraseña demasiados intentos fallidos sesion acceso cerrado mycentauro
+buscar: no puede entrar consola contraseña demasiados intentos fallidos sesion acceso cerrado mycentauro huella cara
 ---
 ### Qué ves
 Alguien de oficina no puede entrar en mycentauro.lat, o lo saca a media tarde.
@@ -15,6 +15,7 @@ Alguien de oficina no puede entrar en mycentauro.lat, o lo saca a media tarde.
 3. **Su sesión terminó.** Dura 12 horas, salvo que su puesto diga otra cosa: vuelve a entrar.
 4. **Su acceso está cerrado**, o Odoo lo dio de baja.
 5. **Todavía no tiene acceso**: la lectura de la oficina trae a la persona, no su acceso. Se lo da Recursos Humanos en [Accesos](#/accesos).
+6. **Su huella ya no abre.** Si cambió su contraseña o quitó la huella desde otro equipo, la de esa computadora o ese teléfono ya no entra: «Usar mi contraseña», y al entrar se le ofrece activarla otra vez.
 
 ### Cómo se arregla
 - **Su contraseña:** que la recupere desde la entrada. Con el correo apagado, dirección general o administración le copian el enlace de una invitación nueva en [Accesos](#/accesos).

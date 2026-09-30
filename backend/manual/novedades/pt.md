@@ -2,6 +2,9 @@
 
 O que há de novo em cada atualização, escrito para quem usa o sistema. A mais nova fica em cima.
 
+## 110 · 2026-09-30 · Entrar com digital ou rosto
+No console e no app de campo se entra com a digital ou o rosto do celular —ou o Touch ID ou o PIN do computador— em vez de digitar a senha toda vez. É oferecido uma única vez, ao entrar com a senha: «Sim, ativar» ou «Agora não», que não pergunta de novo por um mês. Depois a entrada cumprimenta pelo nome e basta um botão, com «Usar minha senha» e «Não sou…» a um clique. Ativar pede a senha, e vale no console e no app. A digital não sai do celular: a Centauro nunca a vê. Vê-se e remove-se no menu do nome → «Entrar com digital ou rosto», e no app em «Eu». A senha continua valendo sempre; trocá-la remove as digitais de todos os aparelhos, que se ativam de novo ao entrar com a nova. O app sobe para a versão 22: fecha-se e abre-se de novo.
+
 ## 109 · 2026-09-30 · A tabela de diárias do implantado, sem meio dia nem transfer
 Em Catálogos → Tabela de diárias, a tabela do implantado agora só pede dia completo, local ou fora da cidade: meio dia e transfer não se aplicam, e já não são oferecidos nem podem ser adicionados. O histórico da tabela diz qual linha mudou —«Hospedagem · dia completo fora da cidade · implantado · Mexico: valor 1200 → 1500»— em vez de «Adicionou “”».
 

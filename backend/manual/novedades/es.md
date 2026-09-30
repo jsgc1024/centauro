@@ -2,6 +2,9 @@
 
 Lo nuevo de cada actualización, escrito para quien usa el sistema. La más nueva va arriba.
 
+## 110 · 2026-09-30 · Entrar con huella o cara
+En la consola y en la app de campo se entra con la huella o la cara del teléfono —o el Touch ID o el PIN de la computadora— en vez de escribir la contraseña cada vez. Se ofrece una sola vez, al entrar con la contraseña: «Sí, activar» o «Ahora no», que no vuelve a preguntar en un mes. Después la entrada saluda por el nombre y basta un botón, con «Usar mi contraseña» y «No soy…» a un clic. Activarla pide la contraseña, y vale en la consola y en la app. La huella no sale del teléfono: Centauro nunca la ve. Se ve y se quita en el menú del nombre → «Entrar con huella o cara», y en la app en «Yo». La contraseña sigue sirviendo siempre; cambiarla quita las huellas de todos los equipos, y se vuelven a activar al entrar con la nueva. La app sube a su versión 22: se cierra y se vuelve a abrir.
+
 ## 109 · 2026-09-30 · La tabla de viáticos del implantado, sin medio día ni transfer
 En Catálogos → Tabulador de viáticos, la tabla del implantado ya solo pide día completo, local o foráneo: medio día y transfer no le aplican, y ya no se ofrecen ni se pueden agregar. El historial de la tabla dice qué renglón se cambió —«Hospedaje · día completo foráneo · implantado · Mexico: monto 1200 → 1500»— en vez de «Agregó «»».
 

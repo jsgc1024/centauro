@@ -4,7 +4,7 @@ parte: resolver
 orden: 240
 area: Accesos
 titulo: El personal de campo no puede entrar a la app
-buscar: app campo no puede entrar codigo cuatro digitos contraseña correo personal telefono appep baja
+buscar: app campo no puede entrar codigo cuatro digitos contraseña correo personal telefono appep baja huella cara
 ---
 ### Qué ves
 Alguien del personal de seguridad dice que no puede entrar a EP Connect.
@@ -16,6 +16,7 @@ Alguien del personal de seguridad dice que no puede entrar a EP Connect.
 4. **Todavía no llega de Odoo**: la lectura del personal no lo trae —ver [una persona no aparece](#/manual/leer/sintoma-persona-no-aparece)—.
 5. **Se equivocó ocho veces seguidas.** El sistema lo hace esperar hasta 15 minutos: el mensaje dice cuántos.
 6. **Abrió otra dirección.** La app vive en appep.mycentauro.lat; la consola, en mycentauro.lat.
+7. **Su huella ya no abre.** Si cambió su contraseña o quitó la huella desde otro equipo, la de ese teléfono ya no entra: toca «Usar mi contraseña», entra con ella y la app le ofrece activarla otra vez.
 
 ### Cómo se arregla
 El código se lo dicta por teléfono su consultor —solo a quien trabaja en sus servicios— o la central, desde la pantalla Código. Lo que protege ese camino es que quien lo dicta reconozca la voz de quien llama.

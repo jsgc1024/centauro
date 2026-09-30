@@ -3,8 +3,8 @@ id: accesos
 parte: entender
 orden: 60
 titulo: Acessos, papéis e cargos
-resumen: Quem entra, com o quê, e o que pode fazer. As travas que cuidam dos acessos, o convite, a recuperação de senha e o código do pessoal de campo.
-buscar: acesso papel cargo categoria chave mestra administracao direcao geral permissao avulsa atividades telas convite link copiar reenviar senha recuperar codigo quatro digitos sessao desligamento
+resumen: Quem entra, com o quê, e o que pode fazer. As travas que cuidam dos acessos, o convite, a recuperação de senha, o código do pessoal de campo e a entrada com digital ou rosto.
+buscar: acesso papel cargo categoria chave mestra administracao direcao geral permissao avulsa atividades telas convite link copiar reenviar senha recuperar codigo quatro digitos sessao desligamento digital rosto touch id pin chave de acesso
 ---
 ## Papel e cargo
 Há nove papéis: pessoal de segurança, central, consultor, direção de operações, direção geral, finanças, recursos humanos, sistema e qualidade, e administração —a **chave mestra**—.
@@ -34,6 +34,7 @@ Dão e fecham acessos a administração, a direção geral, os recursos humanos 
 - **Quem esqueceu a senha** a recupera na entrada, com «Esqueceu sua senha?». Esse link vale **2 horas**. As duas coisas precisam do e-mail ligado.
 - **O pessoal de segurança** não recebe convite: define a senha com um **código de quatro dígitos** que o seu consultor dita —só a quem trabalha nos seus serviços— ou a central, na tela Código. O código vale **10 minutos**. O que protege esse caminho é que quem o dita reconheça a voz de quem liga.
 - **A sessão** dura 12 horas, a não ser que o cargo diga outra coisa. Se expira no meio de uma tela, ao entrar de novo volta-se a essa tela.
-- **Mudar a própria senha** se faz por dentro, no menu do nome: pede a atual e, ao salvar a nova, todas as sessões são encerradas, inclusive essa.
+- **Mudar a própria senha** se faz por dentro, no menu do nome: pede a atual e, ao salvar a nova, todas as sessões são encerradas, inclusive essa, e as digitais são removidas.
+- **Com digital ou rosto** (seção 110): num celular ou computador com digital, rosto ou PIN, ao entrar com a senha isso é oferecido uma única vez —«Sim, ativar» ou «Agora não», que não pergunta de novo por um mês—. Depois a entrada cumprimenta pelo nome e basta um botão; «Usar minha senha» e «Não sou…» ficam a um clique. Vale no console e no app, ativa-se digitando a senha, e se vê e se remove no menu do nome → «Entrar com digital ou rosto» (no app, em «Eu»). A digital não sai do celular: o sistema guarda só uma chave que o celular cria para o Connect. A senha continua valendo sempre; trocá-la remove as digitais de todos os aparelhos, que se ativam de novo ao entrar com a nova.
 
 > Quase todo travamento de acessos é uma dessas travas fazendo o seu trabalho. A mensagem diz qual e o que fazer; se não estiver clara, está em [quando o sistema diz não](#/manual/mensajes), em Acessos e senhas.

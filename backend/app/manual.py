@@ -606,6 +606,8 @@ AREA_DE_ARCHIVO = {
     "direccion_operaciones.py": "operacion", "routers/direccion.py": "operacion",
     "accesos.py": "accesos", "auth.py": "accesos", "contrasenas.py": "accesos",
     "routers/acceso.py": "accesos",
+    # Entrar con huella o cara (seccion 110).
+    "llaves.py": "accesos", "routers/llaves.py": "accesos",
     "routers/campo.py": "campo",
     "bolson.py": "viaticos", "viaticos.py": "viaticos",
     "routers/viaticos.py": "viaticos", "depositos.py": "viaticos",

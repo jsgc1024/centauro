@@ -3,8 +3,8 @@ id: accesos
 parte: entender
 orden: 60
 titulo: Accesos, roles y puestos
-resumen: Quién entra, con qué, y qué puede hacer. Los candados que cuidan los accesos, la invitación, la recuperación de contraseña y el código del personal de campo.
-buscar: acceso rol puesto categoria llave maestra administracion direccion general permiso de mas actividades pantallas invitacion enlace copiar reenviar contraseña recuperar codigo cuatro digitos sesion baja
+resumen: Quién entra, con qué, y qué puede hacer. Los candados que cuidan los accesos, la invitación, la recuperación de contraseña, el código del personal de campo y la entrada con huella o cara.
+buscar: acceso rol puesto categoria llave maestra administracion direccion general permiso de mas actividades pantallas invitacion enlace copiar reenviar contraseña recuperar codigo cuatro digitos sesion baja huella cara touch id pin llave de acceso
 ---
 ## Rol y puesto
 Hay nueve roles: personal de seguridad, central, consultor, dirección de operaciones, dirección general, finanzas, recursos humanos, sistema y calidad, y administración —la **llave maestra**—.
@@ -34,6 +34,7 @@ Dan y cierran accesos administración, dirección general, recursos humanos y si
 - **Quien olvidó su contraseña** la recupera desde la entrada, con «¿Olvidaste tu contraseña?». Ese enlace vale **2 horas**. Las dos cosas necesitan el correo encendido.
 - **El personal de seguridad** no recibe invitación: pone su contraseña con un **código de cuatro dígitos** que le dicta su consultor —solo a quien trabaja en sus servicios— o la central, desde la pantalla Código. El código vale **10 minutos**. Lo que protege ese camino es que quien lo dicta reconozca la voz de quien llama.
 - **La sesión** dura 12 horas, salvo que el puesto diga otra cosa. Si vence a media pantalla, al volver a entrar se regresa a esa pantalla.
-- **Cambiar la propia contraseña** se hace desde adentro, en el menú del nombre: pide la actual, y al guardar la nueva se cierran todas las sesiones, también esa.
+- **Cambiar la propia contraseña** se hace desde adentro, en el menú del nombre: pide la actual, y al guardar la nueva se cierran todas las sesiones, también esa, y se quitan las huellas.
+- **Con huella o cara** (sección 110): en un teléfono o una computadora con huella, cara o PIN, al entrar con la contraseña se ofrece una sola vez —«Sí, activar» o «Ahora no», que no vuelve a preguntar en un mes—. Después la entrada saluda por el nombre y basta un botón; «Usar mi contraseña» y «No soy…» quedan a un clic. Vale en la consola y en la app, se activa escribiendo la contraseña, y se ve y se quita en el menú del nombre → «Entrar con huella o cara» (en la app, en «Yo»). La huella no sale del teléfono: el sistema guarda solo una llave que el teléfono crea para Connect. La contraseña sigue sirviendo siempre; cambiarla quita las huellas de todos sus equipos, y se vuelven a activar al entrar con la nueva.
 
 > Casi todo atorón de accesos es uno de estos candados haciendo su trabajo. El mensaje dice cuál y qué hacer; si no es claro, está en [cuando el sistema dice que no](#/manual/mensajes), en Accesos y contraseñas.
