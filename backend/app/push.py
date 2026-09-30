@@ -200,6 +200,15 @@ TEXTOS_PUSH = {
         "cambio_unidad_cuerpo": "{folio}, {cuando}: va la {entra} en lugar de la {sale}. Revisa tu día en la app.",
         "hora_rechazada_titulo": "Se queda la hora de la hoja",
         "hora_rechazada_cuerpo": "{fecha}: la central no tomó las {propuesta} que propusiste; sigue a las {hora}. Revisa tu día en la app.",
+        # Seccion 107: la entrega de la unidad va despues del fin del
+        # dia, con su plazo; al vencer, a la persona y a la oficina.
+        "entrega_titulo": "Falta entregar la unidad {placa}",
+        "entrega_cuerpo": "Terminaste. Al dejar la {placa} en la oficina, toma las cinco fotos de la entrega. Tienes hasta el {fecha} a las {hora}.",
+        "entrega_sin_recepcion_cuerpo": "Terminaste. La {placa} nunca se revisó al recibirla: habla con tu consultor antes de entregarla. Tienes hasta el {fecha} a las {hora}.",
+        "entrega_vencida_titulo": "Se venció la entrega de la {placa}",
+        "entrega_vencida_cuerpo": "El plazo para entregar la {placa} ({folio}) venció el {fecha} a las {hora}. Entrégala hoy con sus fotos y avisa a tu consultor.",
+        "entrega_vencida_of_titulo": "{folio}: unidad sin entregar",
+        "entrega_vencida_of_cuerpo": "{quien} no entregó la {placa} en el plazo ({fecha} {hora}). Sigue por entregar; el cierre la reclama hasta que se entregue o se registre sin revisión.",
     },
     "pt": {
         "vispera_titulo": "Amanhã você trabalha",
@@ -256,6 +265,13 @@ TEXTOS_PUSH = {
         "cambio_unidad_cuerpo": "{folio}, {cuando}: vai a {entra} no lugar da {sale}. Veja o seu dia no app.",
         "hora_rechazada_titulo": "Fica o horário da folha",
         "hora_rechazada_cuerpo": "{fecha}: a central não aceitou as {propuesta} que você propôs; continua às {hora}. Veja o seu dia no app.",
+        "entrega_titulo": "Falta entregar a unidade {placa}",
+        "entrega_cuerpo": "Você terminou. Ao deixar a {placa} no escritório, tire as cinco fotos da entrega. Você tem até {fecha} às {hora}.",
+        "entrega_sin_recepcion_cuerpo": "Você terminou. A {placa} nunca foi revisada ao recebê-la: fale com o seu consultor antes de entregá-la. Você tem até {fecha} às {hora}.",
+        "entrega_vencida_titulo": "Venceu a entrega da {placa}",
+        "entrega_vencida_cuerpo": "O prazo para entregar a {placa} ({folio}) venceu em {fecha} às {hora}. Entregue hoje com as fotos e avise o seu consultor.",
+        "entrega_vencida_of_titulo": "{folio}: unidade sem entregar",
+        "entrega_vencida_of_cuerpo": "{quien} não entregou a {placa} no prazo ({fecha} {hora}). Continua por entregar; o fechamento cobra até que seja entregue ou registrada sem revisão.",
     },
 }
 

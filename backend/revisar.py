@@ -668,7 +668,8 @@ AYUDA_POR_PANTALLA = {
     "calidad.js": 6,
     # La bitacora de administracion (seccion 86): el de la tabla.
     "bitacora_admin.js": 1,
-    "central.js": 5,
+    # Central: seccion 107 suma las unidades por entregar.
+    "central.js": 6,
     "consultor.js": 4,
     "facturacion.js": 1,
     "finanzas.js": 5,

@@ -510,12 +510,20 @@ async function pantallaHoy() {
         t("cmp_te_relevaron_pie"))));
   }
 
+  /* La unidad que el fin del dia dejo por entregar (seccion 107): va
+     arriba de todo, grande y con su reloj, hasta que tenga su revision
+     de entrega. Es lo unico que queda por hacer del dia cerrado, y las
+     24 horas corren desde el fin, no desde que se abre la app. */
+  const entregas = datos.entregas_pendientes || [];
+  for (const e of entregas) cuerpo.push(tarjetaEntrega(e));
+
   if (!hoy.length && !manana.length) {
     /* Cerrar el dia lo saca de aqui. Si el hueco dijera "no tienes
        servicios", quien acaba de trabajar doce horas leeria que su dia
        nunca existio. */
     cuerpo.push(h("div", { clase: "vacio" },
-      datos.cerrados_hoy ? t("cmp_dia_cerrado")
+      datos.cerrados_hoy
+        ? t(entregas.length ? "cmp_ent_cerrado" : "cmp_dia_cerrado")
         : (datos.relevado_hoy || []).length ? t("cmp_dia_relevado")
         : t("cmp_sin_servicios")));
   }
@@ -549,6 +557,32 @@ async function pantallaHoy() {
   }
 
   conBarra(...cuerpo);
+}
+
+/* La unidad por entregar, con el mismo reloj que los viaticos: cuando
+   vence y cuanto queda, en la hora del pais del servicio. Sin la
+   recepcion no hay como guardar la entrega, y se manda con el consultor
+   en vez de a una puerta cerrada. */
+function tarjetaEntrega(e) {
+  const reloj = cuandoVence({ limite: e.limite, momento: e.momento,
+                              minutos: e.minutos, vencido: e.vencido });
+  return h("div", { clase: "caja", style: "border-left:4px solid #b45309" },
+    h("div", { clase: "fila separa" },
+      h("div", {},
+        h("div", { clase: "clave gris chico" }, t("cmp_ent_titulo")),
+        h("div", { style: "font-size:22px;font-weight:700" }, e.placa || "—"),
+        h("div", { clase: "chico gris" },
+          [e.folio, e.cliente].filter(Boolean).join(" · "))),
+      reloj.marca),
+    h("div", { clase: "marco" },
+      e.sin_recepcion
+        ? h("div", { clase: "chico", style: "line-height:1.45" },
+            t("cmp_nunca_revisada"))
+        : h("a", { href: `#/revision/${e.servicio_id}`, clase: "botonazo" },
+            t("cmp_entregar")),
+      h("div", { style: "margin-top:8px;text-align:center" }, reloj.pie),
+      h("div", { clase: "chico gris", style: "margin-top:6px;text-align:center" },
+        t("cmp_ent_pie"))));
 }
 
 function sinLinea(en) {
@@ -690,18 +724,15 @@ function tarjetaHoy(f) {
      Si ese paso ya esta marcado y esperando salir, el boton no se
      vuelve a ofrecer: durante esos segundos la pantalla todavia trae el
      dato del servidor --que no sabe nada-- y el dedo volveria. */
-  /* Con la unidad por entregar hoy, el fin no se ofrece todavia
-     (seccion 106, caso 8 de Alberto): el servidor lo rechazaba y el
-     aviso se perdia en un letrero de dos segundos, y el equipo se
-     quedaba con "no hay como cortar" mientras corrian las horas. La
-     entrega va primero, grande, y el boton de terminar aparece en
-     cuanto la unidad queda entregada. */
+  /* El fin se ofrece cuando toca, con o sin unidad por entregar
+     (seccion 107, decision de Salvador): el fin es cuando el ejecutivo
+     corta y ahi se cierran las horas; la entrega de la unidad es otro
+     proceso, que queda pendiente despues del fin con sus 24 horas. */
   const porEntregar = (f.revision && f.revision.entregar_hoy) || [];
-  const finDespues = paso === "fin_servicio" && porEntregar.length > 0;
   if (paso && enCola(f.jornada_id, paso)) {
     caja.append(h("div", { clase: "marco" },
       h("button", { disabled: "disabled" }, t("cmp_marca_enviando"))));
-  } else if (paso && !finDespues) {
+  } else if (paso) {
     caja.append(h("div", { clase: "marco" },
       h("button", { onclick: (e) => marcar(e, f, paso) },
         hitos()[paso].texto),
@@ -750,30 +781,30 @@ function tarjetaHoy(f) {
   }
 
   /* La unidad se revisa cuando cambia de manos, no cada dia. Por eso
-     el boton solo aparece cuando de verdad falta algo: sin revisar al
+     esto solo aparece cuando de verdad falta algo: sin revisar al
      empezar, o dejando el servicio hoy y todavia sin entregar.
 
-     El aviso de hoy va primero y va grande. El fin de servicio no se
-     marca sin esa revisión, y enterarse de eso al intentar cerrar —a las
-     ocho de la noche, con el cliente en el coche— es el peor momento
-     posible. Que lo sepa desde que abre la pantalla. */
+     La que hoy deja el servicio se dice desde que abre la pantalla,
+     pero ya no frena nada (seccion 107): se entrega despues del fin, en
+     la oficina, y el boton grande con su reloj sale arriba de la
+     pantalla en cuanto el dia queda cerrado. Aqui va el aviso y el
+     camino, por si la entrega es a media jornada (la unidad que se fue
+     al taller). */
   const hoy = porEntregar;
   if (hoy.length) {
     const atorado = hoy.some(u => u.sin_recepcion);
-    const entrega = h("div", { clase: "marco alerta" },
-      h("a", { href: `#/revision/${f.servicio_id}`, clase: "botonazo" },
-        hoy.length > 1 ? t("cmp_entregar_unidades") : t("cmp_entregar")),
-      h("div", { clase: "chico", style: "margin-top:8px;text-align:center" },
+    const avisoEntrega = h("div", { clase: "marco" },
+      h("div", { clase: "chico", style: "line-height:1.45" },
         atorado
           ? t("cmp_nunca_revisada")
-          : t("cmp_sin_esto_fin").replace("{placas}", hoy
+          : t("cmp_ent_hoy").replace("{placas}", hoy
               .map(u => u.placa).filter(Boolean).join(", "))));
-    if (finDespues) {
-      entrega.append(h("div", { clase: "chico",
-                               style: "margin-top:6px;text-align:center;font-weight:650" },
-                       t("cmp_fin_despues_de_entregar")));
+    if (!atorado) {
+      avisoEntrega.append(h("a", { href: `#/revision/${f.servicio_id}`, clase: "chico",
+                                   style: "display:inline-block;margin-top:6px" },
+                            t("cmp_entregar_flecha")));
     }
-    caja.append(entrega);
+    caja.append(avisoEntrega);
   } else if (f.revision && f.revision.por_recibir) {
     caja.append(h("div", { clase: "marco" },
       h("a", { href: `#/revision/${f.servicio_id}`, clase: "botonazo" },

@@ -196,6 +196,45 @@ def revisar(db: Session, servicio_id: int, ahora: datetime | None = None) -> dic
                     "mensaje": f"{j.fecha}: el conductor no marco el fin del servicio",
                     "accion": "Pide a la central que registre el corte con justificacion."})
 
+    # --- la unidad que salio del servicio y no se entrego (seccion 107)
+    #
+    # El fin del dia ya no la frena; lo que la reclama es esto. Grave
+    # mientras siga abierta: el cierre no sale a finanzas con una
+    # camioneta de la que nadie sabe como volvio. La salida, cuando las
+    # fotos ya no se pueden tomar, es registrarla sin revision con la
+    # razon --y entonces se dice, informativo, quien lo decidio--.
+    from app import entregas
+    for pendiente in entregas.del_servicio(db, servicio_id, ahora).values():
+        if pendiente["cerrada_en"] is None:
+            observaciones.append({
+                "nivel": GRAVE, "asunto": "Unidad sin entregar",
+                "clave": "entrega_pendiente",
+                "datos": {"placa": pendiente["placa"],
+                          "persona": pendiente["persona"],
+                          "limite": pendiente["limite"],
+                          "vencido": pendiente["vencido"],
+                          "entrega_id": pendiente["entrega_id"]},
+                "mensaje": (f"La unidad {pendiente['placa']} salio del "
+                            f"servicio y no tiene su revision de entrega "
+                            f"(responde {pendiente['persona']})"),
+                "accion": ("Que la entregue con las cinco fotos desde su "
+                           "app. Si ya no se puede, registrala como "
+                           "entregada sin revision, con la razon, desde la "
+                           "revision de la unidad en esta ficha.")})
+        elif pendiente["sin_revision"]:
+            observaciones.append({
+                "nivel": INFO, "asunto": "Entregada sin revision",
+                "clave": "entrega_sin_revision",
+                "datos": {"placa": pendiente["placa"],
+                          "quien": pendiente["justificada_por"],
+                          "justificacion": pendiente["justificacion"]},
+                "mensaje": (f"La unidad {pendiente['placa']} se dio por "
+                            f"entregada sin revision"
+                            f" ({pendiente['justificada_por']}): "
+                            f"{pendiente['justificacion']}"),
+                "accion": "No hay fotos de como volvio; queda escrito quien "
+                          "lo decidio y por que."})
+
     # --- viaticos que nadie cerro
     #
     # Va aqui y es grave por dos razones. La primera es del dinero: el

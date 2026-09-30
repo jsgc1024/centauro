@@ -1163,6 +1163,8 @@ prueba que más sirve.
 
 ## 18. El candado: la unidad no se suelta sin revisar
 
+*(Quitado en la sección 107, por decisión de Salvador del 30 de septiembre: el fin es cuando el ejecutivo corta y la entrega queda pendiente después, con sus 24 horas.)*
+
 Salvador eligió (18 sep) el **candado duro en el fin de servicio**, sobre
 dos alternativas más suaves. El razonamiento que descartó la más cómoda
 —frenar al cerrar el servicio, en la consola— vale escribirlo, porque es
@@ -8113,6 +8115,84 @@ confirmación y sus textos piden confirmar de nuevo), `routers/campo.py`
 `web/cotizacion.js`, `web/accesos.js`, `web/catalogos_pantalla.js`,
 `web/estilo.css`, `web/idioma.js` (bloque `seccion 106`). Pruebas:
 `tests/test_revision_106_casos.py` (8).
+
+## 107. El fin es cuando el ejecutivo corta; la unidad se entrega después
+
+Decisión de Salvador (30 sep), al ver el punto 8 de la sección 106: «el
+servicio debe terminar al momento que el ejecutivo corta el servicio.
+Una vez que da término, empiezan a correr las 24 horas para cerrar
+gastos y en ese lapso aparece el proceso de entrega de unidad. El tiempo
+para desde que el cliente dice "hasta aquí me dejas"; lo que tarde el
+conductor en llegar a la oficina y entregar la unidad es otro proceso
+que no debe afectar los tiempos del día del servicio». Sin candado
+duro.
+
+Esto quita el candado del 18 de septiembre (sección 18: no había fin de
+servicio con una unidad que hoy deja el servicio y sin su revisión de
+entrega). Se puso ahí para que las fotos de la entrega no se quedaran
+sin tomar, pero quedó donde se cortan las horas, y eso son dos cosas
+distintas: obligaba a marcar el fin desde la oficina —y el trayecto se
+cobraba como servicio— o a topar con el rechazo con el cliente todavía
+en el coche, que fue lo que le pasó a Alberto con la 19J120. El punto 8
+de la 106, que ponía la entrega antes del fin, queda sin efecto.
+
+**Lo que cambia:**
+
+- **El fin se marca siempre que toque**, con o sin unidad por entregar.
+  Ahí se cierran las horas del día (`fin_real`); nada de lo que pase
+  después cuenta como servicio. El servidor ya no rechaza el fin por la
+  unidad.
+- **Con el fin nace la entrega pendiente** (`entrega_pendiente`, una por
+  unidad y servicio): la unidad que ese día deja el servicio y no tiene
+  su revisión de entrega, con quién responde por ella —el que la traía
+  asignada ese día o, con una sola unidad, quien marcó el fin— y su
+  plazo: 24 horas desde el fin, las mismas de los viáticos. Nace también
+  cuando la central cierra el día a mano o cuando el día termina por
+  cancelación (ahí el plazo corre desde la firma, como el del cierre).
+- **La app** la pone arriba de todo, grande y con el mismo reloj de los
+  viáticos («vence hoy a las 19:55 · te quedan 18 h»), hasta que el
+  conductor haga la revisión de entrega desde `#/revision`; si la
+  unidad nunca se revisó al recibirla, lo manda con su consultor. Al
+  marcar el fin le llega el aviso al teléfono con la placa y hasta
+  cuándo; durante el día, la tarjeta dice desde la mañana que hoy esa
+  unidad deja el servicio y que la entrega va después del fin.
+- **La central** ve «Unidades por entregar» en su tablero, después del
+  camino y antes de mañana: placa, servicio, quién responde, desde
+  cuándo y cuándo vence; la vencida en rojo.
+- **Al vencer**, una sola vez: aviso al teléfono de la persona; correo y
+  teléfono al consultor titular y a dirección de operaciones del país.
+  Va en la misma vuelta de cinco minutos de `cierre.avanzar`.
+- **El cierre la reclama**: el revisor la pone como punto por corregir
+  («Unidad sin entregar», grave) mientras siga abierta, así que el
+  servicio no se manda a finanzas con una camioneta de la que nadie sabe
+  cómo volvió. La salida, cuando las fotos ya no se pueden tomar, es
+  **Registrar entrega sin revisión**, con la razón, desde la ficha del
+  servicio (revisión de la unidad) o desde la central: la registra el
+  consultor del servicio o quien corrige marcas; queda quién y por qué,
+  la pastilla dice «Entregada sin revisión» y el revisor lo deja como
+  informativo. No es una revisión y no se presenta como tal.
+- **La revisión de entrega** guardada desde la app cierra la pendiente.
+
+Por dentro: `models.EntregaPendiente` + migración `e9c1a3b5d7f9`;
+`entregas.py` (`abrir_al_terminar`, `cerrar_con_revision`,
+`registrar_sin_revision`, `pendientes_de`, `abiertas`, `del_servicio`,
+`avisar_vencidas`); `operacion.registrar_hito` sin el candado y abriendo
+la entrega con el fin, `_abrir_entregas_del_dia` en `cerrar_a_mano` y
+`terminar_por_cancelacion`; `routers/campo.py` (`mi-dia` con
+`entregas_pendientes`, `POST /campo/revisiones` cierra la pendiente);
+`routers/operacion.py` (`GET /operacion/entregas-pendientes`, `POST
+/operacion/entregas-pendientes/{id}/sin-revision`);
+`routers/servicios.py` (`revisiones` con `entrega_pendiente` por
+unidad); `revisor.py` (`entrega_pendiente` grave, `entrega_sin_revision`
+informativa); `celery_app.py` (`cierre.avanzar` llama
+`entregas.avisar_vencidas`); `push.py` y `textos_aviso.py` (textos
+`entrega_*` y `ent_*`); `web/campo/app.js` (`tarjetaEntrega`, sin
+`finDespues`), `web/central.js` (`bandaEntregas`), `web/servicio.js`
+(`entregaSinRevision`), `web/cierre.js`, `web/idioma.js` (bloque
+`seccion 107`); manual `02_camino` (paso 15) y `07_pantallas` es/pt;
+`sw.js` v21. Pruebas: `tests/test_revision_107_entrega.py` (9);
+`tests/test_revision_candado.py` se retira —era el candado— y
+`ayudas.marcar_fin` entrega la unidad que el fin dejó pendiente.
 
 ## 14. Lo que falta
 

@@ -2419,6 +2419,7 @@ def cambiar_titular(servicio_id: int, datos: s.TitularIn,
             summary="Como se recibio y como se entrego cada unidad")
 def revisiones_del_servicio(servicio_id: int, fotos: bool = False,
                             db: Session = Depends(get_db),
+                            ahora: datetime | None = None,
                             usuario: m.Usuario = Depends(auth.usuario_actual)):
     """Lo que la consola necesita para resolver un reclamo de dano.
 
@@ -2485,8 +2486,23 @@ def revisiones_del_servicio(servicio_id: int, fotos: bool = False,
                       for f in r.fotos],
         }
 
+    # La entrega pendiente (seccion 107): la unidad que salio con el fin
+    # del dia y no tiene su revision de entrega, con su reloj; y si se
+    # dio por entregada sin revision, quien y por que. Sale aunque no
+    # haya ninguna revision todavia: es justo el renglon que hay que
+    # atender.
+    from app import entregas
+    pendientes = entregas.del_servicio(db, servicio.id, reloj.de_prueba(ahora))
+    for vehiculo_id, pendiente in pendientes.items():
+        fila = por_unidad.setdefault(vehiculo_id, {
+            "vehiculo_id": vehiculo_id, "placa": pendiente["placa"],
+            "recibe": None, "entrega": None,
+        })
+        fila["entrega_pendiente"] = pendiente
+
     for fila in por_unidad.values():
         entrada, salida = fila["recibe"], fila["entrega"]
+        fila.setdefault("entrega_pendiente", None)
         # El renglon que hay que atender: volvio con un golpe que no
         # traia. Se calcula aqui y no en la pantalla porque es la
         # pregunta que se hace al abrir, no un detalle que se busca.

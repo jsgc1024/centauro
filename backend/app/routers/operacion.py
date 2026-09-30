@@ -475,6 +475,37 @@ def dias_sin_cerrar(db: Session = Depends(get_db),
             "horas_de_gracia": motor.HORAS_DE_GRACIA}
 
 
+@router.get("/entregas-pendientes",
+            summary="Las unidades que dejaron el servicio y siguen sin entregar")
+def entregas_pendientes(db: Session = Depends(get_db),
+                        ahora: datetime | None = None,
+                        _=Depends(VER)):
+    """Seccion 107: cada renglon es una camioneta que salio del servicio
+    con el fin del dia y todavia no tiene su revision de entrega, con
+    quien responde por ella y cuanto le queda de sus 24 horas. Las
+    vencidas primero."""
+    from app import entregas
+    filas = entregas.abiertas(db, reloj.de_prueba(ahora))
+    return {"entregas": filas, "cuantos": len(filas),
+            "vencidas": len([f for f in filas if f["vencido"]]),
+            "horas": entregas.HORAS_PARA_ENTREGAR}
+
+
+@router.post("/entregas-pendientes/{entrega_id}/sin-revision",
+             summary="Dar la unidad por entregada sin su revision, con la razon")
+def entrega_sin_revision(entrega_id: int, datos: s.ReabrirDiaIn,
+                         db: Session = Depends(get_db),
+                         ahora: datetime | None = None,
+                         usuario: m.Usuario = Depends(auth.usuario_actual)):
+    """La salida cuando las fotos ya no se pueden tomar. La registra el
+    consultor del servicio o quien corrige marcas (la central); queda
+    quien y por que, y no es una revision: la ficha lo dice asi."""
+    from app import entregas
+    return entregas.registrar_sin_revision(db, entrega_id, usuario,
+                                           datos.justificacion,
+                                           reloj.de_prueba(ahora))
+
+
 @router.post("/jornadas/{jornada_id}/cerrar-a-mano",
              summary="La central cierra un dia que nadie marco")
 def cerrar_a_mano(jornada_id: int, datos: s.CierreAManoIn,

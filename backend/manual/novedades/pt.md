@@ -2,6 +2,9 @@
 
 O que há de novo em cada atualização, escrito para quem usa o sistema. A mais nova fica em cima.
 
+## 107 · 2026-09-30 · O fim é quando o executivo corta; a unidade se entrega depois
+O fim do serviço se marca quando o executivo corta —«até aqui você me deixa»— e aí se fecham as horas do dia, com ou sem unidade por entregar; levar a unidade ao escritório já não conta como serviço nem trava o fim. Com o fim nasce a entrega pendente: 24 horas, as mesmas das diárias. O app a põe no alto com o seu relógio até que o motorista faça a revisão de entrega; o telefone lembra; a central a vê em «Unidades por entregar»; ao vencer, avisa o consultor e a direção de operações; e o fechamento cobra até que seja entregue ou o consultor ou a central a registrem como entregue sem revisão, com o motivo. Fica sem efeito o que a seção 106 punha no ponto 8 (a entrega antes do fim).
+
 ## 106 · 2026-09-30 · Os casos reportados pelo Connect
 Os seis casos abertos em Manual do sistema → Casos, resolvidos. Se a hora ou a data de um dia muda depois que alguém confirmou ciente, a confirmação é pedida de novo: a pessoa recebe o aviso e a central a vê pendente com o motivo. No app, o dia traz o telefone do executivo e o hotel onde ele se hospeda (junto do hospital mais próximo e da agenda, que já apareciam quando cadastrados), e com a unidade por entregar a entrega vem primeiro e «Terminar o serviço» aparece assim que ela é entregue. No console, os campos obrigatórios levam asterisco nos cadastros do eventual e do implantado, na cotação, no incidente, na troca de titular, em cancelar, em acessos e em catálogos; e o quadro sem foto da ficha diz de onde sai a foto: a da unidade é a da sua categoria, em Catálogos, e a da pessoa vem do Odoo. O prazo para comprovar diárias já aparecia em Pagamentos: corre quando o serviço termina.
 

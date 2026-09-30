@@ -42,7 +42,7 @@ O que espera o visto do diretor de operações —os incidentes por autorizar, a
 ## Operações CI
 
 ### Monitoramento {#central}
-A central: o que precisa de atenção agora —um pânico, um bloqueador de sinal, uma equipe calada— e o que precisa ser resolvido antes do corte da véspera. Aqui se registram à mão as marcações que não chegaram, com a sua justificativa.
+A central: o que precisa de atenção agora —um pânico, um bloqueador de sinal, uma equipe calada—, as unidades que saíram do serviço e continuam por entregar, com quem responde e quanto lhes resta, e o que precisa ser resolvido antes do corte da véspera. Aqui se registram à mão as marcações que não chegaram, com a sua justificativa, e a entrega sem revisão quando as fotos já não podem ser tiradas.
 
 ### Código {#codigo}
 O código de quatro dígitos que se dita por telefone ao pessoal de campo que não consegue entrar no app. Vale 10 minutos.
@@ -71,4 +71,4 @@ O que o sistema usa para calcular e para montar a folha do serviço: feriados, h
 Este manual: como funciona cada peça, o que fazer quando algo trava, o estado do sistema ao vivo e os casos: as falhas reportadas para revisar e o que já foi resolvido. Enquanto dura a mudança para o Connect, também [o arranque](#/manual/arranque): o que falta para operar tudo aqui e desligar o OVH, revisando-se sozinho, com de quem é cada coisa e onde se resolve.
 
 ## O app de campo {#app}
-EP Connect, no telefone do pessoal de segurança: o seu dia e os seguintes —com o telefone do executivo, o hotel onde ele se hospeda, o hospital mais próximo e a agenda do dia, quando estão cadastrados—, a confirmação da véspera (pedida de novo se a hora muda), as suas marcações —chegada, contato e fim; com a unidade por entregar, primeiro a entrega e depois o fim—, as suas diárias e comprovantes com o seu prazo, a revisão da unidade ao recebê-la e ao entregá-la, e o botão de pânico. Em **Eu** se ligam os avisos do telefone, se manda um aviso de teste e se reporta uma falha do app, com uma foto se for preciso.
+EP Connect, no telefone do pessoal de segurança: o seu dia e os seguintes —com o telefone do executivo, o hotel onde ele se hospeda, o hospital mais próximo e a agenda do dia, quando estão cadastrados—, a confirmação da véspera (pedida de novo se a hora muda), as suas marcações —chegada, contato e fim, que se marca quando o executivo corta—, a unidade por entregar depois do fim, no alto e com o seu relógio de 24 horas, as suas diárias e comprovantes com o seu prazo, a revisão da unidade ao recebê-la e ao entregá-la, e o botão de pânico. Em **Eu** se ligam os avisos do telefone, se manda um aviso de teste e se reporta uma falha do app, com uma foto se for preciso.

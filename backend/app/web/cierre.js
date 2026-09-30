@@ -567,6 +567,8 @@ const ASUNTOS = {
   "Sin precio en la lista": "cie_asu_sin_precio",
   "Cobro por autorizar": "cie_asu_cobro",
   "Dia cancelado": "cie_asu_dia_cancelado",
+  "Unidad sin entregar": "cie_asu_entrega",
+  "Entregada sin revision": "ent_pastilla_sin_revision",
 };
 
 /* Como se llama cada precio de los terminos del implantado, para decir
@@ -791,6 +793,19 @@ function paraRevisar(o) {
                mensaje: reemplazar(t("cie_dc_mensaje"),
                                    { f: fecha(d.fecha), e: d.equipo || "", q: d.que || "" }),
                accion: t(d.completo ? "cie_dc_completo" : "cie_dc_no_se_cobra") };
+    /* La unidad que salio del servicio y no se entrego (seccion 107):
+       grave hasta que tenga su revision o alguien la registre sin ella. */
+    case "entrega_pendiente":
+      return { asunto: t("cie_asu_entrega"),
+               mensaje: reemplazar(t("cie_o_entrega_pendiente"),
+                                   { placa: d.placa || "?", persona: d.persona || "—" }),
+               accion: "" };
+    case "entrega_sin_revision":
+      return { asunto: t("ent_pastilla_sin_revision"),
+               mensaje: reemplazar(t("cie_o_entrega_sin_revision"),
+                                   { placa: d.placa || "?", quien: d.quien || "—",
+                                     j: d.justificacion || "" }),
+               accion: "" };
     /* Alguien fue sin rol, o con un rol o una unidad que la lista del
        cliente no cotiza (seccion 101): antes la revision reventaba con
        un 400 y aqui se pintaba el texto crudo, sin que hacer. */

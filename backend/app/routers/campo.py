@@ -29,6 +29,7 @@ from app import senal as senal_motor
 from app import trayecto
 from app import tasksheet
 from app import devoluciones as devoluciones_motor
+from app import entregas
 from app import operacion
 from app import push
 from app import viaticos as viaticos_motor
@@ -447,6 +448,12 @@ def mi_dia(db: Session = Depends(get_db), ahora: datetime | None = None,
         # A quien relevaron hoy: su dia ya no es suyo, y la app lo dice
         # en vez de seguir ofreciendole el fin de servicio (seccion 99).
         "relevado_hoy": _relevos_de(db, usuario.persona_id, hoy),
+        # Lo que dejo el fin del dia por entregar (seccion 107): la
+        # unidad que hay que llevar a la oficina, con su reloj de 24
+        # horas, hasta que tenga su revision de entrega. Vive arriba de
+        # todo porque es lo unico que queda por hacer del dia cerrado.
+        "entregas_pendientes": entregas.pendientes_de(
+            db, usuario.persona_id, ahora),
         "proximos": [{
             "jornada_id": j.id,
             "fecha": j.fecha.isoformat(),
@@ -1552,11 +1559,14 @@ def revisar(datos: RevisionIn, db: Session = Depends(get_db),
             nota=f.nota, momento=ahora,
             lat=f.lat if f.lat is not None else datos.lat,
             lon=f.lon if f.lon is not None else datos.lon))
+    # La entrega guardada cierra la entrega pendiente de esa unidad
+    # (seccion 107): es el proceso que el fin del dia dejo abierto.
+    entregada = entregas.cerrar_con_revision(db, revision, ahora)
     db.commit()
     db.refresh(revision)
 
     salida = {"resultado": "revision guardada", "revision_id": revision.id,
-              "fotos": len(datos.fotos)}
+              "fotos": len(datos.fotos), "entrega_pendiente_cerrada": entregada}
 
     # Decision de Salvador (19 sep): un dano nuevo avisa al consultor y
     # nada mas. Ni alerta que cerrar, ni incidencia automatica --ni

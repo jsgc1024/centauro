@@ -84,9 +84,15 @@ async function pintar(zona) {
      unico rato en que todavia se puede hacer algo. Reponer a alguien
      toma hora y media. */
   const camino = await bandaCamino();
+  /* Las unidades que salieron del servicio y siguen sin entregar
+     (seccion 107): van despues del camino y antes de manana, porque
+     tienen reloj --24 horas desde el fin-- y la vencida ya es un
+     problema de hoy. */
+  const entregas = await bandaEntregas(zona);
   zona.replaceChildren(
     bandaRoto(d.roto, zona),
     ...(camino ? [camino] : []),
+    ...(entregas ? [entregas] : []),
     bandaManana(d),
     bandaPulso(d.pulso),
     bandaSemana(d.semana),
@@ -1178,6 +1184,83 @@ export function detener() {
    convertirse en un reclamo.
 
    Si no hay nada, la banda no existe. */
+
+/* ------------------------------------------- las unidades por entregar
+
+   Seccion 107. El fin del dia ya no espera a la entrega: la camioneta
+   se entrega despues, en la oficina, con sus cinco fotos, y mientras
+   tanto esta aqui con quien responde por ella y cuanto le queda. La
+   vencida sale en rojo y ya aviso al consultor y a direccion de
+   operaciones. "Registrar entrega sin revision" es la salida cuando las
+   fotos ya no se pueden tomar: no es una revision, y queda quien y por
+   que. */
+
+async function bandaEntregas(zona) {
+  let d;
+  try { d = await api.get("/operacion/entregas-pendientes"); }
+  catch { return null; }
+  if (!d.cuantos) return null;
+
+  const caja = h("div", { clase: "tarjeta" },
+    h("div", { clase: "encabeza-revision" },
+      conAyuda("h3", t("ent_titulo"), "ay_cen_entregas"),
+      h("span", { clase: `etiqueta ${d.vencidas ? "grave" : "alerta"}` },
+        t("ent_cuantas").replace("{n}", d.cuantos))),
+    h("p", { clase: "sub" }, t("ent_sub").replace("{h}", d.horas)));
+
+  for (const e of d.entregas) caja.append(renglonEntrega(e, zona));
+  return caja;
+}
+
+function renglonEntrega(e, zona) {
+  const cuando = `${fecha(e.limite.slice(0, 10))} ${hora(e.limite)}`;
+  const cuerpo = h("div", { clase: "linea-sin-cerrar" },
+    h("div", {},
+      h("a", { href: `#/servicio/${e.servicio_id}` }, h("b", {}, e.placa || "—")),
+      h("span", { clase: "chico gris" }, ` · ${e.folio || ""}`),
+      h("div", { clase: "chico gris" },
+        `${t("ent_responde").replace("{quien}", e.persona || "—")} · `
+        + t("ent_desde").replace("{f}", `${fecha(e.abierta_en.slice(0, 10))} ${hora(e.abierta_en)}`))),
+    h("div", { clase: "chico" },
+      e.vencido
+        ? h("span", { clase: "etiqueta grave" },
+            t("ent_vencida").replace("{f}", cuando))
+        : h("span", { clase: "etiqueta alerta" },
+            t("ent_vence").replace("{f}", cuando))));
+
+  const zonaForm = h("div", {});
+  const boton = h("button", { clase: "claro chico", onclick: () => {
+    if (zonaForm.firstChild) {
+      zonaForm.replaceChildren();
+      boton.textContent = t("ent_sin_revision");
+      return;
+    }
+    zonaForm.append(formEntregaSinRevision(e, zona));
+    boton.textContent = t("sc_cancelar");
+  } }, t("ent_sin_revision"));
+
+  return h("div", { clase: "renglon-sin-cerrar" },
+    h("div", { clase: "encabeza-revision" }, cuerpo, corrige() ? boton : null),
+    zonaForm);
+}
+
+function formEntregaSinRevision(e, zona) {
+  const razon = h("textarea", { rows: 2, maxlength: 600 });
+  const guardar = h("button", { clase: "chico" }, t("ent_registrar"));
+  guardar.onclick = async () => {
+    guardar.disabled = true;
+    try {
+      await api.post(`/operacion/entregas-pendientes/${e.entrega_id}/sin-revision`,
+                     { justificacion: razon.value });
+      mensaje(t("ent_registrada"));
+      await pintar(zona);
+    } catch (err) { mensaje(err.message, "grave"); guardar.disabled = false; }
+  };
+  return h("div", { clase: "marco-cierre" },
+    h("p", { clase: "chico gris", style: "margin:6px 0" }, t("ent_sin_revision_pie")),
+    campo(t("ent_justificacion"), razon, { obligatorio: true }),
+    guardar);
+}
 
 async function bandaSinCerrar(zona) {
   let d;

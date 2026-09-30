@@ -128,18 +128,34 @@ def revisar_unidad(cliente, headers_personal, servicio_id, vehiculo_id,
 
 
 def marcar_fin(cliente, headers_personal, jornada_id, cuando):
-    """Cierra el dia, devolviendo la unidad si el servidor la reclama.
+    """Cierra el dia y entrega la unidad que ese fin dejo pendiente.
 
-    Desde el 18 de septiembre no hay fin de servicio con una unidad que
-    hoy deja el servicio y no tiene su revision de entrega.
+    Del 18 al 30 de septiembre no habia fin de servicio con una unidad
+    que hoy deja el servicio y no tiene su revision de entrega: el
+    servidor contestaba 409 y aqui se hacian las revisiones que pedia.
+    Desde la seccion 107 el fin entra siempre --el servicio termina
+    cuando el ejecutivo corta-- y la entrega queda pendiente despues,
+    con sus 24 horas; un dia completo de estas pruebas la entrega en
+    ese momento, que es lo que hace el conductor al llegar a la oficina.
 
-    Se hace asi --intentar, y resolver lo que el servidor reclame-- y no
-    revisando siempre por si acaso: asi estas pruebas no fabrican
-    revisiones donde la operacion real no las tendria, y el dia que el
-    candado cambie de forma, esto sigue diciendo la verdad.
+    Se hace asi --cerrar, y entregar lo que el servidor diga que quedo
+    pendiente-- y no revisando siempre por si acaso: asi estas pruebas
+    no fabrican revisiones donde la operacion real no las tendria, y el
+    dia que la regla cambie de forma, esto sigue diciendo la verdad.
     """
     cierre = marcar(cliente, headers_personal, jornada_id, "fin_servicio",
                     cuando)
+    if cierre.status_code == 200:
+        for unidad in cierre.json().get("entregas_pendientes") or []:
+            if unidad["sin_recepcion"]:
+                r = revisar_unidad(cliente, headers_personal,
+                                   unidad["servicio_id"], unidad["vehiculo_id"],
+                                   "recibe", KM_RECEPCION)
+                assert r.status_code == 201, f"no se pudo recibir la unidad: {r.text}"
+            r = revisar_unidad(cliente, headers_personal, unidad["servicio_id"],
+                               unidad["vehiculo_id"], "entrega", KM_ENTREGA)
+            assert r.status_code == 201, f"no se pudo entregar la unidad: {r.text}"
+        return cierre
     if cierre.status_code != 409:
         return cierre
     detalle = cierre.json().get("detail")
@@ -167,15 +183,11 @@ def ejecutar_jornada(cliente, headers_personal, jornada_dict, retraso_minutos=0,
                      horas_extra=0):
     """Marca la secuencia completa: llegada, contacto y fin.
 
-    Desde el 18 de septiembre, un dia completo incluye devolver la unidad:
-    no hay fin de servicio con una unidad que hoy deja el servicio y no
-    tiene su revision de entrega. Si el candado muerde, se hacen las
-    revisiones que pide y se vuelve a marcar.
-
-    Se hace asi --intentar, y resolver lo que el servidor reclame-- y no
-    revisando siempre por si acaso, para que estas pruebas no fabriquen
-    revisiones donde la operacion real no las tendria. Si manana el
-    candado cambia de forma, esto sigue diciendo la verdad.
+    Un dia completo incluye devolver la unidad: desde la seccion 107 el
+    fin la deja pendiente (24 horas) y `marcar_fin` la entrega ahi
+    mismo, como el conductor al llegar a la oficina. Se entrega solo lo
+    que el servidor diga que quedo pendiente, para que estas pruebas no
+    fabriquen revisiones donde la operacion real no las tendria.
     """
     inicio = datetime.fromisoformat(jornada_dict["inicio_programado"])
     fin = datetime.fromisoformat(jornada_dict["fin_programado"])

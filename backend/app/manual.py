@@ -615,6 +615,9 @@ AREA_DE_ARCHIVO = {
     "hoja_implantado.py": "implantados", "cierre_mes.py": "implantados",
     "cierre.py": "cierre", "revision.py": "cierre", "revisor.py": "cierre",
     "historial.py": "cierre", "facturacion.py": "cierre",
+    # La entrega de la unidad despues del fin (seccion 107): sus "no se
+    # puede" son del cierre, que es quien la reclama.
+    "entregas.py": "cierre",
     # El cierre y las encuestas ganaron sus "que hacer" (seccion 101):
     # justificar una desviacion, mandar la encuesta que falta.
     "routers/cierre.py": "cierre", "encuestas.py": "cierre",

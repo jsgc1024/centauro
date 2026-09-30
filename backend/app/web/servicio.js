@@ -3916,6 +3916,39 @@ const DANOS_ES = {
   mecanico: t("srv_dano_mecanico"), otro: t("srv_dano_otro"),
 };
 
+/* Darla por entregada sin revision, con la razon (seccion 107). Solo
+   cuando las fotos ya no se pueden tomar: no es una revision, y queda
+   quien lo decidio y por que. */
+function entregaSinRevision(pend) {
+  const zona = h("div", {});
+  const boton = h("button", { clase: "claro chico", style: "margin-top:6px" },
+    t("ent_sin_revision"));
+  boton.onclick = () => {
+    if (zona.firstChild) {
+      zona.replaceChildren();
+      boton.textContent = t("ent_sin_revision");
+      return;
+    }
+    const razon = h("textarea", { rows: 2, maxlength: 600 });
+    const guardar = h("button", { clase: "chico" }, t("ent_registrar"));
+    guardar.onclick = async () => {
+      guardar.disabled = true;
+      try {
+        await api.post(`/operacion/entregas-pendientes/${pend.entrega_id}/sin-revision`,
+                       { justificacion: razon.value });
+        mensaje(t("ent_registrada"));
+        setTimeout(() => location.reload(), 800);
+      } catch (err) { mensaje(err.message, "grave"); guardar.disabled = false; }
+    };
+    zona.append(h("div", { style: "margin-top:8px" },
+      h("p", { clase: "chico gris", style: "margin:0 0 6px" }, t("ent_sin_revision_pie")),
+      campo(t("ent_justificacion"), razon, { obligatorio: true }),
+      guardar));
+    boton.textContent = t("sc_cancelar");
+  };
+  return h("div", {}, boton, zona);
+}
+
 async function bloqueRevisiones(servicio) {
   const caja = h("div", { clase: "tarjeta" },
     conAyuda("h3", t("srv_revision"), "ay_srv_revision"));
@@ -3938,14 +3971,41 @@ async function bloqueRevisiones(servicio) {
 }
 
 function tarjetaRevision(u, servicio) {
-  const bloque = h("div", { clase: "tarjeta lisa", style: "margin:0 0 14px" },
-    h("div", { clase: "fila separa" },
-      h("b", {}, u.placa || t("srv_sin_placa")),
-      u.completa
+  /* La entrega pendiente (seccion 107): la unidad salio con el fin del
+     dia y su revision de entrega sigue sin hacerse. Manda sobre las
+     otras pastillas mientras este abierta, y la que se dio por
+     entregada sin revision se dice asi, con quien y por que. */
+  const pend = u.entrega_pendiente;
+  const abierta = pend && !pend.cerrada_en;
+  const pastilla = abierta
+    ? h("span", { clase: `etiqueta ${pend.vencido ? "grave" : "alerta"}` },
+        t(pend.vencido ? "ent_pastilla_vencida" : "ent_pastilla_pendiente"))
+    : pend && pend.sin_revision
+      ? h("span", { clase: "etiqueta alerta" }, t("ent_pastilla_sin_revision"))
+      : u.completa
         ? h("span", { clase: "pastilla ok" }, t("srv_recibida_entregada"))
         : u.recibe
           ? h("span", { clase: "pastilla alerta" }, t("srv_en_manos"))
-          : h("span", { clase: "pastilla alerta" }, t("srv_sin_revisar"))));
+          : h("span", { clase: "pastilla alerta" }, t("srv_sin_revisar"));
+  const bloque = h("div", { clase: "tarjeta lisa", style: "margin:0 0 14px" },
+    h("div", { clase: "fila separa" },
+      h("b", {}, u.placa || t("srv_sin_placa")), pastilla));
+
+  if (abierta) {
+    bloque.append(h("p", { clase: "chico" },
+      `${t("ent_responde").replace("{quien}", pend.persona || "—")} · `
+      + t(pend.vencido ? "ent_vencida" : "ent_vence")
+          .replace("{f}", `${fecha(pend.limite.slice(0, 10))} ${hora(pend.limite)}`)));
+    const puede = tiene(sesion.usuario, "operacion.corregir")
+      || (sesion.usuario && sesion.usuario.persona_id === servicio.consultor_id);
+    if (puede) bloque.append(entregaSinRevision(pend));
+  } else if (pend && pend.sin_revision) {
+    bloque.append(h("p", { clase: "chico gris" },
+      t("ent_sin_revision_de")
+        .replace("{quien}", pend.justificada_por || "—")
+        .replace("{f}", `${fecha((pend.cerrada_en || "").slice(0, 10))} ${hora(pend.cerrada_en)}`)
+        .replace("{j}", pend.justificacion || "")));
+  }
 
   /* Las dos banderas, arriba y sin abrir nada. Son la pregunta que uno
      se hace al llegar aqui; tener que desplegar las fotos para saber si

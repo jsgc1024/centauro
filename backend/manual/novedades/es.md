@@ -2,6 +2,9 @@
 
 Lo nuevo de cada actualización, escrito para quien usa el sistema. La más nueva va arriba.
 
+## 107 · 2026-09-30 · El fin es cuando el ejecutivo corta; la unidad se entrega después
+El fin del servicio se marca cuando el ejecutivo corta —«hasta aquí me dejas»— y ahí se cierran las horas del día, con o sin unidad por entregar; llevar la unidad a la oficina ya no cuenta como servicio ni frena el fin. Con el fin nace la entrega pendiente: 24 horas, las mismas de los viáticos. La app la pone arriba con su reloj hasta que el conductor haga la revisión de entrega; el teléfono se la recuerda; la central la ve en «Unidades por entregar»; al vencer, avisa al consultor y a dirección de operaciones; y el cierre la reclama hasta que se entregue o el consultor o la central la registren como entregada sin revisión, con la razón. Queda sin efecto lo que la sección 106 ponía en el punto 8 (la entrega antes del fin).
+
 ## 106 · 2026-09-30 · Los casos reportados desde Connect
 Los seis casos abiertos en Manual del sistema → Casos, resueltos. Si cambia la hora o la fecha de un día después de que alguien confirmó de enterado, la confirmación se vuelve a pedir: le llega el aviso y la central lo ve pendiente con la razón. En la app, el día trae el teléfono del ejecutivo y el hotel donde se hospeda (junto al hospital más cercano y la agenda, que ya estaban cuando se capturan), y con la unidad por entregar la entrega va primero y «Terminar el servicio» aparece en cuanto se entrega. En la consola, los campos obligatorios llevan asterisco en las altas del eventual y del implantado, la cotización, la incidencia, el cambio de titular, cancelar, accesos y catálogos; y el cuadro sin foto de la ficha dice de dónde sale la foto: la de la unidad es la de su categoría, en Catálogos, y la de la persona viene de Odoo. El plazo para comprobar viáticos ya se veía en Pagos: corre cuando termina el servicio.
 

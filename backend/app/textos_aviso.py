@@ -283,6 +283,20 @@ TEXTOS = {
                                    "the sign-off; head of operations can give "
                                    "it as cover."),
         "cie_consultor": "Consultant",
+        # Section 107: the unit hand-back after the day's end.
+        "ent_venc_asunto": "{folio}: unit {placa} not handed back in time",
+        "ent_venc_cuerpo": ("{quien} did not hand back unit {placa} of {folio} "
+                            "with its inspection by {fecha} at {hora}. It is "
+                            "still pending: the service close-out flags it "
+                            "until it is handed back or recorded as handed "
+                            "back without inspection."),
+        "ent_venc_que_hacer": ("Have the driver hand it back with the five "
+                               "photos from the app. If that is no longer "
+                               "possible, record it as handed back without "
+                               "inspection from the unit review in the "
+                               "service, with the reason."),
+        "ent_unidad": "Unit",
+        "ent_quien": "Responsible",
     },
     "es": {
         "equipo": "Equipo",
@@ -513,6 +527,20 @@ TEXTOS = {
                                    "bueno; dirección de operaciones puede "
                                    "darlo como cobertura."),
         "cie_consultor": "Consultor",
+        # Seccion 107: la entrega de la unidad despues del fin del dia.
+        "ent_venc_asunto": "{folio}: la unidad {placa} no se entregó a tiempo",
+        "ent_venc_cuerpo": ("{quien} no entregó la unidad {placa} de {folio} "
+                            "con su revisión antes del {fecha} a las {hora}. "
+                            "Sigue por entregar: el cierre del servicio la "
+                            "reclama hasta que se entregue o se registre "
+                            "como entregada sin revisión."),
+        "ent_venc_que_hacer": ("Que el conductor la entregue con las cinco "
+                               "fotos desde su app. Si ya no se puede, "
+                               "regístrala como entregada sin revisión desde "
+                               "la revisión de la unidad en el servicio, con "
+                               "la razón."),
+        "ent_unidad": "Unidad",
+        "ent_quien": "Responsable",
     },
     "pt": {
         "equipo": "Equipe",
@@ -738,6 +766,18 @@ TEXTOS = {
                                    "a direção de operações pode dá-lo como "
                                    "cobertura."),
         "cie_consultor": "Consultor",
+        "ent_venc_asunto": "{folio}: a unidade {placa} não foi entregue no prazo",
+        "ent_venc_cuerpo": ("{quien} não entregou a unidade {placa} de {folio} "
+                            "com a sua revisão até {fecha} às {hora}. Continua "
+                            "por entregar: o fechamento do serviço cobra até "
+                            "que seja entregue ou registrada como entregue "
+                            "sem revisão."),
+        "ent_venc_que_hacer": ("Que o motorista a entregue com as cinco fotos "
+                               "pelo app. Se já não for possível, registre "
+                               "como entregue sem revisão na revisão da "
+                               "unidade do serviço, com o motivo."),
+        "ent_unidad": "Unidade",
+        "ent_quien": "Responsável",
     },
 }
 

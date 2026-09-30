@@ -42,7 +42,7 @@ Lo que espera la firma del director de operaciones —las incidencias por autori
 ## Operaciones CI
 
 ### Monitoreo {#central}
-La central: lo que hay que atender ahora —un pánico, un inhibidor, un equipo callado— y lo que hay que resolver antes del corte de la víspera. Aquí se registran a mano las marcas que no llegaron, con su justificación.
+La central: lo que hay que atender ahora —un pánico, un inhibidor, un equipo callado—, las unidades que salieron del servicio y siguen por entregar, con quién responde y cuánto les queda, y lo que hay que resolver antes del corte de la víspera. Aquí se registran a mano las marcas que no llegaron, con su justificación, y la entrega sin revisión cuando las fotos ya no se pueden tomar.
 
 ### Código {#codigo}
 El código de cuatro dígitos que se le dicta por teléfono al personal de campo que no puede entrar a la app. Vale 10 minutos.
@@ -71,4 +71,4 @@ Lo que el sistema usa para calcular y para armar la hoja del servicio: festivos,
 Este manual: cómo funciona cada pieza, qué hacer cuando algo se atora, el estado del sistema en vivo y los casos: las fallas reportadas por revisar y lo que ya se resolvió. Mientras dura el cambio a Connect, también [el arranque](#/manual/arranque): lo que falta para operar todo aquí y apagar OVH, revisándose solo, con de quién es cada cosa y dónde se arregla.
 
 ## La app de campo {#app}
-EP Connect, en el teléfono del personal de seguridad: su día y los que siguen —con el teléfono del ejecutivo, el hotel donde se hospeda, el hospital más cercano y la agenda del día, cuando están capturados—, la confirmación de la víspera (que se vuelve a pedir si cambia la hora), sus marcas —llegada, contacto y fin; con la unidad por entregar, primero la entrega y después el fin—, sus viáticos y comprobantes con su plazo, la revisión de la unidad al recibirla y al entregarla, y el botón de pánico. En **Yo** se encienden los avisos del teléfono, se manda un aviso de prueba y se reporta una falla de la app, con una foto si hace falta.
+EP Connect, en el teléfono del personal de seguridad: su día y los que siguen —con el teléfono del ejecutivo, el hotel donde se hospeda, el hospital más cercano y la agenda del día, cuando están capturados—, la confirmación de la víspera (que se vuelve a pedir si cambia la hora), sus marcas —llegada, contacto y fin, que se marca cuando el ejecutivo corta—, la unidad por entregar después del fin, arriba y con su reloj de 24 horas, sus viáticos y comprobantes con su plazo, la revisión de la unidad al recibirla y al entregarla, y el botón de pánico. En **Yo** se encienden los avisos del teléfono, se manda un aviso de prueba y se reporta una falla de la app, con una foto si hace falta.

@@ -5,8 +5,11 @@ Candados aprobados:
   1. Geocerca obligatoria en el punto de origen.
   2. Ventana de tiempo: si marca fuera de horario, lo revisa la central.
   3. Rastreo continuo durante el servicio (reportes de standby).
-  4. La unidad no se suelta sin revisar: no hay fin de servicio con una
-     unidad que hoy deja el servicio y no tiene su revision de entrega.
+  4. (Quitado en la seccion 107.) La unidad no se soltaba sin revisar:
+     no habia fin de servicio con una unidad que hoy deja el servicio y
+     no tiene su revision de entrega. Desde el 30 sep el fin es cuando
+     el ejecutivo corta, y la entrega queda pendiente con sus 24 horas
+     (`entregas.py`).
 """
 import logging
 import math
@@ -20,7 +23,6 @@ from app import correo_html
 from app import models as m
 from app.cierre import _horas_extra
 from app import horas_extra
-from app import revision
 from app import reloj
 from app import textos_aviso as ta
 
@@ -606,50 +608,22 @@ def registrar_hito(db: Session, jornada_id: int, persona_id: int,
                               "se puede cerrar desde la central."),
             })
 
-    # ---- La unidad no se suelta sin revisar
+    # ---- La unidad se entrega despues del fin, no antes
     #
-    # Decision de Salvador (18 sep): candado duro. Un candado que solo
-    # frenara al cerrar el servicio no salva nada --para entonces la
-    # camioneta cambio de manos hace dias y las fotos de ese momento ya
-    # no se pueden tomar--. El unico que sirve es el que muerde cuando la
-    # unidad deja de estar en sus manos, y eso pasa aqui.
-    #
-    # Muerde poco a proposito:
-    #   * solo en el ultimo dia de esa unidad en el servicio. Un
-    #     implantado con la misma camioneta veintidos dias se revisa dos
-    #     veces, no cuarenta y cuatro.
-    #   * solo a quien responde por ella. El escolta que va de copiloto
-    #     cierra su dia normal: si le pidieramos la revision de una
-    #     unidad que no puede firmar, quedaria trabado sin salida.
-    if tipo == m.TipoHito.FIN_SERVICIO:
-        faltan = revision.falta_entregar(db, jornada, persona_id)
-        if faltan:
-            placas = ", ".join(f["placa"] or "?" for f in faltan)
-            # Sin la recepcion no se puede guardar la entrega --no hay
-            # contra que comparar-- asi que ese caso no lo resuelve solo
-            # y el mensaje tiene que mandarlo con su consultor en vez de
-            # dejarlo dando vueltas en la app.
-            atorado = any(f["sin_recepcion"] for f in faltan)
-            raise HTTPException(409, {
-                "mensaje": (f"Antes de cerrar hay que revisar la unidad: "
-                            f"{placas}."),
-                "que_hacer": ("Habla con tu consultor: esa unidad nunca se "
-                              "reviso al recibirla, y sin eso no hay contra "
-                              "que comparar la entrega."
-                              if atorado else
-                              "Toma las cinco fotos de la entrega. Es el "
-                              "ultimo momento en que se puede probar como "
-                              "la devolviste; manana ya no."),
-                # La pantalla necesita a donde mandarlo, no solo que
-                # le falta: el aviso y el boton son la misma cosa.
-                "servicio_id": jornada.equipo.servicio_id,
-                "unidades": faltan,
-            })
+    # Hasta la seccion 106 aqui habia un candado duro (18 sep): sin
+    # revision de entrega no habia fin de servicio. Salvador lo quito el
+    # 30 sep (seccion 107): el fin es cuando el ejecutivo corta --"hasta
+    # aqui me dejas"-- y ahi se cierran las horas; llevar la camioneta a
+    # la oficina y entregarla es otro proceso, con sus 24 horas, y no
+    # toca los tiempos del dia. Lo que se abre con el fin es la entrega
+    # pendiente (`entregas.abrir_al_terminar`, mas abajo), que la app,
+    # el telefono, la central y el cierre no dejan perder de vista.
 
     db.add(hito)
 
     # ---- efectos de cada hito
     servicio = jornada.equipo.servicio
+    entregas_abiertas: list = []
 
     if tipo == m.TipoHito.LLEGADA_ORIGEN:
         # Llego al punto: arribado, no en curso. Llegar y esperar veinte
@@ -766,6 +740,14 @@ def registrar_hito(db: Session, jornada_id: int, persona_id: int,
         elif jornada.fin_real is None or ahora > jornada.fin_real:
             jornada.fin_real = ahora
         jornada.estatus = m.EstatusJornada.TERMINADA
+        # La unidad que hoy deja el servicio y no tiene su revision de
+        # entrega queda como entrega pendiente (seccion 107): 24 horas
+        # desde este fin, con aviso al telefono. Las horas del dia ya
+        # quedaron cerradas arriba; lo que tarde en llegar a la oficina
+        # no es servicio.
+        from app import entregas
+        entregas_abiertas = entregas.abrir_al_terminar(
+            db, jornada, persona_id, ahora)
         # El dia termino. En el eventual el plazo es uno solo para todo
         # el servicio y arranca con el termino general, abajo, al
         # cerrar el ultimo dia (decision de Salvador, 22 sep). En el
@@ -804,10 +786,12 @@ def registrar_hito(db: Session, jornada_id: int, persona_id: int,
                          # heredada del primero, que no es un dato.
                          manana=(_manana_del_equipo(jornada)
                                  if tipo == m.TipoHito.FIN_SERVICIO
-                                 else None))
+                                 else None),
+                         entregas=entregas_abiertas)
 
 
-def _respuesta_de(hito: m.Hito, avisos: list[str], manana=None) -> dict:
+def _respuesta_de(hito: m.Hito, avisos: list[str], manana=None,
+                  entregas: list | None = None) -> dict:
     return {
         "hito_id": hito.id,
         "tipo": hito.tipo.value,
@@ -819,6 +803,9 @@ def _respuesta_de(hito: m.Hito, avisos: list[str], manana=None) -> dict:
         "requiere_revision": hito.requiere_revision,
         "avisos": avisos,
         "manana": manana,
+        # Lo que quedo por entregar con este fin (seccion 107): la app
+        # lo dice en el mismo letrero de "dia cerrado".
+        "entregas_pendientes": entregas or [],
     }
 
 
@@ -1896,6 +1883,18 @@ def registrar_hito_a_mano(db: Session, jornada_id: int,
             "estatus_jornada": jornada.estatus.value}
 
 
+def _abrir_entregas_del_dia(db: Session, jornada: m.Jornada,
+                            desde: datetime) -> None:
+    """Un dia que termina sin que nadie marque el fin desde la calle
+    --cerrado a mano o por cancelacion-- tambien deja unidades por
+    entregar (seccion 107): una por cada persona que responde por
+    alguna, sin duplicar."""
+    from app import entregas
+    for a in jornada.personal:
+        if a.relevado_en is None:
+            entregas.abrir_al_terminar(db, jornada, a.persona_id, desde)
+
+
 def cerrar_a_mano(db: Session, jornada_id: int, quien_id: int,
                   justificacion: str, fin_real: datetime | None = None,
                   inicio_real: datetime | None = None,
@@ -1981,6 +1980,9 @@ def cerrar_a_mano(db: Session, jornada_id: int, quien_id: int,
     # en el reloj de la comprobacion.
     if jornada.equipo.servicio.tipo != m.TipoServicio.EVENTUAL:
         _termino_del_implantado(db, jornada, fin, ahora)
+    # La unidad que con este dia deja el servicio queda por entregar
+    # (seccion 107), con el plazo desde la firma, como el del cierre.
+    _abrir_entregas_del_dia(db, jornada, ahora)
     jornada.cerrada_a_mano_por_id = quien_id
     jornada.cerrada_a_mano_en = ahora
     jornada.cierre_motivo = justificacion.strip()
@@ -2045,6 +2047,7 @@ def terminar_por_cancelacion(db: Session, jornada: m.Jornada, quien_id: int,
         jornada.inicio_real = inicio
     jornada.fin_real = fin
     jornada.estatus = m.EstatusJornada.TERMINADA
+    _abrir_entregas_del_dia(db, jornada, momento)
     jornada.cerrada_a_mano_por_id = quien_id
     jornada.cerrada_a_mano_en = momento
     jornada.cierre_motivo = f"{TERMINADO_POR_CANCELACION}: {motivo.strip()}"

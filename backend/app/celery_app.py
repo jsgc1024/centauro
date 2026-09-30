@@ -500,14 +500,18 @@ def avanzar_cierres():
     de operaciones. Cada uno una sola vez.
     """
     from app.db import SessionLocal
-    from app import cierre, cierre_mes
+    from app import cierre, cierre_mes, entregas
 
     db = SessionLocal()
     try:
         meses = cierre_mes.abrir_los_que_terminaron(db)
         movidos = cierre.avanzar_cierres(db)
         return {"meses_abiertos": meses, "movidos": movidos,
-                "avisos": cierre.avisar_plazos(db)}
+                "avisos": cierre.avisar_plazos(db),
+                # La unidad que se vencio sin entregar (seccion 107):
+                # a la persona, al consultor y a direccion de operaciones,
+                # una vez. Va en la misma vuelta de cinco minutos.
+                "entregas_vencidas": entregas.avisar_vencidas(db)}
     finally:
         db.close()
 

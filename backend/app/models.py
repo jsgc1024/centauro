@@ -2244,6 +2244,65 @@ class FotoRevision(Base):
     lon: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
 
 
+class EntregaPendiente(Base):
+    """La unidad que dejo el servicio y todavia no tiene su revision de
+    entrega (seccion 107).
+
+    El fin del dia es cuando el ejecutivo corta --"hasta aqui me dejas"--
+    y ahi se cierran las horas. Llevar la camioneta a la oficina y
+    entregarla con sus cinco fotos es otro proceso, que pasa despues y
+    tiene su propio plazo: las mismas 24 horas que los viaticos. Esta
+    fila es ese proceso: nace con el fin del dia, se cierra con la
+    revision de entrega, y si nadie la hace queda escrito quien decidio
+    darla por entregada sin revision y por que.
+
+    Hasta la seccion 106 esto era un candado en el fin del dia (decision
+    del 18 sep): sin entrega no habia fin. Obligaba a marcar el fin
+    desde la oficina, y el trayecto se cobraba como servicio.
+    """
+    __tablename__ = "entrega_pendiente"
+    __table_args__ = (
+        UniqueConstraint("servicio_id", "vehiculo_id",
+                         name="uq_entrega_pendiente_unidad"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    servicio_id: Mapped[int] = mapped_column(
+        ForeignKey("servicio.id", ondelete="CASCADE"), index=True)
+    vehiculo_id: Mapped[int] = mapped_column(ForeignKey("vehiculo.id"),
+                                             index=True)
+    # El dia cuyo fin la abrio, y quien responde por la unidad: el que
+    # la traia asignada ese dia o, con una sola unidad, quien marco el
+    # fin.
+    jornada_id: Mapped[int] = mapped_column(
+        ForeignKey("jornada.id", ondelete="CASCADE"), index=True)
+    persona_id: Mapped[int] = mapped_column(ForeignKey("persona.id"),
+                                            index=True)
+    # Hora del pais del servicio, como `fin_real`.
+    abierta_en: Mapped[datetime] = mapped_column(DateTime)
+    vence_en: Mapped[datetime] = mapped_column(DateTime)
+    aviso_vencido_en: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True)
+    cerrada_en: Mapped[datetime | None] = mapped_column(DateTime,
+                                                        nullable=True)
+    # Como se cerro: con la revision de entrega, o sin ella y con la
+    # razon escrita por quien lo decidio.
+    revision_id: Mapped[int | None] = mapped_column(
+        ForeignKey("revision_unidad.id", ondelete="SET NULL"), nullable=True)
+    sin_revision: Mapped[bool] = mapped_column(Boolean, default=False,
+                                               server_default=false())
+    justificacion: Mapped[str | None] = mapped_column(Text, nullable=True)
+    justificada_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+
+    servicio: Mapped["Servicio"] = relationship()
+    vehiculo: Mapped["Vehiculo"] = relationship()
+    jornada: Mapped["Jornada"] = relationship()
+    persona: Mapped["Persona"] = relationship(foreign_keys=[persona_id])
+    justificada_por: Mapped["Persona | None"] = relationship(
+        foreign_keys=[justificada_por_id])
+
+
 class SuscripcionPush(Base):
     """A donde mandarle un aviso al telefono de alguien.
 

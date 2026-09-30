@@ -191,17 +191,19 @@ def test_sin_hotel_ni_telefono_la_ficha_no_inventa(cliente, sesion, datos):
 
 # ======================== casos 1, 3, 8 y 9 · lo que dice la pantalla
 
-def test_la_app_pone_la_entrega_de_la_unidad_antes_del_fin():
-    """Con la unidad por entregar hoy, el boton de terminar no se ofrece
-    todavia: primero la entrega, y el letrero dice que el fin aparece
-    despues. El servidor sigue rechazando el fin sin entrega (seccion
-    98); esto evita que el equipo se tope con ese rechazo."""
+def test_la_app_dice_desde_la_manana_que_la_unidad_se_entrega_hoy():
+    """Caso 8, como quedo despues de la seccion 107: el fin ya no espera
+    a la entrega (decision de Salvador, 30 sep). Lo que queda de la 106
+    es que la app lo diga desde que abre el dia --hoy la unidad deja el
+    servicio-- y que no se vaya a topar con un rechazo al cerrar. La
+    entrega, con su reloj, esta en `test_revision_107_entrega.py`."""
     app = _js("campo/app.js")
-    assert 'const finDespues = paso === "fin_servicio" && porEntregar.length > 0;' in app
-    assert "} else if (paso && !finDespues) {" in app
-    assert 't("cmp_fin_despues_de_entregar")' in app
+    assert "finDespues" not in app
+    assert 't("cmp_ent_hoy")' in app
+    assert "Antes de cerrar hay que revisar la unidad" not in open(
+        os.path.join(WEB, "..", "operacion.py"), encoding="utf-8").read()
     idioma = _js("idioma.js")
-    assert idioma.count("cmp_fin_despues_de_entregar:") == 3
+    assert idioma.count("cmp_ent_hoy:") == 3
     assert idioma.count("cmp_reconfirmar:") == 3
     assert idioma.count("cmp_hotel:") == 3
 
