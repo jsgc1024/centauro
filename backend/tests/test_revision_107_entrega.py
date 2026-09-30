@@ -17,6 +17,7 @@ se registre sin revision con la razon; y donde no debe estorbar --el dia
 de en medio, el copiloto-- sigue sin estorbar.
 """
 import json
+import re
 import os
 from datetime import datetime, timedelta
 
@@ -411,4 +412,6 @@ def test_la_app_ofrece_el_fin_y_pone_la_entrega_arriba():
     assert "async function bandaEntregas" in _js("central.js")
     assert "function entregaSinRevision(pend)" in _js("servicio.js")
     assert '"entrega_pendiente"' in _js("cierre.js")
-    assert 'CACHE = "centauro-campo-v21"' in _js("campo/sw.js")
+    # La v22 (30 sep, entrar con huella) vino despues: basta con que la
+    # version haya subido de la v20.
+    assert re.search(r'CACHE = "centauro-campo-v(2[1-9]|[3-9]\d)"', _js("campo/sw.js"))

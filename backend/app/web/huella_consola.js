@@ -15,8 +15,9 @@ const HUELLA_SVG = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" 
 
 function icono(tamano = 20) {
   /* Solo el ancho y el alto: el dibujo trae numeros propios. */
+  const lado = String(tamano);
   return h("span", { html: HUELLA_SVG.replace('width="20" height="20"',
-                                               `width="${tamano}" height="${tamano}"`) });
+                                               'width="' + lado + '" height="' + lado + '"') });
 }
 
 /* El boton que entra. `alEntrar` es lo mismo que hace la consola despues
@@ -119,7 +120,7 @@ export async function pantalla(main, usuario) {
   async function pintar() {
     const llaves = await huella.mias();
     const aqui = llaves.some(huella.esDeAqui);
-    lista.replaceChildren(...(llaves.length ? llaves.map(k => h("div", {
+    lista.replaceChildren(...[...(llaves.length ? llaves.map(k => h("div", {
       style: "display:flex;justify-content:space-between;align-items:center;gap:12px;"
            + "padding:10px 0;border-top:1px solid var(--linea)" },
       h("div", {},
@@ -142,7 +143,7 @@ export async function pantalla(main, usuario) {
           e.target.disabled = false;
         }
       } }, huella.th("quitar"))))
-      : [h("p", { clase: "gris" }, huella.th("ninguna"))]));
+      : [h("p", { clase: "gris" }, huella.th("ninguna"))])].filter(Boolean));
 
     if (!lector) {
       zona.replaceChildren(h("p", { clase: "gris chico" }, huella.th("no_hay")));

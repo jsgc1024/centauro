@@ -373,12 +373,14 @@ async function entrada(conContrasena = false) {
     }
   }
 
+  /* El boton de huella solo si el telefono tiene con que (30 sep). */
+  const conHuella = lector ? botonHuella(error, correo, true) : "";
   raiz().replaceChildren(puerta(
     error,
     h("div", { clase: "campo" }, h("label", {}, t("cmp_correo")), correo),
     h("div", { clase: "campo" }, h("label", {}, t("cmp_contrasena")), clave),
     boton,
-    lector ? botonHuella(error, correo, true) : null,
+    conHuella,
     /* Tu contraseña no va por correo: el correo es tuyo y la empresa
        no lo controla. Va por tu consultor, que te reconoce la voz. */
     h("button", { clase: "claro", style: "margin-top:10px",

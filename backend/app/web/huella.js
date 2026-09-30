@@ -1,113 +1,19 @@
 /* Entrar con huella o cara (30 sep). Lo comparten la consola y la app de
    campo: la llave vale en las dos (mycentauro.lat y appep.mycentauro.lat).
 
-   Aqui vive lo que habla con el telefono (WebAuthn) y con el servidor, y
-   los textos --en su propio diccionario, para no tocar idioma.js cada
-   vez--. Lo que se pinta lo decide cada app: la consola y la app de
-   campo no se ven igual.
+   Aqui vive lo que habla con el telefono (WebAuthn) y con el servidor;
+   los textos, en idioma.js con el prefijo hue_. Lo que se pinta lo
+   decide cada app: la consola y la app de campo no se ven igual.
 
    La huella nunca sale del telefono. El telefono firma un reto del
    servidor despues de pedir la huella, la cara o el PIN del equipo, y el
    servidor comprueba la firma. */
 import { ErrorApi, api, sesion } from "/consola/api.js";
-import { idioma } from "/consola/idioma.js";
+import { idioma, t } from "/consola/idioma.js";
 
-const TEXTOS = {
-  es: {
-    boton: "Entrar con huella o cara",
-    boton_corto: "Entrar con huella",
-    o: "o",
-    hola: "Hola, {nombre}",
-    usar_contrasena: "Usar mi contraseña",
-    no_soy: "No soy {nombre}",
-    ofrecer_titulo: "¿Entrar con huella o cara la próxima vez?",
-    ofrecer_texto: "En este equipo ya no tendrás que escribir tu contraseña: te pedirá tu huella, tu cara o el PIN del equipo.",
-    ofrecer_si: "Sí, activar",
-    ofrecer_no: "Ahora no",
-    ofrecer_pie: "Tu huella no sale del equipo: Centauro nunca la ve. Se quita cuando quieras.",
-    activada: "Listo: la próxima vez entras con tu huella o tu cara.",
-    cancelada: "Se canceló. Vuelve a intentar o entra con tu contraseña.",
-    ya_activada: "Este equipo ya tiene la huella activada.",
-    no_hay: "Este equipo o navegador no permite entrar con huella.",
-    titulo: "Entrar con huella o cara",
-    pie: "Al entrar, el equipo te pide tu huella, tu cara o su PIN en vez de tu contraseña. Actívala solo en equipos que son tuyos.",
-    este: "Este equipo",
-    activar_aqui: "Activar en este equipo",
-    pide_contrasena: "Para activarla, escribe tu contraseña.",
-    contrasena: "Contraseña",
-    ninguna: "Todavía no la tienes activada en ningún equipo.",
-    usada: "Última vez: {cuando}",
-    nunca: "Todavía no se usa",
-    quitar: "Quitar",
-    quitar_pregunta: "¿Quitar la huella de «{nombre}»? En ese equipo tendrás que entrar con tu contraseña.",
-    quitada: "Se quitó. En ese equipo se entra con la contraseña.",
-    activado_aqui: "Activado en este equipo",
-  },
-  en: {
-    boton: "Sign in with fingerprint or face",
-    boton_corto: "Sign in with fingerprint",
-    o: "or",
-    hola: "Hi, {nombre}",
-    usar_contrasena: "Use my password",
-    no_soy: "I am not {nombre}",
-    ofrecer_titulo: "Sign in with your fingerprint or face next time?",
-    ofrecer_texto: "On this device you won't have to type your password: it will ask for your fingerprint, your face or the device PIN.",
-    ofrecer_si: "Yes, turn it on",
-    ofrecer_no: "Not now",
-    ofrecer_pie: "Your fingerprint never leaves the device: Centauro never sees it. You can remove it at any time.",
-    activada: "Done: next time you sign in with your fingerprint or face.",
-    cancelada: "It was cancelled. Try again or sign in with your password.",
-    ya_activada: "This device already has fingerprint sign-in.",
-    no_hay: "This device or browser does not support fingerprint sign-in.",
-    titulo: "Sign in with fingerprint or face",
-    pie: "When you sign in, the device asks for your fingerprint, face or PIN instead of your password. Turn it on only on devices that are yours.",
-    este: "This device",
-    activar_aqui: "Turn on for this device",
-    pide_contrasena: "To turn it on, type your password.",
-    contrasena: "Password",
-    ninguna: "You have not turned it on for any device yet.",
-    usada: "Last used: {cuando}",
-    nunca: "Not used yet",
-    quitar: "Remove",
-    quitar_pregunta: "Remove fingerprint sign-in from “{nombre}”? On that device you will sign in with your password.",
-    quitada: "Removed. On that device you sign in with your password.",
-    activado_aqui: "On for this device",
-  },
-  pt: {
-    boton: "Entrar com digital ou rosto",
-    boton_corto: "Entrar com digital",
-    o: "ou",
-    hola: "Olá, {nombre}",
-    usar_contrasena: "Usar minha senha",
-    no_soy: "Não sou {nombre}",
-    ofrecer_titulo: "Entrar com digital ou rosto da próxima vez?",
-    ofrecer_texto: "Neste aparelho você não precisará digitar a senha: ele pedirá sua digital, seu rosto ou o PIN do aparelho.",
-    ofrecer_si: "Sim, ativar",
-    ofrecer_no: "Agora não",
-    ofrecer_pie: "Sua digital não sai do aparelho: a Centauro nunca a vê. Pode ser removida quando quiser.",
-    activada: "Pronto: da próxima vez você entra com sua digital ou seu rosto.",
-    cancelada: "Foi cancelado. Tente de novo ou entre com sua senha.",
-    ya_activada: "Este aparelho já tem a digital ativada.",
-    no_hay: "Este aparelho ou navegador não permite entrar com digital.",
-    titulo: "Entrar com digital ou rosto",
-    pie: "Ao entrar, o aparelho pede sua digital, seu rosto ou o PIN em vez da senha. Ative só em aparelhos que são seus.",
-    este: "Este aparelho",
-    activar_aqui: "Ativar neste aparelho",
-    pide_contrasena: "Para ativar, digite sua senha.",
-    contrasena: "Senha",
-    ninguna: "Ainda não está ativada em nenhum aparelho.",
-    usada: "Última vez: {cuando}",
-    nunca: "Ainda não usada",
-    quitar: "Remover",
-    quitar_pregunta: "Remover a digital de “{nombre}”? Nesse aparelho você entrará com a senha.",
-    quitada: "Removida. Nesse aparelho se entra com a senha.",
-    activado_aqui: "Ativado neste aparelho",
-  },
-};
-
+/* Los textos viven en idioma.js, con el prefijo hue_. */
 export function th(clave, valores = {}) {
-  const dic = TEXTOS[idioma()] || TEXTOS.es;
-  let texto = dic[clave] || TEXTOS.es[clave] || clave;
+  let texto = t(`hue_${clave}`);
   for (const [k, v] of Object.entries(valores)) texto = texto.replace(`{${k}}`, v);
   return texto;
 }
