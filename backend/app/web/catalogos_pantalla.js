@@ -72,6 +72,11 @@ const CONCEPTOS = [["alimentos", "cie_con_alimentos"], ["hospedaje", "cie_con_ho
                    ["traslado_personal", "cie_con_traslado"], ["otros", "cie_con_otros"]];
 const ESCENARIOS = [["full_day_local", "ctl_esc_local"], ["full_day_foraneo", "ctl_esc_foraneo"],
                     ["medio_dia", "mod_medio_dia"], ["transfer", "mod_transfer"]];
+/* El implantado es siempre dia completo (seccion 109, caso de Salvador):
+   su tabla solo lleva el local y el foraneo. Medio dia y transfer no le
+   aplican y pedirlos confundia --parecia que faltaba capturarlos--. */
+const ESCENARIOS_DE = (tipo) => (tipo === "implantado"
+  ? ESCENARIOS.filter(([e]) => e.startsWith("full_day")) : ESCENARIOS);
 /* La del implantado (seccion 105): su jornada, aparte del full day del
    eventual. Es donde se cambian sus horas de descanso. */
 const MODALIDADES = [["full_day", "mod_full_day"], ["medio_dia", "mod_medio_dia"],
@@ -992,14 +997,21 @@ function tabulador(caja, d, recargar) {
         onclick: puede(clave) ? () => abrir(concepto, escenario, x) : null,
       }, ...texto);
     };
+    const escenarios = ESCENARIOS_DE(tipo);
     zona.replaceChildren(...[
       h("div", { clase: "acciones", style: "margin:0 0 10px" },
         botonesDePais(d, paisId, (id) => { paisId = id; pintar(); }),
         h("div", { style: "min-width:160px" }, selTipo)),
-      tabla([t("ctl_concepto"), ...ESCENARIOS.map(([, k]) => t(k))],
+      tabla([t("ctl_concepto"), ...escenarios.map(([, k]) => t(k))],
         CONCEPTOS.map(([concepto, k]) => h("tr", {},
           h("td", {}, h("b", {}, t(k))),
-          ...ESCENARIOS.map(([escenario]) => celda(concepto, escenario)))))].filter(Boolean));
+          ...escenarios.map(([escenario]) => celda(concepto, escenario))))),
+      tipo === "implantado"
+        ? h("p", { clase: "chico gris", style: "margin:8px 0 0" }, t("ctl_tab_implantado_pie"))
+        : null].filter(Boolean));
+    /* Al cambiar de tabla se cierra lo que estaba abierto: un monto de
+       medio dia del eventual no se guarda en la del implantado. */
+    forma.replaceChildren();
   }
 
   function abrir(concepto, escenario, x) {

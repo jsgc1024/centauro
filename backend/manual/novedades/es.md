@@ -2,6 +2,9 @@
 
 Lo nuevo de cada actualización, escrito para quien usa el sistema. La más nueva va arriba.
 
+## 109 · 2026-09-30 · La tabla de viáticos del implantado, sin medio día ni transfer
+En Catálogos → Tabulador de viáticos, la tabla del implantado ya solo pide día completo, local o foráneo: medio día y transfer no le aplican, y ya no se ofrecen ni se pueden agregar. El historial de la tabla dice qué renglón se cambió —«Hospedaje · día completo foráneo · implantado · Mexico: monto 1200 → 1500»— en vez de «Agregó «»».
+
 ## 108 · 2026-09-30 · El puesto «Gerente de administración»
 Un puesto nuevo en Accesos: firma el dinero y la gente sin operar. Aprueba, factura o regresa los cierres, fija el tabulador de nómina y los catálogos que deciden dinero, autoriza el bono del mes y registra las diferencias de las comisiones; ve toda la operación, los viáticos, la utilidad por servicio, el desempeño, las encuestas y Calidad. No deposita, no arma ni paga el corte, no paga el bono, no opera servicios, no da accesos y no toca Odoo. Se sugiere a quien en Odoo es gerente de administración; se pone desde Accesos > Personas.
 

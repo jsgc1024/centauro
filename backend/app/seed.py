@@ -223,25 +223,19 @@ def sembrar() -> dict:
         #
         # OJO: estos montos son de ejemplo, igual que los del eventual.
         # La direccion tiene que definir los suyos antes de operar.
+        # Solo dia completo, local o foraneo: el implantado nunca es medio
+        # dia ni transfer (seccion 109).
         implantado = [
             (C.ALIMENTOS, E.FULL_DAY_LOCAL, "350", False),
             (C.ALIMENTOS, E.FULL_DAY_FORANEO, "350", False),
-            (C.ALIMENTOS, E.MEDIO_DIA, "0", False),
-            (C.ALIMENTOS, E.TRANSFER, "0", False),
             (C.HOSPEDAJE, E.FULL_DAY_FORANEO, "1200", False),
             (C.TRASLADO_PERSONAL, E.FULL_DAY_LOCAL, "200", False),
             (C.TRASLADO_PERSONAL, E.FULL_DAY_FORANEO, "200", False),
-            (C.TRASLADO_PERSONAL, E.MEDIO_DIA, "0", False),
-            (C.TRASLADO_PERSONAL, E.TRANSFER, "0", False),
             (C.COMBUSTIBLE, E.FULL_DAY_LOCAL, "0", True),
             (C.COMBUSTIBLE, E.FULL_DAY_FORANEO, "0", True),
-            (C.COMBUSTIBLE, E.MEDIO_DIA, "0", True),
-            (C.COMBUSTIBLE, E.TRANSFER, "0", True),
             (C.CASETAS, E.FULL_DAY_FORANEO, "0", True),
             (C.OTROS, E.FULL_DAY_LOCAL, "0", True),
             (C.OTROS, E.FULL_DAY_FORANEO, "0", True),
-            (C.OTROS, E.MEDIO_DIA, "0", True),
-            (C.OTROS, E.TRANSFER, "0", True),
         ]
         for tipo, tabla in ((T.EVENTUAL, eventual), (T.IMPLANTADO, implantado)):
             for concepto, escenario, monto, abierto in tabla:

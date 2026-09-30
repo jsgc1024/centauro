@@ -457,6 +457,28 @@ class _Nombres:
     def usuario(self, usuario_id) -> str:
         return self.de_usuario.get(usuario_id) or f"#{usuario_id}"
 
+    def tabulador(self, r: m.RegistroAdmin, idioma: str) -> str | None:
+        """El renglon del tabulador de viaticos por su id --los renglones
+        no se borran, se desactivan--; si ya no esta, lo que se guardo al
+        escribir («implantado/hospedaje/full_day_foraneo»)."""
+        clave = ("tabulador", r.objeto_id)
+        if clave not in self._cache:
+            fila = (self.db.get(m.TabuladorViatico, r.objeto_id)
+                    if r.objeto_id else None)
+            self._cache[clave] = fila
+        fila = self._cache[clave]
+        if fila is not None:
+            pais = self.db.get(m.Pais, fila.pais_id)
+            return renglon_del_tabulador(
+                fila.tipo_servicio.value, fila.concepto.value,
+                fila.escenario.value, pais.nombre if pais else None, idioma)
+        guardado = r.detalle or (r.despues if r.accion == "catalogo creado"
+                                 else None) or ""
+        partes = guardado.split("/")
+        if len(partes) == 3:
+            return renglon_del_tabulador(*partes, None, idioma)
+        return None
+
     def de(self, campo: str, valor: str) -> str | None:
         modelo = QUIEN_ES.get(campo)
         if not modelo:
@@ -559,6 +581,47 @@ MODALIDADES_CORTAS = {"es": {"full_day": "full day", "medio_dia": "medio día", 
                              "implantado": "implantado"}}
 
 
+# El renglon del tabulador de viaticos, dicho (seccion 109): antes salia
+# «Agregó «»» y, al cambiarlo, el monto como si fuera el nombre.
+CONCEPTOS_VIATICO = {
+    "es": {"alimentos": "Alimentos", "hospedaje": "Hospedaje",
+           "combustible": "Gasolina", "casetas": "Casetas",
+           "traslado_personal": "Traslado del personal", "otros": "Otros"},
+    "en": {"alimentos": "Meals", "hospedaje": "Lodging",
+           "combustible": "Fuel", "casetas": "Tolls",
+           "traslado_personal": "Staff commute", "otros": "Other"},
+    "pt": {"alimentos": "Alimentação", "hospedaje": "Hospedagem",
+           "combustible": "Combustível", "casetas": "Pedágios",
+           "traslado_personal": "Deslocamento do pessoal", "otros": "Outros"},
+}
+ESCENARIOS_VIATICO = {
+    "es": {"full_day_local": "día completo local",
+           "full_day_foraneo": "día completo foráneo",
+           "medio_dia": "medio día", "transfer": "transfer"},
+    "en": {"full_day_local": "local full day",
+           "full_day_foraneo": "out-of-town full day",
+           "medio_dia": "half day", "transfer": "transfer"},
+    "pt": {"full_day_local": "dia completo local",
+           "full_day_foraneo": "dia completo fora da cidade",
+           "medio_dia": "meio dia", "transfer": "transfer"},
+}
+TIPOS_SERVICIO = {"es": {"eventual": "eventual", "implantado": "implantado"},
+                  "en": {"eventual": "one-off", "implantado": "embedded"},
+                  "pt": {"eventual": "eventual", "implantado": "implantado"}}
+
+
+def renglon_del_tabulador(tipo: str, concepto: str, escenario: str,
+                          pais: str | None, idioma: str) -> str:
+    """«Hospedaje · día completo foráneo · implantado · México»."""
+    lengua = idioma if idioma in CONCEPTOS_VIATICO else "es"
+    partes = [CONCEPTOS_VIATICO[lengua].get(concepto, concepto),
+              ESCENARIOS_VIATICO[lengua].get(escenario, escenario),
+              TIPOS_SERVICIO[lengua].get(tipo, tipo)]
+    if pais:
+        partes.append(pais)
+    return " · ".join(x for x in partes if x)
+
+
 def _tabulador(texto: str, idioma: str) -> str:
     """"conductor_seguridad/full_day 700 (+90)" -> "conductor · full day 700 (+90)"."""
     partes = []
@@ -598,6 +661,8 @@ def que_cambio(r: m.RegistroAdmin, idioma: str, nombres: _Nombres) -> str:
         nombre = despues
     elif r.accion == "catalogo borrado":
         nombre = antes
+    if r.objeto == "tabulador-viaticos" and r.accion.startswith("catalogo"):
+        nombre = nombres.tabulador(r, idioma) or nombre
     elif r.accion in ("foto de categoria", "foto de categoria quitada"):
         nombre = detalle or nombres.de("categoria_id", str(r.objeto_id)) or ""
     color = despues if r.accion == "foto de categoria" else antes

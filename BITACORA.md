@@ -8238,6 +8238,42 @@ dicen el mismo puesto, quien lo trae firma y no ejecuta, y no junta lo
 que no vive en la misma mano; `test_puestos.py` lo revisa como a los
 demás.
 
+## 109. La tabla de viáticos del implantado, sin medio día ni transfer
+
+Caso de Salvador (30 sep, desde la consola, «Reportar una falla»): en
+Catálogos → Tabulador de viáticos, con «Implantado», la tabla pedía
+montos de medio día y transfer, que al implantado no le aplican. Es un
+arreglo de sistema, sin cambio de proceso: el implantado es siempre día
+completo —con la modalidad «Implantado» desde la sección 105—, y el
+cálculo de sus viáticos nunca leyó esas dos columnas
+(`viaticos.escenario_de` da día completo local o foráneo, y la
+sugerencia del acuerdo sale del local).
+
+- **La pantalla**: con «Implantado», la tabla solo trae día completo
+  local y día completo foráneo, con la nota «El implantado es siempre
+  día completo, local o foráneo: medio día y transfer no le aplican». Al
+  cambiar de país o de tabla se cierra el formulario que estuviera
+  abierto: antes, un monto abierto en una tabla se podía guardar en la
+  otra.
+- **La puerta**: la API ya no acepta un renglón de implantado en medio
+  día o transfer (400 con el porqué). El eventual sigue igual.
+- **La siembra** ya no crea esos renglones del implantado. Los que ya
+  existen en la base se quedan donde están, sin leerse y sin verse.
+- **El historial** del tabulador dice qué renglón se tocó: «Agregó
+  «Casetas · día completo local · implantado · Mexico»» y ««Hospedaje ·
+  día completo foráneo · implantado · Mexico»: monto 1200 → 1500», en
+  el idioma de quien lo lee. Antes decía «Agregó «»» y ponía el monto
+  como si fuera el nombre; los renglones viejos también se leen bien,
+  porque el nombre sale del renglón mismo.
+
+Por dentro: `web/catalogos_pantalla.js` (`ESCENARIOS_DE`),
+`web/idioma.js` (`ctl_tab_implantado_pie`), `routers/crud.py`
+(`_tabulador_que_aplica` en crear y editar; `_como_se_llama` nombra el
+renglón como «implantado/hospedaje/full_day_foraneo»),
+`bitacora_admin.py` (`renglon_del_tabulador`, `_Nombres.tabulador`),
+`seed.py`. Pruebas: `tests/test_revision_109_tabulador_implantado.py`
+(3).
+
 ## 14. Lo que falta
 
 ### Abierto

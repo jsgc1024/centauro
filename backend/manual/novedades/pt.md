@@ -2,6 +2,9 @@
 
 O que há de novo em cada atualização, escrito para quem usa o sistema. A mais nova fica em cima.
 
+## 109 · 2026-09-30 · A tabela de diárias do implantado, sem meio dia nem transfer
+Em Catálogos → Tabela de diárias, a tabela do implantado agora só pede dia completo, local ou fora da cidade: meio dia e transfer não se aplicam, e já não são oferecidos nem podem ser adicionados. O histórico da tabela diz qual linha mudou —«Hospedagem · dia completo fora da cidade · implantado · Mexico: valor 1200 → 1500»— em vez de «Adicionou “”».
+
 ## 108 · 2026-09-30 · O cargo «Gerente de administração»
 Um cargo novo em Acessos: assina o dinheiro e as pessoas sem operar. Aprova, fatura ou devolve os fechamentos, fixa a tabela da folha e os catálogos que decidem dinheiro, autoriza o bônus do mês e registra as diferenças das comissões; vê toda a operação, as diárias, o lucro por serviço, o desempenho, as pesquisas e Qualidade. Não deposita, não monta nem paga o fechamento semanal, não paga o bônus, não opera serviços, não dá acessos e não mexe no Odoo. É sugerido a quem no Odoo é gerente de administração; se atribui em Acessos > Pessoas.
 

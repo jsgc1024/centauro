@@ -58,12 +58,38 @@ def _como_se_llama(obj) -> str | None:
 
     Un renglon que dice "registro 47" no sirve dentro de un ano: para
     saber que era hay que ir a buscarlo, y si se borro ya no esta.
+
+    El renglon del tabulador de viaticos no tiene nombre: es un concepto
+    en un escenario de una tabla (seccion 109). Se guarda asi,
+    «implantado/hospedaje/full_day_foraneo», y la bitacora lo dice en el
+    idioma de quien la lee; antes salia «Agregó «»» y el monto como si
+    fuera el nombre.
     """
     for campo in ("nombre", "placa", "codigo", "correo"):
         valor = getattr(obj, campo, None)
         if valor:
             return str(valor)[:200]
+    if isinstance(obj, m.TabuladorViatico):
+        return "/".join(getattr(x, "value", str(x)) for x in (
+            obj.tipo_servicio, obj.concepto, obj.escenario))
     return None
+
+
+# El implantado es siempre dia completo (seccion 109): su tabla de
+# viaticos no lleva medio dia ni transfer. La pantalla ya no los ofrece;
+# esto cuida la puerta, para que nadie los agregue por la API.
+SIN_IMPLANTADO = {"medio_dia", "transfer"}
+
+
+def _tabulador_que_aplica(datos: dict) -> None:
+    tipo = getattr(datos.get("tipo_servicio"), "value", datos.get("tipo_servicio"))
+    escenario = getattr(datos.get("escenario"), "value", datos.get("escenario"))
+    if tipo == "implantado" and escenario in SIN_IMPLANTADO:
+        raise HTTPException(400, {
+            "mensaje": "El implantado es siempre día completo: medio día y "
+                       "transfer no aplican en su tabla.",
+            "que_hacer": "Captura el día completo local o foráneo; medio día "
+                         "y transfer van en la tabla del eventual."})
 
 
 def _recorte(partes: list[str]) -> str | None:
@@ -155,6 +181,8 @@ def crud_router(
               actor: m.Usuario = Depends(escribir)):
         if modelo in TARIFAS and _de_una_lista_de_odoo(db, datos.tarifario_id):
             raise HTTPException(409, LISTA_DE_ODOO)
+        if modelo is m.TabuladorViatico:
+            _tabulador_que_aplica(datos.model_dump())
         obj = modelo(**datos.model_dump())
         db.add(obj)
         db.flush()
@@ -199,6 +227,11 @@ def crud_router(
                                  "Centauro lo toma en la siguiente lectura.",
                     "campos": tocados,
                 })
+
+        if modelo is m.TabuladorViatico:
+            _tabulador_que_aplica({
+                "tipo_servicio": obj.tipo_servicio, "escenario": obj.escenario,
+                **datos.model_dump(exclude_unset=True)})
 
         # Se apunta solo lo que de verdad cambio, con su valor viejo al
         # lado. El estado entero no sirve: lo que alguien busca en
