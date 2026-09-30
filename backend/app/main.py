@@ -24,6 +24,7 @@ from app.routers import (acceso, archivo, bitacora_admin, bonos, calidad,
                          mapas, nomina, odoo, operacion, panorama,
                          profesionalismo, servicios, solicitantes,
                          tarifarios, tasksheet, viaticos)
+from app.routers import llaves as llaves_router
 from app.seed import (sembrar, sembrar_bonos, sembrar_festivos,
                       sembrar_lugares, sembrar_parametros, sembrar_recursos)
 
@@ -114,6 +115,9 @@ class SinSecretoDePegasus(logging.Filter):
 logging.getLogger("uvicorn.access").addFilter(SinSecretoDePegasus())
 
 app.include_router(acceso.router)
+# Entrar con huella o cara (30 sep). En su propio renglon: la lista de
+# arriba la edita cada seccion.
+app.include_router(llaves_router.router)
 app.include_router(catalogos.router, prefix="/catalogos")
 app.include_router(solicitantes.router)
 app.include_router(servicios.router)

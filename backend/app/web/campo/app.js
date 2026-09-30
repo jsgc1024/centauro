@@ -17,6 +17,8 @@ import { guardar as guardarMemoria, hace, olvidar, recordar,
          traer } from "./memoria.js";
 import { reducir } from "./foto.js";
 import { firma } from "/consola/firma.js";
+// Entrar con huella (30 sep). Tambien en el armazon del sw.js.
+import * as huella from "/consola/huella.js";
 
 const raiz = () => document.getElementById("app");
 
@@ -234,7 +236,117 @@ function hora(iso) {
 
 /* ----------------------------------------------------------- entrada */
 
-function entrada() {
+/* Lo que sigue a entrar --con contrasena, con el codigo o con huella--:
+   la misma sesion y el mismo camino. */
+async function yaDentro() {
+  await api.quienSoy();
+  location.hash = "#/hoy";
+  pintar();
+  /* El logo se pide de nuevo aqui: quien abre la app por primera
+     vez no tenia sesion cuando se pidio al arrancar. */
+  cargarLogo();
+  if (sesion.usuario && sesion.usuario.rol === "personal_seguridad") {
+    reengancharAvisos();
+  }
+}
+
+/* ------------------------------------------------ entrar con huella
+
+   Decision de Salvador, 30 sep: los telefonos son de cada quien y no se
+   prestan, asi que el de campo entra con su huella. Se ofrece una vez,
+   al entrar con la contrasena; despues la app lo saluda por su nombre y
+   basta el boton. La contrasena sigue sirviendo. */
+const HUELLA_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" '
+  + 'stroke="currentColor" stroke-width="1.8" stroke-linecap="round" '
+  + 'style="vertical-align:-5px;margin-right:10px" aria-hidden="true">'
+  + '<path d="M12 11c0 3.5-.7 6.3-2 8.5"/><path d="M8.5 7.5A5 5 0 0 1 17 11c0 1.3-.1 2.6-.3 3.8"/>'
+  + '<path d="M5.3 9A8 8 0 0 1 20 11c0 2-.2 3.6-.6 5"/><path d="M8.5 11a3.5 3.5 0 0 1 7 0c0 3-.4 5.6-1.3 7.7"/>'
+  + '<path d="M4 14.5c.5-1 .7-2.2.7-3.5"/></svg>';
+
+function botonHuella(error, correo, claro = false) {
+  const b = h("button", { clase: claro ? "claro" : null, style: claro ? "margin-top:10px" : null,
+    onclick: async () => {
+      b.disabled = true;
+      error.replaceChildren();
+      try {
+        await huella.entrar(correo ? correo.value.trim().toLowerCase() : null);
+        await yaDentro();
+      } catch (err) {
+        error.replaceChildren(aviso(err.message, "grave"));
+        b.disabled = false;
+      }
+    } }, h("span", { html: HUELLA_SVG }), huella.th("boton_corto"));
+  return b;
+}
+
+/* La pregunta de una sola vez, despues de entrar con contrasena. */
+function ofrecerHuella(correo, nombre, contrasena) {
+  return new Promise((listo) => {
+    const error = h("div");
+    const si = h("button", { onclick: async () => {
+      si.disabled = true;
+      error.replaceChildren();
+      try {
+        await huella.activar(contrasena, correo, nombre);
+        alertaSinAnotar(huella.th("activada"));
+        listo();
+      } catch (err) {
+        error.replaceChildren(aviso(err.message, "grave"));
+        si.disabled = false;
+      }
+    } }, huella.th("ofrecer_si"));
+    raiz().replaceChildren(puerta(
+      h("div", { style: "text-align:center;margin:10px 0 4px;color:var(--centauro)",
+                 html: HUELLA_SVG.replace('width="22" height="22"', 'width="54" height="54"')
+                                .replace("margin-right:10px", "") }),
+      h("h2", { style: "text-align:center;margin:6px 0 8px" }, huella.th("ofrecer_titulo")),
+      h("p", { clase: "gris chico", style: "text-align:center;line-height:1.5;margin:0 0 14px" },
+        huella.th("ofrecer_texto")),
+      error,
+      si,
+      h("button", { clase: "claro", style: "margin-top:10px", onclick: () => {
+        huella.ahoraNo(correo);
+        listo();
+      } }, huella.th("ofrecer_no")),
+      h("p", { clase: "chico gris", style: "text-align:center;margin:14px 0 0" },
+        huella.th("ofrecer_pie"))));
+  });
+}
+
+/* Entro con contrasena: se ofrece la huella si toca, y adentro. */
+async function trasLaContrasena(correo, contrasena, datos) {
+  if (await huella.convieneOfrecer(correo)) {
+    await ofrecerHuella(correo, datos && datos.nombre, contrasena);
+  }
+  await yaDentro();
+}
+
+async function entrada(conContrasena = false) {
+  /* Quien ya entra con huella en este telefono: "Hola, Alberto" y un
+     boton grande. La contrasena queda a un toque. */
+  const conocido = huella.recordado();
+  const lector = await huella.hayLector();
+  if (lector && conocido && !conContrasena) {
+    const error = h("div");
+    const grande = botonHuella(error, null);
+    grande.style.cssText = "height:60px;font-size:16px";
+    const primero = (conocido.nombre || "").trim().split(/\s+/)[0] || conocido.nombre;
+    raiz().replaceChildren(puerta(
+      h("p", { style: "text-align:center;margin:18px 0 2px;font-size:17px" },
+        huella.th("hola", { nombre: "" }), h("b", {}, primero)),
+      h("p", { clase: "gris chico", style: "text-align:center;margin:0 0 18px" },
+        conocido.nombre),
+      error,
+      grande,
+      h("button", { clase: "claro", style: "margin-top:10px",
+                    onclick: () => entrada(true) }, huella.th("usar_contrasena")),
+      h("p", { clase: "gris chico", style: "text-align:center;margin:14px 0 0" },
+        h("a", { href: "#", onclick: (e) => {
+          e.preventDefault(); huella.olvidar(); entrada(true); } },
+          huella.noSoy()))));
+    return;
+  }
+
   const correo = h("input", { type: "email", inputmode: "email",
                               autocapitalize: "none", autocomplete: "username" });
   const clave = h("input", { type: "password",
@@ -246,17 +358,16 @@ function entrada() {
     boton.disabled = true;
     error.replaceChildren();
     try {
-      await api.entrar(correo.value.trim().toLowerCase(), clave.value);
-      await api.quienSoy();
-      location.hash = "#/hoy";
-      pintar();
-      /* El logo se pide de nuevo aqui: quien abre la app por primera
-         vez no tenia sesion cuando se pidio al arrancar. */
-      cargarLogo();
-      if (sesion.usuario && sesion.usuario.rol === "personal_seguridad") {
-        reengancharAvisos();
-      }
+      const quien = correo.value.trim().toLowerCase();
+      const datos = await api.entrar(quien, clave.value);
+      await trasLaContrasena(quien, clave.value, datos);
     } catch (err) {
+      /* Si fallo despues de ofrecer la huella, la puerta ya no esta:
+         se vuelve a pintar con el error. */
+      if (!document.body.contains(error)) {
+        await entrada(true);
+        return;
+      }
       error.replaceChildren(aviso(err.message, "grave"));
       boton.disabled = false;
     }
@@ -267,6 +378,7 @@ function entrada() {
     h("div", { clase: "campo" }, h("label", {}, t("cmp_correo")), correo),
     h("div", { clase: "campo" }, h("label", {}, t("cmp_contrasena")), clave),
     boton,
+    lector ? botonHuella(error, correo, true) : null,
     /* Tu contraseña no va por correo: el correo es tuyo y la empresa
        no lo controla. Va por tu consultor, que te reconoce la voz. */
     h("button", { clase: "claro", style: "margin-top:10px",
@@ -323,16 +435,11 @@ function conCodigo(correoPrevio) {
       });
       /* Se entra de corrido con la que acaba de poner: a las 5:40 nadie
          quiere escribirla dos veces. */
-      await api.entrar(correo.value.trim().toLowerCase(), clave.value);
-      await api.quienSoy();
-      location.hash = "#/hoy";
-      pintar();
-      /* El logo se pide de nuevo aqui: quien abre la app por primera
-         vez no tenia sesion cuando se pidio al arrancar. */
-      cargarLogo();
-      if (sesion.usuario && sesion.usuario.rol === "personal_seguridad") {
-        reengancharAvisos();
-      }
+      const quien = correo.value.trim().toLowerCase();
+      const datos = await api.entrar(quien, clave.value);
+      /* Acaba de poner su contrasena: buen momento para ofrecer la
+         huella (30 sep). */
+      await trasLaContrasena(quien, clave.value, datos);
     } catch (err) {
       error.replaceChildren(aviso(err.message, "grave"));
       boton.disabled = false;
@@ -1779,9 +1886,65 @@ async function pantallaYo() {
   } catch { /* sin capacitacion cargada */ }
 
   cuerpo.push(bloqueAvisos());
+  const suHuella = await tarjetaHuella();
+  if (suHuella) cuerpo.push(suHuella);
   cuerpo.push(tarjetaFalla());
 
   conBarra(...cuerpo);
+}
+
+/* Entrar con huella, en "Yo" (30 sep): si esta activada en este
+   telefono y quitarla, o activarla con la contrasena. Sin lector de
+   huella en el telefono no se pinta nada. */
+async function tarjetaHuella() {
+  if (!(await huella.hayLector())) return null;
+  let llaves = [];
+  try { llaves = await huella.mias(); } catch { return null; }   // sin senal
+  const aqui = llaves.find(huella.esDeAqui);
+  const caja = h("div", { clase: "caja" },
+    h("span", { clase: "gris chico" }, huella.th("titulo").toUpperCase()));
+  const error = h("div");
+  if (aqui) {
+    caja.append(
+      h("p", { style: "margin:10px 0 6px" },
+        h("span", { clase: "marca ok" }, huella.th("activado_aqui"))),
+      h("p", { clase: "chico gris", style: "margin:0 0 12px;line-height:1.5" },
+        huella.th("pie")),
+      error,
+      h("button", { clase: "claro", onclick: async (e) => {
+        if (!confirm(huella.th("quitar_pregunta", { nombre: aqui.nombre }))) return;
+        e.target.disabled = true;
+        try {
+          await huella.quitar(aqui);
+          alertaSinAnotar(huella.th("quitada"));
+          pintar();
+        } catch (err) {
+          error.replaceChildren(aviso(err.message, "grave"));
+          e.target.disabled = false;
+        }
+      } }, huella.th("quitar")));
+  } else {
+    const clave = h("input", { type: "password", autocomplete: "current-password" });
+    const boton = h("button", { onclick: async () => {
+      boton.disabled = true;
+      error.replaceChildren();
+      try {
+        await huella.activar(clave.value, sesion.usuario.correo, sesion.usuario.nombre);
+        alertaSinAnotar(huella.th("activada"));
+        pintar();
+      } catch (err) {
+        error.replaceChildren(aviso(err.message, "grave"));
+        boton.disabled = false;
+      }
+    } }, h("span", { html: HUELLA_SVG }), huella.th("activar_aqui"));
+    caja.append(
+      h("p", { clase: "chico gris", style: "margin:10px 0 12px;line-height:1.5" },
+        huella.th("pie")),
+      h("div", { clase: "campo" }, h("label", {}, huella.th("contrasena")), clave),
+      error,
+      boton);
+  }
+  return caja;
 }
 
 /* ------------------------------------------------ reportar una falla

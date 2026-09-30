@@ -81,6 +81,10 @@ class Settings(BaseSettings):
     # esto, el enlace de una encuesta seria "/encuestas/pagina/abc" y no
     # llevaria a ningun lado fuera del servidor.
     url_publica: str = ""          # "https://mycentauro.lat"
+    # La app del personal de seguridad (seccion 70). Ya estaba en el .env
+    # para el proxy; la huella (30 sep) la necesita porque una llave de
+    # acceso solo vale en las direcciones que el sistema reconoce.
+    dominio_campo: str = ""        # "appep.mycentauro.lat"
 
     # Odoo, del lado de SALIDA: la factura del servicio aprobado.
     #

@@ -2121,6 +2121,38 @@ class Usuario(Base):
     categoria: Mapped["CategoriaAcceso | None"] = relationship()
 
 
+class LlaveAcceso(Base):
+    """Entrar con huella o cara (llave de acceso, WebAuthn).
+
+    Decision de Salvador, 30 sep: en la consola y en la app de campo --los
+    telefonos son de cada quien, no se prestan--. La huella nunca sale del
+    telefono: aqui se guarda la llave publica que el telefono creo para
+    este sistema, y con ella se comprueba la firma de cada entrada. Una
+    por cada telefono o computadora en que se activo.
+    """
+    __tablename__ = "llave_acceso"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    usuario_id: Mapped[int] = mapped_column(
+        ForeignKey("usuario.id", ondelete="CASCADE"), index=True)
+    # El id de la credencial, en base64url: es como el telefono dice que
+    # llave esta usando.
+    credencial_id: Mapped[str] = mapped_column(String(400), unique=True)
+    llave_publica: Mapped[str] = mapped_column(Text)
+    # El contador de firmas del autenticador: si retrocede, alguien copio
+    # la llave (los de telefono suelen mandar 0 siempre, y eso es normal).
+    contador: Mapped[int] = mapped_column(Integer, default=0,
+                                          server_default="0")
+    # Como lo nombra la persona en su lista: "Chrome en Android".
+    nombre: Mapped[str] = mapped_column(String(120))
+    creada_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    usada_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+    usuario: Mapped[Usuario] = relationship()
+
+
 class TipoRevision(str, enum.Enum):
     """En que sentido cambia de manos la unidad."""
     RECIBE = "recibe"        # la unidad pasa a manos del equipo

@@ -14,3 +14,5 @@ httpx==0.28.1
 # Avisos al telefono del equipo de campo, sin terceros ni costo por
 # mensaje: el propio navegador los entrega.
 pywebpush==2.0.3
+# Entrar con huella o cara (30 sep): las llaves de acceso del telefono.
+webauthn==3.0.1

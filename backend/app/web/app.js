@@ -19,6 +19,9 @@ import { pantallaCalidad } from "./calidad.js";
 import { pantallaManual } from "./manual.js";
 import { pantallaDireccion } from "./direccion.js";
 import { botonReportar } from "./falla.js";
+// Entrar con huella o cara (30 sep): aparte, para no tocar lo demas.
+import * as huella from "./huella.js";
+import * as huellaConsola from "./huella_consola.js";
 import { pantallaCodigo } from "./codigo.js";
 import { pantallaEnlace, pantallaOlvide } from "./contrasena.js";
 import { nombreDelRol } from "./categorias.js";
@@ -120,10 +123,32 @@ function puerta(tarjeta) {
    quien pide el enlace ya lo habia escrito en la entrada. */
 let correoSugerido = "";
 
-async function pantallaEntrada() {
+async function pantallaEntrada(conContrasena = false) {
   await traerLogo();
   const cuerpo = document.getElementById("app");
   vaciar(cuerpo);
+  const lector = await huella.hayLector();
+
+  /* Lo que sigue a entrar, con contrasena o con huella: la misma sesion
+     y el mismo camino. */
+  const alEntrar = async () => {
+    await api.quienSoy();
+    idiomaDelUsuario();
+    /* Si la sesion vencio a media pantalla, se vuelve a esa pantalla
+       (seccion 101); si no, al inicio de su rol. */
+    location.hash = destinoPendiente() || destinoDe(sesion.usuario);
+    pintar();
+  };
+
+  /* Quien ya entra con huella en este equipo (30 sep): "Hola, Salvador"
+     y un boton. La contrasena queda a un clic. */
+  if (lector && huella.recordado() && !conContrasena && !notaEntrada) {
+    cuerpo.append(puerta(huellaConsola.saludo({
+      portada: portada(), alEntrar,
+      usarContrasena: () => pantallaEntrada(true),
+      cambiarPersona: () => pantallaEntrada(true) })));
+    return;
+  }
 
   const correo = entrada("correo", { type: "email", required: "true",
                                      autocomplete: "username",
@@ -136,13 +161,16 @@ async function pantallaEntrada() {
     const boton = f.querySelector("button");
     boton.disabled = true;
     try {
-      await api.entrar((d.correo || "").trim().toLowerCase(), d.contrasena);
-      await api.quienSoy();
-      idiomaDelUsuario();
-      /* Si la sesion vencio a media pantalla, se vuelve a esa pantalla
-         (seccion 101); si no, al inicio de su rol. */
-      location.hash = destinoPendiente() || destinoDe(sesion.usuario);
-      pintar();
+      const quien = (d.correo || "").trim().toLowerCase();
+      const dentro = await api.entrar(quien, d.contrasena);
+      /* Una sola vez: si este equipo tiene huella o cara, se ofrece
+         entrar asi la proxima (30 sep). */
+      if (await huella.convieneOfrecer(quien)) {
+        await huellaConsola.ofrecer({ cuerpo, puerta, correo: quien,
+                                      nombre: dentro.nombre,
+                                      contrasena: d.contrasena });
+      }
+      await alEntrar();
     } catch (err) {
       f.querySelector(".error").replaceChildren(aviso(err.message, "grave"));
       boton.disabled = false;
@@ -151,14 +179,20 @@ async function pantallaEntrada() {
 
   const nota = notaEntrada ? aviso(notaEntrada, "ok") : null;
   notaEntrada = "";
-  f.append(
+  const error = h("div", { clase: "error" });
+  /* `append` no es `h`: un null se pintaba como la palabra "null"
+     encima del correo. Se filtra. */
+  f.append(...[
     portada(),
     nota,
     campo(t("correo"), correo),
     campo(t("contrasena"), entrada("contrasena", { type: "password", required: "true",
                                                   autocomplete: "current-password" })),
-    h("div", { clase: "error" }),
+    error,
     h("button", { type: "submit" }, t("entrar")),
+    /* Con huella o cara, si el equipo tiene con que (30 sep). */
+    lector ? huellaConsola.separador() : null,
+    lector ? huellaConsola.botonEntrar({ alEntrar, correo, error, claro: true }) : null,
     /* Quien trabaja en la consola la recupera solo, por correo. El de
        campo lo lee en la pantalla siguiente: lo suyo va con su
        consultor o con la central. */
@@ -166,7 +200,7 @@ async function pantallaEntrada() {
       h("button", { type: "button", clase: "enlace", onclick: () => {
         correoSugerido = correo.value.trim();
         location.hash = "#/olvide";
-      } }, t("cc_olvide"))));
+      } }, t("cc_olvide")))].filter(Boolean));
 
   cuerpo.append(puerta(f));
 }
@@ -321,6 +355,11 @@ function quienSoy(rol) {
       menu.hidden = true;
       location.hash = "#/mi-contrasena";
     } }, t("cc_cambiar")),
+    /* Entrar con huella o cara (30 sep): en que equipos, y quitarla. */
+    h("button", { clase: "otra-vez", type: "button", onclick: () => {
+      menu.hidden = true;
+      location.hash = "#/mi-huella";
+    } }, huella.th("titulo")),
     h("div", { clase: "idiomas" }, ...IDIOMAS.map(i =>
       h("button", {
         clase: `bandera ${i.codigo === idioma() ? "activa" : ""}`.trim(),
@@ -493,6 +532,12 @@ async function pintar() {
   if (sesion.usuario.recorrido_pendiente) {
     sesion.usuario.recorrido_pendiente = false;
     abrirRecorrido(menuDe(sesion.usuario));
+  }
+
+  if (location.hash === "#/mi-huella") {
+    try { await huellaConsola.pantalla(main, sesion.usuario); }
+    catch (err) { main.append(aviso(err.message, "grave")); }
+    return;
   }
 
   if (location.hash === "#/mi-contrasena") {

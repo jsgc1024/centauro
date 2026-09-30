@@ -21,7 +21,8 @@
 // v13: Reportar una falla desde «Yo», y la caja negra (seccion 92).
 // v14: el icono de Android con su filo dorado, dentro de la zona que
 //      ningun telefono recorta (seccion 97).
-const CACHE = "centauro-campo-v21";
+// v22: entrar con huella (30 sep), y /consola/huella.js en el armazon.
+const CACHE = "centauro-campo-v22";
 const ARMAZON = [
   "/app/",
   "/app/index.html",
@@ -38,6 +39,9 @@ const ARMAZON = [
   /* La firma de la entrada --CONNECT APP con su lema--, que app.js
      importa igual que el idioma: sin ella, sin senal la app no abre. */
   "/consola/firma.js",
+  /* Entrar con huella (30 sep): app.js la importa al arrancar, igual
+     que las dos de arriba. */
+  "/consola/huella.js",
   "/app/manifiesto.json",
   /* El icono del aviso se guarda tambien: si no, el aviso que llega en
      el estacionamiento sale sin icono, que es como se ven los avisos de
