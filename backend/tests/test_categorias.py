@@ -28,8 +28,8 @@ import pytest
 BEATRIZ = "beatriz.roman@centauro.lat"
 
 # Lo que Beatriz trae por ser consultor, y lo que no. Son dos puertas
-# baratas --una lectura y un barrido sin nada pendiente-- elegidas para
-# que la prueba mida el permiso y no la operacion.
+# baratas --una lectura y una confirmacion de finanzas sin nada detras--
+# elegidas para que la prueba mida el permiso y no la operacion.
 SUYA = "solicitantes.ver"
 AJENA = "viaticos.transferir"
 
@@ -39,8 +39,13 @@ def _hace_lo_suyo(cliente, cabeceras) -> int:
 
 
 def _hace_lo_ajeno(cliente, cabeceras) -> int:
-    return cliente.post("/viaticos/transferencias/barrido",
-                        headers=cabeceras).status_code
+    """Confirmar una solicitud que no existe: a quien pasa la puerta le
+    contesta 404 y a quien no, 403. Aqui solo importa la puerta, asi que
+    pasar se cuenta como 200 (antes era el barrido, que se fue con la
+    seccion 105)."""
+    codigo = cliente.post("/viaticos/transferencias/0/confirmar",
+                          headers=cabeceras).status_code
+    return 200 if codigo == 404 else codigo
 
 
 def _usuarios(cliente, sesion):

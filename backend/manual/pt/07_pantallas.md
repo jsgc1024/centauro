@@ -4,7 +4,7 @@ parte: entender
 orden: 70
 titulo: Cada tela, para que serve
 resumen: As telas do console, grupo por grupo, e o app de campo. O que se faz em cada uma e o que convém saber dela.
-buscar: telas menu operacao eventual implantado pessoal unidades desempenho clientes qualidade monitoramento codigo despesas faturamento folha acessos odoo catalogos manual app de campo
+buscar: telas menu operacao direcao eventual implantado pessoal unidades desempenho clientes qualidade monitoramento codigo despesas faturamento folha acessos odoo catalogos manual app de campo
 ---
 O menu de cada um sai do seu cargo. Quase todos os blocos trazem um **«?»**: para que serve, quando você fica sabendo se algo falha e de onde sai o número. Essa ajuda vive colada à sua tela e é a mais atualizada que existe.
 
@@ -35,6 +35,9 @@ O que o cliente disse: as pesquisas, a taxa de resposta e as notas de 3 ou menos
 
 ### Qualidade {#calidad}
 O mês em números: o que o cliente disse, a rua, o fechamento, as pessoas e os dados que faltam no Odoo e em Catálogos, contra o mês anterior, com o seu relatório em Excel para a reunião.
+
+### Direção de operações {#direccion}
+O que espera o visto do diretor de operações —os incidentes por autorizar, as cobranças ao cancelar e os prazos vencidos do fechamento— e os números de hoje por país: serviços hoje e amanhã, em andamento, com alerta, trocas por contingência e incidentes do mês. Cada número abre para mostrar quais serviços são. Veem o diretor de operações e a direção geral.
 
 ## Operações CI
 

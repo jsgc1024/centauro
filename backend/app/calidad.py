@@ -789,10 +789,11 @@ def puntualidad_y_reporte(ctx: _Contexto) -> dict:
         if marca is not None and marca.registrado_a_mano_en is not None:
             continue
         medidos += 1
-        momento = marca.marcado_en if marca is not None else j.inicio_real
-        if momento is None or (marca is not None and marca.dentro_geocerca is False):
+        # Solo su propia llegada (seccion 105, decision 4), como en el
+        # bono: sin marca suya no hay puntualidad que contar.
+        if marca is None or marca.dentro_geocerca is False:
             continue
-        if (momento - j.inicio_programado).total_seconds() <= 0:
+        if (marca.marcado_en - j.inicio_programado).total_seconds() <= 0:
             a_tiempo += 1
     return {"a_tiempo": a_tiempo, "medidos": medidos,
             "completos": completos, "dias": dias}

@@ -172,6 +172,34 @@ TEXTOS_PUSH = {
         "accion_confirmar": "Confirmo que voy",
         "accion_en_camino": "Voy en camino",
         "accion_abrir": "Abrir",
+        # El cambio de consultor titular (decision 13, seccion 105): a los
+        # dos, en el momento.
+        "titular_entra_titulo": "Ahora eres titular de {folio}",
+        "titular_entra_cuerpo": "{quien} te pasó {folio} ({cliente}): sus avisos, sus plazos y su comisión son tuyos desde ahora. Motivo: {motivo}",
+        "titular_sale_titulo": "{nuevo} pasa a ser titular de {folio}",
+        "titular_sale_cuerpo": "{quien} cambió el titular de {folio} ({cliente}): desde ahora lo lleva {nuevo}. Motivo: {motivo}",
+        # El cobro al cancelar y los plazos del cierre (seccion 105). El
+        # consultor y el director trabajan en la consola: el correo es el
+        # aviso que no falla y este es el toque.
+        "cobro_completo": "completo",
+        "cobro_ejecutado": "de lo ejecutado",
+        "cie_cobro_titulo": "{de_que}: operaciones autorizó el cobro {cobro}",
+        "cie_cobro_cuerpo": "Ya puedes dar el visto bueno y mandarlo a finanzas.",
+        "cie_mitad_titulo": "{de_que}: va la mitad de tu plazo",
+        "cie_mitad_cuerpo": "El plazo del visto bueno vence el {fecha} a las {hora}. Dalo antes.",
+        "cie_venc_titulo": "{de_que}: venció el plazo del visto bueno",
+        "cie_venc_cuerpo": "El servicio sigue esperando tu visto bueno, ya sin comisión. Mándalo cuanto antes.",
+        "cie_venc_reg_cuerpo": "Sigue esperando que lo vuelvas a mandar a finanzas; lo en plazo de tu primer visto bueno se queda.",
+        "cie_venc_dir_titulo": "{de_que}: venció el plazo de {consultor}",
+        "cie_venc_dir_cuerpo": "{consultor} no dio el visto bueno a tiempo: el servicio sigue esperando, ya sin comisión.",
+        "cie_venc_dir_reg_cuerpo": "{consultor} no volvió a mandarlo en las 24 horas del regreso de finanzas.",
+        # Seccion 105 (g2): el cambio de unidad avisa al equipo y no al
+        # cliente (decision 3); la hora propuesta que la central no tomo
+        # (decision 5).
+        "cambio_unidad_titulo": "Cambió la unidad",
+        "cambio_unidad_cuerpo": "{folio}, {cuando}: va la {entra} en lugar de la {sale}. Revisa tu día en la app.",
+        "hora_rechazada_titulo": "Se queda la hora de la hoja",
+        "hora_rechazada_cuerpo": "{fecha}: la central no tomó las {propuesta} que propusiste; sigue a las {hora}. Revisa tu día en la app.",
     },
     "pt": {
         "vispera_titulo": "Amanhã você trabalha",
@@ -186,6 +214,10 @@ TEXTOS_PUSH = {
         "regreso_titular_titulo": "Você volta ao seu serviço",
         "regreso_titular_cuerpo": "Você volta em {cuando}: {quien} cobre você até {hasta}. Abra o app e confirme.",
         "regreso_cubre_titulo": "O titular volta",
+        "titular_entra_titulo": "Agora você é o titular de {folio}",
+        "titular_entra_cuerpo": "{quien} passou {folio} ({cliente}) para você: os avisos, os prazos e a comissão são seus a partir de agora. Motivo: {motivo}",
+        "titular_sale_titulo": "{nuevo} passa a ser o titular de {folio}",
+        "titular_sale_cuerpo": "{quien} trocou o titular de {folio} ({cliente}): a partir de agora quem leva é {nuevo}. Motivo: {motivo}",
         "regreso_cubre_cuerpo": "{quien} volta em {cuando}: o seu último dia neste serviço é {hasta}. Veja o seu dia no app.",
         "asignacion_titulo": "Você trabalha {dia}",
         "asignacion_cuerpo": "Acabaram de designar você para {folio}: {dia} às {hora}. Abra o app e confirme.",
@@ -201,6 +233,18 @@ TEXTOS_PUSH = {
         "cancelacion_titulo": "Um serviço foi cancelado",
         "cancelacion_cuerpo": "{folio}: {rango} já não acontece. Não se apresente; veja o seu dia no app.",
         "cambio_hora_titulo": "O seu horário mudou",
+        "cobro_completo": "completa",
+        "cobro_ejecutado": "do executado",
+        "cie_cobro_titulo": "{de_que}: operações autorizou a cobrança {cobro}",
+        "cie_cobro_cuerpo": "Você já pode dar o visto e mandar para finanças.",
+        "cie_mitad_titulo": "{de_que}: já passou a metade do seu prazo",
+        "cie_mitad_cuerpo": "O prazo do visto vence {fecha} às {hora}. Dê o visto antes.",
+        "cie_venc_titulo": "{de_que}: venceu o prazo do visto",
+        "cie_venc_cuerpo": "O serviço continua esperando o seu visto, já sem comissão. Mande o quanto antes.",
+        "cie_venc_reg_cuerpo": "Continua esperando que você mande de novo para finanças; o 'no prazo' do seu primeiro visto fica.",
+        "cie_venc_dir_titulo": "{de_que}: venceu o prazo de {consultor}",
+        "cie_venc_dir_cuerpo": "{consultor} não deu o visto a tempo: o serviço continua esperando, já sem comissão.",
+        "cie_venc_dir_reg_cuerpo": "{consultor} não mandou de novo nas 24 horas da devolução de finanças.",
         "cambio_hora_cuerpo": "{fecha}: agora é às {hora} (antes {antes}). Veja o seu dia no app.",
         "cambio_fecha_titulo": "A sua data mudou",
         "cambio_fecha_cuerpo": "Agora é dia {fecha} às {hora} (antes dia {antes_fecha} às {antes}). Veja o seu dia no app.",
@@ -208,6 +252,10 @@ TEXTOS_PUSH = {
         "accion_confirmar": "Confirmo que vou",
         "accion_en_camino": "Estou a caminho",
         "accion_abrir": "Abrir",
+        "cambio_unidad_titulo": "A unidade mudou",
+        "cambio_unidad_cuerpo": "{folio}, {cuando}: vai a {entra} no lugar da {sale}. Veja o seu dia no app.",
+        "hora_rechazada_titulo": "Fica o horário da folha",
+        "hora_rechazada_cuerpo": "{fecha}: a central não aceitou as {propuesta} que você propôs; continua às {hora}. Veja o seu dia no app.",
     },
 }
 
@@ -455,6 +503,42 @@ def avisar_regreso(db: Session, titular: m.Persona, cubre: m.Persona,
     return r
 
 
+def avisar_cambio_de_titular(db: Session, servicio: m.Servicio,
+                             anterior: m.Persona | None, nuevo: m.Persona,
+                             quien: str, motivo: str) -> dict:
+    """El titular del servicio cambio: a los dos, en el momento (decision
+    13, seccion 105).
+
+    Al nuevo, que desde ahora le llegan los avisos y le corren los plazos
+    del servicio; al anterior, que ya no. Un servicio que estaba sin
+    asignar no tiene anterior a quien avisar. El consultor trabaja en la
+    consola, no en la app de campo: el aviso abre la ficha. Como todos
+    los avisos, no detiene nada: si no sale, el cambio ya quedo hecho.
+    """
+    pantalla = (f"/consola/#/implantado/{servicio.id}"
+                if servicio.tipo == m.TipoServicio.IMPLANTADO
+                else f"/consola/#/servicio/{servicio.id}")
+    cliente = servicio.cliente.nombre if servicio.cliente else ""
+    de_nuevo = idioma_de(db, nuevo.id)
+    r = avisar(
+        db, nuevo.id,
+        titulo=tx(de_nuevo, "titular_entra_titulo", folio=servicio.folio),
+        cuerpo=tx(de_nuevo, "titular_entra_cuerpo", quien=quien,
+                  folio=servicio.folio, cliente=cliente, motivo=motivo),
+        url=pantalla, etiqueta=f"titular-{servicio.id}")
+    if anterior is not None:
+        de_anterior = idioma_de(db, anterior.id)
+        avisar(
+            db, anterior.id,
+            titulo=tx(de_anterior, "titular_sale_titulo", nuevo=nuevo.nombre,
+                      folio=servicio.folio),
+            cuerpo=tx(de_anterior, "titular_sale_cuerpo", quien=quien,
+                      folio=servicio.folio, cliente=cliente,
+                      nuevo=nuevo.nombre, motivo=motivo),
+            url=pantalla, etiqueta=f"titular-{servicio.id}")
+    return r
+
+
 def avisar_asignacion_sin_vispera(db: Session, jornadas: list,
                                   persona_id: int) -> dict:
     """Te acaban de asignar, y a este servicio ya no le toca la vispera.
@@ -663,6 +747,49 @@ def avisar_cancelacion(db: Session, jornadas: list, folio: str) -> dict:
         if r["enviados"]:
             avisados.append(persona_id)
     return {"avisados": len(avisados)}
+
+
+def avisar_cambio_de_unidad(db: Session, jornadas: list, folio: str,
+                            sale: str, entra: str) -> dict:
+    """Cambio la camioneta: al equipo si, al cliente no.
+
+    Decision 3 de Salvador (seccion 105): el cambio de unidad por
+    contingencia no le escribe al cliente --a diferencia del cambio de
+    persona--, pero quien va a bordo tiene que saber en que placa se
+    sube manana, o se va a buscar la que ya no esta. Un aviso por
+    persona con el rango de dias, como la cancelacion.
+    """
+    avisados = []
+    for persona_id, suyas in _asignados(db, jornadas).items():
+        lengua = idioma_de(db, persona_id)
+        r = avisar(db, persona_id,
+                   titulo=tx(lengua, "cambio_unidad_titulo"),
+                   cuerpo=tx(lengua, "cambio_unidad_cuerpo", folio=folio,
+                             cuando=_rango(suyas, lengua), sale=sale,
+                             entra=entra),
+                   etiqueta="cambio-unidad", urgente=True)
+        if r["enviados"]:
+            avisados.append(persona_id)
+    return {"avisados": len(avisados)}
+
+
+def avisar_hora_rechazada(db: Session, jornada, persona_id: int) -> dict:
+    """La central dejo la hora de la hoja (seccion 105, decision 5).
+
+    Quien propuso la hora la escucho del principal y la manda dando por
+    hecho que va a quedar; si la central no la toma y nadie se lo dice,
+    se presenta a la hora que el propuso.
+    """
+    lengua = idioma_de(db, persona_id)
+    return avisar(
+        db, persona_id,
+        titulo=tx(lengua, "hora_rechazada_titulo"),
+        cuerpo=tx(lengua, "hora_rechazada_cuerpo",
+                  fecha=f"{jornada.fecha:%d/%m}",
+                  propuesta=(f"{jornada.hora_propuesta:%H:%M}"
+                             if jornada.hora_propuesta else "--:--"),
+                  hora=f"{jornada.inicio_programado:%H:%M}"),
+        etiqueta="cambio-hora", urgente=True)
 
 
 def avisar_cambio_de_hora(db: Session, jornada, antes) -> dict:

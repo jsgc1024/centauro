@@ -699,6 +699,12 @@ AYUDA_POR_PANTALLA = {
     # Corregir los contactos del servicio (seccion 95): un "?" que dice
     # para que sirve y cuando se nota que hace falta.
     "contactos.js": 1,
+    # Cambiar al consultor titular (seccion 105): un renglon con su boton
+    # dentro de la ficha, y el panel dice en su pie que pasa al guardar.
+    "titular.js": 0,
+    # La ventana del director de operaciones (seccion 105): uno para la
+    # bandeja de firmas y otro para el tablero de hoy, que trae numeros.
+    "direccion.js": 2,
 
     # --- las que no, y por que
     "api.js": 0,        # habla con el servidor; no pinta nada
@@ -729,6 +735,10 @@ AYUDA_POR_PANTALLA = {
     # Reportar una falla (seccion 92): la forma dice en su propia tarjeta
     # a quien le llega y que se manda solo, a la vista antes de mandarlo.
     "falla.js": 0,
+    # Registrar una incidencia (seccion 105): un panel que vive dentro de
+    # la ficha del servicio y de la encuesta; su pie dice que no toca el
+    # bono hasta el visto bueno, y cada gravedad trae su linea.
+    "incidencias.js": 0,
 
     # --- la app de campo no lleva "?", y es a proposito
     #

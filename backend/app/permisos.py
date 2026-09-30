@@ -86,6 +86,14 @@ ACTIVIDADES: dict[str, dict] = {
         "roles": {R.CONSULTOR, R.CENTRAL, R.DIRECTOR_OPERACIONES,
                   R.SISTEMA_CALIDAD},
     },
+    # Decision 13 de Salvador (29 sep, seccion 105): el titular de un
+    # servicio lo cambia direccion de operaciones --vacaciones largas,
+    # cambio de cartera, una baja--. No es del consultor: el que se va no
+    # decide a quien le deja su comision.
+    "servicios.titular": {
+        "descripcion": "Cambiar al consultor titular de un servicio",
+        "roles": {R.DIRECTOR_OPERACIONES},
+    },
 
     # ------------------------------------------------------- el dinero
     #
@@ -148,6 +156,13 @@ ACTIVIDADES: dict[str, dict] = {
         "descripcion": "Facturar el servicio o regresarlo a operacion",
         "roles": {R.FINANZAS},
     },
+    # El cobro de una cancelacion (seccion 105, decision 1): el consultor
+    # elige completo o ejecutado al cancelar y direccion de operaciones
+    # lo autoriza; direccion general lo alcanza por lo que hereda.
+    "cierre.autorizar_cobro": {
+        "descripcion": "Autorizar como se cobra un servicio cancelado",
+        "roles": {R.DIRECTOR_OPERACIONES},
+    },
     "cierre.rentabilidad": {
         "descripcion": "Ver la utilidad y el margen de un servicio",
         "roles": {R.CONSULTOR, R.FINANZAS, R.DIRECTOR_OPERACIONES},
@@ -202,10 +217,14 @@ ACTIVIDADES: dict[str, dict] = {
                   R.RECURSOS_HUMANOS,
                   R.SISTEMA_CALIDAD},
     },
+    # La central tambien registra incidencias (decision 2 de Salvador, 29
+    # sep, seccion 105): es quien esta despierta cuando pasa algo en la
+    # calle. La actividad sigue siendo una --registrar y calcular--, como
+    # la traia el consultor; calcular no mueve dinero (nace calculada).
     "bonos.incidencia": {
-        "descripcion": "Clasificar una incidencia y calcular las estrellas del "
+        "descripcion": "Registrar una incidencia y calcular las estrellas del "
                        "mes",
-        "roles": {R.CONSULTOR, R.DIRECTOR_OPERACIONES},
+        "roles": {R.CONSULTOR, R.DIRECTOR_OPERACIONES, R.CENTRAL},
     },
     "bonos.visto_bueno": {
         "descripcion": "Autorizar o descartar una incidencia que quita bono",
@@ -438,6 +457,16 @@ ACTIVIDADES: dict[str, dict] = {
                   R.DIRECTOR_GENERAL,
                   R.SISTEMA_CALIDAD},
     },
+    # La ventana del director de operaciones (seccion 105, decision 2 de
+    # Salvador, 29 sep): donde le llegan sus autorizaciones --las
+    # incidencias, el cobro al cancelar, los plazos vencidos-- y el
+    # tablero de hoy. Es suya y de direccion general, que ademas la
+    # hereda; nadie mas, porque lo que hay adentro son firmas.
+    "direccion.ver": {
+        "descripcion": "Ver la bandeja de autorizaciones y el tablero de "
+                       "direccion de operaciones",
+        "roles": {R.DIRECTOR_OPERACIONES, R.DIRECTOR_GENERAL},
+    },
 
     # --------------------------------- sistema y calidad (seccion 85)
     #
@@ -530,10 +559,13 @@ ACTIVIDADES: dict[str, dict] = {
 #
 # El manual del sistema entro en la seccion 90: lo abre quien trae
 # `manual.ver`.
+#
+# Direccion de operaciones entro en la seccion 105: la abre quien trae
+# `direccion.ver`.
 PANTALLAS = ("panorama", "servicios", "implantados", "equipo", "unidades",
              "bonos", "encuestas", "calidad", "central", "codigo",
              "finanzas", "facturacion", "nomina", "accesos", "odoo",
-             "catalogos", "manual")
+             "catalogos", "manual", "direccion")
 
 
 def roles_de(actividad: str) -> set:

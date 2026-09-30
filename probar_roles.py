@@ -102,11 +102,13 @@ c, r = pedir("POST", "/servicios", {"cliente_id": clientes[0]["id"], "pais_id": 
                                     "equipos": []}, token=tokens["juan"])
 resultado(403, c, "conductor intenta crear un servicio")
 
-c, r = pedir("POST", "/viaticos/transferencias/barrido", token=tokens["consultor"])
-resultado(403, c, "consultor intenta correr el barrido de finanzas")
+# Sin barrido desde la seccion 105: la puerta de finanzas se mide con
+# una confirmacion sobre una solicitud que no existe (404 = paso).
+c, r = pedir("POST", "/viaticos/transferencias/0/confirmar", token=tokens["consultor"])
+resultado(403, c, "consultor intenta confirmar un deposito de finanzas")
 
-c, r = pedir("POST", "/viaticos/transferencias/barrido", token=tokens["finanzas"])
-resultado(200, c, "finanzas corre el barrido")
+c, r = pedir("POST", "/viaticos/transferencias/0/confirmar", token=tokens["finanzas"])
+resultado(404, c, "finanzas pasa la puerta de confirmar")
 
 c, r = pedir("POST", "/catalogos/plazas", {"pais_id": mx["id"], "nombre": "Cancun"},
              token=tokens["consultor"])
@@ -148,8 +150,8 @@ resultado(200, c, "la central ajusta la marca")
 titulo("7. Alcance de la direccion general")
 c, r = pedir("GET", "/servicios", token=tokens["dirgeneral"])
 resultado(200, c, "direccion general consulta servicios")
-c, r = pedir("POST", "/viaticos/transferencias/barrido", token=tokens["dirgeneral"])
-resultado(200, c, "direccion general alcanza lo de finanzas")
+c, r = pedir("POST", "/viaticos/transferencias/0/confirmar", token=tokens["dirgeneral"])
+resultado(404, c, "direccion general alcanza lo de finanzas")
 c, r = pedir("POST", "/catalogos/plazas", {"pais_id": mx["id"], "nombre": "Merida"},
              token=tokens["dirgeneral"])
 resultado(403, c, "direccion general intenta tocar catalogos")

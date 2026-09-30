@@ -98,6 +98,19 @@ def _unidad_de(db: Session, contrato: m.ContratoImplantado, fila) -> m.Vehiculo 
     return None
 
 
+def modalidad_de_la_lista(db: Session,
+                          contrato: m.ContratoImplantado) -> m.Modalidad | None:
+    """Con que modalidad se lee la lista del cliente: el dia completo del
+    pais. Las listas de Odoo traen precios por full day, medio dia y
+    transfer, y el dia del implantado se cobra como el dia completo. El
+    contrato apunta a la modalidad `implantado` desde la seccion 105 --la
+    de sus horas--, y con ella la lista no tendria ningun precio."""
+    return (db.query(m.Modalidad)
+            .filter_by(pais_id=contrato.servicio.pais_id,
+                       codigo=m.CodigoModalidad.FULL_DAY).first()
+            or contrato.modalidad)
+
+
 def de_la_lista(db: Session, contrato: m.ContratoImplantado) -> dict:
     """Los terminos del mes segun la lista, renglon por renglon.
 
@@ -130,8 +143,9 @@ def de_la_lista(db: Session, contrato: m.ContratoImplantado) -> dict:
         salida["motivo"] = OTRA_MONEDA
         return salida
 
-    modalidad = contrato.modalidad
-    paquetes = cot.paquetes_del_tarifario(db, lista.id, contrato.modalidad_id)
+    modalidad = modalidad_de_la_lista(db, contrato)
+    modalidad_id = modalidad.id if modalidad else contrato.modalidad_id
+    paquetes = cot.paquetes_del_tarifario(db, lista.id, modalidad_id)
     renglones, faltan = salida["renglones"], salida["faltan"]
     en_paquete = set()
     dia, hora_extra = CERO, CERO
@@ -161,7 +175,7 @@ def de_la_lista(db: Session, contrato: m.ContratoImplantado) -> dict:
         else:
             tarifa = (db.query(m.TarifaRecurso)
                       .filter_by(tarifario_id=lista.id, perfil_id=fila.rol_id,
-                                 modalidad_id=contrato.modalidad_id).first())
+                                 modalidad_id=modalidad_id).first())
             if tarifa is None:
                 faltan.append({"que": "rol", "quien": quien, "descripcion": rol})
                 dia_completo = False
@@ -184,7 +198,7 @@ def de_la_lista(db: Session, contrato: m.ContratoImplantado) -> dict:
             continue
         tarifa = (db.query(m.TarifaVehiculo)
                   .filter_by(tarifario_id=lista.id, categoria_id=v.categoria_id,
-                             modalidad_id=contrato.modalidad_id).first())
+                             modalidad_id=modalidad_id).first())
         if tarifa is None:
             faltan.append({"que": "unidad", "quien": v.placa,
                            "descripcion": v.categoria.nombre})

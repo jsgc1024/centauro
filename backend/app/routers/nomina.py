@@ -78,13 +78,17 @@ def ver_tabulador(pais_id: int, db: Session = Depends(get_db),
                .filter_by(pais_id=pais_id).all()}
 
     def tabla(tipo):
-        # El implantado es siempre dia completo: es la misma persona en
-        # el mismo lugar todos los dias del mes. Ofrecerle medio dia y
-        # transfer es pedir numeros que nunca se van a usar, y peor:
-        # hacen ver la tabla incompleta cuando esta completa.
+        # El implantado es siempre su propia jornada (seccion 105): es la
+        # misma persona en el mismo lugar todos los dias del mes, y sus
+        # dias llevan la modalidad `implantado` del pais. Ofrecerle medio
+        # dia y transfer es pedir numeros que nunca se van a usar, y
+        # peor: hacen ver la tabla incompleta cuando esta completa. Y el
+        # eventual no ve la del implantado, por lo mismo.
         suyas = ([x for x in modalidades
-                  if x.codigo == m.CodigoModalidad.FULL_DAY]
-                 if tipo == m.TipoServicio.IMPLANTADO else modalidades)
+                  if x.codigo == m.CodigoModalidad.IMPLANTADO]
+                 if tipo == m.TipoServicio.IMPLANTADO else
+                 [x for x in modalidades
+                  if x.codigo != m.CodigoModalidad.IMPLANTADO])
         renglones = []
         for rol in roles:
             celdas = []
@@ -315,30 +319,32 @@ def ver(nomina_id: int, db: Session = Depends(get_db), _=Depends(LECTURA)):
     n = db.get(m.NominaSemanal, nomina_id)
     if not n:
         raise HTTPException(404, f"No existe la nomina {nomina_id}")
+    # Un corte absorbido ya no tiene renglones: se leen de donde viven
+    # hoy, con su semana de origen (seccion 105).
+    filas = (motor.filas_de_un_absorbido(db, n)
+             if n.estatus == m.EstatusNomina.ABSORBIDA
+             else motor.filas_del_corte(db, n))
     # El corte se paga por dia y por rol, asi que se suma por rol: es la
     # cuenta que la direccion va a pedir —cuanto se fue en conductores y
     # cuanto en coordinadores— y no se puede sacar de un total plano.
     por_rol: dict = {}
     dias_totales = 0
-    for r in n.renglones:
-        for c in r.conceptos:
-            # Solo los dias: un ajuste o el renglon del saldo en contra no
-            # son un dia de nadie.
-            if not c.jornada_id:
-                continue
-            dias_totales += 1
-            clave = c.rol_id or 0
-            fila = por_rol.setdefault(clave, {
-                "rol_id": c.rol_id,
-                "rol": c.rol.nombre if c.rol else "Sin rol",
-                "dias": 0, "monto": Decimal("0")})
-            fila["dias"] += 1
-            fila["monto"] += Decimal(str(c.monto))
+    for f in filas:
+        # Solo los dias: un ajuste o el renglon del saldo en contra no
+        # son un dia de nadie.
+        if f["jornada"] is None:
+            continue
+        dias_totales += 1
+        clave = f["rol_id"] or 0
+        fila = por_rol.setdefault(clave, {
+            "rol_id": f["rol_id"], "rol": f["rol"] or "Sin rol",
+            "dias": 0, "monto": Decimal("0")})
+        fila["dias"] += 1
+        fila["monto"] += Decimal(str(f["monto"]))
 
     # Lo mismo que la pestana del lunes: de donde sale cada peso, por
     # persona y el saldo en contra que pasa al siguiente (seccion 66).
-    detalle = motor.armar_detalle(db, motor.filas_del_corte(db, n),
-                                  n.fecha_corte)
+    detalle = motor.armar_detalle(db, filas, n.fecha_corte)
     return {
         **detalle,
         **motor.ficha(db, n),
@@ -367,17 +373,37 @@ def ver(nomina_id: int, db: Session = Depends(get_db), _=Depends(LECTURA)):
 
 
 @router.get("", summary="Listar cortes")
-def listar(pais_id: int | None = None, db: Session = Depends(get_db),
-           _=Depends(LECTURA)):
+def listar(pais_id: int | None = None, ahora: datetime | None = None,
+           db: Session = Depends(get_db), _=Depends(LECTURA)):
+    """El historial. Desde la seccion 105 cada corte dice que semanas
+    trae, quien se lo llevo si lo absorbieron, y si es un corte de un
+    lunes pasado que sigue sin pagarse (`pendiente`): ese trae "Pagar"
+    tambien aqui. `ahora` solo mueve el reloj en las pruebas."""
     consulta = db.query(m.NominaSemanal)
     if pais_id:
         consulta = consulta.filter_by(pais_id=pais_id)
     filas = consulta.order_by(m.NominaSemanal.fecha_corte.desc()).all()
-    return [{"id": n.id, "fecha_corte": n.fecha_corte.isoformat(),
-             "estatus": n.estatus.value, "total": n.total,
-             "estado": motor.ficha(db, n)["estado"],
-             "moneda": n.moneda.value, "personas": len(n.renglones)}
-            for n in filas]
+    relojes = reloj.Relojes(db, reloj.de_prueba(ahora))
+    salida = []
+    for n in filas:
+        ficha = motor.ficha(db, n)
+        # El absorbido ya no tiene renglones: su gente se cuenta de donde
+        # viven hoy sus conceptos.
+        personas = (len({f["persona_id"]
+                         for f in motor.filas_de_un_absorbido(db, n)})
+                    if n.estatus == m.EstatusNomina.ABSORBIDA
+                    else len(n.renglones))
+        lunes = motor.lunes_de(relojes.hoy(n.pais_id))
+        salida.append({
+            "id": n.id, "fecha_corte": n.fecha_corte.isoformat(),
+            "estatus": n.estatus.value, "total": n.total,
+            "estado": ficha["estado"],
+            "moneda": n.moneda.value, "personas": personas,
+            "desde": ficha["desde"], "semanas": ficha["semanas"],
+            "absorbida_por": ficha["absorbida_por"],
+            "pendiente": (n.estatus == m.EstatusNomina.CALCULADA
+                          and n.fecha_corte < lunes)})
+    return salida
 
 
 @router.delete("/{nomina_id}", summary="Tirar un borrador de corte")

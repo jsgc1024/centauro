@@ -12,6 +12,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app import models as m
+from app import reloj
 
 # Cuanto se tolera de mas al comprobar. No es cero porque pasa de
 # verdad: alguien pone de su bolsa la diferencia de una caseta o de una
@@ -230,9 +231,13 @@ def redondear(monto: Decimal) -> Decimal:
 
 
 def escenario_de(jornada: m.Jornada) -> m.EscenarioViatico:
-    """El escenario sale de la modalidad del dia y de si es local o foraneo."""
+    """El escenario sale de la modalidad del dia y de si es local o foraneo.
+
+    El implantado es un dia completo con su propia jornada (seccion
+    105): sus viaticos son los del dia completo, local o foraneo.
+    """
     codigo = jornada.modalidad.codigo
-    if codigo == m.CodigoModalidad.FULL_DAY:
+    if codigo in (m.CodigoModalidad.FULL_DAY, m.CodigoModalidad.IMPLANTADO):
         return (m.EscenarioViatico.FULL_DAY_FORANEO if jornada.es_foraneo
                 else m.EscenarioViatico.FULL_DAY_LOCAL)
     if codigo == m.CodigoModalidad.MEDIO_DIA:
@@ -240,14 +245,75 @@ def escenario_de(jornada: m.Jornada) -> m.EscenarioViatico:
     return m.EscenarioViatico.TRANSFER
 
 
-def estimar_combustible(db: Session, jornada: m.Jornada, pais_id: int) -> dict | None:
-    """Kilometros / rendimiento de la categoria * precio por litro, mas holgura."""
+def al_volante(jornada: m.Jornada, vehiculo_id: int) -> int | None:
+    """A quien se le propone la gasolina de esa unidad ese dia.
+
+    Decision 9 de Salvador (seccion 105): el combustible se propone una
+    vez por unidad, a quien va al volante --la persona con rol de
+    conductor a bordo de esa unidad--; si la unidad no trae conductor
+    asignado, a quien vaya en ella (el agente puede quedar a cargo de
+    la unidad). Con dos a bordo del mismo rol se lo lleva el primero
+    asignado: la propuesta tiene que caer en alguien, y el consultor la
+    mueve si iba al reves.
+
+    Es la misma regla con la que la central sabe quien trae la unidad al
+    punto (`gps.la_traen`); se importa aqui adentro porque `gps`
+    arrastra la operacion entera y este modulo se carga antes que ella.
+    """
+    from app import gps
+
+    gente = sorted(gps.la_traen(jornada, vehiculo_id), key=lambda a: a.id)
+    return gente[0].persona_id if gente else None
+
+
+def unidad_que_conduce(jornada: m.Jornada, persona_id: int
+                       ) -> m.AsignacionVehiculo | None:
+    """La unidad cuya gasolina le toca a esa persona ese dia, si alguna.
+
+    Con dos unidades cada conductor recibe lo de la suya, con el
+    rendimiento de esa unidad y no el de la primera del dia (seccion
+    105). La que salio a media jornada ya no cuenta: su gasolina la trae
+    quien la relevo.
+    """
+    for asignacion in sorted(jornada.vehiculos, key=lambda a: a.id):
+        if asignacion.relevado_en is not None or not asignacion.vehiculo_id:
+            continue
+        if al_volante(jornada, asignacion.vehiculo_id) == persona_id:
+            return asignacion
+    return None
+
+
+def estimar_combustible(db: Session, jornada: m.Jornada, pais_id: int,
+                        persona_id: int | None = None) -> dict | None:
+    """Kilometros / rendimiento de la categoria * precio por litro, mas holgura.
+
+    Por unidad y para quien la conduce (seccion 105). Antes se calculaba
+    con la primera unidad del dia y se le proponia a cada persona del
+    equipo: conductor y agente en la misma camioneta recibian cada uno
+    el tanque completo, "Usar el propuesto" lo depositaba dos veces y
+    con dos unidades el segundo conductor recibia el rendimiento de la
+    primera. Sin `persona_id` se calcula con la primera unidad vigente,
+    como antes: es lo que sirve para saber cuanto cuesta el dia.
+
+    Devuelve None cuando no hay como estimar --sin kilometros, sin
+    unidad, sin precio del litro-- y `{"monto": 0, ...}` cuando si hay
+    unidad pero la gasolina no le toca a esa persona.
+    """
     if not jornada.km_estimados:
         return None
 
-    asignacion_vehiculo = jornada.vehiculos[0] if jornada.vehiculos else None
-    if not asignacion_vehiculo:
+    vigentes = [a for a in sorted(jornada.vehiculos, key=lambda a: a.id)
+                if a.relevado_en is None and a.vehiculo_id]
+    if not vigentes:
         return None
+    if persona_id is None:
+        asignacion_vehiculo = vigentes[0]
+    else:
+        asignacion_vehiculo = unidad_que_conduce(jornada, persona_id)
+        if asignacion_vehiculo is None:
+            return {"monto": Decimal("0"),
+                    "detalle": "La gasolina se propone a quien conduce "
+                               "la unidad"}
 
     rendimiento = Decimal(str(asignacion_vehiculo.vehiculo.categoria.rendimiento_km_litro))
     if rendimiento <= 0:
@@ -266,11 +332,14 @@ def estimar_combustible(db: Session, jornada: m.Jornada, pais_id: int) -> dict |
     holgura = Decimal(str(parametro.holgura_pct)) / Decimal("100")
     total = redondear(base * (Decimal("1") + holgura))
 
+    placa = (asignacion_vehiculo.vehiculo.placa
+             if asignacion_vehiculo.vehiculo else None)
     return {
         "monto": total,
         "detalle": (f"{jornada.km_estimados} km / "
                     f"{rendimiento} km-l = {litros.quantize(Decimal('0.01'))} l "
-                    f"x {parametro.precio_litro} + {parametro.holgura_pct}% de holgura"),
+                    f"x {parametro.precio_litro} + {parametro.holgura_pct}% de holgura"
+                    + (f" · unidad {placa}" if placa else "")),
     }
 
 
@@ -335,7 +404,10 @@ def calcular(db: Session, jornada_id: int, persona_id: int) -> dict:
             })
             continue
         if fila.concepto == m.ConceptoViatico.COMBUSTIBLE:
-            estimado = estimar_combustible(db, jornada, pais.id)
+            # Por unidad y para quien la conduce (seccion 105): al que
+            # va de copiloto le sale en cero, editable, y no el tanque
+            # otra vez.
+            estimado = estimar_combustible(db, jornada, pais.id, persona_id)
             if estimado:
                 conceptos.append({
                     "concepto": fila.concepto.value,
@@ -398,22 +470,205 @@ def calcular(db: Session, jornada_id: int, persona_id: int) -> dict:
     }
 
 
-def ventana_de_transferencia(fecha_servicio: date, hoy: date | None = None) -> dict:
-    """La solicitud se dispara un dia antes del servicio.
-    Si el servicio inicia el mismo dia, entra de inmediato al primer barrido."""
-    hoy = hoy or date.today()
-    dispara_en = fecha_servicio - timedelta(days=1)
-
-    if fecha_servicio <= hoy:
-        return {"inmediata": True, "dispara_en": hoy.isoformat(),
-                "nota": "El servicio inicia hoy o ya inicio: entra al primer barrido."}
-    if dispara_en <= hoy:
-        return {"inmediata": True, "dispara_en": hoy.isoformat(),
-                "nota": "El servicio inicia manana: entra al barrido de hoy."}
-    return {"inmediata": False, "dispara_en": dispara_en.isoformat(),
-            "nota": "Queda programada para el barrido del dia previo al servicio."}
-
-
 def limite_de_comprobacion(termino: datetime) -> datetime:
     """24 horas desde el termino del servicio para cerrar viaticos."""
     return termino + timedelta(hours=HORAS_PARA_COMPROBAR)
+
+
+# ------------------------------------------------- la bandeja de finanzas
+#
+# Decision 8 de Salvador (seccion 105): ya no hay barrido ni ventana de
+# "un dia antes". Lo solicitado entra a la bandeja en cuanto se pide y
+# finanzas decide cuando transferir, mirando la fecha del servicio: lo
+# vencido sin depositar hasta arriba y en rojo, luego lo de hoy, lo de
+# manana y lo demas con su fecha. La regla vieja vivia en una ruta que
+# nadie corria: la bandeja ensenaba todo igual, un servicio de manana y
+# uno de dentro de treinta dias.
+
+VENCIDA, HOY, MANANA, DESPUES = "vencida", "hoy", "manana", "despues"
+# El orden en que se despacha.
+ORDEN_URGENCIA = {VENCIDA: 0, HOY: 1, MANANA: 2, DESPUES: 3}
+
+
+def urgencia_del_deposito(fecha_servicio: date, hoy: date) -> str:
+    """Que tan urgente es depositar, contra el dia de hoy DEL PAIS.
+
+    `fecha_servicio` es el primer dia pendiente de pago de esa persona en
+    ese equipo (en el implantado, dentro del mes). Anterior a hoy y sin
+    depositar es dinero que ya debia estar en la calle.
+    """
+    if fecha_servicio < hoy:
+        return VENCIDA
+    if fecha_servicio == hoy:
+        return HOY
+    if fecha_servicio == hoy + timedelta(days=1):
+        return MANANA
+    return DESPUES
+
+
+# ---------------------------------------------- dinero nuevo tras el cierre
+#
+# Decision 10 de Salvador (seccion 105): en un servicio cancelado, en
+# facturacion o cerrado ya no entra dinero nuevo --ni se abre un
+# viatico, ni se pide, ni se deposita--. Lo pedido antes del cierre no se
+# toca: se deposita, se comprueba y se devuelve como siempre. Si de
+# verdad hace falta mas dinero, primero finanzas regresa el servicio, se
+# mueve el dinero y se vuelve a cerrar. Antes el consultor fijaba 1,500
+# en un servicio ya facturado, lo pedia y finanzas lo depositaba: el
+# agente recibia dinero sin tarjeta en la app, sin plazo y con la
+# factura ya hecha.
+
+CANCELADO, EN_FACTURACION, CERRADO = "cancelado", "en_facturacion", "cerrado"
+
+# Lo que ya tiene visto bueno en el cierre de un mes del implantado. El
+# servicio implantado no cambia de estatus mes con mes: la fase la lleva
+# el cierre de cada mes, y por eso aqui se lee el cierre y no el servicio.
+_MES_EN_FACTURACION = (m.EstatusCierre.ENVIADO_FINANZAS,)
+_MES_CERRADO = (m.EstatusCierre.APROBADO, m.EstatusCierre.FACTURADO)
+
+
+def cierre_del_dinero(db: Session, servicio: m.Servicio,
+                      anio: int | None = None, mes: int | None = None
+                      ) -> tuple[str, datetime | None] | None:
+    """Si ya no entra dinero nuevo, por que y desde cuando.
+
+    Devuelve `(motivo, desde)` o None si el servicio sigue abierto al
+    dinero. `motivo` es cancelado, en_facturacion o cerrado; `desde` es
+    la hora de pared del pais desde la que quedo cerrado --el visto bueno
+    del consultor, la aprobacion de finanzas o la cancelacion--, o None
+    cuando no hay cierre del que leerla.
+
+    En el eventual lo dice el estatus del servicio: el visto bueno lo
+    pone en facturacion, la aprobacion de finanzas lo cierra y el regreso
+    de finanzas lo devuelve a sin visto bueno. En el implantado el
+    servicio se queda en curso y cierra por mes (seccion 56): con `anio`
+    y `mes` se lee el cierre de ese mes.
+    """
+    cierre = None
+    if servicio.tipo == m.TipoServicio.IMPLANTADO and anio and mes:
+        contrato = (db.query(m.ContratoImplantado)
+                    .filter_by(servicio_id=servicio.id, anio=anio, mes=mes)
+                    .first())
+        if contrato is not None:
+            cierre = (db.query(m.Cierre)
+                      .filter_by(contrato_id=contrato.id).first())
+    elif servicio.estatus in (m.EstatusServicio.CANCELADO,
+                              m.EstatusServicio.CERRADO,
+                              m.EstatusServicio.EN_FACTURACION):
+        # Solo entonces hace falta el cierre: la bandeja pregunta esto
+        # por cada solicitud, y un servicio abierto se contesta sin ir
+        # a la base.
+        cierre = (db.query(m.Cierre)
+                  .filter_by(servicio_id=servicio.id, contrato_id=None)
+                  .first())
+    else:
+        return None
+
+    if servicio.estatus == m.EstatusServicio.CANCELADO:
+        return CANCELADO, (cierre.abierto_en if cierre else None)
+    if servicio.estatus == m.EstatusServicio.CERRADO:
+        return CERRADO, (cierre.enviado_en if cierre else None)
+    if servicio.estatus == m.EstatusServicio.EN_FACTURACION:
+        return EN_FACTURACION, (cierre.enviado_en if cierre else None)
+    if cierre is not None and cierre.contrato_id:
+        if cierre.estatus in _MES_CERRADO:
+            return CERRADO, cierre.enviado_en
+        if cierre.estatus in _MES_EN_FACTURACION:
+            return EN_FACTURACION, cierre.enviado_en
+    return None
+
+
+def cerrado_al_dinero(db: Session, servicio: m.Servicio,
+                      anio: int | None = None, mes: int | None = None
+                      ) -> str | None:
+    """Solo el motivo, para las pantallas: cancelado, en_facturacion,
+    cerrado, o None si sigue entrando dinero."""
+    cierre = cierre_del_dinero(db, servicio, anio, mes)
+    return cierre[0] if cierre else None
+
+
+QUE_HACER_CERRADO = {
+    CANCELADO: ("Un servicio cancelado no lleva dinero nuevo. Lo que ya se "
+                "había pedido se deposita, se comprueba y se devuelve como "
+                "siempre."),
+    EN_FACTURACION: ("Si de verdad hace falta más dinero, pídele a finanzas "
+                     "que regrese el servicio, muévelo y vuélvanlo a cerrar."),
+    # Lo aprobado por finanzas ya no se regresa (lo cerrado se corrige
+    # con nota de credito, no reabriendolo), asi que mandar a "regresar"
+    # seria mandar a un boton que contesta que no.
+    CERRADO: ("Ya lo aprobó finanzas y no se regresa: si de verdad hace "
+              "falta más dinero, resuélvelo con finanzas fuera de este "
+              "servicio."),
+}
+NOMBRE_CERRADO = {CANCELADO: "cancelado", EN_FACTURACION: "en facturación",
+                  CERRADO: "cerrado"}
+
+
+def frenar_si_cerrado(db: Session, servicio: m.Servicio,
+                      anio: int | None = None, mes: int | None = None) -> None:
+    """Una sola puerta para todo el dinero nuevo (seccion 105).
+
+    La llaman abrir o fijar el viatico, agregar un deposito y pedirlo a
+    finanzas, en el eventual y en el mes del implantado. No la llaman
+    comprobar, devolver ni depositar lo que ya estaba pedido: eso es
+    dinero de antes del cierre y sigue su camino.
+    """
+    motivo = cerrado_al_dinero(db, servicio, anio, mes)
+    if not motivo:
+        return
+    # En el implantado lo que cierra es el mes; el cancelado es el
+    # servicio entero.
+    que = "El mes" if (anio and mes and motivo != CANCELADO) else "El servicio"
+    raise HTTPException(409, {
+        "mensaje": f"{que} está {NOMBRE_CERRADO[motivo]}: ya no entra "
+                   f"dinero nuevo",
+        "que_hacer": QUE_HACER_CERRADO[motivo],
+        "motivo": motivo,
+    })
+
+
+def _de_donde(solicitud: m.SolicitudTransferencia) -> tuple:
+    """(servicio, anio, mes) de una solicitud: el mes solo en el
+    implantado, que es donde cierra el mes y no el servicio."""
+    viatico = solicitud.asignacion
+    jornada = viatico.jornada if viatico else None
+    equipo = jornada.equipo if jornada else None
+    servicio = equipo.servicio if equipo else None
+    if servicio is not None and servicio.tipo == m.TipoServicio.IMPLANTADO:
+        return servicio, jornada.fecha.year, jornada.fecha.month
+    return servicio, None, None
+
+
+def pedida_tras_el_cierre(db: Session, solicitud: m.SolicitudTransferencia
+                          ) -> bool:
+    """Si esa solicitud nacio con el servicio (o el mes) ya cerrado al dinero.
+
+    No deberia existir --las puertas de arriba ya no la dejan nacer--,
+    pero si existe, finanzas no la deposita: la bandeja no le pone
+    boton y la ruta la rechaza. Lo pedido antes del cierre se deposita
+    como siempre. Sin cierre del que leer la hora se toma como de antes:
+    la duda no le quita a nadie un deposito que si iba.
+    """
+    servicio, anio, mes = _de_donde(solicitud)
+    if servicio is None:
+        return False
+    cierre = cierre_del_dinero(db, servicio, anio, mes)
+    if not cierre or cierre[1] is None or solicitud.creada_en is None:
+        return False
+    # `creada_en` es un instante (con zona); el cierre guarda hora de
+    # pared del pais. Se compara en la hora del pais.
+    pais = db.get(m.Pais, servicio.pais_id)
+    pedida = reloj.ahora_en(pais, solicitud.creada_en)
+    return pedida > cierre[1]
+
+
+def frenar_si_pedida_tras_el_cierre(db: Session,
+                                    solicitudes: list) -> None:
+    """Finanzas no deposita lo que se pidio con el servicio ya cerrado.
+
+    Con el mismo mensaje que las demas puertas: dice por que y que hacer.
+    """
+    for solicitud in solicitudes:
+        if pedida_tras_el_cierre(db, solicitud):
+            servicio, anio, mes = _de_donde(solicitud)
+            frenar_si_cerrado(db, servicio, anio, mes)

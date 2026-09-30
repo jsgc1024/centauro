@@ -474,6 +474,12 @@ class OdooPersonalFalso:
         return [{"id": e["id"], **{c: e.get(c, False) for c in campos}}
                 for e in filas]
 
+    def campos(self, modelo, atributos=None):
+        """Sin el campo de la cuenta bancaria (seccion 105): la lectura
+        del personal pregunta por el antes de pedirlo."""
+        from app import odoo_personal
+        return {c: {"type": "char"} for c in odoo_personal.CAMPOS}
+
     def cambiar(self, n, **valores):
         self.empleados[ODOO0 + n].update(valores)
 

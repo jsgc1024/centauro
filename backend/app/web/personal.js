@@ -13,6 +13,7 @@ import { api, sesion } from "./api.js";
 import { aviso, buscador, campo, coincide, conAyuda, dinero, etiqueta,
          fecha, h, lista, mensaje } from "./util.js";
 import { t } from "./idioma.js";
+import { etiquetaEstado, nombreGravedad } from "./incidencias.js";
 
 let paisActual = null;
 let soloPorVencer = false;
@@ -179,6 +180,18 @@ function usuarioDe(f) {
     u.correo + (nota ? ` · ${nota}` : ""));
 }
 
+/* Si hay a donde depositarle (decision 7 de Salvador, seccion 105). La
+   cuenta viene de Odoo y se captura alla, en la ficha del empleado; aqui
+   solo se dice si esta o falta --en rojo, porque sin ella no sale su
+   deposito--. El numero es de finanzas, en su bandeja. */
+function cuentaDe(f) {
+  if (!f.cuenta) return "";
+  return f.cuenta === "falta"
+    ? h("div", { clase: "chico", style: "color:var(--grave)" },
+        t("per_falta_cuenta_odoo"))
+    : h("div", { clase: "gris chico" }, t("per_tiene_cuenta"));
+}
+
 function renglon(f, zona) {
   const cap = f.capacitacion || {};
   return h("tr", {},
@@ -273,7 +286,8 @@ async function abrirFicha(zona, fila) {
           h("div", { clase: "gris chico" },
             [f.plaza,
              `${f.horas_en_centauro.toLocaleString()} h`,
-             t("per_ventana").replace("{n}", f.ventana_meses)].join(" · "))),
+             t("per_ventana").replace("{n}", f.ventana_meses)].join(" · ")),
+          cuentaDe(f)),
         h("div", { style: "text-align:right" },
           h("div", { clase: "calificacion_grande" }, String(f.calificacion)),
           h("div", { clase: "gris chico" },
@@ -290,8 +304,42 @@ async function abrirFicha(zona, fila) {
           onclick: () => pintar(zona) }, t("per_volver")))),
 
     bloqueBonos(exp),
+    bloqueIncidencias(exp),
     bloqueClientes(exp),
     bloqueCertificados(exp));
+}
+
+/* Sus incidencias, todas (seccion 105): la que espera visto bueno, la
+   autorizada y la descartada con su resolucion. La descartada no toca
+   bono ni comision, pero se queda aqui: es lo que explica, meses
+   despues, que alguien la levanto y por que no procedio. */
+function bloqueIncidencias(exp) {
+  const filas = exp.incidencias || [];
+  const tono = { pendiente: "alerta", autorizada: "grave", descartada: "" };
+  return h("div", { clase: "tarjeta lisa" },
+    h("h3", {}, t("inc_exp_titulo")),
+    filas.length
+      ? h("table", {},
+          h("thead", {}, h("tr", {},
+            h("th", {}, t("inc_dia")), h("th", {}, t("enc_servicio")),
+            h("th", {}, t("inc_gravedad")), h("th", {}, t("inc_descripcion")),
+            h("th", {}, t("bon_estado")))),
+          h("tbody", {}, ...filas.map(i => h("tr", {},
+            h("td", { clase: "chico gris" }, fecha(i.fecha)),
+            h("td", {}, i.servicio_id
+              ? h("a", { href: `#/servicio/${i.servicio_id}` }, i.folio || "—")
+              : "—"),
+            h("td", { clase: "chico" }, nombreGravedad(i.gravedad)),
+            h("td", { clase: "chico" }, i.descripcion,
+              h("div", { clase: "chico gris" },
+                t("inc_exp_registro").replace("{q}", i.registrada_por || "—")),
+              i.resolucion
+                ? h("div", { clase: "chico gris" },
+                    t("inc_exp_firmo").replace("{q}", i.visto_bueno_por || "—")
+                      .replace("{r}", i.resolucion))
+                : ""),
+            h("td", {}, etiqueta(etiquetaEstado(i.estado), tono[i.estado] || ""))))))
+      : h("div", { clase: "vacio" }, t("inc_exp_vacio")));
 }
 
 function dimension(d) {

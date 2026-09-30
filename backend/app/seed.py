@@ -121,6 +121,21 @@ def sembrar() -> dict:
                 {"horas": D(horas), "horas_descanso": D(descanso),
                  "aplica_horas_extra": he, "bloquea_dia_completo": bloquea})
 
+        # El implantado lleva su propia jornada en cada pais (seccion 105,
+        # decision 6): 12 horas corridas en Mexico y en Brasil, hoy sin
+        # descanso; el ano que entra Catalogos le pone las horas de
+        # descanso --en bloques de una hora-- sin tocar nada mas. Va para
+        # todos los paises, tambien los que se den de alta despues.
+        for pais in db.query(m.Pais).all():
+            obj, _ = _obtener_o_crear(
+                db, m.Modalidad,
+                {"pais_id": pais.id, "codigo": m.CodigoModalidad.IMPLANTADO},
+                {"horas": D("12"), "horas_descanso": D("0"),
+                 "intervalo_descanso": D("1"), "aplica_horas_extra": True,
+                 "bloquea_dia_completo": True, "km_estimados": None})
+            if pais.id == mx.id:
+                mods_mx[m.CodigoModalidad.IMPLANTADO.value] = obj
+
         # ---------------------------------------------------- tarifario general Mexico
         tarifario, _ = _obtener_o_crear(
             db, m.Tarifario, {"nombre": "General Mexico", "pais_id": mx.id},
@@ -245,16 +260,24 @@ def sembrar() -> dict:
         # Las dos tablas arrancan con los mismos numeros. De ahi en
         # adelante cada operacion ajusta la suya: un dia de implantado no
         # se paga igual que un dia suelto que arranca en un aeropuerto.
-        for tipo in (m.TipoServicio.EVENTUAL, m.TipoServicio.IMPLANTADO):
-            for perfil_cod, por_mod in comisiones.items():
-                for mod_cod, monto in por_mod.items():
-                    _obtener_o_crear(
-                        db, m.ComisionPersonal,
-                        {"pais_id": mx.id, "tipo_servicio": tipo,
-                         "perfil_id": perfiles[perfil_cod].id,
-                         "modalidad_id": mods_mx[mod_cod].id},
-                        {"monto": D(monto), "moneda": m.Moneda.MXN,
-                         "monto_hora_extra": D(comision_he[perfil_cod]) if mod_cod == "full_day" else None})
+        for perfil_cod, por_mod in comisiones.items():
+            for mod_cod, monto in por_mod.items():
+                _obtener_o_crear(
+                    db, m.ComisionPersonal,
+                    {"pais_id": mx.id, "tipo_servicio": m.TipoServicio.EVENTUAL,
+                     "perfil_id": perfiles[perfil_cod].id,
+                     "modalidad_id": mods_mx[mod_cod].id},
+                    {"monto": D(monto), "moneda": m.Moneda.MXN,
+                     "monto_hora_extra": D(comision_he[perfil_cod]) if mod_cod == "full_day" else None})
+            # El implantado es siempre su propia modalidad (seccion 105):
+            # una sola celda por rol, con el monto del dia completo.
+            _obtener_o_crear(
+                db, m.ComisionPersonal,
+                {"pais_id": mx.id, "tipo_servicio": m.TipoServicio.IMPLANTADO,
+                 "perfil_id": perfiles[perfil_cod].id,
+                 "modalidad_id": mods_mx["implantado"].id},
+                {"monto": D(por_mod["full_day"]), "moneda": m.Moneda.MXN,
+                 "monto_hora_extra": D(comision_he[perfil_cod])})
 
         db.commit()
 

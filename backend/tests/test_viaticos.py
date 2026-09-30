@@ -200,7 +200,6 @@ def test_no_se_cierra_si_el_dinero_no_cuadra(cliente, sesion, datos):
 
     solicitud = cliente.post(f"/viaticos/{viatico['id']}/solicitar-transferencia",
                              headers=h).json()
-    cliente.post("/viaticos/transferencias/barrido", headers=sesion("finanzas"))
     cliente.post(f"/viaticos/transferencias/{solicitud['id']}/confirmar",
                  headers=sesion("finanzas"))
 
@@ -225,7 +224,6 @@ def test_se_cierra_cuando_se_devuelve_el_sobrante(cliente, sesion, datos):
 
     solicitud = cliente.post(f"/viaticos/{viatico['id']}/solicitar-transferencia",
                              headers=h).json()
-    cliente.post("/viaticos/transferencias/barrido", headers=sesion("finanzas"))
     cliente.post(f"/viaticos/transferencias/{solicitud['id']}/confirmar",
                  headers=sesion("finanzas"))
 
@@ -257,28 +255,10 @@ def test_el_personal_solo_comprueba_lo_suyo(cliente, sesion, datos):
     assert ajeno.status_code == 403
 
 
-def test_la_ventana_de_transferencia_respeta_el_dia_previo(cliente, sesion, datos):
-    _, lejano, _ = _jornada_con_viaticos(cliente, sesion, datos, 46)
-    r = cliente.get(f"/viaticos/transferencias/ventana?jornada_id={lejano['id']}",
-                    headers=sesion("consultor")).json()
-    assert r["inmediata"] is False
-
-    _, manana_, _ = _jornada_con_viaticos(cliente, sesion, datos, 1)
-    r2 = cliente.get(f"/viaticos/transferencias/ventana?jornada_id={manana_['id']}",
-                     headers=sesion("consultor")).json()
-    assert r2["inmediata"] is True
-
-
-def test_el_barrido_pospone_lo_que_no_toca(cliente, sesion, datos):
-    _, lejano, persona = _jornada_con_viaticos(cliente, sesion, datos, 47)
-    viatico = _asignar_viaticos(cliente, sesion, lejano, persona)
-    cliente.post(f"/viaticos/{viatico['id']}/solicitar-transferencia",
-                 headers=sesion("consultor"))
-
-    lote = cliente.post("/viaticos/transferencias/barrido",
-                        headers=sesion("finanzas")).json()
-    assert lote["enviadas"] == 0
-    assert lote["pospuestas"] == 1
+# La ventana de "un dia antes" y el barrido por lote se fueron con la
+# decision 8 de Salvador (seccion 105): lo pedido entra a la bandeja de
+# finanzas en cuanto se pide, ordenado por la fecha del servicio. Sus
+# pruebas viven en `test_revision_105_finanzas.py`.
 
 
 # ------------------------------------------- cierre forzado por el consultor

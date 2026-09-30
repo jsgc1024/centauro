@@ -549,6 +549,9 @@ export async function nuevoServicio(main) {
   function opcionesModalidad() {
     return cat.modalidades
       .filter(m => String(m.pais_id) === String(paises.value))
+      /* La jornada del implantado (seccion 105) no es un dia del
+         eventual: no se ofrece aqui. */
+      .filter(m => m.codigo !== "implantado")
       .sort((a, b) => ORDEN_MODALIDAD.indexOf(a.codigo)
                       - ORDEN_MODALIDAD.indexOf(b.codigo))
       .map(m => ({

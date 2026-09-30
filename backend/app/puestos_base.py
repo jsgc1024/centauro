@@ -58,10 +58,14 @@ PUESTOS: list[dict] = [
         # codigo reconozca la voz de quien llama (seccion 57).
         # Catalogos (seccion 86): fija lo que en ellos decide dinero.
         # Calidad (seccion 89): ve el mes en cifras.
+        # Direccion de operaciones (seccion 105): su bandeja de
+        # autorizaciones y el tablero de hoy. El puesto que ya existia en
+        # produccion la tomo con la migracion d7f9a1b3c5e7 (crear_puestos
+        # no pisa lo que ya esta).
         "pantallas": ["panorama", "servicios", "implantados", "equipo",
                       "unidades", "bonos", "encuestas", "central",
                       "finanzas", "facturacion", "nomina", "catalogos",
-                      "calidad"],
+                      "calidad", "direccion"],
         "actividades": _de(R.DIRECTOR_OPERACIONES),
         "puestos_odoo": "Director de Operaciones, Director Operativo",
     },

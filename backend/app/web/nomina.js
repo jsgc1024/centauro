@@ -16,7 +16,14 @@
    debajo de cero cobra cero y lo que falta pasa a su siguiente corte.
 
    Ya pagado no se toca: el dinero ya salio. Lo que cambie despues viaja
-   hacia adelante como diferencia, con su motivo escrito. */
+   hacia adelante como diferencia, con su motivo escrito.
+
+   El corte que no se pago el lunes (seccion 105): sigue en la pestana
+   hasta pagarse, con "Pagar" tambien en el historial; mientras sea
+   lunes y el corte de hoy no exista se ofrece "Armar el corte de hoy";
+   y el corte de un lunes se lleva al de la semana anterior que nadie
+   pago: un solo corte de dos semanas, con cada renglon diciendo de que
+   semana viene, y el viejo queda "absorbido" sin boton de pagar. */
 import { api, sesion } from "./api.js";
 import { aviso, campo, conAyuda, dinero, entrada, etiqueta, fecha, h, hora,
          lista, mensaje, tasa } from "./util.js";
@@ -175,17 +182,53 @@ async function pintarPersonal(zona, recargar) {
     tarjetaDelLunes(semana, recargar),
     tarjetaMeses(meses.meses),
     historial, detalle, bloqueAjustes());
-  await pintarHistorial(historial, detalle);
+  await pintarHistorial(historial, detalle, recargar,
+                        semana.corte ? semana.corte.nomina_id : null);
 }
 
 function estadoDelCorte(estado) {
   if (estado === "pagado") return etiqueta(t("nom_e_pagado"), "ok");
   if (estado === "listo") return etiqueta(t("nom_e_listo"), "info");
+  if (estado === "absorbido") return etiqueta(t("nom_e_absorbido"));
   return etiqueta(t("nom_e_borrador"), "alerta");
 }
 
-/* El corte de este lunes si hay uno por pagar; si no, lo que va
-   juntandose para el siguiente. */
+/* "Corte del lunes 28 · incluye la semana del 21" (seccion 105): el
+   corte que se llevo al de la semana anterior que no se pago. */
+function tituloDelCorte(c) {
+  const titulo = reemplazar(t("nom_corte_del"), { f: fecha(c.fecha_corte) });
+  if (!c.semanas || !c.semanas.length) return titulo;
+  return `${titulo} · ${reemplazar(t("nom_incluye_semana"),
+                                   { d: c.semanas.map(fecha).join(", ") })}`;
+}
+
+/* Hoy es lunes y el corte de hoy no existe (seccion 105): el reloj no
+   corrio, o fallo por una tarifa que ya se cargo. Se puede armar a mano,
+   tambien despues de las 11:00. El servidor decide cuando se ofrece; el
+   boton solo lo ve quien arma el corte. */
+function ofrecerArmarHoy(semana, recargar, faltantes, caja) {
+  if (!semana.armar_hoy) return;
+  const falta = semana.falta_hoy || [];
+  /* El aviso y la tabla van en `faltantes`, que es lo que el intento
+     de armar reemplaza con lo que le falto; el boton va aparte, para
+     que siga ahi despues de cargar la tarifa. */
+  faltantes.replaceChildren(...[
+    aviso(t(semana.no_salio ? "nom_no_salio" : "nom_armar_hoy_pie"),
+          semana.no_salio ? "grave" : "alerta"),
+    falta.length ? tablaSinTarifa(falta) : null,
+  ].filter(Boolean));
+  if (puede("calcular")) {
+    caja.append(h("div", { clase: "acciones", style: "margin-top:10px" },
+      h("button", { type: "button",
+        onclick: (e) => calcular(e, semana.lunes, recargar, faltantes,
+                                 "nom_armado_hoy") },
+        t("nom_armar"))));
+  }
+}
+
+/* El corte de este lunes si hay uno por pagar; si no, el de un lunes
+   anterior que sigue sin pagarse; si no, lo que va juntandose para el
+   siguiente. */
 function tarjetaDelLunes(semana, recargar) {
   const c = semana.corte;
   const hs = semana.horario;
@@ -204,8 +247,21 @@ function tarjetaDelLunes(semana, recargar) {
       : reemplazar(t("nom_armado"), {
           q: c.calculada_por || t("nom_el_sistema"), h: hora(c.calculada_en) })
         + " " + reemplazar(t("nom_horario"), { c: hs.cierre, p: hs.pago });
-    caja.append(cabeza(reemplazar(t("nom_corte_del"), { f: fecha(c.fecha_corte) }),
-                       estadoDelCorte(c.estado), pie), faltantes);
+    caja.append(cabeza(tituloDelCorte(c), estadoDelCorte(c.estado), pie));
+    /* El corte de un lunes pasado que nadie pago (seccion 105): sigue
+       aqui, con sus botones, hasta que se pague. Si hoy es lunes y el
+       corte de hoy no se ha armado, tambien se ofrece armarlo: se lleva
+       a este y sale uno solo de dos semanas. */
+    if (c.pendiente) {
+      caja.append(aviso(reemplazar(t("nom_corte_pendiente"),
+                                   { f: fecha(c.fecha_corte) }), "alerta"));
+    }
+    if (c.semanas && c.semanas.length) {
+      caja.append(h("p", { clase: "gris chico", style: "margin:6px 0 0" },
+        reemplazar(t("nom_incluye_pie"), { d: c.semanas.map(fecha).join(", ") })));
+    }
+    caja.append(faltantes);
+    ofrecerArmarHoy(semana, recargar, faltantes, caja);
     if (sinTarifa.length) {
       /* El borrador de las 7:00 que no cierra: entre las 7:00 y las
          11:00 llego un dia sin tarifa y el recalculo de las 11:00 no
@@ -223,18 +279,10 @@ function tarjetaDelLunes(semana, recargar) {
     caja.append(cabeza(reemplazar(t("nom_va_para"), { f: fecha(p.fecha_corte) }),
       etiqueta(reemplazar(t("nom_e_se_arma"), { h: hs.borrador })),
       reemplazar(t("nom_va_pie"), { b: hs.borrador, c: hs.cierre })), faltantes);
-    if (semana.no_salio) {
-      faltantes.replaceChildren(...[
-        aviso(t("nom_no_salio"), "grave"),
-        p.sin_tarifa.length ? tablaSinTarifa(p.sin_tarifa) : null,
-      ].filter(Boolean));
-      if (puede("calcular")) {
-        caja.append(h("div", { clase: "acciones", style: "margin-top:10px" },
-          h("button", { type: "button",
-            onclick: (e) => calcular(e, semana.lunes, recargar, faltantes) },
-            t("nom_armar"))));
-      }
-    }
+    /* "Armar el corte de hoy" (seccion 105): antes solo cuando el reloj
+       no pudo antes de las 11:00; ahora mientras sea lunes y el corte
+       de hoy no exista, con la tabla de lo que le falta si hay. */
+    ofrecerArmarHoy(semana, recargar, faltantes, caja);
   }
 
   const d = c || semana.proximo;
@@ -284,9 +332,9 @@ function fichas(d) {
   const cifra = (valor, texto, tono = "") => h("div", {},
     h("div", { clase: `cifra ${tono}`.trim() }, dinero(valor, monedaActual)),
     h("div", { clase: "gris chico" }, texto));
+  const de = { pagado: "nom_t_pagado", absorbido: "nom_t_absorbido" };
   return h("div", { clase: "rejilla cuatro", style: "margin:16px 0 4px" },
-    cifra(d.total, reemplazar(t(d.estado === "pagado" ? "nom_t_pagado" : "nom_t_a_pagar"),
-                              { n: r.personas })),
+    cifra(d.total, reemplazar(t(de[d.estado] || "nom_t_a_pagar"), { n: r.personas })),
     cifra(r.eventual, reemplazar(t("nom_t_eventual"), { n: eventuales })),
     cifra(r.implantado, reemplazar(t("nom_t_implantado"), { n: contratos })),
     cifra(Number(r.diferencias) + pasan,
@@ -431,9 +479,14 @@ function tablaPersonas(d) {
             "grave")) : null)));
       if (!abierta) continue;
       for (const c of p.conceptos) {
+        /* De que semana viene el renglon (seccion 105): el corte que
+           absorbio al anterior trae sus dias con una etiqueta chica. */
         filas.push(h("tr", { clase: "sub" },
           h("td", {}, c.folio && !c.descripcion.includes(c.folio)
-            ? `${c.folio} · ${c.descripcion}` : c.descripcion),
+            ? `${c.folio} · ${c.descripcion}` : c.descripcion,
+            c.semana ? [" ", etiqueta(reemplazar(t("nom_semana_de"),
+                                                { f: fecha(c.semana) }))]
+                     : null),
           h("td", {}), h("td", {}), h("td", {}),
           h("td", { clase: "der num" }, c.saldo_en_contra
             ? `+${dinero(c.monto, monedaActual)}` : dinero(c.monto, monedaActual))));
@@ -515,11 +568,11 @@ function tablaSinTarifa(filas) {
                            "alerta"))))));
 }
 
-async function calcular(e, lunes, recargar, faltantes) {
+async function calcular(e, lunes, recargar, faltantes, hecho = "nom_recalculado") {
   e.target.disabled = true;
   try {
     await api.post("/nomina/calcular", { pais_id: paisActual, fecha_corte: lunes });
-    mensaje(t("nom_recalculado"));
+    mensaje(t(hecho));
     await recargar();
   } catch (err) {
     const filas = (err.detalle && err.detalle.sin_tarifa) || [];
@@ -615,13 +668,41 @@ function tarjetaMeses(meses) {
 
 /* --------------------------------------------------------- historial */
 
-async function pintarHistorial(zona, zonaDetalle) {
+/* `mostrado` es el corte que ya esta en la tarjeta de arriba con sus
+   botones: en el historial no se le repite el "Pagar". */
+async function pintarHistorial(zona, zonaDetalle, recargar, mostrado) {
   let cortes = [];
   try { cortes = await api.get(`/nomina?pais_id=${paisActual}`); }
   catch (err) { return zona.replaceChildren(aviso(err.message, "grave")); }
   if (!cortes.length) {
     return zona.replaceChildren(h("div", { clase: "tarjeta" },
       h("span", { clase: "gris" }, t("nom_sin_cortes"))));
+  }
+  /* Lo que dice cada renglon debajo de su estado (seccion 105): el
+     absorbido, quien se lo llevo; el que absorbio, que semanas trae. */
+  function nota(c) {
+    if (c.absorbida_por) {
+      return h("div", { clase: "gris chico" }, reemplazar(
+        t("nom_absorbido_por"), { f: fecha(c.absorbida_por.fecha_corte) }));
+    }
+    if (c.semanas && c.semanas.length) {
+      return h("div", { clase: "gris chico" }, reemplazar(
+        t("nom_incluye_semana"), { d: c.semanas.map(fecha).join(", ") }));
+    }
+    return null;
+  }
+  function botones(c) {
+    const lista_ = [h("button", { clase: "claro chico", type: "button",
+      onclick: () => verCorte(zonaDetalle, c.id) }, t("nom_ver"))];
+    /* El corte de un lunes pasado que sigue sin pagarse se paga desde
+       aqui tambien (seccion 105); el absorbido no tiene boton. */
+    if (c.pendiente && c.id !== mostrado && puede("pagar")) {
+      lista_.push(" ", h("button", { clase: "chico", type: "button",
+        onclick: (e) => pagar(e, { nomina_id: c.id, fecha_corte: c.fecha_corte,
+                                   total: c.total }, recargar) },
+        t("nom_pagar")));
+    }
+    return lista_;
   }
   zona.replaceChildren(h("div", { clase: "tarjeta" },
     conAyuda("h3", t("nom_cortes"), "ay_nom_cortes", { style: "margin:0 0 12px" }),
@@ -635,11 +716,8 @@ async function pintarHistorial(zona, zonaDetalle) {
         h("td", {}, String(c.personas)),
         h("td", { clase: "num", style: "text-align:right" },
           dinero(c.total, c.moneda)),
-        h("td", {}, estadoDelCorte(c.estado)),
-        h("td", {},
-          h("button", { clase: "claro chico", type: "button",
-            onclick: () => verCorte(zonaDetalle, c.id) },
-            t("nom_ver")))))))));
+        h("td", {}, estadoDelCorte(c.estado), nota(c)),
+        h("td", {}, ...botones(c))))))));
 }
 
 async function verCorte(zona, nominaId) {
@@ -647,13 +725,17 @@ async function verCorte(zona, nominaId) {
   let n;
   try { n = await api.get(`/nomina/${nominaId}`); }
   catch (err) { return zona.replaceChildren(aviso(err.message, "grave")); }
-  const pie = n.estado === "pagado"
-    ? reemplazar(t("nom_pagado_el"), { f: diaHora(n.pagada_en),
-                                       q: n.pagada_por || "—" })
-    : "";
+  let pie = "";
+  if (n.estado === "pagado") {
+    pie = reemplazar(t("nom_pagado_el"), { f: diaHora(n.pagada_en),
+                                           q: n.pagada_por || "—" });
+  } else if (n.estado === "absorbido") {
+    /* Sus renglones viven en el corte que se lo llevo (seccion 105). */
+    pie = reemplazar(t("nom_absorbido_pie"), {
+      f: fecha(n.absorbida_por ? n.absorbida_por.fecha_corte : null) });
+  }
   zona.replaceChildren(h("div", { clase: "tarjeta" },
-    cabeza(reemplazar(t("nom_corte_del"), { f: fecha(n.fecha_corte) }),
-           estadoDelCorte(n.estado), pie),
+    cabeza(tituloDelCorte(n), estadoDelCorte(n.estado), pie),
     fichas(n), ...detalleDelCorte(n)));
   zona.scrollIntoView({ behavior: "smooth", block: "start" });
 }

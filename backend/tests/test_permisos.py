@@ -23,11 +23,13 @@ def test_cada_rol_en_su_carril(cliente, sesion, datos):
         headers=sesion("juan"))
     assert r.status_code == 403
 
-    # El barrido de transferencias es de finanzas
-    assert cliente.post("/viaticos/transferencias/barrido",
+    # Confirmar un deposito es de finanzas. Sobre una solicitud que no
+    # existe: la puerta contesta 403 a quien no pasa y 404 a quien si
+    # (antes se probaba con el barrido, que se fue con la seccion 105).
+    assert cliente.post("/viaticos/transferencias/0/confirmar",
                         headers=sesion("consultor")).status_code == 403
-    assert cliente.post("/viaticos/transferencias/barrido",
-                        headers=sesion("finanzas")).status_code == 200
+    assert cliente.post("/viaticos/transferencias/0/confirmar",
+                        headers=sesion("finanzas")).status_code == 404
 
     # Los catalogos de dinero son de administracion
     tarifario = {"pais_id": datos["mx"]["id"], "moneda": "MXN",
@@ -61,7 +63,10 @@ def test_direccion_general_alcanza_todo(cliente, sesion, datos):
     """
     h = sesion("dirgeneral")
     assert cliente.get("/servicios", headers=h).status_code == 200
-    assert cliente.post("/viaticos/transferencias/barrido", headers=h).status_code == 200
+    # La puerta de finanzas la pasa (404: la solicitud no existe, pero
+    # el permiso si).
+    assert cliente.post("/viaticos/transferencias/0/confirmar",
+                        headers=h).status_code == 404
     import uuid
     assert cliente.post("/catalogos/tarifarios",
                         json={"pais_id": datos["mx"]["id"], "moneda": "MXN",

@@ -10,10 +10,10 @@ El procedimiento diario es identico al eventual. Lo que cambia:
 import calendar
 import logging
 from datetime import date, datetime, time, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from app import contingencia
 from app import disponibilidad
@@ -65,6 +65,140 @@ def turno_del_servicio(db: Session, servicio_id: int) -> str:
     acuerdo = (db.query(m.AcuerdoImplantado)
                .filter_by(servicio_id=servicio_id).first())
     return (acuerdo.turno if acuerdo and acuerdo.turno else TURNO_NATURAL)
+
+
+# --------------------------------------------------------------------
+# Las horas de la jornada (seccion 105, decision 6)
+#
+# En Mexico y en Brasil el implantado es de doce horas corridas, y el
+# ano que entra va a llevar horas de descanso dentro de esas doce --en
+# bloques de una hora, cuatro al dia; el 12x36 no--. Viven en la
+# modalidad `implantado` de cada pais (Catalogos > Horas de cada
+# modalidad) y el acuerdo las puede corregir por contrato. Hasta aqui el
+# implantado tomaba el full day del pais, que en Brasil es de diez horas:
+# cada dia que cerraba a las doce generaba dos horas extra.
+#
+# Las horas extra corren despues de la jornada completa: el descanso va
+# adentro y no la alarga ni las recorta. El cliente no ve el descanso;
+# lo ve el equipo en su app y lo ve Centauro.
+# --------------------------------------------------------------------
+
+HORAS_MAXIMAS_DE_JORNADA = Decimal("24")
+
+
+def _decimal(valor, si_vacio: str) -> Decimal:
+    return Decimal(str(valor if valor is not None else si_vacio))
+
+
+def modalidad_del_pais(db: Session, pais_id: int | None):
+    """La modalidad `implantado` del pais; sin ella --una base de antes
+    de la seccion 105 que no corrio la migracion--, el dia completo, que
+    es lo que el implantado tomaba hasta entonces."""
+    if not pais_id:
+        return None
+    suya = (db.query(m.Modalidad)
+            .filter_by(pais_id=pais_id, codigo=m.CodigoModalidad.IMPLANTADO)
+            .first())
+    return suya or (db.query(m.Modalidad)
+                    .filter_by(pais_id=pais_id,
+                               codigo=m.CodigoModalidad.FULL_DAY).first())
+
+
+def horas_de(contrato: m.ContratoImplantado,
+             db: Session | None = None) -> tuple[Decimal, Decimal, Decimal]:
+    """(jornada, descanso, intervalo) de ese acuerdo.
+
+    Lo que el contrato trae escrito manda; lo que no, sale de la
+    modalidad `implantado` de su pais, leida en vivo: el dia que
+    Catalogos ponga las horas de descanso, las tienen todos los
+    implantados que no pactaron otras. En 12x36 el descanso es siempre
+    cero --dos personas, sin descansos pactados con el cliente--, aunque
+    alguien mande otro. Es la unica puerta a estas horas: la jornada, las
+    horas extra, el aviso preventivo, el comparativo del mes y la nomina
+    salen de aqui.
+    """
+    db = db or object_session(contrato)
+    modalidad = contrato.modalidad
+    if db is not None and (modalidad is None
+                           or modalidad.codigo != m.CodigoModalidad.IMPLANTADO):
+        # Un contrato que todavia apunta al full day (los de antes de la
+        # seccion 105): las horas son las del implantado del pais.
+        modalidad = modalidad_del_pais(db, contrato.servicio.pais_id) or modalidad
+    jornada = (_decimal(contrato.horas_jornada, "12")
+               if contrato.horas_jornada is not None
+               else _decimal(modalidad.horas if modalidad else None, "12"))
+    descanso = (_decimal(contrato.horas_descanso, "0")
+                if contrato.horas_descanso is not None
+                else _decimal(modalidad.horas_descanso if modalidad else None, "0"))
+    intervalo = _decimal(getattr(modalidad, "intervalo_descanso", None), "1")
+    if intervalo <= 0:
+        intervalo = Decimal("1")
+    if db is not None and turno_del_servicio(db, contrato.servicio_id) == TURNO_12X36:
+        descanso = Decimal("0")
+    return jornada, descanso, intervalo
+
+
+def validar_horas(jornada, descanso) -> tuple[Decimal | None, Decimal | None]:
+    """Las horas que el consultor corrige por contrato: tope de 24 y el
+    descanso dentro de la jornada. Vacias, se quedan vacias (las del
+    pais)."""
+    jornada = Decimal(str(jornada)) if jornada is not None else None
+    descanso = Decimal(str(descanso)) if descanso is not None else None
+    if jornada is not None and not (0 < jornada <= HORAS_MAXIMAS_DE_JORNADA):
+        raise HTTPException(422, {
+            "mensaje": f"La jornada de {jornada} horas no cabe en un día",
+            "que_hacer": "Escribe cuántas horas dura el turno: 12 en "
+                         "México y en Brasil.",
+        })
+    if descanso is not None and descanso < 0:
+        raise HTTPException(422, {
+            "mensaje": "Las horas de descanso no pueden ser negativas",
+            "que_hacer": "Vacías, van las del país.",
+        })
+    tope = jornada if jornada is not None else HORAS_MAXIMAS_DE_JORNADA
+    if descanso is not None and descanso >= tope:
+        raise HTTPException(422, {
+            "mensaje": (f"{descanso} horas de descanso no caben en una "
+                        f"jornada de {tope}"),
+            "que_hacer": "El descanso va dentro de la jornada: tiene que "
+                         "ser menor que ella.",
+        })
+    return jornada, descanso
+
+
+def horas_de_la_jornada(db: Session, jornada: m.Jornada) -> Decimal | None:
+    """Las horas contratadas de un dia de implantado --las de su acuerdo--
+    o None si el dia es de un eventual. Es lo que el aviso preventivo y
+    el panel del dia dicen como «contratado»."""
+    equipo = jornada.equipo
+    servicio = equipo.servicio if equipo else None
+    if not servicio or servicio.tipo != m.TipoServicio.IMPLANTADO:
+        return None
+    contrato = (db.query(m.ContratoImplantado)
+                .filter_by(servicio_id=servicio.id, anio=jornada.fecha.year,
+                           mes=jornada.fecha.month).first())
+    if contrato is None:
+        return None
+    return horas_de(contrato, db)[0]
+
+
+def descanso_de_la_jornada(db: Session, jornada: m.Jornada) -> dict | None:
+    """Lo que la app le dice al equipo de sus descansos: {jornada, horas,
+    intervalo} solo cuando el acuerdo los tiene; con cero no se dice nada."""
+    equipo = jornada.equipo
+    servicio = equipo.servicio if equipo else None
+    if not servicio or servicio.tipo != m.TipoServicio.IMPLANTADO:
+        return None
+    contrato = (db.query(m.ContratoImplantado)
+                .filter_by(servicio_id=servicio.id, anio=jornada.fecha.year,
+                           mes=jornada.fecha.month).first())
+    if contrato is None:
+        return None
+    jornada_horas, descanso, intervalo = horas_de(contrato, db)
+    if descanso <= 0:
+        return None
+    return {"jornada": float(jornada_horas), "horas": float(descanso),
+            "intervalo": float(intervalo)}
 
 
 def dias_del_mes(anio: int, mes: int, dias_servicio,
@@ -190,7 +324,8 @@ def generar_mes(db: Session, contrato_id: int,
         db.flush()
 
     hora = time.fromisoformat(contrato.hora_presentacion)
-    horas = float(contrato.modalidad.horas)
+    # Las horas del acuerdo, no las del full day del pais (seccion 105).
+    horas = float(horas_de(contrato, db)[0])
 
     # El punto de inicio es el mismo todos los dias del implantado: se
     # capturo una vez en el acuerdo y cada jornada lo hereda. Sin esto,
@@ -438,8 +573,7 @@ def agregar_dia(db: Session, contrato_id: int, fecha: date,
             raise HTTPException(409, "Ese dia ya esta cubierto")
         return _cubrir(db, contrato, ya_esta, persona_id)
 
-    hora = time.fromisoformat(contrato.hora_presentacion)
-    inicio = datetime.combine(fecha, hora)
+    inicio, fin = _ventana(contrato, fecha)
     # Adicional solo el fin de semana, con la misma regla que cubrir un
     # dia y que generar el mes (seccion 101). Nacia siempre adicional, y
     # un martes borrado por error y vuelto a abrir se facturaba al precio
@@ -447,8 +581,7 @@ def agregar_dia(db: Session, contrato_id: int, fecha: date,
     adicional = fecha.weekday() >= 5
     jornada = m.Jornada(
         equipo_id=equipo.id, fecha=fecha, modalidad_id=contrato.modalidad_id,
-        inicio_programado=inicio,
-        fin_programado=inicio + timedelta(hours=float(contrato.modalidad.horas)),
+        inicio_programado=inicio, fin_programado=fin,
         hora_confirmada=True, es_dia_adicional=adicional)
     acuerdo = (db.query(m.AcuerdoImplantado)
                .filter_by(servicio_id=contrato.servicio_id).first())
@@ -744,10 +877,11 @@ def dias_fuera_del_inicio(db: Session, servicio: m.Servicio,
 
 
 def _ventana(contrato: m.ContratoImplantado, fecha: date):
-    """De que hora a que hora corre ese dia, segun el contrato."""
+    """De que hora a que hora corre ese dia, segun el contrato: su hora
+    de presentacion y las horas de su acuerdo (seccion 105)."""
     hora = time.fromisoformat(contrato.hora_presentacion)
     inicio = datetime.combine(fecha, hora)
-    return inicio, inicio + timedelta(hours=float(contrato.modalidad.horas))
+    return inicio, inicio + timedelta(hours=float(horas_de(contrato)[0]))
 
 
 def _vecino_del_fin(db: Session, equipo_id: int, fecha: date,
@@ -1958,6 +2092,303 @@ def rehacer_dias(db: Session, contrato: m.ContratoImplantado,
     return rehechos
 
 
+def meses_generados_despues(db: Session, servicio_id: int,
+                            anio: int, mes: int) -> list:
+    """Los contratos ya generados del servicio posteriores a ese mes, en
+    orden. Es a donde llega lo que se cambia hoy (seccion 105)."""
+    return [c for c in (db.query(m.ContratoImplantado)
+                        .filter_by(servicio_id=servicio_id, generado=True)
+                        .order_by(m.ContratoImplantado.anio,
+                                  m.ContratoImplantado.mes).all())
+            if (c.anio, c.mes) > (anio, mes)]
+
+
+def copiar_plantilla_a_meses_siguientes(db: Session,
+                                        contrato: m.ContratoImplantado,
+                                        personal: list,
+                                        unidades: list) -> list[dict]:
+    """La plantilla que se acaba de guardar en un mes, en cada mes
+    posterior ya abierto (seccion 105, pantalla «Cambiar la plantilla del
+    mes»): la baja del titular el 12 dejaba octubre --ya abierto-- con el
+    titular dado de baja, y habia que repetir el cambio cada mes. Cada
+    mes se rehace con las mismas reglas que el primero: no se tocan los
+    dias operados, con cambio ni cubiertos a mano. Un mes con visto
+    bueno ya no se arma. Devuelve por mes cuantos dias se rehicieron."""
+    from app import cierre_mes
+    hechos = []
+    for siguiente in meses_generados_despues(db, contrato.servicio_id,
+                                             contrato.anio, contrato.mes):
+        if cierre_mes.con_visto_bueno(db, siguiente):
+            continue
+        anterior = {f.persona_id for f in siguiente.plantilla}
+        guardar_plantilla(db, siguiente, personal, unidades)
+        rehechos = rehacer_dias(db, siguiente, plantilla_anterior=anterior)
+        hechos.append({"contrato_id": siguiente.id,
+                       "periodo": f"{siguiente.mes:02d}/{siguiente.anio}",
+                       "anio": siguiente.anio, "mes": siguiente.mes,
+                       "dias_rehechos": rehechos})
+    return hechos
+
+
+# --------------------------------------------------------------------
+# Los cambios del acuerdo aplican desde el mes siguiente
+#
+# Decision 14 de Salvador (29 sep): los dias de servicio, la hora del
+# encuentro, los precios y las horas que se corrigen a medio mes llegan a
+# los meses futuros ya abiertos, que se rehacen solos con el acuerdo
+# nuevo sin tocar los dias con gente puesta a mano ni con marcas. El mes
+# en curso NO se toca: se corrige a mano con las herramientas del mes. Y
+# si el servicio todavia no arranca, el cambio aplica desde su primer
+# mes, porque no hay nada operado.
+#
+# Hasta aqui (hallazgo 65) cambiar los dias de servicio no llegaba a
+# ningun mes, y mover la hora con el mes siguiente ya abierto lo dejaba
+# con la hora vieja: la app, la geocerca y la puntualidad del bono.
+# --------------------------------------------------------------------
+
+# Lo que viaja de mes en mes: los terminos del acuerdo que un contrato
+# puede recibir de otro.
+CAMPOS_DEL_ACUERDO = (
+    "dias_servicio", "hora_presentacion", "esquema",
+    "precio_dia_personal", "precio_dia_adicional", "precio_mes_vehiculo",
+    "precio_mes_completo", "viaticos_incluidos", "gastos_mes",
+    "precio_hora_extra", "horas_jornada", "horas_descanso",
+)
+
+
+def _periodo(anio: int, mes: int) -> str:
+    return f"{mes:02d}/{anio}"
+
+
+def primer_mes_a_tocar(db: Session, servicio: m.Servicio) -> tuple[int, int]:
+    """(anio, mes) del primer mes al que llega un cambio del acuerdo: el
+    que sigue al mes de hoy en el pais del servicio, o el primer mes del
+    servicio si todavia no arranca (su hoy es anterior al primer dia de
+    su primer mes: no hay nada operado)."""
+    hoy = hoy_del_servicio(db, servicio)
+    primero = (db.query(m.ContratoImplantado)
+               .filter_by(servicio_id=servicio.id)
+               .order_by(m.ContratoImplantado.anio, m.ContratoImplantado.mes)
+               .first())
+    if primero is not None:
+        arranque = date(primero.anio, primero.mes, primero.desde_dia or 1)
+        if hoy < arranque:
+            return primero.anio, primero.mes
+    return _siguiente_periodo(hoy.year, hoy.month)
+
+
+def mes_en_curso_que_no_se_toca(db: Session, servicio: m.Servicio,
+                                desde: tuple[int, int]) -> str | None:
+    """La frase para la pantalla cuando el mes de hoy queda fuera del
+    cambio: existe, esta generado y es anterior al primer mes tocado."""
+    hoy = hoy_del_servicio(db, servicio)
+    if (hoy.year, hoy.month) >= desde:
+        return None
+    contrato = (db.query(m.ContratoImplantado)
+                .filter_by(servicio_id=servicio.id, anio=hoy.year,
+                           mes=hoy.month, generado=True).first())
+    if contrato is None:
+        return None
+    return (f"{_periodo(hoy.year, hoy.month)}: no se toca; corrígelo con "
+            "las herramientas del mes")
+
+
+def _tiene_rastro(db: Session, jornada: m.Jornada) -> bool:
+    """Marcas, dinero que ya salio o esta en camino, o un cambio."""
+    from app.routers.servicios import _movimientos
+    if bool(jornada.inicio_real) or jornada.estatus not in (
+            m.EstatusJornada.PLANEADA, m.EstatusJornada.CONFIRMADA):
+        return True
+    if _movimientos(db, [jornada.id]):
+        return True
+    if any(a.reemplaza_a_id or a.relevado_en for a in jornada.personal):
+        return True
+    return bool(db.query(m.ReemplazoRecurso).filter(
+        (m.ReemplazoRecurso.desde_jornada_id == jornada.id)
+        | (m.ReemplazoRecurso.hasta_jornada_id == jornada.id)).count())
+
+
+def _puesto_a_mano(jornada: m.Jornada, contrato: m.ContratoImplantado,
+                   turno: str) -> bool:
+    """Gente que el consultor puso desde la ficha del dia: alguien que no
+    es de la plantilla del mes o, en natural, un fin de semana con gente
+    --nace vacio y lo cubre alguien a proposito--. Ese dia lo decidio el."""
+    if not jornada.personal:
+        return False
+    if turno != TURNO_12X36 and jornada.fecha.weekday() >= 5:
+        return True
+    plantilla = {f.persona_id for f in contrato.plantilla}
+    if not plantilla and contrato.titular_id:
+        plantilla = {contrato.titular_id}
+    return any(a.persona_id not in plantilla for a in jornada.personal)
+
+
+def _igual(a, b) -> bool:
+    """Si dos valores de un termino dicen lo mismo: 2900 y 2900.00 son el
+    mismo precio; lunes_viernes y lunes_viernes, los mismos dias."""
+    if a is None or b is None:
+        return a is None and b is None
+    try:
+        return Decimal(str(a)) == Decimal(str(b))
+    except (InvalidOperation, ValueError):
+        return str(getattr(a, "value", a)) == str(getattr(b, "value", b))
+
+
+def _texto(valor) -> str | None:
+    if valor is None:
+        return None
+    return str(getattr(valor, "value", valor))
+
+
+def _rehacer_con_el_acuerdo(db: Session, contrato: m.ContratoImplantado,
+                            antes: dict) -> dict:
+    """Los dias de un mes futuro, con el acuerdo ya puesto en el contrato.
+
+    Un dia que ya no es de servicio y no tiene nada se quita; los dias
+    nuevos de servicio se crean como los crea el mes (entre semana con la
+    plantilla, el fin de semana abierto por cubrir); la hora nueva se
+    pone en los dias que siguen con la de antes. Un dia con marcas, con
+    cambio, con gente puesta a mano o movido a mano se deja como esta y
+    se cuenta como «no se toco».
+    """
+    from app.routers.servicios import _limpiar_jornadas
+    equipo = contrato.servicio.equipos[0] if contrato.servicio.equipos else None
+    turno = turno_del_servicio(db, contrato.servicio_id)
+    hoy = hoy_del_servicio(db, contrato.servicio)
+    movidos, creados, quitados, no_tocados = [], [], [], []
+    if equipo is None:
+        return {"movidos": movidos, "creados": creados, "quitados": quitados,
+                "no_tocados": no_tocados}
+
+    contratados = set(dias_del_mes(contrato.anio, contrato.mes,
+                                   contrato.dias_servicio, contrato.desde_dia,
+                                   turno))
+    hora_vieja = time.fromisoformat(antes["hora_presentacion"])
+    duracion_vieja = timedelta(hours=float(antes["horas"]))
+    del_mes = [j for j in list(equipo.jornadas)
+               if j.fecha.year == contrato.anio and j.fecha.month == contrato.mes]
+
+    for j in sorted(del_mes, key=lambda x: x.fecha):
+        if j.estatus == m.EstatusJornada.CANCELADA or j.fecha <= hoy:
+            continue
+        intocable = _tiene_rastro(db, j) or _puesto_a_mano(j, contrato, turno)
+        if j.fecha not in contratados:
+            # Ya no es dia de servicio. Con gente puesta --el sabado que
+            # el cliente pidio aparte-- se queda: eso no es del esquema.
+            if intocable or j.personal:
+                no_tocados.append(j.fecha.isoformat())
+                continue
+            _limpiar_jornadas(db, [j.id])
+            db.flush()
+            db.delete(j)
+            quitados.append(j.fecha.isoformat())
+            continue
+        inicio, fin = _ventana(contrato, j.fecha)
+        if (j.inicio_programado, j.fin_programado) == (inicio, fin):
+            continue
+        if intocable:
+            no_tocados.append(j.fecha.isoformat())
+            continue
+        # Solo los dias que siguen con la hora y las horas de antes: un
+        # dia movido a mano a otra hora lo decidio el consultor.
+        if (j.inicio_programado.time() != hora_vieja
+                or j.fin_programado - j.inicio_programado != duracion_vieja):
+            no_tocados.append(j.fecha.isoformat())
+            continue
+        j.inicio_programado, j.fin_programado = inicio, fin
+        j.hora_confirmada = True
+        movidos.append(j.fecha.isoformat())
+    db.flush()
+
+    # Los dias nuevos de servicio, como los abre el mes: `generar_mes`
+    # rellenando salta los que ya estan y vuelve a poner la base del mes.
+    db.expire(equipo, ["jornadas"])
+    hay = {j.fecha for j in equipo.jornadas}
+    faltan = [d for d in contratados if d not in hay and d > hoy]
+    if faltan or not _igual(antes["dias_servicio"], contrato.dias_servicio):
+        generar_mes(db, contrato.id, rellenando=True)
+        hay_ahora = {j.fecha for j in equipo.jornadas}
+        creados = [d.isoformat() for d in sorted(faltan) if d in hay_ahora]
+    return {"movidos": movidos, "creados": creados, "quitados": quitados,
+            "no_tocados": sorted(no_tocados)}
+
+
+def aplicar_acuerdo_a_meses_futuros(db: Session, servicio: m.Servicio,
+                                    desde_mes: tuple[int, int],
+                                    cambios: dict,
+                                    excepto_id: int | None = None) -> dict:
+    """Copia los terminos nuevos a cada mes generado desde `desde_mes` y
+    rehace sus dias (seccion 105, decision 14).
+
+    `cambios` son los campos del contrato que cambiaron, de
+    `CAMPOS_DEL_ACUERDO`; `excepto_id`, el contrato donde se hizo el
+    cambio, que ya los tiene. Un mes con visto bueno no se toca: su
+    factura salio. Devuelve por mes que campos cambiaron (antes y
+    despues) y que dias se movieron, crearon, quitaron o no se tocaron,
+    y la frase del mes en curso cuando quedo fuera.
+    """
+    from app import cierre_mes
+    cambios = {k: v for k, v in cambios.items() if k in CAMPOS_DEL_ACUERDO}
+    meses = []
+    for contrato in (db.query(m.ContratoImplantado)
+                     .filter_by(servicio_id=servicio.id, generado=True)
+                     .order_by(m.ContratoImplantado.anio,
+                               m.ContratoImplantado.mes).all()):
+        if (contrato.anio, contrato.mes) < desde_mes or contrato.id == excepto_id:
+            continue
+        if cierre_mes.con_visto_bueno(db, contrato):
+            continue
+        antes = {"hora_presentacion": contrato.hora_presentacion,
+                 "horas": horas_de(contrato, db)[0],
+                 "dias_servicio": contrato.dias_servicio}
+        campos = {}
+        for campo, valor in cambios.items():
+            previo = getattr(contrato, campo)
+            if _igual(previo, valor):
+                continue
+            setattr(contrato, campo, valor)
+            campos[campo] = (_texto(previo), _texto(valor))
+        if "dias_servicio" in campos:
+            contrato.incluye_fines_de_semana = (
+                contrato.dias_servicio != m.DiasServicio.LUNES_VIERNES)
+        db.flush()
+        dias = _rehacer_con_el_acuerdo(db, contrato, antes)
+        from app import implantado_precios
+        if "dias_servicio" in campos and contrato.precios_de_la_lista:
+            # Con la lista de implantados del cliente (seccion 80), los
+            # dias de servicio cambian el precio del mes de la unidad.
+            implantado_precios.aplicar(
+                contrato, implantado_precios.de_la_lista(db, contrato))
+            implantado_precios.fijar_moneda_del_mes(db, contrato)
+        elif any(k in implantado_precios.CAMPOS or k == "esquema"
+                 for k in campos):
+            # Precios copiados: si son los de la lista, el mes sigue con
+            # ella; si no, es un acuerdo especial, como en el mes de origen.
+            contrato.precios_de_la_lista = implantado_precios.sigue_la_lista(
+                contrato, implantado_precios.de_la_lista(db, contrato))
+        db.flush()
+        meses.append({"contrato_id": contrato.id,
+                      "periodo": _periodo(contrato.anio, contrato.mes),
+                      "anio": contrato.anio, "mes": contrato.mes,
+                      "campos": campos, **dias})
+    return {"desde": _periodo(*desde_mes), "meses": meses,
+            "mes_en_curso": mes_en_curso_que_no_se_toca(db, servicio, desde_mes)}
+
+
+def resumen_del_acuerdo_aplicado(hecho: dict) -> str:
+    """Una frase por mes para la bitacora: que cambio y que dias."""
+    partes = []
+    for mes in hecho["meses"]:
+        campos = "; ".join(f"{k}: {a} -> {d}" for k, (a, d) in mes["campos"].items())
+        dias = (f"{len(mes['movidos'])} movidos, {len(mes['creados'])} creados, "
+                f"{len(mes['quitados'])} quitados, "
+                f"{len(mes['no_tocados'])} sin tocar")
+        partes.append(f"{mes['periodo']}: {campos or 'sin cambios'} · {dias}")
+    if hecho.get("mes_en_curso"):
+        partes.append(hecho["mes_en_curso"])
+    return " | ".join(partes)
+
+
 # --------------------------------------------------------------------
 # El mes que sigue
 #
@@ -1979,6 +2410,13 @@ DIAS_ANTES = 7
 
 def _siguiente_periodo(anio: int, mes: int) -> tuple[int, int]:
     return (anio + 1, 1) if mes == 12 else (anio, mes + 1)
+
+
+def siguiente_periodo(anio: int, mes: int) -> tuple[int, int]:
+    """(anio, mes) del mes que sigue a ese. Para quien lo pide desde
+    fuera del motor (seccion 105): los terminos de un mes llegan a los
+    meses que le siguen."""
+    return _siguiente_periodo(anio, mes)
 
 
 def ultimo_mes(db: Session, servicio_id: int):
@@ -2059,14 +2497,24 @@ def abrir_siguiente(db: Session, servicio: m.Servicio,
     anterior = ultimo_mes(db, servicio.id)
     anio, mes = estado["anio"], estado["mes"]
 
+    # El mes nuevo nace con el acuerdo (seccion 105, decision 14): los
+    # dias de servicio y la hora del encuentro son los del trato, que es
+    # donde se corrigen a medio mes --el mes en curso no se toca--, y lo
+    # que el trato no dice se copia del mes que termina, como siempre.
+    acuerdo = (db.query(m.AcuerdoImplantado)
+               .filter_by(servicio_id=servicio.id).first())
+    dias_servicio = ((acuerdo.dias_servicio if acuerdo else None)
+                     or anterior.dias_servicio)
+    hora = ((acuerdo.hora_presentacion if acuerdo else None)
+            or anterior.hora_presentacion)
     contrato = m.ContratoImplantado(
         servicio_id=servicio.id, anio=anio, mes=mes,
         desde_dia=None,             # el mes nuevo siempre arranca el dia 1
         modalidad_id=anterior.modalidad_id,
-        hora_presentacion=anterior.hora_presentacion,
+        hora_presentacion=hora,
         esquema=anterior.esquema,
-        dias_servicio=anterior.dias_servicio,
-        incluye_fines_de_semana=anterior.incluye_fines_de_semana,
+        dias_servicio=dias_servicio,
+        incluye_fines_de_semana=dias_servicio != m.DiasServicio.LUNES_VIERNES,
         titular_id=anterior.titular_id,
         titular_rotacion_id=anterior.titular_rotacion_id,
         vehiculo_id=anterior.vehiculo_id,
@@ -2077,11 +2525,15 @@ def abrir_siguiente(db: Session, servicio: m.Servicio,
         viaticos_incluidos=anterior.viaticos_incluidos,
         gastos_mes=anterior.gastos_mes,
         precio_hora_extra=anterior.precio_hora_extra,
+        # Las horas que ese acuerdo tiene de distinto al pais (seccion
+        # 104) pasan con el; vacias, siguen siendo las del pais.
+        horas_jornada=anterior.horas_jornada,
+        horas_descanso=anterior.horas_descanso,
         # Los precios copiados van en su moneda (seccion 82); el tipo de
         # cambio no se copia: el mes nuevo toma el que este puesto cuando
         # se abre.
         moneda=anterior.moneda,
-        dias_base=len(dias_del_mes(anio, mes, anterior.dias_servicio,
+        dias_base=len(dias_del_mes(anio, mes, dias_servicio,
                                    None,
                                    turno_del_servicio(db, servicio.id))))
     db.add(contrato)

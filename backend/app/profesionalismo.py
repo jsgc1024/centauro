@@ -405,6 +405,10 @@ def _armar(persona: m.Persona, p: "_Parametros", tabla_pesos: dict,
         # Sin puesto: el rol es de la tarea, no de la persona.
         "plaza": persona.plaza.nombre,
         "es_freelance": persona.es_freelance,
+        # Si hay a donde depositarle (decision 7, seccion 105). La cuenta
+        # viene de Odoo; aqui solo se dice si esta o falta, nunca el
+        # numero: eso es de finanzas, en su bandeja.
+        "cuenta": "tiene" if persona.clabe else "falta",
         "calificacion": round(float(calificacion), 1),
         "ventana_meses": p.meses_ventana,
         "horas_en_centauro": horas,
@@ -534,9 +538,19 @@ def expediente(db: Session, persona_id: int, meses: int = 6) -> dict:
               .order_by(m.Capacitacion.nombre).all())
     hoy = date.today()
 
+    # Sus incidencias, todas (seccion 105): la pendiente, la autorizada y
+    # la descartada con su resolucion. La descartada no toca bono ni
+    # comision, pero queda en el expediente: es lo que explica, meses
+    # despues, que alguien la levanto y por que no procedio.
+    incidencias = (db.query(m.Incidencia)
+                   .filter_by(persona_id=persona_id)
+                   .order_by(m.Incidencia.fecha.desc(), m.Incidencia.id.desc())
+                   .limit(12).all())
+
     return {
         "persona_id": persona.id,
         "persona": persona.nombre,
+        "incidencias": [bonos.renglon_incidencia(db, i) for i in incidencias],
         "bonos": [{"periodo": f"{e.mes:02d}/{e.anio}",
                    "estrellas": e.estrellas,
                    "posibles": sum(1 for r in e.detalle if r.aplica),

@@ -39,6 +39,9 @@ LECTURA = auth.puede("cierre.ver")
 # Quien trae dinero encima y cuanto no lo ve cualquiera: la misma puerta
 # que el panel de viaticos del equipo.
 DINERO = auth.puede("viaticos.ver")
+# El cobro de una cancelacion lo autoriza direccion de operaciones
+# (seccion 105); direccion general lo alcanza por lo que hereda.
+AUTORIZA_COBRO = auth.puede("cierre.autorizar_cobro")
 # El historial de lo facturado (seccion 69): los mismos que abren
 # Facturacion.
 HISTORIAL = auth.puede("cierre.historial")
@@ -108,6 +111,13 @@ class RespaldoIn(BaseModel):
 
 class DevolucionIn(BaseModel):
     motivo: str
+
+
+class CobroIn(BaseModel):
+    """Como se cobra la cancelacion (seccion 105): completo o ejecutado,
+    y la nota de operaciones si cambia lo que pidio el consultor."""
+    cobro: str = Field(max_length=12)
+    nota: str | None = Field(default=None, max_length=motor.LARGO_NOTA)
 
 
 # ---------------------------------------------------------------- cotizacion
@@ -566,6 +576,20 @@ def enviar_finanzas(cierre_id: int, db: Session = Depends(get_db),
             "observaciones": [],
         })
 
+    # Una cancelacion se manda con el cobro ya autorizado por direccion
+    # de operaciones (seccion 105, decision 1): sin eso no hay cifra que
+    # facturar, y la eleccion del consultor no es la ultima palabra.
+    if motor.cobro_sin_autorizar(cierre):
+        raise HTTPException(409, {
+            "mensaje": (f"Falta que dirección de operaciones autorice el "
+                        f"cobro de la cancelación (pediste "
+                        f"{cierre.cobro})"),
+            "que_hacer": "Pídele a dirección de operaciones que lo autorice "
+                         "desde «Autorizar el cobro», en la tarjeta del "
+                         "cierre. Mientras, el servicio espera.",
+            "observaciones": [],
+        })
+
     # Los gastos netos de una cotizacion en otra moneda se facturan al
     # tipo de cambio que esta puesto en el visto bueno (seccion 82): la
     # factura sale ahora. Se fija antes de la revision, para que lo que
@@ -584,9 +608,10 @@ def enviar_finanzas(cierre_id: int, db: Session = Depends(get_db),
 
     comparativo = revision["comparativo"]
     cierre.total_cotizado = comparativo["cotizacion"]["total"]
-    # Lo que se factura: lo ejecutado y, si la cotizacion cobra los
-    # viaticos aparte, lo comprobado (seccion 57).
-    cierre.total_ejecutado = (comparativo["ejecutado"]["total"]
+    # Lo que se factura: lo ejecutado --o la cotizacion tal cual, en la
+    # cancelacion que se cobra completa (seccion 105)-- y, si la
+    # cotizacion cobra los viaticos aparte, lo comprobado (seccion 57).
+    cierre.total_ejecutado = (comparativo["a_facturar"]["servicio"]
                               + comparativo["viaticos"]["facturable_al_cliente"])
     # El primer visto bueno juzga el plazo y se queda: si finanzas lo
     # regreso, este envio no lo vuelve a juzgar (decision 1, 23 sep).
@@ -635,6 +660,28 @@ def enviar_finanzas(cierre_id: int, db: Session = Depends(get_db),
                                   if cierre.dentro_de_plazo
                                   else "se pierde por cierre fuera de plazo",
             "ajustes_de_nomina": ajustes["ajustes_generados"]}
+
+
+@router.post("/cierre/{cierre_id}/autorizar-cobro",
+             summary="Operaciones autoriza como se cobra una cancelacion")
+def autorizar_cobro(cierre_id: int, datos: CobroIn,
+                    db: Session = Depends(get_db),
+                    ahora: datetime | None = None,
+                    usuario: m.Usuario = Depends(AUTORIZA_COBRO)):
+    """Completo --la cotizacion autorizada tal cual-- o ejecutado, sobre
+    el cierre de un servicio cancelado (seccion 105, decision 1). Puede
+    cambiar lo que pidio el consultor, con nota. Queda en la bitacora del
+    servicio y al consultor le llega por correo y al telefono; hasta
+    entonces el cierre no se manda a finanzas."""
+    cierre = db.get(m.Cierre, cierre_id)
+    if not cierre:
+        raise HTTPException(404, f"No existe el cierre {cierre_id}")
+    # La hora por parametro solo vale en pruebas (seccion 99).
+    resultado = motor.autorizar_cobro(db, cierre, datos.cobro, datos.nota,
+                                      usuario, reloj.de_prueba(ahora))
+    return {**resultado,
+            "cierre": motor_comisiones.solo_la_suya(
+                motor.estado(db, cierre.servicio_id), usuario)}
 
 
 @router.post("/cierre/{cierre_id}/devolver",

@@ -572,6 +572,18 @@ function identificacion(f) {
     partes.join(" · "));
 }
 
+/* Los descansos de la jornada del implantado (seccion 105): cuantas
+   horas dura el turno, cuantas son de descanso y de que tamano es cada
+   bloque. Viene solo cuando el acuerdo los tiene; sin descanso, nada. */
+function descansoDelDia(f) {
+  const d = f.descanso;
+  if (!d || !d.horas) return null;
+  const numero = (v) => String(Number(v));
+  return h("div", { clase: "chico gris" },
+    t("app_descanso").replace("{j}", numero(d.jornada))
+      .replace("{d}", numero(d.horas)).replace("{i}", numero(d.intervalo)));
+}
+
 function tarjetaHoy(f) {
   const paso = f.siguiente;
   const caja = h("div", { clase: "caja" },
@@ -580,7 +592,8 @@ function tarjetaHoy(f) {
       h("div", {}, h("div", { clase: "grande" }, hora(f.llegar_a_las)),
         h("div", { clase: "chico gris" },
           t("cmp_estar_punto").replace("{hora}", hora(f.presentacion))
-          + (f.contra_vuelo ? " · " + t("cmp_contra_vuelo") : ""))),
+          + (f.contra_vuelo ? " · " + t("cmp_contra_vuelo") : "")),
+        descansoDelDia(f)),
       miPuesto(f)),
 
     /* Confirmar tambien vive aqui, no solo en la tarjeta de manana.
@@ -840,6 +853,15 @@ function tarjetaManana(f) {
         h("div", { style: "font-size:22px;font-weight:700" },
           f.hora_confirmada ? hora(f.llegar_a_las)
                             : t("cmp_hora_sin_confirmar")),
+        f.hora_confirmada ? descansoDelDia(f) : null,
+        /* La hora que un companero propuso y la central no ha resuelto
+           (seccion 105, decision 5): se dice como propuesta, no como la
+           hora del dia, hasta que la central la confirme o la deje. */
+        f.propuesta
+          ? h("div", { clase: "chico", style: "color:#b8860b" },
+              t("app_hora_propuesta_pendiente")
+                .replace("{hora}", f.propuesta.hora))
+          : null,
         /* Donde presentarse. La direccion escrita si la hay, y el
            enlace al mapa siempre que haya coordenadas: un punto sin
            nombre capturado se veia como si no hubiera punto. */
@@ -2060,56 +2082,19 @@ function tarjetaViatico(s) {
    Se pregunta al cerrar el dia y no antes: es cuando el principal lo
    dice, en la puerta del hotel.
 
-   El punto se toma del GPS porque quien contesta esta parado en el.
-   Sin coordenadas no hay geocerca, y sin geocerca manana no va a poder
-   marcar su llegada: una direccion escrita a mano deja el dia a
-   medias. Por eso el boton de tomar la ubicacion es lo primero. */
+   Lo que se manda es una PROPUESTA (seccion 105, decision 5 de
+   Salvador): la central la confirma con un clic desde "Manana", y si
+   nadie la toca antes de las 22:00 queda como se capturo. La hora de la
+   hoja no se mueve mientras tanto, y el punto de manana ya no se toma
+   del GPS del telefono: se queda el del task sheet salvo que la central
+   lo cambie. Donde se ven manana se dice en palabras, para que la
+   central lo lea. */
 function pantallaManana(manana) {
   const hora = h("input", { type: "time" });
   const direccion = h("input", { type: "text",
                                  placeholder: t("cmp_donde_manana_ph") });
   const nota = h("input", { type: "text",
                             placeholder: t("cmp_algo_mas") });
-  const vista = h("div", { clase: "chico gris", style: "margin-top:6px" });
-  let punto = null;
-
-  /* Dos caminos, y ninguno se da por hecho.
-
-     Que el dia siguiente arranque donde termino el de hoy es lo mas
-     comun --se deja al principal en el hotel y ahi lo recogen-- pero NO
-     es una regla: puede ser en su casa, en otra oficina, en el
-     aeropuerto. Preguntarlo con un boton que dice "aqui mismo" y ya,
-     seria convertir la costumbre en ley.
-
-     El camino de "aqui mismo" toma el GPS y con eso el dia queda
-     completo: hay geocerca y manana se puede marcar la llegada. El otro
-     deja la direccion escrita y se dice con todas sus letras que a la
-     central le toca ponerle el pin, porque sin pin no hay geocerca. */
-  const direccionCaja = h("div", { hidden: true, style: "margin-top:8px" },
-    direccion,
-    h("div", { clase: "chico gris", style: "margin-top:6px" },
-      t("cmp_otro_lado_pie")));
-
-  const aqui = h("button", { clase: "claro chico", onclick: async (e) => {
-    e.target.disabled = true;
-    direccionCaja.hidden = true;
-    vista.textContent = t("cmp_tomando_ubicacion");
-    const donde = await ubicacion();
-    e.target.disabled = false;
-    if (!donde) return vista.textContent = t("cmp_camino_sin_ubicacion");
-    punto = donde;
-    vista.textContent = t("cmp_punto_tomado");
-  } }, t("cmp_aqui_mismo"));
-
-  const otro = h("button", { clase: "claro chico", onclick: () => {
-    punto = null;
-    vista.textContent = "";
-    direccionCaja.hidden = false;
-    direccion.focus();
-  } }, t("cmp_en_otro_lado"));
-
-  const tomar = h("div", {},
-    h("div", { clase: "fila", style: "gap:8px;flex-wrap:wrap" }, aqui, otro));
 
   const guardar = h("button", { style: "margin-top:12px",
     onclick: async (e) => {
@@ -2119,30 +2104,41 @@ function pantallaManana(manana) {
         await api.post(`/campo/jornadas/${manana.jornada_id}/manana`, {
           hora: hora.value.length === 5 ? `${hora.value}:00` : hora.value,
           direccion: direccion.value.trim() || null,
-          lat: punto ? String(punto.lat) : null,
-          lon: punto ? String(punto.lon) : null,
           nota: nota.value.trim() || null,
         });
-        alert(t("cmp_manana_guardada"));
+        alert(t("app_hora_propuesta"));
         location.hash = "#/hoy";
         pintar();
       } catch (err) { alert(err.message); e.target.disabled = false; }
-    } }, t("cmp_guardar_manana"));
+    } }, t("app_proponer_hora"));
 
   const dia = new Date(manana.fecha + "T12:00:00")
     .toLocaleDateString(local(), { weekday: "long", day: "numeric",
                                    month: "long" });
+
+  /* Si un companero ya propuso una hora, se dice antes de pedir otra:
+     la nueva reemplaza a la pendiente. */
+  const ya = manana.propuesta;
 
   conBarra(
     h("h1", {}, t("cmp_y_manana")),
     h("p", { clase: "gris chico" },
       t("cmp_y_manana_pie").replace("{dia}", dia)),
     h("div", { clase: "caja" },
+      ya
+        ? h("div", { clase: "pendientes", style: "margin-bottom:10px" },
+            h("div", {}, t("app_ya_propuesta").replace("{hora}", ya.hora)
+              .replace("{quien}", ya.por || t("cmp_alguien"))))
+        : null,
       h("div", { clase: "campo" },
         h("label", {}, t("cmp_hora_manana")), hora),
       h("div", { clase: "campo" },
-        h("label", {}, t("cmp_donde_manana")), tomar, vista, direccionCaja),
+        h("label", {}, t("cmp_donde_manana")), direccion,
+        h("div", { clase: "chico gris", style: "margin-top:6px" },
+          t("app_donde_manana_pie"))),
       h("div", { clase: "campo" }, h("label", {}, t("cmp_nota")), nota),
+      h("div", { clase: "chico gris", style: "margin-top:8px" },
+        t("app_propuesta_pie")),
       guardar,
       /* Se puede dejar para despues: si el principal no dijo nada, no
          hay nada que inventar. El dia sigue con su hora heredada y la

@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app import auth
 from app import gps
+from app import implantado as implantado_motor
 from app import models as m
 from app import reloj
 from app import revision as revision_unidad
@@ -28,6 +29,7 @@ from app import senal as senal_motor
 from app import trayecto
 from app import tasksheet
 from app import devoluciones as devoluciones_motor
+from app import operacion
 from app import push
 from app import viaticos as viaticos_motor
 from app.config import settings
@@ -135,11 +137,18 @@ def _ficha(db: Session, jornada: m.Jornada, persona_id: int,
                         m.Hito.anulado_en.is_(None))
                 .order_by(m.Hito.marcado_en).all())
     hechos = {h.tipo for h in marcados}
+    # Lo que marco ESTA persona. La llegada es de cada quien (seccion
+    # 104, decision 4): si Juan ya marco la suya, Luis sigue viendo
+    # "Marcar llegada" hasta que marque la propia; el contacto y el fin
+    # siguen siendo del equipo.
+    mios = {h.tipo for h in marcados if h.persona_id == persona_id}
 
     # El siguiente paso: el primero de la secuencia que falta. Ofrecer
     # los seis a la vez es como se marca el fin del servicio a las siete
     # de la manana.
-    siguiente = next((t for t in SECUENCIA if t not in hechos), None)
+    siguiente = next((t for t in SECUENCIA
+                      if t not in (mios if t == m.TipoHito.LLEGADA_ORIGEN
+                                   else hechos)), None)
 
     llega, minutos, contra_vuelo = llegada_de_la_jornada(db, jornada)
 
@@ -239,8 +248,18 @@ def _ficha(db: Session, jornada: m.Jornada, persona_id: int,
                      for a in jornada.vehiculos if a.vehiculo],
         # La hora que importa: a la que hay que estar parado en el punto.
         "presentacion": jornada.inicio_programado.isoformat(),
+        # Los descansos de la jornada del implantado (seccion 105,
+        # decision 6): de cuantas horas es la jornada, cuantas de
+        # descanso y de que tamano es cada bloque. Solo cuando el acuerdo
+        # los tiene; con cero no viaja nada. Es para el equipo y para
+        # Centauro: el cliente no lo ve.
+        "descanso": implantado_motor.descanso_de_la_jornada(db, jornada),
         # Ver el comentario de `proximos`: la heredada no es un dato.
         "hora_confirmada": bool(jornada.hora_confirmada),
+        # La hora que un companero propuso y la central no ha resuelto
+        # (seccion 105): la tarjeta de manana la dice como propuesta,
+        # no como la hora del dia.
+        "propuesta": operacion.propuesta_pendiente(jornada),
         "llegar_a_las": llega.isoformat(),
         "anticipacion_minutos": minutos,
         "contra_vuelo": contra_vuelo,
@@ -925,12 +944,13 @@ class DevolucionDeCampoIn(BaseModel):
 
 
 class ManianaDeCampoIn(BaseModel):
-    """A que hora y donde se presenta el equipo manana.
+    """A que hora --y donde, en palabras-- se presenta el equipo manana.
 
-    El punto viaja con su lat/lon porque quien lo captura esta parado en
-    el: acaba de dejar al principal en la puerta del hotel y ahi mismo
-    le dijeron la hora. Sin coordenadas no hay geocerca, y sin geocerca
-    ese equipo no puede marcar su llegada manana.
+    Es una propuesta (seccion 105, decision 5): la central la confirma.
+    La direccion viaja como texto en la nota, para que la central la lea
+    y mueva el punto a mano si hace falta. `lat` y `lon` se siguen
+    aceptando para que la app vieja no reviente, pero ya no se toman: el
+    punto de manana no se mueve con el GPS del telefono.
     """
     hora: time
     direccion: str | None = Field(default=None, max_length=300)
@@ -940,16 +960,21 @@ class ManianaDeCampoIn(BaseModel):
 
 
 @router.post("/jornadas/{jornada_id}/manana",
-             summary="A que hora y donde nos vemos manana")
+             summary="A que hora nos vemos manana: la propuesta del equipo")
 def hora_de_manana_campo(jornada_id: int, datos: ManianaDeCampoIn,
                          db: Session = Depends(get_db),
+                         ahora: datetime | None = None,
                          usuario: m.Usuario = Depends(CAMPO)):
-    """Lo captura quien lo escucho, cuando lo escucho.
+    """Lo captura quien lo escucho, cuando lo escucho; lo confirma la
+    central.
 
     El principal dice "manana a las siete" al bajarse del coche, a las
-    diez de la noche. Antes ese dato iba por telefono a la central y se
-    quedaba en la cabeza de alguien hasta el dia siguiente; mientras
-    tanto, el dia de manana vivia con la hora heredada del primero.
+    diez de la noche. Se guarda como propuesta en el dia de manana
+    (seccion 105, decision 5): la hora de la hoja no se mueve, nadie
+    recibe "cambio tu hora" y el punto se queda donde estaba, hasta que
+    la central la confirme desde "Manana" o el reloj la confirme a las
+    22:00 del pais. Si el conductor manda otra hora, reemplaza la
+    propuesta pendiente.
 
     Solo sobre un dia suyo, y solo hacia el dia siguiente de SU equipo.
     A quien ya relevaron no le toca (seccion 99).
@@ -958,30 +983,20 @@ def hora_de_manana_campo(jornada_id: int, datos: ManianaDeCampoIn,
         raise HTTPException(403, "No estas asignado a esa jornada")
     jornada = db.get(m.Jornada, jornada_id)
 
-    from app import operacion as motor_operacion
-
-    hecho = motor_operacion.fijar_hora_de_manana(
+    hecho = operacion.proponer_hora_de_manana(
         db, jornada, datos.hora, usuario.persona_id, datos.nota,
-        datos.direccion, datos.lat, datos.lon)
-    siguiente, antes = hecho["siguiente"], hecho["antes"]
+        datos.direccion, ahora=reloj.de_prueba(ahora))
+    siguiente = hecho["siguiente"]
     db.commit()
 
-    # A los demas del equipo que ya confirmaron. Su confirmacion era
-    # sobre otra hora.
-    if siguiente.inicio_programado != antes:
-        try:
-            push.avisar_cambio_de_hora(db, siguiente, antes)
-            db.commit()
-        except Exception:                     # noqa: BLE001
-            # Un aviso que no sale no puede tumbar una hora ya guardada.
-            registro.exception("no se pudo avisar el cambio de hora")
-
-    return {"resultado": "listo",
+    return {"resultado": "propuesta",
             "jornada_id": siguiente.id,
             "fecha": siguiente.fecha.isoformat(),
+            # La de la hoja sigue siendo la del dia hasta que la central
+            # diga: la app no la pinta como si ya hubiera cambiado.
             "inicio": siguiente.inicio_programado.isoformat(),
-            "punto": siguiente.origen_direccion,
-            "con_geocerca": siguiente.origen_lat is not None}
+            "propuesta": hecho["propuesta"],
+            "pendiente": True}
 
 
 @router.post("/viaticos/{viatico_id}/devolucion",

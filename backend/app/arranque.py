@@ -19,7 +19,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app import fallas, manual, reloj, tipo_cambio
@@ -70,6 +70,7 @@ TEXTOS = {
         "puestos": "Los puestos", "acceso_oficina": "La oficina, con acceso",
         "acceso_campo": "El personal de campo, con acceso",
         "avisos_encendidos": "Avisos encendidos en el teléfono",
+        "cuentas_bancarias": "El personal de campo, con cuenta bancaria en Odoo",
         "implantados": "Los implantados, con {mes} abierto",
         "eventuales": "Eventuales de esta semana en Connect",
         "fallas": "Fallas por revisar",
@@ -120,6 +121,11 @@ TEXTOS = {
         "acceso_oficina_sin": "Todavía no se lee la oficina de Odoo.",
         "acceso_campo_sin": "Todavía no hay personal de campo.",
         "de": "{a} de {n}.",
+        "cuentas_ok": "Las {n} personas de seguridad activas tienen su cuenta "
+                      "en Odoo.",
+        "cuentas_faltan": "{k} de {n} personas de seguridad activas sin cuenta "
+                          "bancaria en Odoo: {f}. Se captura en Odoo, en la "
+                          "ficha del empleado; la siguiente lectura la trae.",
         "impl_sin": "Todavía no hay implantados dados de alta.",
         "eventuales_n": "{n}.",
         "eventuales_0": "Ninguno todavía esta semana.",
@@ -143,6 +149,7 @@ TEXTOS = {
         "puestos": "Os cargos", "acceso_oficina": "O escritório, com acesso",
         "acceso_campo": "O pessoal de campo, com acesso",
         "avisos_encendidos": "Avisos ligados no telefone",
+        "cuentas_bancarias": "O pessoal de campo, com conta bancária no Odoo",
         "implantados": "Os implantados, com {mes} aberto",
         "eventuales": "Eventuais desta semana no Connect",
         "fallas": "Falhas por revisar",
@@ -190,6 +197,11 @@ TEXTOS = {
         "acceso_oficina_sin": "O escritório ainda não foi lido do Odoo.",
         "acceso_campo_sin": "Ainda não há pessoal de campo.",
         "de": "{a} de {n}.",
+        "cuentas_ok": "As {n} pessoas de segurança ativas têm a sua conta no "
+                      "Odoo.",
+        "cuentas_faltan": "{k} de {n} pessoas de segurança ativas sem conta "
+                          "bancária no Odoo: {f}. Cadastra-se no Odoo, na "
+                          "ficha do funcionário; a próxima leitura a traz.",
         "impl_sin": "Ainda não há implantados cadastrados.",
         "eventuales_n": "{n}.",
         "eventuales_0": "Nenhum ainda nesta semana.",
@@ -487,6 +499,24 @@ def _gente(db: Session, T: dict, idioma: str) -> list:
         T["avisos_encendidos"],
         T["de"].format(a=con_avisos, n=n) if n else T["acceso_campo_sin"],
         T["q_consultor_gente"]))
+
+    # La cuenta bancaria de cada quien viene de Odoo y solo de Odoo
+    # (decision 7 de Salvador, seccion 105): sin ella, el 2 de noviembre
+    # su deposito no sale. Se dice quien falta, para que RH la capture
+    # alla; la siguiente lectura la trae. Con muchos, los primeros.
+    sin_cuenta = [nombre for (nombre,) in db.execute(
+        select(P.nombre).where(P.id.in_(campo), or_(P.clabe.is_(None),
+                                                    P.clabe == ""))
+        .order_by(P.nombre)).all()]
+    con_cuenta = n - len(sin_cuenta)
+    lista = ", ".join(sin_cuenta[:6]) + (" …" if len(sin_cuenta) > 6 else "")
+    renglones.append(_renglon(
+        "cuentas_bancarias", _tono_de_avance(con_cuenta, n) if n else FALTA,
+        T["cuentas_bancarias"],
+        (T["acceso_campo_sin"] if not n else
+         T["cuentas_ok"].format(n=n) if not sin_cuenta else
+         T["cuentas_faltan"].format(k=len(sin_cuenta), n=n, f=lista)),
+        T["q_rh"], "#/odoo", T["d_odoo"], sin_cuenta=sin_cuenta))
 
     # Los implantados, con el mes en que todo pasa a Connect ya abierto.
     Sv = m.Servicio

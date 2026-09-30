@@ -185,8 +185,9 @@ def test_al_cerrar_el_dia_la_app_pregunta_por_manana(cliente, sesion, datos):
 
     Antes ese dato iba por teléfono a la central y se quedaba en la
     cabeza de alguien hasta el día siguiente. Ahora lo captura quien lo
-    escuchó, cuando lo escuchó, y con el punto de su propio GPS: sin
-    coordenadas no hay geocerca y mañana no podría marcar su llegada.
+    escuchó, cuando lo escuchó. Desde la sección 105 (decisión 5) queda
+    como propuesta: la hora de la hoja y el punto no se mueven hasta que
+    la central la confirme, y el GPS del conductor ya no mueve el punto.
     """
     from app import models as mo
     from app.db import SessionLocal
@@ -225,14 +226,19 @@ def test_al_cerrar_el_dia_la_app_pregunta_por_manana(cliente, sesion, datos):
                                "lat": "19.4270", "lon": "-99.1677"},
                          headers=juan)
     assert hecho.status_code == 200, hecho.text
-    assert hecho.json()["con_geocerca"] is True
+    assert hecho.json()["pendiente"] is True
+    assert hecho.json()["propuesta"]["hora"] == "07:15"
 
     with SessionLocal() as db:
         siguiente = db.get(mo.Jornada, dias[1]["id"])
-        assert siguiente.hora_confirmada is True
-        assert siguiente.inicio_programado.strftime("%H:%M") == "07:15"
-        assert siguiente.origen_direccion == "Lobby del hotel"
-        assert siguiente.origen_lat is not None
+        # Propuesta, no dato: la hoja sigue con su hora heredada, sin
+        # confirmar, y el punto es el que capturo el consultor.
+        assert siguiente.hora_confirmada is False
+        assert siguiente.inicio_programado.strftime("%H:%M") == "09:00"
+        assert siguiente.hora_propuesta.strftime("%H:%M") == "07:15"
+        assert siguiente.hora_propuesta_resuelta is None
+        assert "Lobby del hotel" in siguiente.hora_propuesta_nota
+        assert siguiente.origen_direccion != "Lobby del hotel"
         # Y queda dicho en la bitacora del dia en que se supo.
         nota = (db.query(mo.NotaBitacora)
                 .filter_by(jornada_id=uno["id"]).first())

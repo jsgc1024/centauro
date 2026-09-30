@@ -85,18 +85,40 @@ def armar(db: Session, cierre: m.Cierre) -> dict:
     cotizacion = cot.vigente(db, servicio.id)
     if not cotizacion:
         raise HTTPException(409, "El servicio no tiene cotizacion autorizada")
-    # Al tarifario del cliente, que es el precio que se le vendio.
-    ejecutado = motor_cierre.ejecutado(db, servicio, cotizacion.tarifario_id)
     cliente = servicio.cliente
-    conceptos = [{
-        "fecha": linea["fecha"],
-        "equipo": linea["equipo"],
-        "tipo": linea["tipo"],
-        "descripcion": linea["descripcion"],
-        "cantidad": linea["cantidad"],
-        "importe": str(linea["importe"]),
-        "horas_extra": linea.get("horas_extra") or 0,
-    } for linea in ejecutado["detalle"]]
+    if motor_cierre.se_cobra_completo(cierre):
+        # La cancelacion que se cobra completa (seccion 105, decision 1 de
+        # Salvador): la factura lleva la cotizacion autorizada tal cual,
+        # renglon por renglon, con los dias que ya no se trabajaron. Los
+        # gastos van aparte, con su trato, como siempre.
+        conceptos = [{
+            "fecha": linea.fecha.isoformat(),
+            "equipo": linea.equipo_clave,
+            "tipo": linea.tipo.value,
+            "descripcion": linea.descripcion,
+            "cantidad": linea.cantidad,
+            "importe": str(Decimal(str(linea.subtotal))),
+            "horas_extra": 0,
+        } for linea in sorted(cotizacion.lineas,
+                              key=lambda l: (l.fecha, l.equipo_clave, l.id))
+            if linea.tipo != m.TipoLinea.VIATICOS]
+        total_servicio = (Decimal(str(cotizacion.total))
+                          - motor_cierre.gastos_cotizados(cotizacion))
+        nota = "Servicio cancelado: se cobra completo por decision de operaciones"
+    else:
+        # Al tarifario del cliente, que es el precio que se le vendio.
+        ejecutado = motor_cierre.ejecutado(db, servicio, cotizacion.tarifario_id)
+        conceptos = [{
+            "fecha": linea["fecha"],
+            "equipo": linea["equipo"],
+            "tipo": linea["tipo"],
+            "descripcion": linea["descripcion"],
+            "cantidad": linea["cantidad"],
+            "importe": str(linea["importe"]),
+            "horas_extra": linea.get("horas_extra") or 0,
+        } for linea in ejecutado["detalle"]]
+        total_servicio = ejecutado["total"]
+        nota = None
     # Los gastos, en su propio renglon (seccion 59): a precio alzado, el
     # monto fijo de la propuesta; netos, lo comprobado valido. Un precio
     # alzado sin monto quiere decir que van dentro del precio: no se suma.
@@ -132,11 +154,13 @@ def armar(db: Session, cierre: m.Cierre) -> dict:
         "moneda": cotizacion.moneda.value,
         "fecha": (cierre.enviado_en or cierre.aprobado_en
                   or datetime.now()).date().isoformat(),
-        "total": str(ejecutado["total"] + viaticos),
+        "total": str(total_servicio + viaticos),
         "conceptos": conceptos,
         # Si finanzas regreso el servicio con la factura ya hecha, esa se
         # anulo: esta la sustituye (seccion 59).
         "sustituye_a": cierre.factura_anulada,
+        # Por que se cobra lo que no se trabajo (seccion 105).
+        "nota": nota,
     }
 
 

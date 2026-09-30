@@ -26,7 +26,9 @@ from app.db import SessionLocal
 # altas y los cambios no: esos entran solos en la lectura de cada hora.
 AREAS = [
     ("personal", "El personal de seguridad", "Recursos Humanos", odoo_personal,
-     ("pendientes", "celular_no_valido", "bajas", "fotos")),
+     # Las cuentas bancarias (seccion 105): cuantos sin cuenta, y si la
+     # conexion no las pudo leer.
+     ("pendientes", "celular_no_valido", "bajas", "fotos", "cuentas")),
     ("flota", "La flota y el taller", "Flota", odoo_flota,
      ("pendientes", "taller.pendientes", "taller.error", "bajas")),
     ("oficina", "El personal de oficina", "Recursos Humanos", odoo_oficina,

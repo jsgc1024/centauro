@@ -227,7 +227,9 @@ def test_un_ajuste_manual_no_lo_deshace_el_sistema(cliente, sesion, datos):
 def test_un_ajuste_no_se_paga_en_dos_cortes(cliente, sesion, datos):
     """Dos borradores con fechas de corte distintas se llevaban el mismo
     ajuste, y al pagar los dos la persona cobraba la diferencia dos
-    veces."""
+    veces. Desde la seccion 105 el corte del lunes siguiente se lleva
+    entero al que no se pago: el ajuste viaja una sola vez, con su
+    semana de origen, y el primero queda absorbido."""
     servicio, _, juan, pais_id = _dia_pagado(cliente, sesion, datos)
     h = sesion("finanzas")
     _ajuste(cliente, sesion, persona_id=juan, pais_id=pais_id,
@@ -242,9 +244,17 @@ def test_un_ajuste_no_se_paga_en_dos_cortes(cliente, sesion, datos):
                            "fecha_corte": str(_lunes() + timedelta(days=7))})
     assert b.status_code == 200, b.text
 
-    # El primero se lo llevo; el segundo no lo vuelve a tomar.
+    # El primero se lo llevo; el segundo no lo vuelve a tomar como ajuste
+    # de la semana: lo hereda del primero, que queda absorbido.
     assert Decimal(str(a.json()["total"])) >= Decimal("1200")
-    assert Decimal(str(b.json()["total"])) < Decimal("1200")
+    assert b.json()["ajustes_aplicados"] == 0 and b.json()["heredados"] == 1
+    assert Decimal(str(b.json()["total"])) == Decimal(str(a.json()["total"]))
+    primero = cliente.get(f"/nomina/{a.json()['nomina_id']}", headers=h).json()
+    assert primero["estado"] == "absorbido"
+    segundo = cliente.get(f"/nomina/{b.json()['nomina_id']}", headers=h).json()
+    conceptos = [c for p in segundo["por_persona"] for c in p["conceptos"]
+                 if c["es_ajuste"]]
+    assert len(conceptos) == 1 and conceptos[0]["semana"] == _lunes().isoformat()
 
 
 def test_un_borrador_se_puede_tirar_y_suelta_lo_que_aparto(cliente, sesion,

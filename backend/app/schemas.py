@@ -106,6 +106,8 @@ class ModalidadIn(Base):
     codigo: CodigoModalidad
     horas: Decimal
     horas_descanso: Decimal = Decimal("0")
+    # De cuantas horas es cada bloque de descanso (seccion 105).
+    intervalo_descanso: Decimal = Decimal("1")
     aplica_horas_extra: bool = False
     bloquea_dia_completo: bool = False
     # El recorrido tipico del dia, para proponer el combustible.
@@ -551,8 +553,23 @@ class DiaIn(Base):
 
 
 class CancelarIn(Base):
-    """Cancelar si pide motivo: es lo que el cliente va a preguntar."""
+    """Cancelar si pide motivo: es lo que el cliente va a preguntar.
+
+    Y que se cobra (seccion 105, decision 1 de Salvador): "completo"
+    factura la cotizacion autorizada tal cual, "ejecutado" lo que se
+    trabajo. Por omision lo ejecutado; lo autoriza direccion de
+    operaciones desde la tarjeta del cierre.
+    """
     motivo: str = Field(max_length=300)
+    cobro: Literal["completo", "ejecutado"] = "ejecutado"
+
+
+class TitularIn(Base):
+    """Cambiar al consultor titular (decision 13, seccion 105): a quien y
+    por que. El motivo es obligatorio: es lo que queda en la bitacora y
+    lo que leen los dos consultores en su aviso."""
+    consultor_id: int
+    motivo: str = Field(min_length=1, max_length=300)
 
 
 class EliminarIn(Base):

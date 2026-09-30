@@ -45,6 +45,15 @@ celery.conf.update(
             "task": "campo.recordar_la_vispera",
             "schedule": crontab(minute=0),
         },
+        # La hora de manana que propuso el equipo y la central no toco
+        # (seccion 105, decision 5): a las 22:00 de cada pais queda como
+        # la capturo el conductor. Cada hora, a los :02 para no caer con
+        # las de la hora en punto; la tarea decide en que pais ya son las
+        # diez de la noche.
+        "hora-de-manana-propuesta": {
+            "task": "campo.confirmar_hora_de_manana",
+            "schedule": crontab(minute=2),
+        },
         # El correo sale cada cinco minutos. No al instante y a
         # proposito: el aviso se escribe dentro de la transaccion que lo
         # origina --un cierre, una encuesta, una cobertura-- y mandarlo
@@ -316,6 +325,21 @@ def recordar_la_vispera():
         db.close()
 
 
+@celery.task(name="campo.confirmar_hora_de_manana")
+def confirmar_hora_de_manana():
+    """Lo que la central no confirmo ni rechazo antes de las 22:00 del
+    pais queda como lo capturo el conductor (seccion 105, decision 5).
+    Dos vueltas no confirman dos veces: lo resuelto ya no esta pendiente."""
+    from app import operacion
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        return operacion.confirmar_propuestas_vencidas(db)
+    finally:
+        db.close()
+
+
 @celery.task(name="nomina.lunes")
 def nomina_del_lunes():
     """El borrador del corte a las 7:00 y su cierre a las 11:00, en hora
@@ -470,6 +494,10 @@ def avanzar_cierres():
     Antes, la red del implantado: el mes que quedo completo sin que el
     cierre de un dia lo disparara --se cancelaron sus ultimos dias--
     arranca aqui su cierre (seccion 56).
+
+    Y despues, los avisos del plazo del consultor (seccion 105, decision
+    12): a la mitad al consultor; al vencer, al consultor y a direccion
+    de operaciones. Cada uno una sola vez.
     """
     from app.db import SessionLocal
     from app import cierre, cierre_mes
@@ -477,8 +505,9 @@ def avanzar_cierres():
     db = SessionLocal()
     try:
         meses = cierre_mes.abrir_los_que_terminaron(db)
-        return {"meses_abiertos": meses,
-                "movidos": cierre.avanzar_cierres(db)}
+        movidos = cierre.avanzar_cierres(db)
+        return {"meses_abiertos": meses, "movidos": movidos,
+                "avisos": cierre.avisar_plazos(db)}
     finally:
         db.close()
 

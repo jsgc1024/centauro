@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app import accesos, auth
+from app import accesos, auditoria, auth
 from app import bonos as motor
 from app import comisiones as motor_com
 from app import models as m
@@ -86,12 +86,25 @@ class NoCobroIn(BaseModel):
 
 # ---------------------------------------------------------------- incidencias
 
+EFECTO_SI_SE_AUTORIZA = {
+    m.GravedadIncidencia.ERROR_MENOR:
+        "Retroalimentación documentada. No afecta las estrellas del mes.",
+    m.GravedadIncidencia.LEVE:
+        "Si se autoriza, quita todas las estrellas del mes.",
+    m.GravedadIncidencia.GRAVE:
+        "Si se autoriza, quita todas las estrellas, retiene la comisión del "
+        "consultor y lo gestiona Recursos Humanos. Puede derivar en baja.",
+}
+
+
 @router.post("/incidencias", status_code=201,
-             summary="El consultor clasifica una incidencia")
+             summary="Registrar una incidencia")
 def crear_incidencia(datos: IncidenciaIn, db: Session = Depends(get_db),
                      usuario: m.Usuario = Depends(CONSULTOR)):
-    """La clasificacion la define el consultor, pero no impacta el bono
-    hasta que el director de operaciones le da el visto bueno."""
+    """La registra el consultor del servicio --o quien lo cubre-- y
+    tambien la central (decision 2 de Salvador, seccion 105), pero no
+    impacta el bono hasta que el director de operaciones le da el visto
+    bueno. Queda en la bitacora del servicio desde que se registra."""
     persona = db.get(m.Persona, datos.persona_id)
     if not persona:
         raise HTTPException(404, f"No existe la persona {datos.persona_id}")
@@ -99,31 +112,77 @@ def crear_incidencia(datos: IncidenciaIn, db: Session = Depends(get_db),
         raise HTTPException(400, "Describe la incidencia con mas detalle")
     # El servicio y el dia que no existen se dicen (seccion 101): antes
     # reventaban en la llave foranea, con un error que no decia cual.
-    if datos.servicio_id is not None and not db.get(m.Servicio, datos.servicio_id):
-        raise HTTPException(404, f"No existe el servicio {datos.servicio_id}")
+    servicio = None
+    if datos.servicio_id is not None:
+        servicio = db.get(m.Servicio, datos.servicio_id)
+        if not servicio:
+            raise HTTPException(404, f"No existe el servicio {datos.servicio_id}")
     if datos.jornada_id is not None and not db.get(m.Jornada, datos.jornada_id):
         raise HTTPException(404, f"No existe la jornada {datos.jornada_id}")
 
     incidencia = m.Incidencia(**datos.model_dump(),
                               clasificada_por_id=usuario.persona_id)
     db.add(incidencia)
+    db.flush()
+    if servicio is not None:
+        auditoria.registrar(
+            db, usuario, servicio, "registrar incidencia",
+            f"{persona.nombre}, {incidencia.gravedad.value}, "
+            f"{incidencia.fecha:%d/%m/%Y}: {incidencia.descripcion}",
+            jornada_id=datos.jornada_id)
     db.commit()
     db.refresh(incidencia)
 
-    efecto = {
-        m.GravedadIncidencia.ERROR_MENOR:
-            "Retroalimentacion documentada. No afecta las estrellas del mes.",
-        m.GravedadIncidencia.LEVE:
-            "Si se autoriza, quita todas las estrellas del mes.",
-        m.GravedadIncidencia.GRAVE:
-            "Si se autoriza, quita todas las estrellas y lo gestiona Recursos "
-            "Humanos. Puede derivar en baja.",
-    }[incidencia.gravedad]
-
     return {"incidencia_id": incidencia.id, "persona": persona.nombre,
             "gravedad": incidencia.gravedad.value, "autorizada": False,
-            "efecto_si_se_autoriza": efecto,
+            "efecto_si_se_autoriza": EFECTO_SI_SE_AUTORIZA[incidencia.gravedad],
             "siguiente_paso": "Requiere visto bueno del director de operaciones"}
+
+
+@router.get("/incidencias/opciones/{servicio_id}",
+            summary="Con que se llena el panel de registrar una incidencia")
+def opciones_incidencia(servicio_id: int, db: Session = Depends(get_db),
+                        _=Depends(CONSULTOR)):
+    """La gente que va o fue en ese servicio --tambien los relevados--,
+    el consultor titular, y los dias del servicio con el de hoy senalado
+    (seccion 105). Es lo que el panel ofrece para no pedir numeros."""
+    servicio = db.get(m.Servicio, servicio_id)
+    if not servicio:
+        raise HTTPException(404, f"No existe el servicio {servicio_id}")
+    hoy = reloj.hoy_en(db.get(m.Pais, servicio.pais_id))
+    jornadas = (db.query(m.Jornada)
+                .join(m.Equipo, m.Jornada.equipo_id == m.Equipo.id)
+                .filter(m.Equipo.servicio_id == servicio_id,
+                        m.Jornada.estatus != m.EstatusJornada.CANCELADA)
+                .order_by(m.Jornada.fecha.desc(), m.Jornada.id).all())
+    personas: dict[int, dict] = {}
+    for j in jornadas:
+        for a in j.personal:
+            fila = personas.setdefault(a.persona_id, {
+                "persona_id": a.persona_id, "nombre": a.persona.nombre,
+                "puesto": a.rol.nombre if a.rol else None, "dias": 0,
+                "consultor": False})
+            fila["dias"] += 1
+    if servicio.consultor_id:
+        titular = db.get(m.Persona, servicio.consultor_id)
+        if titular:
+            personas.setdefault(titular.id, {
+                "persona_id": titular.id, "nombre": titular.nombre,
+                "puesto": None, "dias": 0, "consultor": True})
+    # Por omision el dia de hoy; si hoy no hay dia, el ultimo que paso.
+    de_hoy = next((j for j in jornadas if j.fecha == hoy), None)
+    pasado = next((j for j in jornadas if j.fecha <= hoy), None)
+    propuesta = de_hoy or pasado or (jornadas[-1] if jornadas else None)
+    return {
+        "servicio_id": servicio.id, "folio": servicio.folio,
+        "tipo": servicio.tipo.value, "hoy": hoy.isoformat(),
+        "personas": sorted(personas.values(),
+                           key=lambda p: (p["consultor"], p["nombre"])),
+        "jornadas": [{"jornada_id": j.id, "fecha": j.fecha.isoformat(),
+                      "equipo": j.equipo.alias, "estatus": j.estatus.value}
+                     for j in jornadas],
+        "jornada_propuesta": propuesta.id if propuesta else None,
+    }
 
 
 @router.post("/incidencias/{incidencia_id}/visto-bueno",
@@ -131,62 +190,98 @@ def crear_incidencia(datos: IncidenciaIn, db: Session = Depends(get_db),
 def visto_bueno(incidencia_id: int, datos: VistoBuenoIn,
                 db: Session = Depends(get_db),
                 usuario: m.Usuario = Depends(DIR_OPERACIONES)):
+    """Autorizar es lo que le pega al bono y a la comision; descartar
+    la deja en el expediente con su resolucion y no toca nada.
+
+    Desde la seccion 105 la firma hace lo que antes solo pedia en una
+    nota: recalcula el bono del mes si RRHH no lo ha autorizado, retiene
+    la comision de la grave y le avisa a RRHH (`bonos.aplicar_visto_bueno`).
+    Y una incidencia se firma una sola vez: la segunda firma pisaba la
+    primera sin rastro y podia descartar lo que ya habia anulado un mes.
+    """
     incidencia = db.get(m.Incidencia, incidencia_id)
     if not incidencia:
         raise HTTPException(404, f"No existe la incidencia {incidencia_id}")
     if len(datos.resolucion.strip()) < 10:
         raise HTTPException(400, "Registra la resolucion")
+    if incidencia.visto_bueno_por_id is not None:
+        raise HTTPException(409, {
+            "mensaje": "Esa incidencia ya tiene visto bueno: quedó "
+                       + ("autorizada" if incidencia.autorizada else "descartada")
+                       + " y no se vuelve a firmar",
+            "que_hacer": "Si hay que corregirla, regístrala otra vez con lo "
+                         "que corresponda; la anterior se queda en el "
+                         "expediente con su resolución."})
 
     incidencia.autorizada = datos.autorizar
     incidencia.visto_bueno_por_id = usuario.persona_id
     incidencia.visto_bueno_en = datetime.now(timezone.utc)
     incidencia.resolucion_direccion = datos.resolucion
 
-    # El bono de ese mes puede estar cerrado ya. Si se autorizo o se
-    # pago, esta incidencia llego tarde y NO lo toca: el dinero no se
-    # recalcula. Se dice aqui, en la respuesta, porque quien acaba de
-    # firmar necesita saber que su firma no bajo ningun bono --y con la
-    # fecha del visto bueno queda demostrado que llego tarde, no que se
-    # ignoro--.
-    cerrada = None
-    if datos.autorizar:
-        cerrada = (db.query(m.EvaluacionMensual)
-                   .filter(m.EvaluacionMensual.persona_id == incidencia.persona_id,
-                           m.EvaluacionMensual.anio == incidencia.fecha.year,
-                           m.EvaluacionMensual.mes == incidencia.fecha.month,
-                           m.EvaluacionMensual.estatus.in_(
-                               [m.EstatusEvaluacion.AUTORIZADA,
-                                m.EstatusEvaluacion.PAGADA]))
-                   .first())
+    efecto = motor.aplicar_visto_bueno(db, incidencia)
+
+    servicio = (db.get(m.Servicio, incidencia.servicio_id)
+                if incidencia.servicio_id else None)
+    if servicio is not None:
+        auditoria.registrar(
+            db, usuario, servicio,
+            "autorizar incidencia" if datos.autorizar else "descartar incidencia",
+            f"{incidencia.persona.nombre}, {incidencia.gravedad.value}, "
+            f"{incidencia.fecha:%d/%m/%Y}: {datos.resolucion}",
+            jornada_id=incidencia.jornada_id)
     db.commit()
 
-    if cerrada is not None:
-        nota = (f"El bono de {incidencia.fecha:%m/%Y} ya esta "
-                f"{cerrada.estatus.value}: esta incidencia no lo toca. "
-                f"Queda asentada con su fecha de visto bueno.")
-    elif datos.autorizar:
-        nota = "Ya impacta el bono del mes. Hay que recalcular la evaluacion."
+    # La nota, en espanol para quien lee la API; la clave, para que la
+    # consola lo diga en su idioma.
+    periodo = f"{incidencia.fecha:%m/%Y}"
+    if not datos.autorizar:
+        nota, clave = "No impacta el bono ni la comisión.", "inc_vb_descartada"
+    elif efecto["bono"] == "no_aplica":
+        nota, clave = ("Error menor: retroalimentación documentada, no toca "
+                       "las estrellas."), "inc_vb_error_menor"
+    elif efecto["bono"] == "ya_autorizado":
+        nota = (f"El bono de {periodo} ya está "
+                f"{efecto['evaluacion']['estatus']}: la incidencia no lo toca "
+                "y queda para el expediente.")
+        clave = "inc_vb_ya_autorizado"
+    elif efecto["bono"] == "recalculado":
+        nota = f"El bono de {periodo} se volvió a calcular y queda en cero."
+        clave = "inc_vb_recalculado"
+    elif efecto["bono"] == "sin_evaluacion":
+        nota = (f"El bono de {periodo} todavía no se calcula: cuando se "
+                "calcule ya la va a tomar en cuenta.")
+        clave = "inc_vb_sin_evaluacion"
     else:
-        nota = "No impacta el bono."
+        nota = (f"La incidencia quedó autorizada, pero el bono de {periodo} "
+                f"no se pudo recalcular: {efecto.get('motivo')}")
+        clave = "inc_vb_no_recalculado"
 
     return {"resultado": "autorizada" if datos.autorizar else "descartada",
             "incidencia_id": incidencia.id,
-            "bono_ya_cerrado": cerrada is not None,
-            "nota": nota}
+            "bono": efecto["bono"],
+            "evaluacion": efecto["evaluacion"],
+            "comisiones_retenidas": efecto["comisiones_retenidas"],
+            "aviso_rrhh": efecto["aviso_rrhh"],
+            # Se conserva para quien ya lo leia.
+            "bono_ya_cerrado": efecto["bono"] == "ya_autorizado",
+            "nota": nota, "clave": clave, "periodo": periodo,
+            "anio": incidencia.fecha.year, "mes": incidencia.fecha.month}
 
 
 @router.get("/incidencias", summary="Incidencias registradas")
 def listar_incidencias(db: Session = Depends(get_db), persona_id: int | None = None,
+                       servicio_id: int | None = None,
                        solo_pendientes: bool = False, _=Depends(LECTURA)):
+    """Con quien la registro, quien la firmo y su resolucion (seccion
+    105): la lista decia solo si estaba autorizada."""
     consulta = db.query(m.Incidencia)
     if persona_id:
         consulta = consulta.filter_by(persona_id=persona_id)
+    if servicio_id:
+        consulta = consulta.filter_by(servicio_id=servicio_id)
     if solo_pendientes:
         consulta = consulta.filter(m.Incidencia.visto_bueno_por_id.is_(None))
-    return [{"id": i.id, "persona": i.persona.nombre, "fecha": i.fecha.isoformat(),
-             "gravedad": i.gravedad.value, "descripcion": i.descripcion,
-             "autorizada": i.autorizada,
-             "pendiente_visto_bueno": i.visto_bueno_por_id is None}
+    return [motor.renglon_incidencia(db, i)
             for i in consulta.order_by(m.Incidencia.id.desc()).all()]
 
 

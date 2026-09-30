@@ -137,6 +137,11 @@ async function pintarPorPagar(zona) {
       pais.depositos.length
         ? h("span", { clase: "gris chico" },
             t("fin_por_depositar").replace("{m}", dinero(pais.total_depositos, pais.moneda)))
+        : "",
+      /* Lo que ya debia estar en la calle (seccion 105), en rojo. */
+      Number(pais.total_vencido) > 0
+        ? h("span", { clase: "chico rojo" },
+            t("fin_vencido_pie").replace("{m}", dinero(pais.total_vencido, pais.moneda)))
         : ""),
     bloqueDepositos(pais.depositos, pais.moneda, repintar),
     bloqueCompras(pais.compras, repintar),
@@ -144,6 +149,20 @@ async function pintarPorPagar(zona) {
 }
 
 /* ---------------------------------------------------------- depositos */
+
+/* Sin barrido ni ventana de "un dia antes" (decision 8, seccion 105):
+   lo pedido llega aqui en cuanto se pide y finanzas decide cuando
+   transferir mirando la fecha del servicio. Por eso la lista viene en
+   cuatro bloques, en el orden en que se despacha: lo vencido sin
+   depositar --el servicio ya arranco y el dinero no ha salido-- en rojo
+   y hasta arriba, lo de hoy, lo de manana y lo demas con su fecha. */
+const URGENCIAS = [
+  { clave: "vencida", texto: "fin_urg_vencida", pie: "fin_urg_vencida_pie",
+    clase: "rojo" },
+  { clave: "hoy", texto: "fin_urg_hoy", pie: null, clase: "" },
+  { clave: "manana", texto: "fin_urg_manana", pie: null, clase: "" },
+  { clave: "despues", texto: "fin_urg_despues", pie: null, clase: "" },
+];
 
 function bloqueDepositos(filas, moneda, repintar) {
   const caja = h("div", { clase: "tarjeta" },
@@ -157,8 +176,17 @@ function bloqueDepositos(filas, moneda, repintar) {
     return caja;
   }
 
-  for (const f of filas) caja.append(
-    renglonDeposito(f, f.moneda || moneda, repintar));
+  for (const u of URGENCIAS) {
+    const suyas = filas.filter(f => (f.urgencia || "despues") === u.clave);
+    if (!suyas.length) continue;
+    caja.append(h("div", { style: "margin:14px 0 0" },
+      h("h4", { clase: u.clase, style: "margin:0 0 2px" },
+        t(u.texto).replace("{n}", suyas.length)),
+      u.pie ? h("p", { clase: "chico rojo", style: "margin:0 0 8px" }, t(u.pie))
+            : h("div", { style: "margin:0 0 8px" })));
+    for (const f of suyas) caja.append(
+      renglonDeposito(f, f.moneda || moneda, repintar));
+  }
   return caja;
 }
 
@@ -190,8 +218,15 @@ function renglonDeposito(f, moneda, repintar) {
         " \u00b7 ",
         [f.cliente, t("fin_equipo").replace("{e}", f.equipo)]
           .filter(Boolean).join(" \u00b7 ")),
-      h("div", { clase: "chico gris", style: "margin-left:34px" },
-        t("fin_arranca") + " " + fecha(f.primera_jornada),
+      /* La fecha del servicio en cada renglon (seccion 105): es con lo
+         que finanzas decide cuando transferir. Vencida va en rojo. */
+      h("div", { clase: "chico " + (f.urgencia === "vencida" ? "rojo" : "gris"),
+                 style: "margin-left:34px" },
+        t("fin_arranca") + " " + fecha(f.fecha_servicio || f.primera_jornada),
+        f.urgencia === "vencida"
+          ? h("span", { style: "margin-left:6px" },
+              etiqueta(t("fin_vencido_etiqueta"), "grave"))
+          : "",
         /* Quien autorizo el gasto. El dato existia y nunca llegaba a la
            pantalla: finanzas no sabia a quien preguntarle. */
         f.solicito ? " \u00b7 " + t("fin_solicito").replace("{p}", f.solicito)
@@ -204,11 +239,18 @@ function renglonDeposito(f, moneda, repintar) {
 
   const acciones = h("div", { clase: "acciones", style: "margin-top:8px" });
   const formulario = h("div");
-  acciones.append(h("button", { clase: "chico", type: "button",
-    onclick: () => {
-      if (formulario.firstChild) return formulario.replaceChildren();
-      formulario.replaceChildren(ventanaDeposito(f, moneda, repintar));
-    } }, t("fin_depositar")));
+  /* Lo que se pidio con el servicio ya cerrado no se deposita (seccion
+     105): no deberia existir, y si existe no lleva boton. Lo pedido
+     antes del cierre se deposita como siempre. */
+  if (f.pedida_tras_cierre) {
+    acciones.append(aviso(t("fin_pedida_tras_cierre"), "alerta"));
+  } else {
+    acciones.append(h("button", { clase: "chico", type: "button",
+      onclick: () => {
+        if (formulario.firstChild) return formulario.replaceChildren();
+        formulario.replaceChildren(ventanaDeposito(f, moneda, repintar));
+      } }, t("fin_depositar")));
+  }
 
   /* El consultor quiere echarse para atras este deposito. No lo cancelo
      el: el unico que sabe si el dinero ya salio del banco es quien lo
@@ -236,13 +278,19 @@ function renglonDeposito(f, moneda, repintar) {
     cuentaBancaria(f), zona, acciones, formulario);
 }
 
-/* A donde se deposita. Viene de Odoo; mientras esa conexion no exista
-   el hueco se dice en voz alta, porque es el paso lento del proceso:
-   sin esto alguien va a buscar la cuenta a otro lado cada vez. */
+/* A donde se deposita. Viene de Odoo y solo de Odoo (decision 7 de
+   Salvador, seccion 105): si falta, RH la captura alla, en la ficha del
+   empleado, y aqui se dice en rojo porque es lo que detiene el deposito.
+   El numero, con su banco y su titular, solo lo ve quien deposita; a los
+   demas la bandeja les dice si la persona tiene cuenta o le falta. */
 function cuentaBancaria(f) {
+  if (f.cuenta === "falta") {
+    return h("div", { clase: "chico", style: "margin:6px 0 0 34px;color:var(--grave)" },
+             t("fin_falta_cuenta_odoo"));
+  }
   if (!f.clabe) {
-    return h("div", { clase: "chico", style: "margin:6px 0 0 34px;color:#b8860b" },
-             t("fin_sin_cuenta"));
+    return h("div", { clase: "chico gris", style: "margin:6px 0 0 34px" },
+             t("fin_tiene_cuenta"));
   }
   return h("div", { clase: "chico gris", style: "margin:6px 0 0 34px" },
     h("span", { clase: "num" }, f.clabe),

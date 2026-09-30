@@ -459,6 +459,19 @@ LARGO_FOLIO = 40
 LARGO_MOTIVO = 400
 
 
+def cancelado_con_visto_bueno(db: Session, servicio: m.Servicio) -> bool:
+    """Si el cierre de un servicio cancelado ya tiene visto bueno: desde
+    ahi la cotizacion ya no se toca, como en un servicio que termino. El
+    estatus del cancelado no cambia con el visto bueno --se queda
+    cancelado--, asi que se mira su cierre."""
+    from app import cierre as motor_cierre
+    from app import horas_extra
+
+    cierre = motor_cierre.del_eventual(db, servicio.id)
+    return bool(cierre and (cierre.facturado_en
+                            or cierre.estatus in horas_extra.CON_VISTO_BUENO))
+
+
 def _servicio_que_se_cotiza(db: Session, servicio_id: int) -> m.Servicio:
     servicio = db.get(m.Servicio, servicio_id)
     if not servicio:
@@ -466,8 +479,14 @@ def _servicio_que_se_cotiza(db: Session, servicio_id: int) -> m.Servicio:
     if servicio.tipo != m.TipoServicio.EVENTUAL:
         raise HTTPException(400, "El implantado no lleva esta cotizacion: sus "
                                  "precios van en el contrato del mes.")
-    if servicio.estatus == m.EstatusServicio.CANCELADO:
-        raise HTTPException(409, "El servicio esta cancelado.")
+    # El cancelado se cotiza mientras su cierre no tenga visto bueno
+    # (seccion 105, hallazgo 6): se cancela con dias trabajados o dinero
+    # afuera, y sin cotizacion su cierre no tenia salida.
+    if (servicio.estatus == m.EstatusServicio.CANCELADO
+            and cancelado_con_visto_bueno(db, servicio)):
+        raise HTTPException(409, "El servicio esta cancelado y su cierre ya "
+                                 "tiene visto bueno: si algo cambio, finanzas "
+                                 "lo regresa y ahi se recotiza.")
     if servicio.estatus in YA_CON_VISTO_BUENO:
         raise HTTPException(409, "Ya tiene visto bueno: si el cliente cambio "
                                  "algo, finanzas lo regresa y ahi se recotiza.")
@@ -476,10 +495,17 @@ def _servicio_que_se_cotiza(db: Session, servicio_id: int) -> m.Servicio:
 
 def _dias(servicio: m.Servicio) -> list:
     """(equipo, jornada) de los dias que se cotizan: los que no estan
-    cancelados, en el orden de cada equipo."""
+    cancelados, en el orden de cada equipo.
+
+    En un servicio cancelado entran tambien los cancelados (seccion
+    105): la cotizacion autorizada es la del plan que el cliente
+    autorizo, y con el cobro completo se factura tal cual, con los dias
+    que ya no se trabajaron.
+    """
+    cancelado = servicio.estatus == m.EstatusServicio.CANCELADO
     return [(e, j) for e in servicio.equipos
             for j in sorted(e.jornadas, key=lambda x: x.fecha)
-            if j.estatus != m.EstatusJornada.CANCELADA]
+            if cancelado or j.estatus != m.EstatusJornada.CANCELADA]
 
 
 def _renglones_de_lo_que_lleva(servicio: m.Servicio, lineas: list[dict]) -> list[dict]:
@@ -742,13 +768,17 @@ def bloque(db: Session, servicio_id: int) -> dict:
         if nombre and all(q["nombre"] != nombre for q in quienes):
             quienes.append({"nombre": nombre, "solicita": False})
 
+    # El cancelado se cotiza mientras su cierre no tenga visto bueno
+    # (seccion 105); despues, como el terminado, ya no.
+    con_visto_bueno = (servicio.estatus in YA_CON_VISTO_BUENO
+                       or (servicio.estatus == m.EstatusServicio.CANCELADO
+                           and cancelado_con_visto_bueno(db, servicio)))
     return {
         "servicio_id": servicio.id,
         "se_cotiza": servicio.tipo == m.TipoServicio.EVENTUAL,
         "se_puede": (servicio.tipo == m.TipoServicio.EVENTUAL
-                     and servicio.estatus != m.EstatusServicio.CANCELADO
-                     and servicio.estatus not in YA_CON_VISTO_BUENO),
-        "con_visto_bueno": servicio.estatus in YA_CON_VISTO_BUENO,
+                     and not con_visto_bueno),
+        "con_visto_bueno": con_visto_bueno,
         "tarifario": ({"id": tarifario.id, "nombre": tarifario.nombre,
                        "moneda": tarifario.moneda.value} if tarifario else None),
         "vigente": resumen(db, vig) if vig else None,

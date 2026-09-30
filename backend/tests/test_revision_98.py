@@ -69,6 +69,21 @@ def _solicitudes(viatico_ids):
                 .order_by(m.SolicitudTransferencia.id).all()]
 
 
+def _enviada(viatico_ids):
+    """La instruccion ya esta en manos de finanzas (`enviada`). Desde la
+    seccion 105 no hay barrido que la ponga --la pondra la conexion con
+    Odoo--, asi que la prueba la escribe directo en la base."""
+    from app import models as m
+    from app.db import SessionLocal
+    with SessionLocal() as db:
+        for s in (db.query(m.SolicitudTransferencia)
+                  .filter(m.SolicitudTransferencia.asignacion_id.in_(viatico_ids),
+                          m.SolicitudTransferencia.estatus
+                          == m.EstatusTransferencia.PENDIENTE).all()):
+            s.estatus = m.EstatusTransferencia.ENVIADA
+        db.commit()
+
+
 def _viaticos(equipo_id):
     from app import models as m
     from app.db import SessionLocal
@@ -192,9 +207,7 @@ def test_quitar_a_una_persona_con_deposito_pedido_se_niega(cliente, sesion, dato
     assert _solicitudes([vid])[0][1] == "pendiente"
 
     # Ya en manos de finanzas: igual.
-    lote = cliente.post("/viaticos/transferencias/barrido",
-                        headers=sesion("finanzas")).json()
-    assert lote["enviadas"] == 1
+    _enviada([vid])
     r = cliente.delete(f"/servicios/equipos/{equipo_id}/personal/{juan}",
                        headers=sesion("consultor"))
     assert r.status_code == 409, r.text
@@ -380,10 +393,8 @@ def test_cancelar_con_el_deposito_ya_enviado_lo_pide_a_finanzas(
     servicio, equipo_id, juan = _servicio(cliente, sesion, datos, dias=1)
     _fijar(cliente, sesion, equipo_id, juan, 1000)
     _solicitar(cliente, sesion, equipo_id)
-    lote = cliente.post("/viaticos/transferencias/barrido",
-                        headers=sesion("finanzas")).json()
-    assert lote["enviadas"] == 1
     vid = _viaticos(equipo_id)[0]["id"]
+    _enviada([vid])
 
     r = cliente.post(f"/servicios/{servicio['id']}/cancelar",
                      json={"motivo": "El cliente cancelo"},

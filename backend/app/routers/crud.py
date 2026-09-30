@@ -249,6 +249,10 @@ def crud_router(
                                  "corresponda.",
                     "viaticos": debiendo,
                 })
+            # Y el consultor titular de servicios vivos tampoco (decision
+            # 13, seccion 105): esta baja tambien cierra el acceso, y el
+            # candado es el mismo que en el panel de accesos.
+            accesos.no_se_va_siendo_titular(db, obj)
 
         if hasattr(obj, "activo"):
             obj.activo = False          # nunca borramos historia, solo desactivamos

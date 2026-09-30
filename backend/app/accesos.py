@@ -84,6 +84,69 @@ def no_es_consultor(persona_id: int) -> HTTPException:
     })
 
 
+# Un cierre que ya termino: finanzas lo aprobo o ya esta facturado. Lo
+# que queda en cualquier otro estatus todavia necesita a su consultor.
+CIERRE_TERMINADO = (m.EstatusCierre.APROBADO, m.EstatusCierre.FACTURADO)
+
+
+def servicio_sigue_vivo(db: Session, servicio: m.Servicio) -> bool:
+    """Si a ese servicio todavia le toca algo a su consultor titular
+    (decision 13, seccion 105).
+
+    El cerrado ya no: su comision se genero al cerrarlo y no se toca. El
+    cancelado sigue vivo mientras tenga un cierre por terminar --dinero
+    afuera o dias trabajados que finanzas no ha aprobado--; sin cierre,
+    o con todos aprobados, ya no le pasa nada. Lo demas --planeado, en
+    la calle, terminado, sin visto bueno, en facturacion-- sigue
+    necesitando a alguien que reciba sus avisos, corra sus plazos y
+    cobre su comision.
+    """
+    if servicio.estatus == m.EstatusServicio.CERRADO:
+        return False
+    if servicio.estatus == m.EstatusServicio.CANCELADO:
+        return (db.query(m.Cierre.id)
+                .filter(m.Cierre.servicio_id == servicio.id,
+                        m.Cierre.estatus.notin_(CIERRE_TERMINADO))
+                .first()) is not None
+    return True
+
+
+def servicios_como_titular(db: Session, persona_id: int | None) -> list[dict]:
+    """Los servicios vivos que esa persona lleva como titular.
+
+    Es lo que le impide irse (decision 13, seccion 105): cerrarle el
+    acceso a un consultor con servicios a su nombre dejaba a esos
+    servicios avisandole a quien ya no esta, con sus plazos corriendo y
+    sin quien cobre la comision. Primero se cambia el titular desde la
+    ficha de cada uno.
+    """
+    if not persona_id:
+        return []
+    filas = (db.query(m.Servicio)
+             .filter(m.Servicio.consultor_id == persona_id,
+                     m.Servicio.estatus != m.EstatusServicio.CERRADO)
+             .order_by(m.Servicio.id).all())
+    return [{"servicio_id": s.id, "folio": s.folio, "tipo": s.tipo.value,
+             "estatus": s.estatus.value}
+            for s in filas if servicio_sigue_vivo(db, s)]
+
+
+def no_se_va_siendo_titular(db: Session, persona: m.Persona | None) -> None:
+    """409 si es titular de servicios vivos: primero se cambian."""
+    vivos = servicios_como_titular(db, persona.id if persona else None)
+    if not vivos:
+        return
+    folios = ", ".join(s["folio"] for s in vivos)
+    raise HTTPException(409, {
+        "mensaje": (f"Tiene {len(vivos)} servicio(s) como titular: "
+                    f"cámbialos primero."),
+        "que_hacer": "Dirección de operaciones le pone otro titular a cada "
+                     "uno desde la ficha del servicio («Cambiar titular»), "
+                     f"y entonces se le cierra el acceso. Son: {folios}.",
+        "servicios": vivos,
+    })
+
+
 # ------------------------------------------------------------- los candados
 
 def _obtener(db: Session, usuario_id: int) -> m.Usuario:
@@ -430,6 +493,9 @@ def desactivar(db: Session, usuario_id: int, actor: m.Usuario,
                          "cerrarlo con el ajuste que corresponda.",
             "viaticos": debiendo,
         })
+    # El titular de servicios vivos tampoco (decision 13, seccion 105):
+    # sus servicios se quedarian avisandole a quien ya no esta.
+    no_se_va_siendo_titular(db, usuario.persona)
 
     usuario.activo = False
     anotar(db, actor, "acceso desactivado", "usuario", usuario.id,

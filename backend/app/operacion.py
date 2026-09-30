@@ -10,7 +10,7 @@ Candados aprobados:
 """
 import logging
 import math
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 
 from fastapi import HTTPException
 from sqlalchemy import or_
@@ -484,6 +484,25 @@ def registrar_hito(db: Session, jornada_id: int, persona_id: int,
                                      if tipo == m.TipoHito.FIN_SERVICIO
                                      else None))
 
+    # La llegada es de cada quien (seccion 105, decision 4): Juan y Luis
+    # marcan cada uno la suya, con su propio GPS contra la geocerca. La
+    # misma persona no la marca dos veces --la segunda con otra hora no
+    # es una llegada, es un intento de corregir la primera, y eso es de
+    # la central--. La de otra persona del equipo si entra, aunque el
+    # dia ya este arribado por la primera. Se revisa antes de la
+    # geocerca para que un segundo toque no deje una alerta de "fuera
+    # del punto" sobre una llegada que ya quedo.
+    if tipo == m.TipoHito.LLEGADA_ORIGEN:
+        suya = _ya_marco(db, jornada, persona_id, tipo)
+        if suya is not None:
+            raise HTTPException(409, {
+                "mensaje": ("Ya marcaste tu llegada a las "
+                            f"{suya.marcado_en:%H:%M}"),
+                "que_hacer": ("Tu llegada de hoy ya quedó registrada. Si "
+                              "la hora está mal, la corrige la central."),
+                "hito_id": suya.id,
+                "marcado_en": suya.marcado_en.isoformat()})
+
     atraso = (recibido - ahora).total_seconds() / 60
     # Una marca de las horas que llega con el visto bueno ya dado --la
     # cola de un telefono que estuvo dias sin senal-- se guarda, pero no
@@ -667,6 +686,9 @@ def registrar_hito(db: Session, jornada_id: int, persona_id: int,
         #
         # Y una vez por dia, no por marca (seccion 99): la llegada del
         # segundo del equipo mandaba otro "su equipo esta en el lugar".
+        # Con la llegada por persona (seccion 105) esto sigue igual: el
+        # cliente se entera con la primera; las demas quedan en la
+        # bitacora del dia y en la central, no en su correo.
         if not _ya_marcado(db, jornada, tipo, salvo=hito):
             del_principal = ta.idioma_de(db, servicio, m.Destinatario.EJECUTIVO)
             del_solicitante = ta.idioma_de(db, servicio,
@@ -802,7 +824,11 @@ def _respuesta_de(hito: m.Hito, avisos: list[str], manana=None) -> dict:
 
 def _ya_marcado(db: Session, jornada: m.Jornada, tipo: m.TipoHito,
                 salvo: m.Hito | None = None) -> bool:
-    """Si ese paso ya lo marco alguien del equipo antes de esta marca."""
+    """Si ese paso ya lo marco alguien del equipo antes de esta marca.
+
+    Es la regla de los avisos al cliente: uno por dia, con la primera
+    marca de su tipo. La de "esta persona ya marco esto" es `_ya_marco`.
+    """
     consulta = (db.query(m.Hito)
                 .filter(m.Hito.jornada_id == jornada.id,
                         m.Hito.tipo == tipo,
@@ -810,6 +836,30 @@ def _ya_marcado(db: Session, jornada: m.Jornada, tipo: m.TipoHito,
     if salvo is not None and salvo.id is not None:
         consulta = consulta.filter(m.Hito.id != salvo.id)
     return consulta.first() is not None
+
+
+def _ya_marco(db: Session, jornada: m.Jornada, persona_id: int,
+              tipo: m.TipoHito) -> m.Hito | None:
+    """La marca de ese paso de ESA persona en ese dia, si ya la hizo.
+
+    Por (jornada, persona, tipo) y no por jornada (seccion 105, decision
+    4): la llegada es de cada quien, y lo que no se repite es la de la
+    misma persona. Sin las anuladas: un dia reabierto se vuelve a marcar.
+    """
+    return (db.query(m.Hito)
+            .filter(m.Hito.jornada_id == jornada.id,
+                    m.Hito.persona_id == persona_id,
+                    m.Hito.tipo == tipo,
+                    m.Hito.anulado_en.is_(None))
+            .order_by(m.Hito.marcado_en)
+            .first())
+
+
+def llego(db: Session, jornada: m.Jornada, persona_id: int) -> bool:
+    """Si esa persona ya marco SU llegada al punto (seccion 105). Lo
+    leen la app, el camino y la central para saber a quien le falta."""
+    return _ya_marco(db, jornada, persona_id,
+                     m.TipoHito.LLEGADA_ORIGEN) is not None
 
 
 def _resolver_silencio(db: Session, jornada: m.Jornada, persona_id: int,
@@ -844,7 +894,10 @@ def _manana_del_equipo(jornada: m.Jornada) -> dict | None:
         return None
     return {"jornada_id": jornada.id,
             "fecha": siguiente.fecha.isoformat(),
-            "heredada": siguiente.inicio_programado.isoformat()}
+            "heredada": siguiente.inicio_programado.isoformat(),
+            # Si un companero ya propuso una hora, la app lo dice antes
+            # de preguntar otra vez (seccion 105).
+            "propuesta": propuesta_pendiente(siguiente)}
 
 
 def siguiente_dia(jornada: m.Jornada) -> m.Jornada | None:
@@ -877,20 +930,8 @@ def fijar_hora_de_manana(db: Session, jornada: m.Jornada, hora,
     equipo no puede marcar su llegada manana. Una direccion escrita sin
     pin deja el dia a medias.
     """
-    siguiente = siguiente_dia(jornada)
-    if not siguiente:
-        raise HTTPException(409, {
-            "mensaje": "Este equipo no tiene otro dia despues de este",
-            "que_hacer": "Si el cliente quiere otro dia, se agrega al "
-                         "servicio desde su pantalla."})
-
-    horas_extra.candado_del_arranque(db, siguiente)
-    antes = siguiente.inicio_programado
-    modalidad = db.get(m.Modalidad, siguiente.modalidad_id)
-    siguiente.inicio_programado = datetime.combine(siguiente.fecha, hora)
-    siguiente.fin_programado = (siguiente.inicio_programado
-                                + timedelta(hours=float(modalidad.horas)))
-    siguiente.hora_confirmada = True
+    siguiente = _el_de_manana(db, jornada)
+    antes = _mover_hora(db, siguiente, hora)
 
     if direccion:
         siguiente.origen_direccion = direccion.strip()
@@ -914,6 +955,237 @@ def fijar_hora_de_manana(db: Session, jornada: m.Jornada, hora,
                           texto=texto))
     db.flush()
     return {"siguiente": siguiente, "antes": antes}
+
+
+def _el_de_manana(db: Session, jornada: m.Jornada) -> m.Jornada:
+    """El dia siguiente del equipo, que tiene que existir y no haber
+    arrancado: es sobre el que se fija o se propone la hora."""
+    siguiente = siguiente_dia(jornada)
+    if not siguiente:
+        raise HTTPException(409, {
+            "mensaje": "Este equipo no tiene otro dia despues de este",
+            "que_hacer": "Si el cliente quiere otro dia, se agrega al "
+                         "servicio desde su pantalla."})
+    horas_extra.candado_del_arranque(db, siguiente)
+    return siguiente
+
+
+def _mover_hora(db: Session, siguiente: m.Jornada, hora) -> datetime:
+    """Pone la hora de presentacion de ese dia y devuelve la que tenia.
+    El fin se recorre con las horas de la modalidad, y la hora deja de
+    ser heredada: alguien la dijo."""
+    antes = siguiente.inicio_programado
+    modalidad = db.get(m.Modalidad, siguiente.modalidad_id)
+    siguiente.inicio_programado = datetime.combine(siguiente.fecha, hora)
+    siguiente.fin_programado = (siguiente.inicio_programado
+                                + timedelta(hours=float(modalidad.horas)))
+    siguiente.hora_confirmada = True
+    return antes
+
+
+# ------------------------------------------ la hora que propone el campo
+#
+# Decision 5 de Salvador (seccion 105): la hora que captura el conductor
+# al cerrar el dia pasa por la central. Se guarda como propuesta en el
+# dia de manana; la central la confirma o la rechaza desde "Manana", y si
+# nadie la toca antes de las 22:00 del pais, el reloj la confirma como la
+# capturo. El punto de manana no se mueve solo: se queda el del task
+# sheet salvo que la central lo cambie, como cualquier otro dia.
+
+CONFIRMADA_CENTRAL = "confirmada_central"
+CONFIRMADA_RELOJ = "confirmada_reloj"
+RECHAZADA = "rechazada"
+# A que hora del pais deja de esperarse a la central. Vive aqui y no en
+# el calendario del reloj: el que confirma y el que decide si ya toca
+# leen el mismo numero.
+HORA_LIMITE_PROPUESTA = 22
+
+
+def propuesta_pendiente(jornada: m.Jornada) -> dict | None:
+    """La propuesta viva de ese dia, o nada. Es lo que pintan la app
+    ("Hora propuesta 07:30 · pendiente de la central") y la banda de
+    manana de la central, con quien la propuso y su nota."""
+    if jornada.hora_propuesta is None or jornada.hora_propuesta_resuelta:
+        return None
+    quien = jornada.hora_propuesta_por
+    return {"hora": jornada.hora_propuesta.strftime("%H:%M"),
+            "por": quien.nombre if quien else None,
+            "por_id": jornada.hora_propuesta_por_id,
+            "nota": jornada.hora_propuesta_nota,
+            "en": (jornada.hora_propuesta_en.isoformat()
+                   if jornada.hora_propuesta_en else None),
+            # La hora que tiene hoy la hoja, para que la central compare.
+            "de_la_hoja": jornada.inicio_programado.strftime("%H:%M")}
+
+
+def proponer_hora_de_manana(db: Session, jornada: m.Jornada, hora,
+                            quien_id: int, nota: str | None = None,
+                            direccion: str | None = None,
+                            ahora: datetime | None = None) -> dict:
+    """Lo que el conductor capturo, guardado como propuesta.
+
+    No toca `inicio_programado` ni el punto: la geocerca y la hora con
+    que se mide la ventana siguen siendo las de la hoja hasta que la
+    central diga. Si el conductor manda otra hora, reemplaza la
+    propuesta pendiente; una ya resuelta no se toca, se abre otra.
+
+    La direccion que escriba viaja en la nota --"en el lobby del hotel"--
+    para que la central la lea y, si hace falta, mueva el punto a mano
+    como siempre. Del GPS del telefono no se toma nada.
+    """
+    siguiente = _el_de_manana(db, jornada)
+    momento = reloj.ahora_de_la_jornada(db, siguiente, ahora)
+
+    partes = []
+    if direccion and direccion.strip():
+        partes.append(f"en {direccion.strip()}")
+    if nota and nota.strip():
+        partes.append(nota.strip())
+    siguiente.hora_propuesta = hora
+    siguiente.hora_propuesta_por_id = quien_id
+    siguiente.hora_propuesta_en = momento
+    siguiente.hora_propuesta_nota = (". ".join(partes)[:600] or None)
+    siguiente.hora_propuesta_resuelta = None
+
+    # En la bitacora del dia en que se supo, como la hora fijada: lo que
+    # se registra es que el principal lo dijo esta noche y que la
+    # central todavia no lo ha visto.
+    texto = (f"Propone para mañana {siguiente.fecha:%d/%m} las "
+             f"{hora:%H:%M} (la hoja dice "
+             f"{siguiente.inicio_programado:%H:%M}); pendiente de la central")
+    if siguiente.hora_propuesta_nota:
+        texto += f". {siguiente.hora_propuesta_nota}"
+    db.add(m.NotaBitacora(jornada_id=jornada.id, persona_id=quien_id,
+                          texto=texto[:600]))
+    db.flush()
+    return {"siguiente": siguiente,
+            "propuesta": propuesta_pendiente(siguiente)}
+
+
+def _dia_anterior(siguiente: m.Jornada) -> m.Jornada:
+    """El dia del mismo equipo desde el que se propuso: donde se escribe
+    que la propuesta se resolvio, igual que donde se escribio que llego.
+    Sin un dia antes --raro-- se escribe en el propio dia."""
+    return max((j for j in siguiente.equipo.jornadas
+                if j.fecha < siguiente.fecha
+                and j.estatus != m.EstatusJornada.CANCELADA),
+               key=lambda j: j.fecha, default=siguiente)
+
+
+def resolver_hora_propuesta(db: Session, siguiente: m.Jornada,
+                            quien_id: int | None, como: str) -> dict:
+    """La central confirma o rechaza la propuesta; el reloj la confirma.
+
+    Confirmar hace exactamente lo que hacia la captura del conductor
+    antes de la decision 5: mueve la hora, la hora deja de ser heredada
+    y queda en la bitacora; quien llama avisa "cambio tu hora" a quien
+    ya habia confirmado. Rechazar deja la hora de la hoja y le dice al
+    que propuso que se quedo asi.
+    """
+    if como not in (CONFIRMADA_CENTRAL, CONFIRMADA_RELOJ, RECHAZADA):
+        raise ValueError(como)
+    propuesta = propuesta_pendiente(siguiente)
+    if not propuesta:
+        raise HTTPException(409, {
+            "mensaje": "Ese día no tiene una hora propuesta pendiente",
+            "que_hacer": ("Ya se resolvió, o nadie propuso nada: la hora "
+                          "del día se cambia desde la pantalla del "
+                          "servicio, como siempre.")})
+
+    propuso_id = siguiente.hora_propuesta_por_id
+    quien = siguiente.hora_propuesta_por
+    nombre = quien.nombre if quien else "el equipo"
+    antes = siguiente.inicio_programado
+    if como == RECHAZADA:
+        siguiente.hora_propuesta_resuelta = RECHAZADA
+        texto = (f"Se queda la hora de la hoja para el "
+                 f"{siguiente.fecha:%d/%m} ({antes:%H:%M}): la central no "
+                 f"tomó las {siguiente.hora_propuesta:%H:%M} que propuso "
+                 f"{nombre}")
+    else:
+        # El candado de siempre: un dia que ya arranco no cambia de hora.
+        horas_extra.candado_del_arranque(db, siguiente)
+        _mover_hora(db, siguiente, siguiente.hora_propuesta)
+        siguiente.hora_propuesta_resuelta = como
+        texto = (f"Mañana {siguiente.fecha:%d/%m} se arranca a las "
+                 f"{siguiente.hora_propuesta:%H:%M}, como propuso {nombre}"
+                 + (": lo confirmó la central" if como == CONFIRMADA_CENTRAL
+                    else f": nadie lo tocó antes de las "
+                         f"{HORA_LIMITE_PROPUESTA}:00 y quedó así"))
+
+    donde = _dia_anterior(siguiente)
+    db.add(m.NotaBitacora(jornada_id=donde.id,
+                          persona_id=quien_id or propuso_id,
+                          texto=texto[:600]))
+    db.flush()
+    return {"siguiente": siguiente, "antes": antes,
+            "movida": siguiente.inicio_programado != antes,
+            "propuso_id": propuso_id, "como": como,
+            "hora": siguiente.hora_propuesta.strftime("%H:%M")}
+
+
+def confirmar_propuestas_vencidas(db: Session,
+                                  ahora: datetime | None = None) -> dict:
+    """La vuelta del reloj: lo que la central no toco antes de las 22:00
+    del pais queda como lo capturo el conductor.
+
+    Hora por pais, como la vispera: a las 22:00 de Sao Paulo son las
+    19:00 de Mexico. Se mira contra las 22:00 del dia ANTERIOR a la
+    jornada, no contra la hora de hoy: la propuesta que llega a las
+    23:40 --el dia cerro tarde-- se confirma en la siguiente vuelta,
+    aunque ya sea la madrugada del dia del servicio. Idempotente: la
+    resuelta ya no esta pendiente y no se vuelve a tocar. Devuelve las
+    jornadas confirmadas y la hora que tenian, para que el reloj avise
+    "cambio tu hora" a quien ya habia confirmado.
+
+    `ahora` es para las pruebas: sin zona vale como hora de pared de
+    todos los paises.
+    """
+    relojes = reloj.Relojes(db, ahora)
+    pendientes = (db.query(m.Jornada)
+                  .filter(m.Jornada.hora_propuesta.isnot(None),
+                          m.Jornada.hora_propuesta_resuelta.is_(None),
+                          m.Jornada.estatus.in_([
+                              m.EstatusJornada.PLANEADA,
+                              m.EstatusJornada.CONFIRMADA,
+                              m.EstatusJornada.PROXIMA_A_INICIAR]))
+                  .all())
+    confirmadas = []
+    for j in pendientes:
+        local = relojes.de_la_jornada(j)
+        limite = datetime.combine(j.fecha - timedelta(days=1),
+                                  time(HORA_LIMITE_PROPUESTA, 0))
+        if local < limite:
+            continue
+        try:
+            hecho = resolver_hora_propuesta(db, j, None, CONFIRMADA_RELOJ)
+        except HTTPException as error:
+            # El dia arranco entre la propuesta y esta vuelta: la hora
+            # ya no se mueve y la propuesta se queda escrita como estaba.
+            registro.warning("propuesta de la jornada %s sin confirmar: %s",
+                             j.id, error.detail)
+            continue
+        confirmadas.append({"jornada_id": j.id, "fecha": j.fecha.isoformat(),
+                            "hora": hecho["hora"],
+                            "antes": hecho["antes"].isoformat(),
+                            "movida": hecho["movida"]})
+    db.commit()
+
+    # "Cambio tu hora" a quien ya habia confirmado, con el mismo aviso
+    # que manda la central al confirmar. Despues de guardar, y sin que
+    # un telefono que no contesta tumbe la vuelta.
+    from app import push
+    for fila in confirmadas:
+        if not fila["movida"]:
+            continue
+        try:
+            push.avisar_cambio_de_hora(db, db.get(m.Jornada, fila["jornada_id"]),
+                                       datetime.fromisoformat(fila["antes"]))
+            db.commit()
+        except Exception:                     # noqa: BLE001
+            registro.exception("no se pudo avisar el cambio de hora de la "
+                               "jornada %s", fila["jornada_id"])
+    return {"confirmadas": confirmadas}
 
 
 def ajustar_hito(db: Session, hito_id: int, nuevo_momento: datetime,
@@ -1215,10 +1487,15 @@ def avisar_horas_extra(db: Session, ahora: datetime | None = None) -> list[dict]
         minutos = int((tope - suyo).total_seconds() / 60)
         pasado = minutos < 0
         servicio = j.equipo.servicio
+        # Lo contratado: en el implantado, las horas de su acuerdo
+        # (seccion 105); en el eventual, las de la modalidad del dia.
+        from app import implantado
+        del_acuerdo = implantado.horas_de_la_jornada(db, j)
         for destinatario in (m.Destinatario.SOLICITANTE,
                              m.Destinatario.EJECUTIVO):
             lengua = ta.idioma_de(db, servicio, destinatario)
-            horas = f"{j.modalidad.horas}"
+            horas = (f"{del_acuerdo.normalize():f}" if del_acuerdo is not None
+                     else f"{j.modalidad.horas}")
             _notificar(
                 db, j, destinatario, m.Canal.AMBOS,
                 (ta.t(lengua, "extra_asunto_ya")
@@ -1506,11 +1783,20 @@ def registrar_hito_a_mano(db: Session, jornada_id: int,
         horas_extra.candado_del_visto_bueno(
             db, jornada, "ya no se registra su meet and greet")
 
+    # La llegada es de cada quien (seccion 105): la de Luis se asienta
+    # aunque Juan ya haya marcado la suya. El contacto sigue siendo uno
+    # por dia.
     ya = (db.query(m.Hito)
-          .filter_by(jornada_id=jornada_id, tipo=tipo).first())
+          .filter_by(jornada_id=jornada_id, tipo=tipo)
+          .filter(m.Hito.anulado_en.is_(None)))
+    if tipo == m.TipoHito.LLEGADA_ORIGEN:
+        ya = ya.filter(m.Hito.persona_id == persona_id)
+    ya = ya.first()
     if ya:
         raise HTTPException(409, {
-            "mensaje": "Ese dia ya tiene esa marca",
+            "mensaje": ("Esa persona ya tiene su llegada"
+                        if tipo == m.TipoHito.LLEGADA_ORIGEN
+                        else "Ese dia ya tiene esa marca"),
             "que_hacer": (f"Quedo marcada a las {ya.marcado_en:%H:%M}. Si la "
                           "hora esta mal, se corrige la marca; no se "
                           "registra otra.")})
@@ -1716,6 +2002,57 @@ def cerrar_a_mano(db: Session, jornada_id: int, quien_id: int,
             "personas": len(jornada.personal),
             "nota": ("Este dia ya entra al corte de nomina. Queda marcado "
                      "como cerrado a mano.")}
+
+
+# Con que se sella el dia que la cancelacion termino (seccion 105).
+TERMINADO_POR_CANCELACION = "Terminado por cancelación"
+
+
+def terminar_por_cancelacion(db: Session, jornada: m.Jornada, quien_id: int,
+                             momento: datetime, motivo: str) -> dict:
+    """El dia que esta en la calle cuando el servicio se cancela termina
+    en ese momento (seccion 105, decision 1 de Salvador).
+
+    El equipo ya esta con el principal --o parado en el punto-- y el
+    cliente corta el servicio. Antes ese dia quedaba cancelado sin hora
+    de fin: no se le pagaba a la gente, no se le cobraba al cliente, no
+    entraba al comparativo y nadie lo podia cerrar. Ahora termina con la
+    hora de la cancelacion y cuenta como trabajado: entra a la nomina,
+    al comparativo y al cierre.
+
+    Es el mismo sello que `cerrar_a_mano` --quien lo firmo, cuando y por
+    que--, sin sus candados: un dia cancelado a media jornada termina
+    antes de su hora programada por definicion. Y como el cierre a mano,
+    no inventa marcas de la calle: nadie marco el fin desde el telefono,
+    y el sello dice exactamente eso. Solo escribe; quien llama anota la
+    bitacora del dia y guarda.
+    """
+    fin = momento
+    # El meet and greet que si se marco se queda: es un hecho de la
+    # calle. Sin el, las horas corren desde la presentacion, como en el
+    # cierre a mano; y si se cancelo antes de esa hora con el equipo ya
+    # en el punto, desde que llego, si lo marco.
+    if jornada.inicio_real is None:
+        inicio = jornada.inicio_programado
+        if fin <= inicio:
+            llegada = (db.query(m.Hito)
+                       .filter(m.Hito.jornada_id == jornada.id,
+                               m.Hito.tipo == m.TipoHito.LLEGADA_ORIGEN,
+                               m.Hito.anulado_en.is_(None))
+                       .order_by(m.Hito.marcado_en).first())
+            inicio = (llegada.marcado_en
+                      if llegada and llegada.marcado_en < fin else None)
+        jornada.inicio_real = inicio
+    jornada.fin_real = fin
+    jornada.estatus = m.EstatusJornada.TERMINADA
+    jornada.cerrada_a_mano_por_id = quien_id
+    jornada.cerrada_a_mano_en = momento
+    jornada.cierre_motivo = f"{TERMINADO_POR_CANCELACION}: {motivo.strip()}"
+    db.flush()
+    return {"jornada_id": jornada.id, "fecha": jornada.fecha.isoformat(),
+            "inicio_real": (jornada.inicio_real.isoformat()
+                            if jornada.inicio_real else None),
+            "fin_real": fin.isoformat()}
 
 
 def reabrir(db: Session, jornada_id: int, quien_id: int,

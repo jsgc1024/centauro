@@ -18,6 +18,13 @@ hora de cada pais:
 Y nadie cobra en negativo: si una diferencia se come lo de la semana, la
 persona queda en cero y lo que falta pasa a su siguiente corte, las
 veces que haga falta, hasta saldarse.
+
+El corte que no se pago el lunes (seccion 105, decision 11 de Salvador,
+29 de septiembre): sigue a la vista hasta pagarse --un martes, un
+jueves--, y si llega al lunes siguiente sin pagarse, el corte nuevo se
+lo lleva entero: sus dias y sus ajustes pasan al nuevo con su semana de
+origen, sale un solo corte de dos semanas, y el viejo queda "absorbido"
+apuntando al que se lo llevo. Se van juntando las veces que haga falta.
 """
 import calendar
 import logging
@@ -303,24 +310,134 @@ def sin_tarifa_pendiente(db: Session, pais_id: int,
                        jornadas_pendientes(db, pais_id, excepto_nomina_id))
 
 
+def candado_del_pais(db: Session, pais_id: int) -> None:
+    """Un armado de nomina de ese pais a la vez, hasta que confirme
+    (seccion 105).
+
+    Dos vueltas del reloj encimadas --o el reloj y "Armar el corte de
+    hoy" al mismo tiempo-- leian las dos que el corte de hoy no existia
+    y las dos se llevaban el corte de la semana pasada: sus renglones
+    se duplicaban o el segundo reventaba a medias. Con el candado, el
+    segundo espera y encuentra el corte ya armado. Vive en la
+    transaccion, como el de Odoo y el de las asignaciones.
+    """
+    import zlib
+
+    from sqlalchemy import text
+
+    db.execute(text("SELECT pg_advisory_xact_lock(:llave)"),
+               {"llave": zlib.crc32(f"nomina:{pais_id}".encode())})
+
+
+def _absorbido_por(db: Session, nomina: m.NominaSemanal) -> HTTPException:
+    """El 409 de un corte absorbido: se paga desde el que se lo llevo."""
+    otro = (db.get(m.NominaSemanal, nomina.absorbida_por_id)
+            if nomina.absorbida_por_id else None)
+    cuando = f" del lunes {otro.fecha_corte:%d/%m/%Y}" if otro else " siguiente"
+    return HTTPException(409, {
+        "mensaje": f"Este corte lo absorbió el{cuando}: págalo desde ahí",
+        "que_hacer": "Sus días y sus ajustes ya están en ese corte, con su "
+                     "semana de origen. Este ya no se paga ni se tira.",
+        "nomina_id": otro.id if otro else None})
+
+
+def _heredado(c: m.ConceptoNomina, persona_id: int, semana: date) -> dict:
+    """Un concepto de un corte absorbido, tal como lo escribe el corte
+    nuevo: los mismos numeros, sin recalcular, con su semana de origen."""
+    return {"persona_id": persona_id, "monto": _d(c.monto),
+            "factor": _d(c.factor_festivo) if c.factor_festivo is not None
+            else Decimal("1"),
+            "horas_extra": c.horas_extra or 0, "descripcion": c.descripcion,
+            "jornada_id": c.jornada_id, "ajuste_id": c.ajuste_id,
+            "rol_id": c.rol_id,
+            "monto_horas_extra": (_d(c.monto_horas_extra)
+                                  if c.monto_horas_extra is not None else None),
+            "semana_origen": semana}
+
+
+def _absorber(db: Session, nomina: m.NominaSemanal) -> list[dict]:
+    """Los cortes anteriores del pais que nadie pago pasan a este
+    (seccion 105, decision 11).
+
+    Se lleva sus renglones tal cual --el dia, la hora extra, el ajuste,
+    el descuento-- con el lunes de donde vienen; el renglon del saldo en
+    contra no, porque no es dinero sino la cuenta que dejo a alguien en
+    cero, y esa cuenta se vuelve a hacer con las dos semanas juntas. Sus
+    ajustes apartados pasan a estar apartados por este. El viejo queda
+    absorbido, sin renglones, apuntando a este; y este cubre desde el
+    lunes del mas viejo que trae.
+
+    Con la fila del viejo bloqueada: si finanzas lo esta marcando pagado
+    en ese instante, se espera a que termine y ya no se absorbe (quedo
+    pagado), y al reves, "Marcar pagado" espera y encuentra que ya lo
+    absorbio este. Un corte viejo sin renglones no tiene nada que
+    llevarse: se quita, que es lo mismo que tirar un borrador vacio.
+    """
+    heredados = []
+    viejos = (db.query(m.NominaSemanal)
+              .filter(m.NominaSemanal.pais_id == nomina.pais_id,
+                      m.NominaSemanal.fecha_corte < nomina.fecha_corte,
+                      m.NominaSemanal.estatus == m.EstatusNomina.CALCULADA)
+              .order_by(m.NominaSemanal.fecha_corte)
+              .with_for_update().all())
+    for viejo in viejos:
+        for a in db.query(m.AjusteNomina).filter_by(
+                pagado_en_nomina_id=viejo.id).all():
+            a.pagado_en_nomina_id = nomina.id
+        if not viejo.renglones:
+            for hija in db.query(m.NominaSemanal).filter_by(
+                    absorbida_por_id=viejo.id).all():
+                hija.absorbida_por_id = nomina.id
+            db.delete(viejo)
+            continue
+        for r in viejo.renglones:
+            for c in r.conceptos:
+                if c.saldo_en_contra:
+                    continue
+                heredados.append(_heredado(
+                    c, r.persona_id, c.semana_origen or viejo.fecha_corte))
+        for r in list(viejo.renglones):
+            db.delete(r)
+        viejo.estatus = m.EstatusNomina.ABSORBIDA
+        viejo.absorbida_por_id = nomina.id
+        nomina.desde = min(nomina.desde, viejo.desde)
+    # Los conceptos viejos se borran antes de escribir los nuevos: una
+    # jornada se le paga a una persona una sola vez, y la base lo cuida.
+    db.flush()
+    return heredados
+
+
 def calcular(db: Session, pais_id: int, fecha_corte: date | None = None,
              quien_id: int | None = None) -> dict:
     """Arma (o rearma) el corte de la semana. No paga: deja la propuesta.
 
     `quien_id` es quien lo pidio; vacio es el reloj del lunes.
+
+    Desde la seccion 105 el corte nuevo se lleva los cortes anteriores
+    del pais que nadie pago (decision 11): el del 28 trae la semana del
+    21, y el del 5 se lleva al del 28 con todo y la del 21. Lo heredado
+    no se recalcula --ese corte ya habia cerrado-- y se conserva tal cual
+    en cada "Recalcular". Armado a mano despues de las 11:00 ("Armar el
+    corte de hoy" porque el reloj no corrio) queda como borrador: la
+    siguiente vuelta del reloj lo cierra, y si el reloj sigue caido se
+    paga como borrador, que es cerrarlo.
     """
     pais = db.get(m.Pais, pais_id)
     if not pais:
         raise HTTPException(404, f"No existe el pais {pais_id}")
     corte = lunes_de(fecha_corte)
+    candado_del_pais(db, pais_id)
 
     nomina = (db.query(m.NominaSemanal)
-              .filter_by(pais_id=pais_id, fecha_corte=corte).first())
+              .filter_by(pais_id=pais_id, fecha_corte=corte)
+              .with_for_update().first())
     if nomina and nomina.estatus == m.EstatusNomina.PAGADA:
         raise HTTPException(409, {
             "mensaje": "Esa nomina ya se pago; lo que cambie va como ajuste "
                        "a la siguiente",
             "nomina_id": nomina.id})
+    if nomina and nomina.estatus == m.EstatusNomina.ABSORBIDA:
+        raise _absorbido_por(db, nomina)
     # Desde las 11:00 el corte esta listo para pagar y no se mueve: lo
     # que tenga su visto bueno despues entra solo al lunes siguiente.
     # Recalcularlo mientras finanzas paga cambiaria las cifras debajo de
@@ -331,7 +448,13 @@ def calcular(db: Session, pais_id: int, fecha_corte: date | None = None,
             "que_hacer": "Lo que llego despues entra solo al corte del "
                          "lunes siguiente.",
             "nomina_id": nomina.id})
+    heredados: list[dict] = []
     if nomina:
+        # Lo que este corte ya heredo de otros se conserva tal cual: el
+        # corte de donde vino ya no existe como para volver a leerlo.
+        heredados = [_heredado(c, r.persona_id, c.semana_origen)
+                     for r in nomina.renglones for c in r.conceptos
+                     if c.semana_origen is not None]
         # Recalcular es rehacerla: mientras no se pague, no hay nada que
         # cuidar. Lo que si hay que hacer es soltar lo apartado, o los
         # ajustes quedarian retenidos por un borrador que ya no los
@@ -344,13 +467,15 @@ def calcular(db: Session, pais_id: int, fecha_corte: date | None = None,
         db.flush()
     else:
         nomina = m.NominaSemanal(pais_id=pais_id, fecha_corte=corte,
-                                 moneda=pais.moneda_local)
+                                 desde=corte, moneda=pais.moneda_local)
         db.add(nomina)
         db.flush()
 
     # No se filtra por fecha: lo que manda es que la jornada este
     # terminada y su servicio ya vaya a facturacion. Una jornada no puede
-    # estar terminada sin haber ocurrido.
+    # estar terminada sin haber ocurrido. Se lee ANTES de absorber: los
+    # cortes viejos todavia apartan lo suyo, que entra por herencia y no
+    # como jornada pendiente.
     pendientes = jornadas_pendientes(db, pais_id, excepto_nomina_id=nomina.id)
 
     # Antes de armar nada: si algo no tiene tarifa, el corte no sale.
@@ -365,7 +490,18 @@ def calcular(db: Session, pais_id: int, fecha_corte: date | None = None,
             "sin_tarifa": sin_tarifa,
         })
 
+    heredados += _absorber(db, nomina)
+    # Los ajustes heredados siguen apartados por este corte y no se
+    # vuelven a tomar como ajustes de la semana.
+    de_otros = {h["ajuste_id"] for h in heredados if h["ajuste_id"]}
+    for ajuste_id in de_otros:
+        db.get(m.AjusteNomina, ajuste_id).pagado_en_nomina_id = nomina.id
+
+    # Primero lo heredado, que es lo mas viejo: el recibo se lee en
+    # orden, la semana del 21 antes que la del 28.
     por_persona: dict[int, list[dict]] = {}
+    for h in heredados:
+        por_persona.setdefault(h["persona_id"], []).append(h)
     for jornada, a in pendientes:
         pago = pago_de_jornada(db, jornada, a, pais_id)
         pago["jornada_id"] = jornada.id
@@ -374,10 +510,12 @@ def calcular(db: Session, pais_id: int, fecha_corte: date | None = None,
     # Los ajustes de semanas pasadas entran a este corte. Los que ya
     # aparto otro borrador no: dos borradores con fechas de corte
     # distintas podian llevarse el mismo ajuste, y al pagar los dos la
-    # persona cobraba la diferencia dos veces.
+    # persona cobraba la diferencia dos veces. Los heredados ya vienen
+    # en su renglon con su semana de origen.
     ajustes = [a for a in db.query(m.AjusteNomina)
                .filter_by(pais_id=pais_id, aplicado_en_nomina_id=None).all()
-               if a.pagado_en_nomina_id in (None, nomina.id)]
+               if a.pagado_en_nomina_id in (None, nomina.id)
+               and a.id not in de_otros]
     for ajuste in ajustes:
         ajuste.pagado_en_nomina_id = nomina.id
     for ajuste in ajustes:
@@ -388,7 +526,9 @@ def calcular(db: Session, pais_id: int, fecha_corte: date | None = None,
 
     # Nadie cobra en negativo. Si lo que se le descuenta pasa de lo que
     # gano esta semana, el renglon queda en cero con un concepto que lo
-    # dice, y al pagar el corte ese resto pasa a su siguiente lunes.
+    # dice, y al pagar el corte ese resto pasa a su siguiente lunes. Con
+    # semanas absorbidas la cuenta es de todas juntas: el descuento de la
+    # semana del 21 se cobra de lo que gano la del 28.
     en_contra = 0
     for persona_id, conceptos in por_persona.items():
         suma = sum((c["monto"] for c in conceptos), CERO)
@@ -414,7 +554,8 @@ def calcular(db: Session, pais_id: int, fecha_corte: date | None = None,
                 monto=c["monto"], factor_festivo=c["factor"],
                 horas_extra=c["horas_extra"], rol_id=c.get("rol_id"),
                 monto_horas_extra=c.get("monto_horas_extra"),
-                saldo_en_contra=bool(c.get("saldo_en_contra"))))
+                saldo_en_contra=bool(c.get("saldo_en_contra")),
+                semana_origen=c.get("semana_origen")))
             subtotal += c["monto"]
         renglon.total = subtotal
         total += subtotal
@@ -425,9 +566,11 @@ def calcular(db: Session, pais_id: int, fecha_corte: date | None = None,
     nomina.calculada_por_id = quien_id
     db.flush()
     return {"nomina_id": nomina.id, "fecha_corte": corte.isoformat(),
+            "desde": nomina.desde.isoformat(),
             "moneda": pais.moneda_local.value, "total": total,
             "personas": len(por_persona),
             "ajustes_aplicados": len(ajustes),
+            "heredados": len(heredados),
             "en_contra": en_contra}
 
 
@@ -445,6 +588,9 @@ def pagar(db: Session, nomina_id: int, persona_id: int | None = None) -> dict:
         raise HTTPException(404, f"No existe la nomina {nomina_id}")
     if nomina.estatus == m.EstatusNomina.PAGADA:
         raise HTTPException(409, "Esa nomina ya estaba pagada")
+    # El que se llevo otro corte se paga desde ese otro (seccion 105).
+    if nomina.estatus == m.EstatusNomina.ABSORBIDA:
+        raise _absorbido_por(db, nomina)
     if not nomina.renglones:
         raise HTTPException(409, "La nomina no tiene nada que pagar")
     # Un borrador que no cerro porque le falta una tarifa no se paga
@@ -535,6 +681,8 @@ def descartar(db: Session, nomina_id: int) -> dict:
             "mensaje": "Esa nomina ya se pago y no se puede tirar",
             "que_hacer": "Lo que haya que corregir va como ajuste al "
                          "siguiente corte."})
+    if nomina.estatus == m.EstatusNomina.ABSORBIDA:
+        raise _absorbido_por(db, nomina)
     # Listo a las 11:00 es listo: tirarlo dejaria que el reloj lo volviera
     # a armar con lo que llego despues, que ya es del lunes siguiente.
     if nomina.lista_en:
@@ -720,6 +868,11 @@ def reloj_del_lunes(db: Session, ahora: datetime | None = None) -> list[dict]:
     Un pais sin nada que pagar no arma un corte vacio. Uno al que le
     falta una tarifa no lo arma: la pantalla dice cual falta y finanzas
     lo recalcula en cuanto la carga.
+
+    Al armar el corte de hoy se lleva el de la semana pasada si nadie lo
+    pago (seccion 105): eso lo hace `calcular`. Un pais con un corte
+    viejo sin pagar y nada nuevo no arma corte: el viejo sigue a la
+    vista hasta que se pague.
     """
     hechos = []
     for pais in (db.query(m.Pais).filter(m.Pais.activo.is_(True))
@@ -730,9 +883,12 @@ def reloj_del_lunes(db: Session, ahora: datetime | None = None) -> list[dict]:
         lunes = local.date()
         if local < datetime.combine(lunes, HORA_BORRADOR):
             continue
+        # Dos vueltas encimadas (seccion 105): la segunda espera a que la
+        # primera confirme y entonces ve el corte ya armado o ya listo.
+        candado_del_pais(db, pais.id)
         nomina = (db.query(m.NominaSemanal)
                   .filter_by(pais_id=pais.id, fecha_corte=lunes).first())
-        if nomina and (nomina.estatus == m.EstatusNomina.PAGADA
+        if nomina and (nomina.estatus != m.EstatusNomina.CALCULADA
                        or nomina.lista_en):
             continue
         cierra = local >= datetime.combine(lunes, HORA_CIERRE)
@@ -830,7 +986,10 @@ def armar_detalle(db: Session, filas: list[dict], fecha_corte: date) -> dict:
             "folio": servicio.folio if servicio else None,
             "rol": f.get("rol"), "horas_extra": f.get("horas_extra") or 0,
             "es_ajuste": ajuste is not None,
-            "saldo_en_contra": bool(f.get("saldo_en_contra"))})
+            "saldo_en_contra": bool(f.get("saldo_en_contra")),
+            # De que corte absorbido viene, para que el recibo lo diga
+            # (seccion 105). Vacio: de la semana de este corte.
+            "semana": _iso(f.get("semana_origen"))})
 
         if f.get("saldo_en_contra"):
             p["en_contra"] += monto
@@ -948,21 +1107,53 @@ def armar_detalle(db: Session, filas: list[dict], fecha_corte: date) -> dict:
     }
 
 
+def _fila(db: Session, r: m.RenglonNomina, c: m.ConceptoNomina) -> dict:
+    return {
+        "persona_id": r.persona_id, "persona": r.persona.nombre,
+        "jornada": db.get(m.Jornada, c.jornada_id) if c.jornada_id else None,
+        "ajuste": db.get(m.AjusteNomina, c.ajuste_id) if c.ajuste_id else None,
+        "descripcion": c.descripcion, "monto": c.monto,
+        "horas_extra": c.horas_extra,
+        "monto_horas_extra": c.monto_horas_extra,
+        "rol_id": c.rol_id, "rol": c.rol.nombre if c.rol else None,
+        "saldo_en_contra": c.saldo_en_contra,
+        "semana_origen": c.semana_origen}
+
+
 def filas_del_corte(db: Session, nomina: m.NominaSemanal) -> list[dict]:
     """Los conceptos guardados de un corte, como los lee `armar_detalle`."""
-    filas = []
-    for r in nomina.renglones:
-        for c in r.conceptos:
-            filas.append({
-                "persona_id": r.persona_id, "persona": r.persona.nombre,
-                "jornada": db.get(m.Jornada, c.jornada_id) if c.jornada_id else None,
-                "ajuste": db.get(m.AjusteNomina, c.ajuste_id) if c.ajuste_id else None,
-                "descripcion": c.descripcion, "monto": c.monto,
-                "horas_extra": c.horas_extra,
-                "monto_horas_extra": c.monto_horas_extra,
-                "rol_id": c.rol_id, "rol": c.rol.nombre if c.rol else None,
-                "saldo_en_contra": c.saldo_en_contra})
-    return filas
+    return [_fila(db, r, c) for r in nomina.renglones for c in r.conceptos]
+
+
+def filas_de_un_absorbido(db: Session, nomina: m.NominaSemanal) -> list[dict]:
+    """Lo que traia un corte absorbido, leido de donde vive hoy (seccion
+    105): sus renglones pasaron al corte que se lo llevo --y quiza de
+    ahi a otro-- con su lunes como semana de origen. Un lunes es de un
+    solo corte por pais, asi que con eso se vuelve a armar."""
+    pares = (db.query(m.RenglonNomina, m.ConceptoNomina)
+             .join(m.ConceptoNomina,
+                   m.ConceptoNomina.renglon_id == m.RenglonNomina.id)
+             .join(m.NominaSemanal,
+                   m.RenglonNomina.nomina_id == m.NominaSemanal.id)
+             .filter(m.NominaSemanal.pais_id == nomina.pais_id,
+                     m.ConceptoNomina.semana_origen == nomina.fecha_corte)
+             .order_by(m.RenglonNomina.persona_id, m.ConceptoNomina.id)
+             .all())
+    return [_fila(db, r, c) for r, c in pares]
+
+
+def absorbidas_por(db: Session,
+                   nomina: m.NominaSemanal) -> list[m.NominaSemanal]:
+    """Los cortes que este se llevo, del mas viejo al mas nuevo (seccion
+    105): el del 28 trae al del 21; el del 5 trae al del 28 y, por el,
+    al del 21. La cadena es lineal, asi que se sigue hasta el final."""
+    salida, cola = [], [nomina.id]
+    while cola:
+        hijas = (db.query(m.NominaSemanal)
+                 .filter(m.NominaSemanal.absorbida_por_id.in_(cola)).all())
+        salida.extend(hijas)
+        cola = [h.id for h in hijas]
+    return sorted(salida, key=lambda n: n.fecha_corte)
 
 
 def vista_previa(db: Session, pais_id: int, fecha_corte: date) -> dict:
@@ -1226,9 +1417,29 @@ def _diferencia_del_dia(db: Session, a: m.AjusteNomina, pagadas: dict) -> dict:
             "pagada": a.aplicado_en_nomina_id in pagadas}
 
 
+def corte_pendiente(db: Session, pais_id: int,
+                    lunes: date) -> m.NominaSemanal | None:
+    """El corte mas viejo del pais que quedo listo y nadie pago, de un
+    lunes anterior a este (seccion 105, decision 11). Sigue a la vista
+    hasta pagarse: un martes, un jueves. Al armarse el corte de un lunes
+    nuevo se lo lleva, asi que a lo mas hay uno."""
+    return (db.query(m.NominaSemanal)
+            .filter(m.NominaSemanal.pais_id == pais_id,
+                    m.NominaSemanal.fecha_corte < lunes,
+                    m.NominaSemanal.estatus == m.EstatusNomina.CALCULADA,
+                    m.NominaSemanal.lista_en.isnot(None))
+            .order_by(m.NominaSemanal.fecha_corte).first())
+
+
 def semana(db: Session, pais_id: int, ahora: datetime | None = None) -> dict:
     """La pestana del personal: el corte de este lunes, o lo que va para
-    el siguiente, y lo que todavia no entra (seccion 66)."""
+    el siguiente, y lo que todavia no entra (seccion 66).
+
+    Desde la seccion 105: si no hay corte de este lunes pero quedo uno
+    listo sin pagar de un lunes anterior, la pestana es ese, con sus
+    botones de pagar; y mientras sea lunes y el corte de hoy no exista,
+    ofrece armarlo a mano, tambien despues de las 11:00.
+    """
     pais = db.get(m.Pais, pais_id)
     if not pais:
         raise HTTPException(404, f"No existe el pais {pais_id}")
@@ -1236,12 +1447,23 @@ def semana(db: Session, pais_id: int, ahora: datetime | None = None) -> dict:
     lunes = lunes_de(local.date())
     nomina = (db.query(m.NominaSemanal)
               .filter_by(pais_id=pais_id, fecha_corte=lunes).first())
+    pendiente = None
+    if nomina is None or nomina.estatus != m.EstatusNomina.CALCULADA:
+        pendiente = corte_pendiente(db, pais_id, lunes)
+    # El reloj ya debio armar el corte de hoy y no esta: no corrio, o
+    # fallo por una tarifa. Mientras sea lunes se puede armar a mano, y
+    # despues de las 11:00 tambien (el corte de hoy no se pierde por un
+    # reloj caido). Sin nada que pagar no hay corte que armar.
+    armar_hoy = (nomina is None and local.weekday() == 0
+                 and local >= datetime.combine(lunes, HORA_BORRADOR)
+                 and _hay_que_pagar(db, pais_id))
 
     corte = None
     no_salio = False
-    if nomina and nomina.estatus != m.EstatusNomina.PAGADA:
+    falta_hoy: list[dict] = []
+    if nomina and nomina.estatus == m.EstatusNomina.CALCULADA:
         corte = {**armar_detalle(db, filas_del_corte(db, nomina), lunes),
-                 **ficha(db, nomina)}
+                 **ficha(db, nomina), "pendiente": False}
         proximo = None
         if not nomina.lista_en:
             # El borrador de las 7:00 que el reloj no puede cerrar
@@ -1255,6 +1477,17 @@ def semana(db: Session, pais_id: int, ahora: datetime | None = None) -> dict:
                 db, pais_id, excepto_nomina_id=nomina.id)
             no_salio = bool(corte["sin_tarifa"]) and (
                 local >= datetime.combine(lunes, HORA_CIERRE))
+    elif pendiente is not None:
+        # El corte listo de un lunes anterior que nadie pago (seccion
+        # 104): sigue aqui, con sus botones, hasta que se pague. Lo que
+        # va juntandose no se ensena aparte: entra al corte de hoy en
+        # cuanto se arme, y ese se lleva a este.
+        corte = {**armar_detalle(db, filas_del_corte(db, pendiente),
+                                 pendiente.fecha_corte),
+                 **ficha(db, pendiente), "pendiente": True}
+        proximo = None
+        if armar_hoy:
+            falta_hoy = sin_tarifa_pendiente(db, pais_id)
     else:
         # Sin corte de este lunes que pagar: lo que va juntandose. Es para
         # este mismo lunes antes de las 11:00, o si el reloj no lo pudo
@@ -1273,6 +1506,8 @@ def semana(db: Session, pais_id: int, ahora: datetime | None = None) -> dict:
                 antes and bool(hoy["por_persona"]))
             if no_salio:
                 proximo = hoy
+        if armar_hoy:
+            falta_hoy = proximo["sin_tarifa"]
 
     ultimo = (db.query(m.NominaSemanal)
               .filter_by(pais_id=pais_id, estatus=m.EstatusNomina.PAGADA)
@@ -1288,6 +1523,9 @@ def semana(db: Session, pais_id: int, ahora: datetime | None = None) -> dict:
         "corte": corte,
         "proximo": proximo,
         "no_salio": no_salio,
+        # "Armar el corte de hoy" (seccion 105) y lo que le faltaria.
+        "armar_hoy": armar_hoy,
+        "falta_hoy": falta_hoy,
         "todavia_no": todavia_no_entra(db, pais_id),
         "ultimo_pagado": ({"nomina_id": ultimo.id,
                            "fecha_corte": ultimo.fecha_corte.isoformat(),
@@ -1299,13 +1537,18 @@ def semana(db: Session, pais_id: int, ahora: datetime | None = None) -> dict:
 
 
 def ficha(db: Session, nomina: m.NominaSemanal) -> dict:
-    """Lo que dice la cabeza de un corte: su estado y quien lo armo."""
+    """Lo que dice la cabeza de un corte: su estado y quien lo armo, y
+    desde la seccion 105 que semanas trae y quien se lo llevo."""
     if nomina.estatus == m.EstatusNomina.PAGADA:
         estado = "pagado"
+    elif nomina.estatus == m.EstatusNomina.ABSORBIDA:
+        estado = "absorbido"
     elif nomina.lista_en:
         estado = "listo"
     else:
         estado = "borrador"
+    otro = (db.get(m.NominaSemanal, nomina.absorbida_por_id)
+            if nomina.absorbida_por_id else None)
     return {"nomina_id": nomina.id, "estado": estado,
             "estatus": nomina.estatus.value,
             "moneda": nomina.moneda.value,
@@ -1313,4 +1556,11 @@ def ficha(db: Session, nomina: m.NominaSemanal) -> dict:
             "calculada_por": _nombre(db, nomina.calculada_por_id),
             "lista_en": _iso(nomina.lista_en),
             "pagada_en": _iso(nomina.pagada_en),
-            "pagada_por": _nombre(db, nomina.pagada_por_id)}
+            "pagada_por": _nombre(db, nomina.pagada_por_id),
+            # Desde que lunes cubre y que semanas se llevo: "corte del 28,
+            # incluye la semana del 21".
+            "desde": _iso(nomina.desde),
+            "semanas": [_iso(n.fecha_corte) for n in absorbidas_por(db, nomina)],
+            "absorbida_por": ({"nomina_id": otro.id,
+                               "fecha_corte": _iso(otro.fecha_corte)}
+                              if otro else None)}

@@ -26,6 +26,15 @@ Y de esa misma noche, ya con la hoja de RH cargada:
     dispositivo»-- no se guarda como telefono ni borra el que Centauro ya
     tiene; el informe lo cuenta aparte. No detiene el alta: la persona
     entra sin celular.
+
+Y la del 29 de septiembre (decision 7, seccion 105):
+
+  * La cuenta bancaria de Odoo manda. Si el empleado trae cuenta con
+    numero, se copian la CLABE, el banco y el titular; si no trae cuenta,
+    se vacian las tres: una cuenta vieja capturada a mano no se queda
+    cuando RH la quito. Pero si las cuentas no se pudieron leer --sin
+    permiso, o el campo no existe en esa version-- no se toca nada,
+    como con cualquier campo que Odoo pierde (seccion 100).
 """
 import collections
 import re
@@ -33,6 +42,9 @@ import unicodedata
 from datetime import date, datetime
 
 PUESTOS = ("personal de seguridad", "security driver")
+# La cuenta bancaria del empleado en Odoo: un many2one a res.partner.bank.
+CAMPO_CUENTA = "bank_account_id"
+SIN_CUENTA = {"clabe": None, "banco": None, "titular_cuenta": None}
 ALIAS_PLAZA = {
     "estado de mexico": "ciudad de mexico",
     "edomex": "ciudad de mexico",
@@ -85,6 +97,48 @@ def nombre_de(valor) -> str:
     if isinstance(valor, dict):
         return texto(valor.get("display_name") or valor.get("name"))
     return ""
+
+
+def id_de(valor) -> int | None:
+    """El numero de un many2one, venga como [id, nombre], como dict o
+    como el numero solo. False o vacio: no apunta a nada."""
+    if isinstance(valor, (list, tuple)) and valor:
+        valor = valor[0]
+    elif isinstance(valor, dict):
+        valor = valor.get("id")
+    if isinstance(valor, bool) or valor in (None, ""):
+        return None
+    try:
+        return int(valor) or None
+    except (TypeError, ValueError):
+        return None
+
+
+def cuenta_de(empleado: dict, cuentas: dict) -> tuple:
+    """(los tres campos bancarios de Centauro, aviso) para un empleado.
+
+    Sin cuenta en Odoo: los tres vacios (Odoo es el maestro). Con cuenta
+    pero sin numero, igual: un renglon sin numero no sirve para
+    depositar. Si el empleado apunta a una cuenta que no vino en la
+    lectura --un registro que se borro o que este usuario no alcanza--
+    no se adivina: `None` y el aviso, y lo guardado se queda. El titular
+    es el nombre escrito en la cuenta o, si RH no lo escribio, el
+    contacto dueno de la cuenta, que es lo que Odoo entiende por
+    titular.
+    """
+    referida = id_de(empleado.get(CAMPO_CUENTA))
+    if not referida:
+        return dict(SIN_CUENTA), None
+    fila = cuentas.get(referida)
+    if fila is None:
+        return None, "su cuenta bancaria no se pudo leer de Odoo"
+    numero = corto(fila.get("acc_number"), 40)
+    if not numero:
+        return dict(SIN_CUENTA), None
+    titular = texto(fila.get("acc_holder_name")) or nombre_de(fila.get("partner_id"))
+    return {"clabe": numero,
+            "banco": corto(nombre_de(fila.get("bank_id")), 80) or None,
+            "titular_cuenta": corto(titular, 160) or None}, None
 
 
 def fecha(valor) -> date | None:
@@ -155,16 +209,19 @@ def foto_de(base64: str | None) -> str | None:
 # ------------------------------------------------------------------ el plan
 
 def planear(empleados: list, personas: list, plazas: dict,
-            correos_de_acceso: dict, normalizar_tel) -> dict:
+            correos_de_acceso: dict, normalizar_tel,
+            cuentas: dict | None = None) -> dict:
     """Que hacer con cada empleado de Odoo, sin hacerlo.
 
     `empleados`: lo que leyo Odoo (los activos). `personas`: foto fija de
     Centauro, una por persona, con id, odoo_id, nombre, correo, plaza_id,
     pais_id, activo, telefono, referencia, fecha_ingreso, foto (si tiene),
-    sincronizado_en y baja_odoo_en. `plazas`: por nombre normalizado, con
-    id, nombre y pais_id. `correos_de_acceso`: correo -> persona_id de los
-    accesos que ya existen. `normalizar_tel(numero, pais_id)`: la regla de
-    la lada del sistema.
+    sincronizado_en, baja_odoo_en y sus datos bancarios (banco, clabe,
+    titular_cuenta). `plazas`: por nombre normalizado, con id, nombre y
+    pais_id. `correos_de_acceso`: correo -> persona_id de los accesos que
+    ya existen. `normalizar_tel(numero, pais_id)`: la regla de la lada
+    del sistema. `cuentas`: las de res.partner.bank por su id, o None si
+    no se pudieron leer (seccion 105): entonces lo bancario no se toca.
     """
     elegidos = [e for e in empleados if es_de_seguridad(e)]
     por_odoo = {p["odoo_id"]: p for p in personas if p.get("odoo_id")}
@@ -177,13 +234,24 @@ def planear(empleados: list, personas: list, plazas: dict,
 
     plan = {"leidos": len(elegidos), "altas": [], "vinculos": [],
             "cambios": [], "fotos": [], "pendientes": [], "sin_cambio": 0,
-            "procesadas": [], "revisar_salida": [], "celular_no_valido": []}
+            "procesadas": [], "revisar_salida": [], "celular_no_valido": [],
+            "con_cuenta": 0, "sin_cuenta": 0}
     tomados = set()        # correos que este plan ya aparto
 
     def pendiente(e, persona_id, faltas):
         plan["pendientes"].append({"odoo_id": e["id"], "persona_id": persona_id,
                                    "nombre": texto(e.get("name")),
                                    "falta": faltas})
+
+    def banco(e):
+        """Lo bancario que dice Odoo, o None si no se toca. Cuenta a
+        quien la trae y a quien no."""
+        if cuentas is None:
+            return None, None
+        datos, aviso = cuenta_de(e, cuentas)
+        if datos is not None:
+            plan["con_cuenta" if datos["clabe"] else "sin_cuenta"] += 1
+        return datos, aviso
 
     def celular(e, pais_id, persona_id, nombre):
         """El celular de Odoo con su lada, o None si Odoo no trae un numero."""
@@ -238,13 +306,19 @@ def planear(empleados: list, personas: list, plazas: dict,
                 pendiente(e, None, faltas)
                 continue
             tomados.add(correo)
+            # Con su cuenta, si Odoo la trae; sin cuentas leidas o con
+            # una que no se alcanzo, entra sin ella y se dice.
+            datos_banco, aviso_banco = banco(e)
             plan["altas"].append({
                 "odoo_id": e["id"], "nombre": nombre, "correo": correo,
                 "plaza_id": plaza["id"], "plaza": plaza["nombre"],
                 "telefono": celular(e, plaza["pais_id"], None, nombre),
                 "referencia": corto(e.get("registration_number"), 40) or None,
-                "fecha_ingreso": fecha(e.get("first_contract_date"))})
+                "fecha_ingreso": fecha(e.get("first_contract_date")),
+                **(datos_banco or SIN_CUENTA)})
             plan["fotos"].append(e["id"])
+            if aviso_banco:
+                pendiente(e, None, [aviso_banco])
             continue
 
         # ------------------------------------------------ quien ya esta
@@ -302,6 +376,18 @@ def planear(empleados: list, personas: list, plazas: dict,
             # Sigue entrando con el que ya tenia, pero RH tiene que poner
             # el personal: el de trabajo se va a suspender.
             avisos.append(problema)
+
+        # La cuenta bancaria: lo que dice Odoo manda, tambien para vaciar
+        # (seccion 105). Con las cuentas sin leer, `banco` no dice nada.
+        datos_banco, aviso_banco = banco(e)
+        if aviso_banco:
+            avisos.append(aviso_banco)
+        elif datos_banco is not None:
+            bancarios = {campo: valor for campo, valor in datos_banco.items()
+                         if valor != persona.get(campo)}
+            if bancarios:
+                valores.update(bancarios)
+                que.append("cuenta bancaria")
 
         # La foto se vuelve a pedir solo si Odoo toco la ficha despues de
         # la ultima lectura: subir una foto cambia el write_date. Quien

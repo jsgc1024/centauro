@@ -27,6 +27,7 @@ Dão e fecham acessos a administração, a direção geral, os recursos humanos 
 - **A chave mestra não fica sem dono**: não pode ser tirada da última pessoa ativa que a tem, contando a direção geral.
 - **O acesso não é a porta dos fundos de um desligamento**: a quem está desligado não se abre um acesso; se voltou, primeiro é reativado como funcionário.
 - **A quem sai devendo diárias não se fecha o acesso** até que comprove; se não vai voltar, o financeiro o fecha com o seu ajuste.
+- **Ao consultor titular de serviços vivos não se fecha o acesso**: o sistema diz quantos e quais; a direção de operações os troca antes em cada ficha com «Trocar titular».
 
 ## Como cada um entra
 - **O escritório** recebe um **convite por e-mail** para criar a sua senha. O link vale **72 horas** e serve uma única vez. Reenviar manda um novo e desliga o anterior. Se o e-mail não chegar, a direção geral ou a administração podem **copiar o link** e entregá-lo em mãos; fica registrado quem o copiou.

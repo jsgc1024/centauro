@@ -36,6 +36,19 @@ function daElVistoBueno() {
   return tiene(sesion.usuario, "cierre.cerrar");
 }
 
+/* El cobro de una cancelacion lo autoriza direccion de operaciones
+   (seccion 105): el consultor pide completo o ejecutado al cancelar, y
+   sin este visto bueno el cierre no se manda a finanzas. */
+function autorizaElCobro() {
+  return tiene(sesion.usuario, "cierre.autorizar_cobro");
+}
+
+const COBRO = { completo: "cie_cobro_completo", ejecutado: "cie_cobro_ejecutado" };
+
+function nombreDelCobro(cobro) {
+  return COBRO[cobro] ? t(COBRO[cobro]) : (cobro || "—");
+}
+
 /* ------------------------------------------------------------ fechas */
 
 function dia(iso) {
@@ -440,6 +453,91 @@ function botonDesglose(ruta) {
       t("cie_ver_desglose")), lengua);
 }
 
+/* ------------------------------------------------------------ el cobro al cancelar
+
+   Seccion 105, decision 1 de Salvador: al cancelar con el equipo en la
+   calle, el consultor elige si al cliente se le cobra la cotizacion
+   completa o lo ejecutado, y direccion de operaciones lo autoriza desde
+   aqui. La tarjeta dice que se pidio y en que va; quien autoriza ve el
+   boton con las dos opciones y una nota, y puede cambiar lo que pidio
+   el consultor. Con el visto bueno dado ya no se cambia: lo regresa
+   finanzas. */
+
+/* Con el visto bueno dado la factura ya salio con ese cobro. */
+const SIN_MANDAR = ["comprobacion", "sin_visto_bueno", "devuelto"];
+
+function formularioCobro(c, recargar, alCerrar = () => {}) {
+  const cobro = c.cobro.cobro;
+  const nombre = `cobro-${c.cierre_id}`;
+  /* .casilla pone el circulo junto a su texto; suelto, el radio se
+     pintaba como bloque, flotando en medio del recuadro. */
+  const opcion = (valor) => h("label", { clase: "casilla", style: "font-weight:400" },
+    h("input", { type: "radio", name: nombre, value: valor,
+                 checked: valor === cobro ? "checked" : null }),
+    h("span", {}, h("b", {}, nombreDelCobro(valor)), " · ",
+      t(valor === "completo" ? "cie_cobro_completo_ayuda" : "cie_cobro_ejecutado_ayuda")));
+  const nota = entrada("nota", { placeholder: t("cie_cobro_nota_ej"),
+                                 maxlength: "400" });
+  const caja = h("div", { clase: "tarjeta lisa", style: "margin:8px 0 0;padding:12px 14px" });
+  const mandar = h("button", { clase: "chico", type: "button",
+    onclick: async (e) => {
+      const elegido = caja.querySelector(`input[name="${nombre}"]:checked`);
+      if (!elegido) return mensaje(t("cie_cobro_elige"), "alerta");
+      /* Cambiar lo que pidio el consultor exige decir por que: es lo
+         que el consultor lee en su correo. */
+      if (elegido.value !== cobro && nota.value.trim().length < 5) {
+        return mensaje(t("cie_cobro_falta_nota"), "alerta");
+      }
+      e.target.disabled = true;
+      try {
+        await api.post(`/cierre/${c.cierre_id}/autorizar-cobro`,
+                       { cobro: elegido.value, nota: nota.value.trim() || null });
+        mensaje(reemplazar(t("cie_cobro_listo"), { c: nombreDelCobro(elegido.value) }));
+        await recargar();
+      } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
+    } }, t("cie_cobro_autorizar"));
+  caja.append(
+    h("p", { clase: "chico gris", style: "margin:0 0 6px" }, t("cie_cobro_pregunta")),
+    opcion("ejecutado"), opcion("completo"),
+    h("div", { clase: "campo", style: "margin-top:8px" },
+      h("label", {}, t("cie_cobro_nota")), nota),
+    h("div", { clase: "acciones" }, mandar,
+      h("button", { clase: "claro chico", type: "button",
+        onclick: () => { caja.remove(); alCerrar(); } }, t("srv_cancelar"))));
+  return caja;
+}
+
+function bloqueCobro(c, recargar) {
+  const cobro = c.cobro;
+  if (!cobro) return null;
+  const nombre = nombreDelCobro(cobro.cobro);
+  const dicho = cobro.autorizado
+    ? reemplazar(t("cie_cobro_autorizado"), { c: nombre, q: cobro.autorizado_por || "",
+                                              f: diaHora(cobro.autorizado_en) })
+    : reemplazar(t("cie_cobro_esperando"), { c: nombre });
+  const zona = h("div", {});
+  const caja = h("div", { clase: "aviso" + (cobro.autorizado ? "" : " alerta"),
+                          style: "margin:0 0 10px" },
+    h("div", {}, dicho), zona);
+  if (autorizaElCobro() && SIN_MANDAR.includes(c.fase)) {
+    /* El boton abre el formulario debajo y se esconde mientras este
+       abierto; «Cancelar» del formulario lo vuelve a enseñar. */
+    const acciones = h("div", { clase: "acciones", style: "margin-top:6px" },
+      h("button", { clase: (cobro.autorizado ? "claro " : "") + "chico", type: "button",
+        onclick: () => {
+          acciones.hidden = true;
+          zona.replaceChildren(formularioCobro(c, recargar,
+                                               () => { acciones.hidden = false; }));
+        } },
+        t(cobro.autorizado ? "cie_cobro_cambiar" : "cie_cobro_autorizar_boton")));
+    caja.append(acciones);
+  } else if (!cobro.autorizado) {
+    caja.append(h("div", { clase: "chico gris", style: "margin-top:4px" },
+      t("cie_cobro_quien")));
+  }
+  return caja;
+}
+
 /* ------------------------------------------------------------ antes de mandarlo */
 
 /* Los asuntos del revisor llegan como el servidor los nombra --en clave,
@@ -467,6 +565,8 @@ const ASUNTOS = {
   "La lista no tiene todo": "cie_li_asunto",
   "Sin tipo de cambio": "cie_asu_sin_tc",
   "Sin precio en la lista": "cie_asu_sin_precio",
+  "Cobro por autorizar": "cie_asu_cobro",
+  "Dia cancelado": "cie_asu_dia_cancelado",
 };
 
 /* Como se llama cada precio de los terminos del implantado, para decir
@@ -532,7 +632,43 @@ function dineroSinCerrar(o, personas) {
   };
 }
 
-function antesDeMandarlo(revision, fallo, viaticos) {
+/* Justificar una desviacion del comparativo (seccion 105, hallazgo 6):
+   la ruta existia desde la seccion 101 y ningun boton la llamaba, asi
+   que "recotiza o justifica" ofrecia dos salidas y una no existia. Se
+   manda la desviacion tal como la dice la revision --es lo que el
+   servidor acepta-- con su justificacion. Solo quien da el visto bueno,
+   y solo en el eventual: el mes del implantado no lleva comparativo
+   contra cotizacion. */
+function botonJustificar(o, cierreId, recargar) {
+  const zona = h("div", { style: "margin-top:4px" });
+  const abrir = h("button", { clase: "claro chico", type: "button",
+    onclick: () => {
+      const texto = entrada("justificacion", {
+        placeholder: t("cie_justificar_ej"), maxlength: "500",
+        style: "max-width:320px" });
+      const mandar = h("button", { clase: "chico", type: "button",
+        onclick: async (e) => {
+          if (texto.value.trim().length < 15) {
+            return mensaje(t("cie_justificar_corta"), "alerta");
+          }
+          e.target.disabled = true;
+          try {
+            await api.post(`/cierre/${cierreId}/desviaciones/respaldar?descripcion=`
+                           + encodeURIComponent(o.mensaje || ""),
+                           { justificacion: texto.value.trim() });
+            mensaje(t("cie_justificada"));
+            await recargar();
+          } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
+        } }, t("cie_justificar"));
+      zona.replaceChildren(h("div", { clase: "acciones" }, texto, mandar));
+      texto.focus();
+    } }, t("cie_justificar"));
+  zona.append(abrir);
+  return zona;
+}
+
+function antesDeMandarlo(revision, fallo, viaticos, cierreId = null,
+                         recargar = null) {
   const zona = h("div", {}, h("h4", { clase: "seccion" }, t("cie_antes")));
   if (fallo) return zona.append(aviso(fallo, "alerta")), zona;
   const personas = (viaticos && viaticos.personas) || [];
@@ -540,6 +676,7 @@ function antesDeMandarlo(revision, fallo, viaticos) {
   const corregir = obs.filter(o => o.nivel === "corregir");
   const revisar = obs.filter(o => o.nivel !== "corregir"
                                   && !DEL_RELOJ.includes(o.asunto));
+  const justifica = cierreId && recargar && daElVistoBueno();
   if (!corregir.length) {
     zona.append(h("p", { clase: "verde chico", style: "margin:4px 0" },
       t("srv_sin_observaciones")));
@@ -552,7 +689,8 @@ function antesDeMandarlo(revision, fallo, viaticos) {
           return h("li", { style: "margin-bottom:6px" },
             h("b", {}, asunto(o.asunto)), ": ",
             h("span", { clase: "chico" }, dicho.mensaje || ""),
-            dicho.accion ? h("div", { clase: "chico gris" }, dicho.accion) : "");
+            dicho.accion ? h("div", { clase: "chico gris" }, dicho.accion) : "",
+            o.justificable && justifica ? botonJustificar(o, cierreId, recargar) : "");
         })));
   }
   if (revisar.length) {
@@ -642,6 +780,17 @@ function paraRevisar(o) {
       return { asunto: t("cie_li_asunto"),
                mensaje: reemplazar(t("cie_li_mensaje"), d),
                accion: t("cie_li_accion") };
+    /* El cobro de la cancelacion que operaciones no ha autorizado, y el
+       dia que se cancelo con el servicio (seccion 105). */
+    case "cobro_por_autorizar":
+      return { asunto: t("cie_asu_cobro"),
+               mensaje: reemplazar(t("cie_cpa_mensaje"), { c: nombreDelCobro(d.cobro) }),
+               accion: t("cie_cpa_accion") };
+    case "dia_cancelado":
+      return { asunto: t("cie_asu_dia_cancelado"),
+               mensaje: reemplazar(t("cie_dc_mensaje"),
+                                   { f: fecha(d.fecha), e: d.equipo || "", q: d.que || "" }),
+               accion: t(d.completo ? "cie_dc_completo" : "cie_dc_no_se_cobra") };
     /* Alguien fue sin rol, o con un rol o una unidad que la lista del
        cliente no cotiza (seccion 101): antes la revision reventaba con
        un 400 y aqui se pintaba el texto crudo, sin que hacer. */
@@ -1047,6 +1196,8 @@ async function cuerpo(c, op, recargar) {
   if (c.motivo === "cancelacion") {
     nodos.push(aviso(t("cie_es_cancelacion"), "alerta"));
   }
+  /* Como se cobra la cancelacion y quien lo autoriza (seccion 105). */
+  nodos.push(bloqueCobro(c, recargar));
 
   const conRevision = ["sin_visto_bueno", "devuelto"].includes(c.fase);
   const conDinero = conRevision || c.fase === "comprobacion";
@@ -1099,9 +1250,13 @@ async function cuerpo(c, op, recargar) {
                                            l: op.lugar || "" })));
     }
     const rev = revision && revision.x;
+    /* "Justificar" solo en el eventual (seccion 105): el mes del
+       implantado no compara contra una cotizacion. */
+    const justificaEn = op.esMes ? null : c.cierre_id;
     nodos.push(
       tablaComparativo(rev && rev.comparativo, op.esMes, m, op.rutas.desglose),
-      antesDeMandarlo(rev, revision && revision.fallo, viaticos),
+      antesDeMandarlo(rev, revision && revision.fallo, viaticos, justificaEn,
+                      recargar),
       seccionDinero(viaticos, recargar));
 
     const zona = h("div", { style: "margin-top:10px" });
@@ -1121,7 +1276,8 @@ async function cuerpo(c, op, recargar) {
         const detalle = err.detalle;
         if (detalle && detalle.observaciones && detalle.observaciones.length) {
           zona.replaceChildren(antesDeMandarlo(
-            { observaciones: detalle.observaciones }, "", viaticos));
+            { observaciones: detalle.observaciones }, "", viaticos,
+            justificaEn, recargar));
         }
         e.target.disabled = false;
       }

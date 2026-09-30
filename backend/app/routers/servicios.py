@@ -1553,16 +1553,24 @@ def asignaciones_equipo(equipo_id: int, db: Session = Depends(get_db),
         ficha = unidades.setdefault(a.vehiculo_id, {
             "vehiculo_id": a.vehiculo_id, "placa": a.vehiculo.placa,
             "unidad": a.vehiculo.categoria.nombre,
+            # La categoria por su id (seccion 105): el cambio por
+            # contingencia busca otra unidad de la misma categoria.
+            "categoria_id": a.vehiculo.categoria_id,
             "blindada": a.vehiculo.categoria.blindado,
             "color": a.vehiculo.color, "anio": a.vehiculo.modelo_anio,
             "marca_modelo": a.vehiculo.marca_modelo,
             "rentado": a.vehiculo.rentado,
             "arrendadora": a.vehiculo.arrendadora,
             "arrendadora_telefono": a.vehiculo.arrendadora_telefono,
-            "foto": a.vehiculo.foto, "dias": 0, "dias_pendientes": 0})
+            "foto": a.vehiculo.foto, "dias": 0, "dias_pendientes": 0,
+            # Relevada a media jornada por otra unidad, como la persona:
+            # la ficha lo dice y ya no ofrece cambiarla otra vez.
+            "relevado_en": None})
         ficha["dias"] += 1
         if a.jornada_id in por_arrancar:
             ficha["dias_pendientes"] += 1
+        if a.relevado_en:
+            ficha["relevado_en"] = a.relevado_en.isoformat()
 
     return {"equipo": equipo.alias, "dias": total,
             "dias_pendientes": len(por_arrancar),
@@ -2219,7 +2227,16 @@ def cancelar_servicio(servicio_id: int, datos: s.CancelarIn,
                       usuario: m.Usuario = Depends(auth.puede("servicios.alta"))):
     """Cuando ya no se puede borrar. El servicio se queda con todo su
     rastro, sus dias se cancelan y la gente y las unidades quedan libres
-    para otros servicios ese mismo dia."""
+    para otros servicios ese mismo dia.
+
+    Con el equipo en la calle (seccion 105, decision 1 de Salvador): el
+    dia que esta arribado o en curso termina con la hora de la
+    cancelacion y cuenta como trabajado; el consultor dice si al cliente
+    se le cobra la cotizacion completa o lo ejecutado, y direccion de
+    operaciones lo autoriza desde la tarjeta del cierre.
+    """
+    from app import operacion
+
     servicio = db.get(m.Servicio, servicio_id)
     if not servicio:
         raise HTTPException(404, f"No existe el servicio {servicio_id}")
@@ -2227,11 +2244,36 @@ def cancelar_servicio(servicio_id: int, datos: s.CancelarIn,
         raise HTTPException(409, {
             "mensaje": f"El servicio ya esta {servicio.estatus.value}",
         })
+    # "Completo" es la cotizacion autorizada tal cual: sin ella no hay
+    # cifra que cobrar. La pantalla solo ofrece "ejecutado" en ese caso.
+    if (datos.cobro == "completo"
+            and cotizacion.vigente(db, servicio_id) is None):
+        raise HTTPException(409, {
+            "mensaje": "No hay cotización autorizada: no se puede cobrar "
+                       "completo",
+            "que_hacer": "Cancela con cobro de lo ejecutado, o registra "
+                         "primero la cotización autorizada.",
+        })
 
     jornadas = [j for e in servicio.equipos for j in e.jornadas]
+    momento_mx = reloj.ahora_del_servicio(db, servicio)
     dias_cancelados = 0
     cancelados = []
+    terminados = []
     for jornada in jornadas:
+        # El dia que esta en la calle termina ahora mismo, firmado como
+        # terminado por cancelacion (seccion 105): esas horas se pagan y
+        # se cobran. Antes quedaba cancelado sin hora de fin y
+        # desaparecia de la nomina y del cierre.
+        if jornada.estatus in m.ARRANCADAS:
+            terminados.append(operacion.terminar_por_cancelacion(
+                db, jornada, usuario.persona_id, momento_mx, datos.motivo))
+            auditoria.registrar(
+                db, usuario, servicio, "cerrar dia a mano",
+                f"{jornada.fecha}: {operacion.TERMINADO_POR_CANCELACION.lower()} "
+                f"a las {momento_mx:%H:%M} · {datos.motivo}",
+                jornada_id=jornada.id)
+            continue
         # Un dia que ya se trabajo no se borra del historial: se queda
         # terminado, porque esas horas se pagan.
         if jornada.estatus != m.EstatusJornada.TERMINADA:
@@ -2246,7 +2288,6 @@ def cancelar_servicio(servicio_id: int, datos: s.CancelarIn,
     viaticos = (db.query(m.AsignacionViatico)
                 .filter(m.AsignacionViatico.jornada_id.in_([j.id for j in jornadas]))
                 .all()) if jornadas else []
-    momento_mx = reloj.ahora_del_servicio(db, servicio)
     pedidas = 0
     for viatico in viaticos:
         if viatico.estatus in VIATICOS_SIN_SALIR:
@@ -2295,14 +2336,19 @@ def cancelar_servicio(servicio_id: int, datos: s.CancelarIn,
                   if j.estatus == m.EstatusJornada.TERMINADA]
     salieron = [v for v in viaticos
                 if v.estatus != m.EstatusViatico.CANCELADO]
+    cobro = None
     if servicio.tipo == m.TipoServicio.EVENTUAL and (trabajados or salieron):
         from app import cierre as motor_cierre
         from app.operacion import abrir_plazo_del_servicio
 
         momento = reloj.ahora_del_servicio(db, servicio)
         abrir_plazo_del_servicio(db, servicio, momento)
+        # Con lo que el consultor pidio cobrar (seccion 105): operaciones
+        # lo autoriza desde la tarjeta del cierre, y sin eso el cierre no
+        # se manda a finanzas.
+        cobro = datos.cobro
         motor_cierre.abrir(db, servicio.id, abierto_en=momento,
-                           motivo="cancelacion")
+                           motivo="cancelacion", cobro=cobro)
     # El implantado cierra por mes (seccion 56): cada mes con dias
     # trabajados o dinero que salio arranca su cierre con T0 = ahora y
     # se factura con lo trabajado; los que no tienen nada que cerrar se
@@ -2314,7 +2360,10 @@ def cancelar_servicio(servicio_id: int, datos: s.CancelarIn,
     antes = servicio.estatus.value
     servicio.estatus = m.EstatusServicio.CANCELADO
     auditoria.registrar(db, usuario, servicio, "cancelar servicio",
-                        f"estaba {antes} · {datos.motivo}")
+                        f"estaba {antes} · {datos.motivo}"
+                        + (f" · cobro pedido: {cobro}" if cobro else "")
+                        + (f" · {len(terminados)} día(s) terminado(s) por la "
+                           f"cancelación" if terminados else ""))
     db.commit()
 
     # Se avisa despues de guardar: el servicio ya quedo cancelado pase
@@ -2328,6 +2377,10 @@ def cancelar_servicio(servicio_id: int, datos: s.CancelarIn,
             "avisados": avisados["avisados"],
             "estatus_anterior": antes,
             "dias_cancelados": dias_cancelados,
+            # Los dias que estaban en la calle y terminaron con la
+            # cancelacion, y como pidio cobrar el consultor (seccion 105).
+            "dias_terminados": terminados,
+            "cobro": cobro,
             "autos_rentados_por_devolver": [v.placa for v in rentados],
             "viaticos_por_devolver": por_devolver,
             "depositos_pedidos_a_finanzas": pedidas,
@@ -2336,6 +2389,30 @@ def cancelar_servicio(servicio_id: int, datos: s.CancelarIn,
                      "La gente y las unidades quedan libres para ese dia")
                     + (f". Finanzas tiene {pedidas} deposito(s) en camino: "
                        f"se le pidio cancelarlos." if pedidas else "")}
+
+
+# ---------------------------------------------------------------- el titular
+
+@router.put("/{servicio_id}/titular",
+            summary="Cambiar al consultor titular del servicio")
+def cambiar_titular(servicio_id: int, datos: s.TitularIn,
+                    db: Session = Depends(get_db),
+                    usuario: m.Usuario = Depends(
+                        auth.puede("servicios.titular"))):
+    """Decision 13 de Salvador (29 sep, seccion 105): direccion de
+    operaciones le pone otro titular --un consultor con acceso abierto--
+    al eventual o al implantado, con motivo. Desde ese momento los avisos,
+    los plazos del cierre y la comision son del nuevo; lo cerrado y pagado
+    al anterior no se toca. Se les avisa a los dos."""
+    from app import titular as motor_titular
+
+    servicio = db.get(m.Servicio, servicio_id)
+    if not servicio:
+        raise HTTPException(404, f"No existe el servicio {servicio_id}")
+    resultado = motor_titular.cambiar(db, servicio, datos.consultor_id,
+                                      datos.motivo, usuario)
+    db.commit()
+    return resultado
 
 
 @router.get("/{servicio_id}/revisiones",

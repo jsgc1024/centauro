@@ -206,6 +206,83 @@ TEXTOS = {
         "cie_vence": "Deadline",
         "cie_motivo": "Reason",
         "cie_que_hacer": "What to do",
+        # --- el cambio de consultor titular (decision 13, seccion 105)
+        "tit_entra_asunto": "{folio}: you are now its consultant in charge",
+        "tit_entra_cuerpo": ("{quien} made you the consultant in charge of "
+                             "{folio} ({cliente}). From now on its notices, "
+                             "its deadlines and its commission are yours."),
+        "tit_sale_asunto": "{folio}: {nuevo} is now its consultant in charge",
+        "tit_sale_cuerpo": ("{quien} changed the consultant in charge of "
+                            "{folio} ({cliente}): from now on {nuevo} leads "
+                            "it. What was already closed and paid to you "
+                            "stays as it was."),
+        "tit_servicio": "Service",
+        "tit_quien": "Changed by",
+        "tit_nuevo": "Consultant in charge",
+        "tit_anterior": "Previous consultant",
+        "tit_motivo": "Reason",
+        # --- la incidencia grave, a Recursos Humanos (seccion 105)
+        "inc_grave_asunto": "Serious incident: {quien} on {folio}",
+        "inc_grave_cuerpo": ("Operations management authorized a serious "
+                             "incident involving {quien} on {folio} ({fecha}). "
+                             "The month's bonus for {quien} is set to zero and "
+                             "the consultant's commission for that service is "
+                             "held until the managing director decides. Human "
+                             "Resources handles it from the person's file."),
+        "inc_descripcion": "What happened",
+        "inc_registro": "Reported by",
+        "inc_resolucion": "Resolution",
+        "inc_comision": "Consultant's commission",
+        "inc_comision_retenida": "Held: the managing director decides it.",
+        "inc_comision_al_cerrar": ("Not generated yet: it will be held when "
+                                   "finance closes the service."),
+        # --- seccion 105: el cobro al cancelar y los plazos del cierre
+        "cie_cobro_asunto": "{de_que}: operations approved billing {cobro}",
+        "cie_cobro_cuerpo": ("Head of operations approved billing {de_que} "
+                             "{cobro}. You can now sign off and send it to "
+                             "finance; your deadline runs until {fecha} at "
+                             "{hora}."),
+        "cie_cobro_que_hacer": ("Open the service in the console, review the "
+                                "comparison and give your sign-off."),
+        "cie_cobro_completo": "in full: the approved quote as it stands",
+        "cie_cobro_ejecutado": "for what was delivered: the days worked",
+        "cie_mitad_asunto": "{de_que}: half of your sign-off deadline is gone",
+        "cie_mitad_cuerpo": ("Half of your time to sign off {de_que} has "
+                             "passed: it runs out on {fecha} at {hora}. Your "
+                             "commission depends on making it in time."),
+        "cie_mitad_reg_cuerpo": ("Half of your 24 hours since finance sent "
+                                 "{de_que} back has passed: they run out on "
+                                 "{fecha} at {hora}."),
+        "cie_mitad_que_hacer": ("Open the service in the console, review the "
+                                "comparison and the team's expenses, and give "
+                                "your sign-off."),
+        "cie_venc_asunto": "{de_que}: the sign-off deadline has expired",
+        "cie_venc_cuerpo": ("Your time to sign off {de_que} ran out on {fecha} "
+                            "at {hora}. The service is still waiting for your "
+                            "sign-off, now without commission: send it as "
+                            "soon as possible so it gets billed."),
+        "cie_venc_reg_cuerpo": ("Your 24 hours since finance sent {de_que} "
+                                "back ran out on {fecha} at {hora}. It is "
+                                "still waiting for you to send it again; your "
+                                "first sign-off keeps its 'in time' as it "
+                                "was."),
+        "cie_venc_que_hacer": ("Open the service in the console, resolve what "
+                               "the review points out and send it to "
+                               "finance."),
+        "cie_venc_dir_asunto": "{de_que}: {consultor}'s sign-off deadline expired",
+        "cie_venc_dir_cuerpo": ("{consultor}'s time to sign off {de_que} ran "
+                                "out on {fecha} at {hora}. The service is "
+                                "still waiting for the sign-off, now without "
+                                "commission, and it is listed under expired "
+                                "deadlines in Head of operations."),
+        "cie_venc_dir_reg_cuerpo": ("{consultor}'s 24 hours since finance sent "
+                                    "{de_que} back ran out on {fecha} at "
+                                    "{hora}. The service is still waiting to "
+                                    "be sent again."),
+        "cie_venc_dir_que_hacer": ("Check with the consultant what is holding "
+                                   "the sign-off; head of operations can give "
+                                   "it as cover."),
+        "cie_consultor": "Consultant",
     },
     "es": {
         "equipo": "Equipo",
@@ -298,6 +375,20 @@ TEXTOS = {
                        "tu cartera. Quedó registrado en la bitácora; "
                        "esto es para que lo sepas, no hay nada que "
                        "hacer."),
+        "tit_entra_asunto": "{folio}: ahora eres su consultor titular",
+        "tit_entra_cuerpo": ("{quien} te puso como consultor titular de "
+                             "{folio} ({cliente}). Desde ahora sus avisos, "
+                             "sus plazos y su comisión son tuyos."),
+        "tit_sale_asunto": "{folio}: {nuevo} pasa a ser su consultor titular",
+        "tit_sale_cuerpo": ("{quien} cambió al consultor titular de {folio} "
+                            "({cliente}): desde ahora lo lleva {nuevo}. Lo "
+                            "que ya se cerró y se te pagó se queda como "
+                            "estaba."),
+        "tit_servicio": "Servicio",
+        "tit_quien": "Lo cambió",
+        "tit_nuevo": "Consultor titular",
+        "tit_anterior": "Titular anterior",
+        "tit_motivo": "Motivo",
         "quien": "Quién",
         "que_hizo": "Qué hizo",
         "detalle": "Detalle",
@@ -313,6 +404,22 @@ TEXTOS = {
         "falla_resuelta_cuerpo": ("La falla que reportaste el {dia} ya quedó "
                                   "resuelta. Gracias por reportarla."),
         "falla_lo_que_reportaste": "Lo que reportaste",
+        # --- la incidencia grave, a Recursos Humanos (seccion 105)
+        "inc_grave_asunto": "Incidencia grave: {quien} en {folio}",
+        "inc_grave_cuerpo": ("Dirección de operaciones autorizó una incidencia "
+                             "grave de {quien} en {folio} ({fecha}). El bono "
+                             "del mes de {quien} queda en cero y la comisión "
+                             "del consultor de ese servicio queda retenida "
+                             "hasta que dirección general la decida. Recursos "
+                             "Humanos la gestiona desde el expediente de la "
+                             "persona."),
+        "inc_descripcion": "Qué pasó",
+        "inc_registro": "La registró",
+        "inc_resolucion": "Resolución",
+        "inc_comision": "Comisión del consultor",
+        "inc_comision_retenida": "Retenida: la decide dirección general.",
+        "inc_comision_al_cerrar": ("Todavía no se genera: se retiene cuando "
+                                   "finanzas cierre el servicio."),
         "falla_causa": "La causa",
         "falla_como": "Cómo se arregló",
         # --- el acceso: la invitacion y la recuperacion de contrasena
@@ -360,6 +467,52 @@ TEXTOS = {
         "cie_vence": "Vence",
         "cie_motivo": "Motivo",
         "cie_que_hacer": "Qué hacer",
+        # --- seccion 105: el cobro al cancelar y los plazos del cierre
+        "cie_cobro_asunto": "{de_que}: operaciones autorizó el cobro {cobro}",
+        "cie_cobro_cuerpo": ("Dirección de operaciones autorizó cobrar {de_que} "
+                             "{cobro}. Ya puedes dar el visto bueno y mandarlo "
+                             "a finanzas; tu plazo corre hasta el {fecha} a "
+                             "las {hora}."),
+        "cie_cobro_que_hacer": ("Abre el servicio en la consola, revisa el "
+                                "comparativo y da el visto bueno."),
+        "cie_cobro_completo": "completo: la cotización autorizada tal cual",
+        "cie_cobro_ejecutado": "de lo ejecutado: los días que se trabajaron",
+        "cie_mitad_asunto": "{de_que}: va la mitad de tu plazo para el visto bueno",
+        "cie_mitad_cuerpo": ("Ya pasó la mitad de tu plazo para dar el visto "
+                             "bueno de {de_que}: vence el {fecha} a las "
+                             "{hora}. De llegar a tiempo depende tu comisión."),
+        "cie_mitad_reg_cuerpo": ("Ya pasó la mitad de tus 24 horas desde que "
+                                 "finanzas regresó {de_que}: vencen el {fecha} "
+                                 "a las {hora}."),
+        "cie_mitad_que_hacer": ("Abre el servicio en la consola, revisa el "
+                                "comparativo y el dinero del personal, y da el "
+                                "visto bueno."),
+        "cie_venc_asunto": "{de_que}: venció el plazo del visto bueno",
+        "cie_venc_cuerpo": ("Tu plazo para dar el visto bueno de {de_que} "
+                            "venció el {fecha} a las {hora}. El servicio sigue "
+                            "esperando tu visto bueno, ya sin comisión: "
+                            "mándalo cuanto antes para que se facture."),
+        "cie_venc_reg_cuerpo": ("Tus 24 horas desde que finanzas regresó "
+                                "{de_que} vencieron el {fecha} a las {hora}. "
+                                "Sigue esperando que lo vuelvas a mandar; lo "
+                                "en plazo de tu primer visto bueno se queda "
+                                "como estaba."),
+        "cie_venc_que_hacer": ("Abre el servicio en la consola, resuelve lo "
+                               "que señale la revisión y mándalo a finanzas."),
+        "cie_venc_dir_asunto": "{de_que}: venció el plazo del visto bueno de {consultor}",
+        "cie_venc_dir_cuerpo": ("El plazo de {consultor} para dar el visto "
+                                "bueno de {de_que} venció el {fecha} a las "
+                                "{hora}. El servicio sigue esperando el visto "
+                                "bueno, ya sin comisión, y sale entre los "
+                                "plazos vencidos de Dirección de operaciones."),
+        "cie_venc_dir_reg_cuerpo": ("Las 24 horas de {consultor} desde que "
+                                    "finanzas regresó {de_que} vencieron el "
+                                    "{fecha} a las {hora}. El servicio sigue "
+                                    "esperando que lo vuelva a mandar."),
+        "cie_venc_dir_que_hacer": ("Revisa con el consultor qué frena el visto "
+                                   "bueno; dirección de operaciones puede "
+                                   "darlo como cobertura."),
+        "cie_consultor": "Consultor",
     },
     "pt": {
         "equipo": "Equipe",
@@ -386,6 +539,20 @@ TEXTOS = {
         "cambio_cuerpo_persona": ("{quien} entra na sua equipe para o "
                                   "serviço de hoje. Abaixo está sua equipe "
                                   "como fica, com os telefones."),
+        "tit_entra_asunto": "{folio}: agora você é o consultor titular",
+        "tit_entra_cuerpo": ("{quien} colocou você como consultor titular de "
+                             "{folio} ({cliente}). A partir de agora os "
+                             "avisos, os prazos e a comissão são seus."),
+        "tit_sale_asunto": "{folio}: {nuevo} passa a ser o consultor titular",
+        "tit_sale_cuerpo": ("{quien} trocou o consultor titular de {folio} "
+                            "({cliente}): a partir de agora quem leva é "
+                            "{nuevo}. O que já foi fechado e pago a você "
+                            "fica como estava."),
+        "tit_servicio": "Serviço",
+        "tit_quien": "Quem trocou",
+        "tit_nuevo": "Consultor titular",
+        "tit_anterior": "Titular anterior",
+        "tit_motivo": "Motivo",
         "cambio_cuerpo_unidad": ("O serviço de hoje é coberto com outro "
                                  "veículo: {quien}. Abaixo está sua equipe "
                                  "como fica."),
@@ -417,6 +584,21 @@ TEXTOS = {
         "fin_con_extra_una": ("Foi gerada 1 hora extra além do horário "
                               "contratado."),
         "fin_sin_extra": "O serviço encerrou dentro do horário contratado.",
+        # --- la incidencia grave, a Recursos Humanos (seccion 105)
+        "inc_grave_asunto": "Incidente grave: {quien} em {folio}",
+        "inc_grave_cuerpo": ("A direção de operações autorizou um incidente "
+                             "grave de {quien} em {folio} ({fecha}). O bônus "
+                             "do mês de {quien} fica em zero e a comissão do "
+                             "consultor desse serviço fica retida até a "
+                             "direção geral decidir. Recursos Humanos cuida "
+                             "dele a partir da ficha da pessoa."),
+        "inc_descripcion": "O que aconteceu",
+        "inc_registro": "Registrado por",
+        "inc_resolucion": "Resolução",
+        "inc_comision": "Comissão do consultor",
+        "inc_comision_retenida": "Retida: a direção geral decide.",
+        "inc_comision_al_cerrar": ("Ainda não foi gerada: fica retida quando "
+                                   "finanças fechar o serviço."),
         "fin_manana": "Amanhã a apresentação é às {hora}",
         "fin_otro_dia": "Em {dia} a apresentação é às {hora}",
         "fin_en": " em {lugar}.",
@@ -510,6 +692,52 @@ TEXTOS = {
         "cie_vence": "Vence",
         "cie_motivo": "Motivo",
         "cie_que_hacer": "O que fazer",
+        # --- seccion 105: el cobro al cancelar y los plazos del cierre
+        "cie_cobro_asunto": "{de_que}: operações autorizou a cobrança {cobro}",
+        "cie_cobro_cuerpo": ("A direção de operações autorizou cobrar {de_que} "
+                             "{cobro}. Você já pode dar o visto e mandar para "
+                             "finanças; seu prazo corre até {fecha} às "
+                             "{hora}."),
+        "cie_cobro_que_hacer": ("Abra o serviço no console, revise o "
+                                "comparativo e dê o visto."),
+        "cie_cobro_completo": "completa: a cotação autorizada tal como está",
+        "cie_cobro_ejecutado": "do executado: os dias que se trabalharam",
+        "cie_mitad_asunto": "{de_que}: já passou a metade do seu prazo para o visto",
+        "cie_mitad_cuerpo": ("Já passou a metade do seu prazo para dar o "
+                             "visto de {de_que}: vence {fecha} às {hora}. Sua "
+                             "comissão depende de chegar a tempo."),
+        "cie_mitad_reg_cuerpo": ("Já passou a metade das suas 24 horas desde "
+                                 "que finanças devolveu {de_que}: vencem "
+                                 "{fecha} às {hora}."),
+        "cie_mitad_que_hacer": ("Abra o serviço no console, revise o "
+                                "comparativo e o dinheiro da equipe, e dê o "
+                                "visto."),
+        "cie_venc_asunto": "{de_que}: venceu o prazo do visto",
+        "cie_venc_cuerpo": ("Seu prazo para dar o visto de {de_que} venceu "
+                            "{fecha} às {hora}. O serviço continua esperando "
+                            "o seu visto, já sem comissão: mande o quanto "
+                            "antes para que seja faturado."),
+        "cie_venc_reg_cuerpo": ("Suas 24 horas desde que finanças devolveu "
+                                "{de_que} venceram {fecha} às {hora}. Continua "
+                                "esperando que você mande de novo; o 'no "
+                                "prazo' do seu primeiro visto fica como "
+                                "estava."),
+        "cie_venc_que_hacer": ("Abra o serviço no console, resolva o que a "
+                               "revisão apontar e mande para finanças."),
+        "cie_venc_dir_asunto": "{de_que}: venceu o prazo do visto de {consultor}",
+        "cie_venc_dir_cuerpo": ("O prazo de {consultor} para dar o visto de "
+                                "{de_que} venceu {fecha} às {hora}. O serviço "
+                                "continua esperando o visto, já sem comissão, "
+                                "e aparece entre os prazos vencidos da Direção "
+                                "de operações."),
+        "cie_venc_dir_reg_cuerpo": ("As 24 horas de {consultor} desde que "
+                                    "finanças devolveu {de_que} venceram "
+                                    "{fecha} às {hora}. O serviço continua "
+                                    "esperando que seja mandado de novo."),
+        "cie_venc_dir_que_hacer": ("Veja com o consultor o que segura o visto; "
+                                   "a direção de operações pode dá-lo como "
+                                   "cobertura."),
+        "cie_consultor": "Consultor",
     },
 }
 

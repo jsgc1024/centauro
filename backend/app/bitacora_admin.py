@@ -153,6 +153,7 @@ TEXTOS = {
             "tiene_recurso_local": "personal propio",
             "rendimiento_km_litro": "rendimiento km/l", "blindado": "blindada",
             "horas": "horas", "horas_descanso": "horas de descanso",
+            "intervalo_descanso": "intervalo de descanso",
             "aplica_horas_extra": "horas extra",
             "bloquea_dia_completo": "bloquea el día",
             "km_estimados": "km estimados", "monto": "monto",
@@ -252,6 +253,7 @@ TEXTOS = {
             "tiene_recurso_local": "own staff",
             "rendimiento_km_litro": "km per litre", "blindado": "armoured",
             "horas": "hours", "horas_descanso": "rest hours",
+            "intervalo_descanso": "rest block",
             "aplica_horas_extra": "overtime",
             "bloquea_dia_completo": "blocks the day",
             "km_estimados": "estimated km", "monto": "amount",
@@ -351,6 +353,7 @@ TEXTOS = {
             "tiene_recurso_local": "pessoal próprio",
             "rendimiento_km_litro": "km por litro", "blindado": "blindado",
             "horas": "horas", "horas_descanso": "horas de descanso",
+            "intervalo_descanso": "intervalo de descanso",
             "aplica_horas_extra": "horas extras",
             "bloquea_dia_completo": "bloqueia o dia",
             "km_estimados": "km estimados", "monto": "valor",
@@ -548,9 +551,12 @@ def _actividad(codigo: str | None) -> str:
 PERFILES_CORTOS = {"conductor_seguridad": "conductor", "agente_seguridad": "agente",
                    "coordinador_seguridad": "coordinador",
                    "consultor_seguridad": "consultor"}
-MODALIDADES_CORTAS = {"es": {"full_day": "full day", "medio_dia": "medio día", "transfer": "transfer"},
-                      "en": {"full_day": "full day", "medio_dia": "half day", "transfer": "transfer"},
-                      "pt": {"full_day": "full day", "medio_dia": "meio dia", "transfer": "transfer"}}
+MODALIDADES_CORTAS = {"es": {"full_day": "full day", "medio_dia": "medio día", "transfer": "transfer",
+                             "implantado": "implantado"},
+                      "en": {"full_day": "full day", "medio_dia": "half day", "transfer": "transfer",
+                             "implantado": "embedded"},
+                      "pt": {"full_day": "full day", "medio_dia": "meio dia", "transfer": "transfer",
+                             "implantado": "implantado"}}
 
 
 def _tabulador(texto: str, idioma: str) -> str:

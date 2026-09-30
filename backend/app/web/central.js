@@ -913,6 +913,13 @@ function tarjetaDelDia(f) {
             : null)
       : null,
 
+    /* La hora que el equipo propuso al cerrar hoy (seccion 105,
+       decision 5): con quien y por que, y dos botones. Confirmar mueve
+       la hora como lo hacia la captura del conductor; dejar la de la
+       hoja la rechaza y se lo dice al que propuso. Si nadie la toca, a
+       las 22:00 del pais queda como la propuso. */
+    f.hora_propuesta ? panelHoraPropuesta(f) : null,
+
     /* Lo que falta, con lo que hay que hacer. Un renglon que dice
        "pendiente" obliga a abrir otra pantalla para saber de que se
        trata; a las seis de la tarde eso es el problema. */
@@ -922,6 +929,45 @@ function tarjetaDelDia(f) {
             h("b", {}, t(`cen_p_${p.clave}`)), ": ",
             h("span", { clase: "chico" }, p.que_hacer || ""))))
       : null);
+}
+
+function panelHoraPropuesta(f) {
+  const p = f.hora_propuesta;
+  const caja = h("div", { clase: "aviso alerta", style: "margin-top:10px" },
+    h("div", {},
+      h("b", {}, t("cen_hora_propuesta").replace("{hora}", p.hora)),
+      " · ",
+      t("cen_hora_propuesta_por").replace("{quien}", p.por || "—")
+        .replace("{hoja}", p.de_la_hoja || hora(f.servicio_inicia))),
+    p.nota ? h("div", { clase: "chico" }, p.nota) : null,
+    h("div", { clase: "chico gris", style: "margin-top:4px" },
+      t("cen_hora_propuesta_pie")));
+
+  /* Los botones solo para quien corrige (`operacion.corregir`), que es
+     quien mueve la hora de un dia con gente ya confirmada. */
+  if (!corrige()) return caja;
+  const confirmar = h("button", { clase: "chico", type: "button" },
+    t("cen_hora_confirmar"));
+  const dejar = h("button", { clase: "claro chico", type: "button" },
+    t("cen_hora_dejar"));
+  const resolver = async (ruta, listo) => {
+    confirmar.disabled = dejar.disabled = true;
+    try {
+      await api.post(`/central/manana/${f.jornada_id}/${ruta}`);
+      mensaje(listo);
+      caja.replaceChildren(h("div", { clase: "chico" }, listo));
+    } catch (err) {
+      mensaje(err.message, "grave");
+      confirmar.disabled = dejar.disabled = false;
+    }
+  };
+  confirmar.onclick = () => resolver(
+    "confirmar-hora", t("cen_hora_confirmada").replace("{hora}", p.hora));
+  dejar.onclick = () => resolver(
+    "rechazar-hora", t("cen_hora_dejada").replace("{hora}", p.de_la_hoja || ""));
+  caja.append(h("div", { clase: "acciones chico", style: "margin-top:8px" },
+                confirmar, dejar));
+  return caja;
 }
 
 /* ------------------------------------------------ 3 · el pulso */
@@ -974,6 +1020,15 @@ function tablaPulso(filas) {
       h("td", {}, h("b", {}, f.folio),
         h("div", { clase: "gris chico" },
           [f.cliente, f.personal.join(", ")].filter(Boolean).join(" · ")),
+        /* Quien todavia no marca SU llegada (seccion 105, decision 4):
+           el dia esta en el punto con Juan, y Luis sigue en camino. Se
+           dice por persona, que es como se vigila ahora. */
+        (f.sin_llegar || []).length
+          ? h("div", { clase: "chico" },
+              etiqueta(t("cen_sin_llegar").replace("{quien}",
+                                                    f.sin_llegar.join(", ")),
+                       "alerta"))
+          : null,
         f.unidades.length
           ? h("div", { clase: "placas chico" }, f.unidades.join(" · "))
           : null),

@@ -500,6 +500,18 @@ function informe(tipo, d) {
                        { r: f.reales ?? 0, g: f.actualizadas ?? 0,
                          s: f.sin_foto_real ?? 0 })));
     }
+    /* Las cuentas bancarias (decision 7, seccion 105): cuantos la traen
+       en Odoo y cuantos no. Si la conexion no las pudo leer se dice, y
+       lo guardado se quedo como estaba. */
+    const c = d.cuentas || {};
+    if (c.error) {
+      partes.push(aviso(reemplazar(t("fin_odoo_cuentas_error"), { e: c.error }),
+                        "alerta"));
+    } else if (c.con_cuenta || c.sin_cuenta) {
+      partes.push(h("p", { clase: "gris chico", style: "margin:10px 0 0" },
+        reemplazar(t("fin_odoo_cuentas"),
+                   { c: c.con_cuenta ?? 0, s: c.sin_cuenta ?? 0 })));
+    }
   } else {
     const tl = d.taller || {};
     partes.push(h("p", { clase: "gris chico", style: "margin:10px 0 0" },

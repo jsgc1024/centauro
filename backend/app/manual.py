@@ -272,13 +272,15 @@ TAREAS = {
         "es": ("El cierre: cuando vencen las 24 horas del personal para "
                "comprobar —o antes, si todo su dinero ya cerró— el servicio "
                "pasa a esperar el visto bueno del consultor, y arrancan sus "
-               "24 horas.",
-               "El reloj, en el estado del sistema."),
+               "24 horas. A la mitad de ese plazo le avisa al consultor y, "
+               "al vencer, al consultor y a dirección de operaciones.",
+               "El reloj y el correo, en el estado del sistema."),
         "pt": ("O fechamento: quando vencem as 24 horas do pessoal para "
                "comprovar —ou antes, se todo o dinheiro já fechou— o serviço "
                "passa a esperar o aval do consultor, e começam as suas "
-               "24 horas.",
-               "O relógio, no estado do sistema."),
+               "24 horas. Na metade desse prazo avisa o consultor e, ao "
+               "vencer, o consultor e a direção de operações.",
+               "O relógio e o e-mail, no estado do sistema."),
     },
     "servicios-sin-reporte": {
         "es": ("Silencios: el servicio en curso que lleva 2 horas sin "
@@ -290,10 +292,12 @@ TAREAS = {
     },
     "nomina-del-lunes": {
         "es": ("El corte del lunes: a las 7:00 de cada país arma el borrador "
-               "y a las 11:00 queda listo para pagar.",
+               "y a las 11:00 queda listo para pagar. Si el corte de la "
+               "semana anterior no se pagó, el nuevo se lo lleva.",
                "El reloj; el pago lo marca finanzas."),
         "pt": ("O corte de segunda-feira: às 7:00 de cada país monta o "
-               "rascunho e às 11:00 fica pronto para pagar.",
+               "rascunho e às 11:00 fica pronto para pagar. Se o corte da "
+               "semana anterior não foi pago, o novo o absorve.",
                "O relógio; o pagamento é marcado pelo financeiro."),
     },
     "confirmacion-de-la-vispera": {
@@ -303,6 +307,18 @@ TAREAS = {
         "pt": ("A véspera: às 5 da tarde de cada país lembra a cada um que "
                "trabalha amanhã.",
                "Que a pessoa tenha o app com os avisos ligados."),
+    },
+    "hora-de-manana-propuesta": {
+        "es": ("La hora de mañana: la que propuso el equipo y la central no "
+               "confirmó ni rechazó antes de las 10 de la noche de cada país "
+               "queda como la capturó el conductor.",
+               "La banda «Mañana» de la central: las propuestas pendientes "
+               "se confirman o se dejan ahí."),
+        "pt": ("O horário de amanhã: o que a equipe propôs e a central não "
+               "confirmou nem recusou antes das 10 da noite de cada país "
+               "fica como o motorista registrou.",
+               "A faixa «Amanhã» da central: as propostas pendentes se "
+               "confirmam ou se deixam ali."),
     },
     "odoo-personal": {
         "es": ("Odoo: el personal de seguridad. Solo corre después de la "
@@ -586,6 +602,8 @@ AREA_DE_ARCHIVO = {
     "operacion.py": "operacion", "routers/operacion.py": "operacion",
     "routers/central.py": "operacion", "central.py": "operacion",
     "geocercas.py": "operacion", "intentos.py": "operacion",
+    # La ventana del director de operaciones (seccion 105).
+    "direccion_operaciones.py": "operacion", "routers/direccion.py": "operacion",
     "accesos.py": "accesos", "auth.py": "accesos", "contrasenas.py": "accesos",
     "routers/acceso.py": "accesos",
     "routers/campo.py": "campo",
@@ -611,6 +629,8 @@ AREA_DE_ARCHIVO = {
     # El choque al mover un dia y el motor del cambio por contingencia,
     # que dice que hacer con la hora del relevo y con deshacer (seccion 101).
     "disponibilidad.py": "servicios", "contingencia.py": "servicios",
+    # El cambio de consultor titular (decision 13, seccion 105).
+    "titular.py": "servicios",
     "routers/crud.py": "catalogos", "routers/bitacora_admin.py": "catalogos",
     "routers/odoo.py": "odoo",
     "routers/archivo.py": "archivo",

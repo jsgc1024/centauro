@@ -340,7 +340,12 @@ def del_dia(db: Session, jornada: m.Jornada,
     corre = jornada.estatus in m.ARRANCADAS
     en_extra = (minutos_de_mas(jornada, ahora)
                 if corre and aplica(jornada) else None)
-    horas_contratadas = (float(jornada.modalidad.horas)
+    # En el implantado, las horas de su acuerdo (seccion 105); en el
+    # eventual, las de la modalidad del dia.
+    from app import implantado
+    del_acuerdo = implantado.horas_de_la_jornada(db, jornada)
+    horas_contratadas = (float(del_acuerdo) if del_acuerdo is not None
+                         else float(jornada.modalidad.horas)
                          if jornada.modalidad else None)
     return {
         "aplica": aplica(jornada),

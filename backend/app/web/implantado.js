@@ -17,6 +17,8 @@ import { bloqueRevisionUnidad } from "./servicio.js";
 import { IDIOMAS, idioma, t } from "./idioma.js";
 import { diferenciaConLaLista, queda, tarjetaCierre } from "./cierre.js";
 import { soloConsulta, tiene } from "./menu.js";
+import { botonIncidencia } from "./incidencias.js";
+import { bloqueTitular } from "./titular.js";
 
 /* El dinero del mes --cuanto a cada quien y pedirselo a finanzas-- lo
    decide el consultor titular o direccion de operaciones (seccion 73).
@@ -182,7 +184,8 @@ function widgetCalendario(alPicar = null) {
    calendario puede de verdad. */
 function widgetPlantilla(cat, ciudadId, alCambiar = () => {},
                          disponibilidad = () => null,
-                         turno = () => "natural") {
+                         turno = () => "natural",
+                         delEquipo = () => []) {
   const gente = [];
   const flota = [];
   const cuerpoGente = h("tbody");
@@ -215,19 +218,28 @@ function widgetPlantilla(cat, ciudadId, alCambiar = () => {},
       ...cat.perfiles.map(p => ({ valor: p.id, texto: p.nombre || p.codigo }))];
   }
 
+  /* Quien ya es del equipo del mes se dice, como en la ficha del dia
+     (seccion 105: al cambiar la plantilla del mes). Y quien no tiene
+     ni un dia libre sale como ocupado: se ve, pero se sabe. */
+  const equipo = () => new Set((delEquipo() || []).map(String));
+  const marcas = (id, ficha) => (equipo().has(String(id))
+    ? ` · ${t("imp_del_equipo")}` : "")
+    + (ficha && ficha.libres === 0 ? ` · ${t("imp_ocupado")}` : "");
+
   function opcionesPersona(perfilId) {
     if (!perfilId) return [{ valor: "", texto: t("imp_elige_rol") }];
     const d = disponibilidad();
     if (d) {
       return [{ valor: "", texto: t("imp_elige_persona") },
         ...d.personal.map(p => ({ valor: p.persona_id,
-                                  texto: `${p.nombre}${cuantosDias(p)}` }))];
+                                  texto: `${p.nombre}${cuantosDias(p)}`
+                                         + marcas(p.persona_id, p) }))];
     }
     /* Sin fecha todavia no hay mes contra que medir: se ofrece el
        catalogo de la ciudad, sin disponibilidad. */
     return [{ valor: "", texto: t("imp_elige_persona") },
       ...deLaCiudad(deCampo(cat.personal))
-        .map(p => ({ valor: p.id, texto: p.nombre }))];
+        .map(p => ({ valor: p.id, texto: p.nombre + marcas(p.id, null) }))];
   }
 
   /* ---------------------------------------------------------- unidades */
@@ -334,7 +346,24 @@ function widgetPlantilla(cat, ciudadId, alCambiar = () => {},
     ponerOpciones(tUnidad, opcionesUnidad(tCatUnidad.value));
   }
 
-  function agregarPersona() {
+  /* Elige un valor en una lista aunque no este entre sus opciones: la
+     plantilla que ya existe puede traer a alguien que hoy no sale en
+     la disponibilidad --se cargo antes de que llegara--. Se agrega
+     con su nombre para no perderlo. */
+  function elegir(control, valor, texto) {
+    if (valor === null || valor === undefined || valor === "") return;
+    const todas = control.todas || [...control.options].map(
+      o => ({ valor: o.value, texto: o.textContent }));
+    if (!todas.some(o => String(o.valor) === String(valor))) {
+      todas.push({ valor, texto: texto || String(valor) });
+    }
+    ponerOpciones(control, todas);
+    control.value = String(valor);
+  }
+
+  /* `valores`: con que arranca el renglon cuando se carga una plantilla
+     que ya existe (seccion 105). Sin valores, vacio, como en el alta. */
+  function agregarPersona(valores = null) {
     const perfil = lista("perfil_id", opcionesPerfil(),
                          { onchange: () => {
                            ponerOpciones(persona, opcionesPersona(perfil.value));
@@ -360,11 +389,16 @@ function widgetPlantilla(cat, ciudadId, alCambiar = () => {},
 
     gente.push(registro);
     cuerpoGente.append(fila);
+    if (valores) {
+      elegir(perfil, valores.rol_id);
+      ponerOpciones(persona, opcionesPersona(perfil.value));
+      elegir(persona, valores.persona_id, valores.nombre);
+    }
     verTurno();
     cambio();
   }
 
-  function agregarUnidad() {
+  function agregarUnidad(valores = null) {
     const categoria = lista("categoria_id", opcionesCategoria(),
                             { onchange: () => {
                               ponerOpciones(unidad, opcionesUnidad(categoria.value));
@@ -393,7 +427,47 @@ function widgetPlantilla(cat, ciudadId, alCambiar = () => {},
 
     flota.push(registro);
     cuerpoFlota.append(fila);
+    if (valores) {
+      elegir(categoria, valores.categoria_id, valores.unidad);
+      ponerOpciones(unidad, opcionesUnidad(categoria.value));
+      elegir(unidad, valores.vehiculo_id, valores.placa);
+      ponerOpciones(conductor, opcionesConductor());
+      elegir(conductor, valores.lleva_id);
+    }
     cambio();
+  }
+
+  /* La plantilla que ya existe, renglon por renglon: la de un mes ya
+     abierto, para corregirla (seccion 105). En 12x36 llena la caja del
+     turno: la categoria de las dos, quien empieza y la unidad. */
+  function cargar(plantilla) {
+    const personal = plantilla.personal || [];
+    const unidades = plantilla.unidades || [];
+    if (turno() === "12x36") {
+      const primera = personal.find(p => p.empieza) || personal[0];
+      const segunda = personal.find(p => p !== primera);
+      elegir(tCategoria, (primera || {}).rol_id);
+      ponerOpciones(tPrimera, opcionesDelTurno(tCategoria.value));
+      ponerOpciones(tSegunda, opcionesDelTurno(tCategoria.value));
+      if (primera) elegir(tPrimera, primera.persona_id, primera.nombre);
+      if (segunda) elegir(tSegunda, segunda.persona_id, segunda.nombre);
+      tEmpieza1.checked = true;
+      const suya = unidades[0];
+      if (suya) {
+        elegir(tCatUnidad, suya.categoria_id, suya.unidad);
+        ponerOpciones(tUnidad, opcionesUnidad(tCatUnidad.value));
+        elegir(tUnidad, suya.vehiculo_id, suya.placa);
+      }
+      verTurno();
+      cambio();
+      return;
+    }
+    for (const p of personal) agregarPersona(p);
+    for (const u of unidades) {
+      const lleva = personal.find(
+        p => String(p.vehiculo_id) === String(u.vehiculo_id));
+      agregarUnidad({ ...u, lleva_id: lleva ? lleva.persona_id : null });
+    }
   }
 
   /* Cambiar a alguien de la lista de personal cambia quien puede llevar
@@ -551,7 +625,7 @@ function widgetPlantilla(cat, ciudadId, alCambiar = () => {},
   verTurno();
 
   return { nodo, agregar: agregarPersona, agregarUnidad, repintar,
-           valor, unidades, verTurno };
+           valor, unidades, verTurno, cargar };
 }
 
 /* Por donde opera el servicio. No es un punto: es un pedazo de ciudad,
@@ -1080,18 +1154,15 @@ export async function nuevoImplantado(main) {
                                    } });
 
 
-  /* El implantado es siempre dia completo: no hay implantado de medio
-     dia ni de transfer. No se pregunta ni se muestra —ocupaba un
-     recuadro para decir siempre lo mismo—, se toma del pais, que es
-     donde vive la jornada: doce horas en Mexico no son las de Brasil.
-     Si un pais no la tiene en su catalogo, el alta se traba. */
+  /* El implantado lleva su propia jornada: la modalidad `implantado` del
+     pais (seccion 105), doce horas en Mexico y en Brasil, aparte del
+     full day del eventual. No se pregunta ni se muestra --ocupaba un
+     recuadro para decir siempre lo mismo--, se toma del pais. Si un
+     pais no la tiene en su catalogo, el alta se traba. */
   let modalidadId = null;
 
   function repintarModalidades() {
-    const suya = cat.modalidades.find(
-      m => m.codigo === "full_day"
-           && String(m.pais_id) === String(paises.value));
-    modalidadId = suya ? suya.id : null;
+    modalidadId = modalidadDelPais(cat, paises.value);
     revisar();
   }
 
@@ -1484,6 +1555,10 @@ export async function pantallaImplantado(main, servicioId) {
 
   /* ------------------------------------------------------ encabezado */
 
+  /* Donde se abre «Registrar incidencia» (seccion 105): debajo de los
+     botones de arriba, que es donde el consultor busca lo que se hace
+     con el servicio entero. */
+  const zonaIncidencia = h("div");
   main.append(
     h("div", { clase: "cabeza-servicio" },
       h("div", {},
@@ -1501,23 +1576,29 @@ export async function pantallaImplantado(main, servicioId) {
          cartera para pasar de una pantalla a la otra. */
       h("button", { clase: "claro chico consulta-si", type: "button",
         onclick: () => (location.hash = `#/servicio/${servicioId}`) },
-        t("imp_ver_operacion"))));
+        t("imp_ver_operacion")),
+      /* La incidencia de alguien de este implantado (seccion 105): la
+         registra el consultor o la central; la firma direccion de
+         operaciones desde su pantalla. Tambien en el cancelado: lo que
+         paso, paso. */
+      botonIncidencia(servicioId, zonaIncidencia)),
+    zonaIncidencia);
 
   /* --------------------------------------------------------- cliente */
-
-  const consultor = cat.consultores.find(
-    c => String(c.id) === String(servicio.consultor_id));
 
   main.append(...[h("div", { clase: "tarjeta" },
     h("h4", {}, t("cliente")),
     h("div", { clase: "rejilla tres" },
       renglon(t("cliente"), ficha.cliente),
-      renglon(t("ciudad_opera"), ficha.ciudad),
-      renglon(t("consultor_asignado"), consultor ? consultor.nombre : null)),
+      renglon(t("ciudad_opera"), ficha.ciudad)),
     h("div", { clase: "rejilla tres" },
       renglon(t("quien_solicita"), servicio.solicitante_completo),
       renglon(t("ejecutivo_principal"), servicio.ejecutivo_completo),
-      renglon(t("telefono"), servicio.ejecutivo_telefono)))].filter(Boolean));
+      renglon(t("telefono"), servicio.ejecutivo_telefono)),
+    /* El titular y el boton para cambiarlo (decision 13, seccion 105),
+       el mismo renglon que en el eventual. A lo ancho, para que el panel
+       que abre el boton no quede apretado en una celda. */
+    bloqueTitular(servicio, cat))].filter(Boolean));
 
   /* --------------------------------------------------------- acuerdo */
 
@@ -1541,11 +1622,21 @@ export async function pantallaImplantado(main, servicioId) {
         renglon(t("imp_punto_fijo"), acuerdo.origen_direccion),
         renglon(t("imp_zona"), acuerdo.zona_operacion)),
       /* La hora del encuentro se leia solo en el alta. Quien abre el
-         trato para saber a que hora es no tenia donde verla. */
+         trato para saber a que hora es no tenia donde verla. Es la del
+         trato; si el mes que corre va con otra --el cambio aplica desde
+         el mes siguiente (seccion 105)--, se dice al lado. Y la jornada
+         del acuerdo, con sus descansos. */
       h("div", { clase: "rejilla dos" },
         renglon(t("imp_hora_encuentro"),
                 acuerdo.hora_presentacion
-                  ? acuerdo.hora_presentacion.slice(0, 5) : null)),
+                  ? acuerdo.hora_presentacion.slice(0, 5)
+                    + (acuerdo.hora_del_mes
+                       && acuerdo.hora_del_mes !== acuerdo.hora_presentacion
+                       ? ` (${t("imp_mes_visto")} ${acuerdo.mes_mes}/${acuerdo.mes_anio}: `
+                         + `${acuerdo.hora_del_mes.slice(0, 5)})`
+                       : "")
+                  : null),
+        renglon(t("imp_horas"), textoDeHoras(acuerdo.horas))),
       arranque(servicioId, acuerdo),
       h("div", { clase: "rejilla dos" },
         renglon(t("imp_dias_semana"), acuerdo.dias_semana),
@@ -1640,14 +1731,16 @@ export async function pantallaImplantado(main, servicioId) {
           protocolo_contacto: protocolo.value.trim() || null,
         });
         if (horaEncuentro.value && horaEncuentro.value !== horaOriginal) {
+          /* La hora del trato aplica desde el mes siguiente (seccion
+             105): los meses futuros ya abiertos se mueven y el mes en
+             curso se corrige a mano. Se dice que paso con cada uno. */
           const hecho = await api.put(
             `/implantados/${servicioId}/hora-presentacion`,
             { hora: `${horaEncuentro.value}:00` });
-          if (hecho.dias_trabados.length) {
-            mensaje(t("imp_hora_trabados")
-                      .replace("{n}", hecho.dias_trabados.length), "alerta");
-          }
+          decirAcuerdoAplicado(hecho.acuerdo_aplicado);
         }
+        /* Y lo mismo con los dias de servicio, si cambiaron. */
+        decirAcuerdoAplicado(guardado.acuerdo_aplicado);
         /* Los dias contratados del mes cambian con el arranque, y eso
            es lo que se factura: se dice en pantalla, no en silencio. */
         const ajuste = guardado.contrato_ajustado;
@@ -1709,7 +1802,7 @@ export async function pantallaImplantado(main, servicioId) {
   /* ------------------------------------------------------------ el mes */
 
   if (ficha.meses) {
-    await pintarMesDelServicio(main, servicioId, ficha);
+    await pintarMesDelServicio(main, servicioId, ficha, servicio, cat);
     // Los hospitales antes de la hoja: es lo que la hoja va a llevar, y
     // si la ciudad no tiene ninguno mas vale verlo antes de liberarla.
     main.append(bloqueHospitales(servicioId));
@@ -1783,7 +1876,7 @@ function sinLlavesDeBase(acuerdo) {
    a veces el que sigue ya abierto. Arriba van las pestanas para saltar
    entre los meses abiertos —se entra por el que se esta operando, no por
    el ultimo que se abrio— y abajo el boton para abrir el que falta. */
-async function pintarMesDelServicio(main, servicioId, ficha) {
+async function pintarMesDelServicio(main, servicioId, ficha, servicio, cat) {
   const tarjeta = h("div", { clase: "tarjeta" },
     h("h4", {}, t("imp_asignacion")));
   /* Los terminos y el cierre del mes que se esta viendo van en sus
@@ -1901,6 +1994,12 @@ async function pintarMesDelServicio(main, servicioId, ficha) {
         : h("div", {}),
       caja,
       calendario.nodo,
+      /* Cambiar la plantilla del mes (seccion 105): solo quien arma el
+         implantado, y no en el cancelado ni en un mes ya cerrado. */
+      cancelado || !tiene(sesion.usuario, "implantado.armar")
+        || MES_CERRADO.has(actual.fase)
+        ? h("div")
+        : bloquePlantillaDelMes(servicioId, actual, datos, servicio, cat),
       cancelado ? h("div") : bloqueTaller(servicioId, actual, () => pintar()),
       fichaDia,
       abrirSiguiente(servicioId, ficha.siguiente, periodos, (nuevo) => {
@@ -1913,6 +2012,144 @@ async function pintarMesDelServicio(main, servicioId, ficha) {
 
   pintarPestanas();
   await pintar();
+}
+
+/* Las fases del cierre en que el mes ya no se arma: su visto bueno ya
+   se dio y la factura salio o esta por salir. */
+const MES_CERRADO = new Set(["en_facturacion", "aprobado", "facturado"]);
+
+/* ------------------------------------------ la plantilla del mes
+
+   Caso de Salvador (29 sep): un implantado con solo un conductor, que
+   arranca el mes que entra; quiso agregarle un vehiculo y no habia por
+   donde. La ruta existia --guardar la plantilla del mes-- pero ninguna
+   pantalla la llamaba, y la baja del titular o la unidad que se vendio
+   se tenian que repetir con «Cambiar» mes tras mes (hallazgo 70).
+
+   Es el mismo roster del alta, cargado con lo que hay: se agregan o se
+   quitan personas, se cambia el rol o la unidad de cada una, se agregan
+   o se quitan unidades. Al guardar, el mes se rehace de hoy en adelante
+   sin tocar los dias operados, con cambio o cubiertos a mano, y con la
+   casilla puesta, tambien los meses siguientes ya abiertos. */
+function bloquePlantillaDelMes(servicioId, periodo, datos, servicio, cat) {
+  const caja = h("div", { hidden: true, style: "margin-top:14px" });
+  const abrir = h("button", { clase: "claro chico", type: "button",
+    onclick: () => alternar() }, t("imp_plantilla_cambiar"));
+
+  function alternar() {
+    caja.hidden = !caja.hidden;
+    if (!caja.hidden) pintarPanel();
+  }
+
+  async function pintarPanel() {
+    caja.replaceChildren(h("div", { clase: "gris chico" },
+                           t("imp_plantilla_cargando")));
+    let plantilla;
+    try {
+      plantilla = await api.get(
+        `/implantados/${servicioId}/mes/${periodo.anio}/${periodo.mes}/plantilla`);
+    } catch (err) {
+      caja.replaceChildren(h("div", { clase: "bloqueo" }, err.message));
+      return;
+    }
+
+    /* La disponibilidad se mide desde el primer dia del mes que no ha
+       pasado, sin contar los dias de este mismo servicio: el equipo del
+       mes salia ocupado sus veintidos dias por su propio implantado. */
+    let libres = null;
+    const hoy = hoyLocal();
+    const primero = `${periodo.anio}-${String(periodo.mes).padStart(2, "0")}-01`;
+    const delEquipo = plantilla.personal.map(p => p.persona_id);
+    /* Lo que `revisar()` lee va antes del roster: cargar la plantilla
+       ya dispara la revision. */
+    const tambien = h("input", { type: "checkbox", checked: "" });
+    const faltantes = h("ul", { clase: "minimo" });
+    const cajaFalta = h("div", { clase: "minimo-caja", style: "margin-top:10px", hidden: true },
+      h("h4", {}, t("imp_falta")), faltantes);
+    const error = h("div", { clase: "bloqueo", hidden: true });
+    const guardar = h("button", { type: "button", onclick: () => mandar() },
+                      t("imp_plantilla_guardar"));
+    const roster = widgetPlantilla(cat, () => servicio.plaza_id,
+                                   () => revisar(), () => libres,
+                                   () => plantilla.turno || datos.turno || "natural",
+                                   () => delEquipo);
+    roster.cargar(plantilla);
+    (async () => {
+      const parametros = new URLSearchParams({
+        plaza_id: servicio.plaza_id,
+        desde: hoy > primero ? hoy : primero,
+        dias_servicio: datos.dias_servicio || "lunes_viernes",
+        servicio_id: servicioId });
+      try {
+        libres = await api.get(`/implantados/disponibilidad?${parametros}`);
+        roster.repintar();
+      } catch (err) { /* sin mes que medir: se ofrece el catalogo */ }
+    })();
+
+    function revisar() {
+      const falta = [];
+      const es12x36 = (plantilla.turno || datos.turno) === "12x36";
+      if (es12x36) {
+        if (roster.valor().length !== 2) falta.push(t("imp_falta_dos"));
+      } else if (!roster.valor().length) {
+        falta.push(t("imp_falta_plantilla"));
+      }
+      faltantes.replaceChildren(...falta.map(x => h("li", {}, x)));
+      faltantes.hidden = !falta.length;
+      /* La caja entera se esconde cuando no falta nada: el titulo
+         «Falta para dar de alta» solo, sin lista, confundia. */
+      cajaFalta.hidden = !falta.length;
+      guardar.disabled = !!falta.length;
+      return falta;
+    }
+
+    function decir(texto) {
+      error.hidden = !texto;
+      error.replaceChildren(texto || "");
+    }
+
+    async function mandar() {
+      if (revisar().length) return;
+      guardar.disabled = true;
+      decir("");
+      try {
+        const r = await api.put(
+          `/implantados/${servicioId}/mes/${periodo.anio}/${periodo.mes}/plantilla`,
+          { personal: roster.valor(), unidades: roster.unidades(),
+            tambien_meses_siguientes: tambien.checked });
+        mensaje(t("imp_plantilla_guardada")
+                  .replace("{n}", r.dias_rehechos || 0)
+                  .replace("{m}", r.dias_rehechos_siguientes || 0));
+        location.reload();
+      } catch (err) {
+        /* Los mensajes del servidor --oficina, otra ciudad, la unidad
+           sin nadie-- se ensenan tal cual, junto al boton. */
+        decir(err.message);
+        mensaje(err.message, "grave");
+        guardar.disabled = false;
+      }
+    }
+
+    caja.replaceChildren(h("div", { clase: "tarjeta lisa" },
+      h("h4", { style: "margin:0 0 2px" },
+        t("imp_plantilla_titulo").replace("{mes}", nombreDelMes(periodo))),
+      h("p", { clase: "gris chico", style: "margin:0 0 12px" },
+        t("imp_plantilla_cambiar_sub")),
+      roster.nodo,
+      h("label", { clase: "casilla", style: "margin-top:12px" }, tambien,
+        h("span", {}, t("imp_plantilla_tambien"))),
+      cajaFalta,
+      error,
+      h("div", { clase: "acciones", style: "margin-top:10px" },
+        guardar,
+        h("button", { clase: "claro chico", type: "button",
+          onclick: () => { caja.hidden = true; } }, t("cancelar")))));
+    revisar();
+  }
+
+  return h("div", {},
+    h("div", { clase: "acciones", style: "margin-top:14px" }, abrir),
+    caja);
 }
 
 const MESES_LARGOS = ["bon_mes_1", "bon_mes_2", "bon_mes_3", "bon_mes_4",
@@ -2104,6 +2341,17 @@ function tarjetaTerminos(contratoId, periodo, alGuardar) {
     const gastos = numero(x.gastos_mes);
     // La hora extra del mes, aparte y en los dos esquemas (seccion 65).
     const horaExtra = numero(x.precio_hora_extra);
+    /* Las horas de la jornada y de descanso de este acuerdo (seccion
+       105): vacias, van las del pais. En 12x36 no hay descanso. */
+    const conHoras = (control) => {
+      control.step = "0.5";
+      return control;
+    };
+    const horasJornada = conHoras(numero(x.horas_del_contrato ? x.horas_jornada : null));
+    horasJornada.placeholder = String(Number(x.horas_del_pais.jornada ?? ""));
+    const horasDescanso = conHoras(numero(x.horas_del_contrato ? x.horas_descanso : null));
+    horasDescanso.placeholder = String(Number(x.horas_del_pais.descanso ?? ""));
+    if (!x.descanso_editable) horasDescanso.disabled = true;
 
     /* Los precios del mes van en la moneda de su lista (seccion 82): si
        no es la del pais, cada etiqueta lo dice. */
@@ -2116,6 +2364,21 @@ function tarjetaTerminos(contratoId, periodo, alGuardar) {
     const deMes = campoDe(t("cie_precio_del_mes"), completo);
     const deGastos = campoDe(t("cie_gastos_del_mes"), gastos);
     const deHoraExtra = campoDe(t("cie_hora_extra"), horaExtra);
+    const deHoras = h("div", { style: "margin-top:4px" },
+      h("div", { clase: "rejilla cuatro" },
+        h("div", { clase: "campo" },
+          h("label", {}, t("imp_horas_jornada")), horasJornada),
+        h("div", { clase: "campo" },
+          h("label", {}, t("imp_horas_descanso")), horasDescanso)),
+      h("p", { clase: "gris chico", style: "margin:0 0 6px" },
+        x.descanso_editable
+          ? t("imp_horas_del_pais")
+              .replace("{j}", String(Number(x.horas_del_pais.jornada ?? 0)))
+              .replace("{d}", String(Number(x.horas_del_pais.descanso ?? 0)))
+          : t("imp_horas_12x36"),
+        x.horas_del_contrato ? ` ${t("imp_horas_del_contrato")}` : ""),
+      h("p", { clase: "gris chico", style: "margin:0 0 10px" },
+        h("b", {}, textoDeHoras(x)), ` ${t("imp_horas_pie")}`));
     const rejilla = h("div", { clase: "rejilla cuatro" });
     const acomodar = () => {
       const esDia = porDia.querySelector("input").checked;
@@ -2135,7 +2398,7 @@ function tarjetaTerminos(contratoId, periodo, alGuardar) {
         try {
           const esDia = porDia.querySelector("input").checked;
           const esAlzado = alzado.querySelector("input").checked;
-          await api.put(`/implantados/contratos/${contratoId}/terminos`, {
+          const guardado = await api.put(`/implantados/contratos/${contratoId}/terminos`, {
             esquema: esDia ? "por_dia" : "mes_completo",
             precio_dia_personal: valor(dia),
             precio_dia_adicional: valor(adicional),
@@ -2144,8 +2407,13 @@ function tarjetaTerminos(contratoId, periodo, alGuardar) {
             viaticos_incluidos: esAlzado,
             gastos_mes: esAlzado ? valor(gastos) : null,
             precio_hora_extra: valor(horaExtra),
+            horas_jornada: valor(horasJornada),
+            horas_descanso: x.descanso_editable ? valor(horasDescanso) : null,
           });
           mensaje(t("cie_terminos_guardados"));
+          /* Los terminos son el acuerdo: llegaron a los meses futuros
+             ya abiertos, y el mes en curso se corrige a mano. */
+          decirAcuerdoAplicado(guardado.acuerdo_aplicado);
           if (alGuardar) alGuardar();
           // Lo de la lista se vuelve a decir con lo guardado.
           pintar();
@@ -2178,6 +2446,7 @@ function tarjetaTerminos(contratoId, periodo, alGuardar) {
         h("div", {}, h("label", {}, t("cie_gastos_del_servicio")),
           h("div", { clase: "bloque-radio" }, alzado, netos))),
       rejilla,
+      deHoras,
       otra ? cambioDelMes(x) : h("div"),
       bloqueDeLaLista(x) || h("div"),
       h("p", { clase: "gris chico", style: "margin:10px 0 12px" },
@@ -2194,6 +2463,50 @@ function periodoSuelto(texto) {
   if (!texto) return null;
   const [mes, anio] = texto.split("/");
   return { anio: Number(anio), mes: Number(mes), periodo: texto };
+}
+
+/* Lo que paso con los meses futuros al cambiar el acuerdo (seccion 105,
+   decision 14): desde que mes aplica, que el mes en curso se corrige a
+   mano, y por mes que dias se movieron, se abrieron, se quitaron o no
+   se tocaron. Se dice en voz alta: el consultor tiene que ver que dias
+   se movieron. */
+function decirAcuerdoAplicado(hecho) {
+  if (!hecho) return;
+  if (hecho.mes_en_curso) {
+    const enCurso = periodoSuelto(hecho.mes_en_curso.split(":")[0]);
+    mensaje(t("imp_acuerdo_desde")
+              .replace("{desde}", hecho.desde || "")
+              .replace("{mes}", enCurso ? nombreDelMes(enCurso) : ""), "alerta");
+  }
+  if (!hecho.meses || !hecho.meses.length) {
+    mensaje(t("imp_acuerdo_sin_meses"));
+    return;
+  }
+  for (const mes of hecho.meses) {
+    mensaje(t("imp_acuerdo_aplicado")
+              .replace("{p}", mes.periodo)
+              .replace("{m}", (mes.movidos || []).length)
+              .replace("{c}", (mes.creados || []).length)
+              .replace("{q}", (mes.quitados || []).length));
+    if (mes.no_tocados && mes.no_tocados.length) {
+      mensaje(t("imp_acuerdo_no_tocados")
+                .replace("{p}", mes.periodo)
+                .replace("{n}", mes.no_tocados.length)
+                .replace("{lista}", mes.no_tocados.join(", ")), "alerta");
+    }
+  }
+}
+
+/* Como se leen las horas del acuerdo: "12 h de jornada · 4 h de
+   descanso en bloques de 1 h", o sin descanso. */
+function textoDeHoras(x) {
+  const n = (v) => String(Number(v));
+  if (!x || x.horas_jornada === null || x.horas_jornada === undefined) return "";
+  if (Number(x.horas_descanso) > 0) {
+    return t("imp_horas_resumen").replace("{j}", n(x.horas_jornada))
+      .replace("{d}", n(x.horas_descanso)).replace("{i}", n(x.intervalo_descanso));
+  }
+  return t("imp_horas_sin_descanso").replace("{j}", n(x.horas_jornada));
 }
 
 /* El boton de abrir el mes que sigue.
@@ -2579,10 +2892,14 @@ function armarPrimerMes(main, servicioId, acuerdo, servicio, cat) {
   revisar();
 }
 
-/* El implantado es siempre dia completo, y la jornada es del pais. */
+/* La jornada del implantado es del pais (seccion 105): la modalidad
+   `implantado`, y en una base de antes, el dia completo. El servidor la
+   toma por su cuenta; aqui solo se revisa que exista. */
 function modalidadDelPais(cat, paisId) {
   const suya = cat.modalidades.find(
-    x => x.codigo === "full_day" && String(x.pais_id) === String(paisId));
+    x => x.codigo === "implantado" && String(x.pais_id) === String(paisId))
+    || cat.modalidades.find(
+      x => x.codigo === "full_day" && String(x.pais_id) === String(paisId));
   return suya ? suya.id : null;
 }
 
@@ -2618,21 +2935,30 @@ async function pintarViaticos(caja, servicioId, anio, mes) {
   const moneda = datos.moneda || "MXN";
   const repintar = () => pintarViaticos(caja, servicioId, anio, mes);
 
+  /* Con el mes en facturacion o cerrado --o el servicio cancelado-- ya
+     no entra dinero nuevo (decision 10, seccion 105): los campos se
+     quedan quietos y se dice por que; lo ya pedido sigue su camino. */
+  const cerrado = datos.dinero_cerrado || null;
+
   const cuerpo = h("tbody");
   for (const p of datos.personal) {
-    cuerpo.append(renglonViatico(p, servicioId, anio, mes, moneda, repintar));
+    cuerpo.append(renglonViatico(p, servicioId, anio, mes, moneda, repintar,
+                                 cerrado));
   }
 
   const porSolicitar = datos.personal.filter(
     p => p.estatus === "asignado").length;
-  const pedir = !decideElDinero()
+  const pedir = cerrado
+    ? h("span", { clase: "chico rojo" },
+        t(cerrado === "cancelado" ? "via_cancelado" : "via_cerrado_mes"))
+    : !decideElDinero()
     ? h("span", { clase: "gris chico" },
         t(soloConsulta(sesion.usuario) ? "srv_dinero_consulta" : "srv_dinero_titular"))
     : h("button", { clase: "chico", type: "button",
     onclick: (e) => solicitar(e) },
     porSolicitar ? `${t("imp_vi_solicitar")} (${porSolicitar})`
                  : t("imp_vi_solicitar"));
-  if (decideElDinero()) pedir.disabled = !porSolicitar;
+  if (decideElDinero() && !cerrado) pedir.disabled = !porSolicitar;
 
   async function solicitar(e) {
     e.target.disabled = true;
@@ -2680,15 +3006,17 @@ async function pintarViaticos(caja, servicioId, anio, mes) {
           : ""))));
 }
 
-function renglonViatico(p, servicioId, anio, mes, moneda, repintar) {
+function renglonViatico(p, servicioId, anio, mes, moneda, repintar,
+                        cerrado = null) {
   const est = SEMAFORO_VIATICO[p.estatus] || SEMAFORO_VIATICO.por_asignar;
   /* Lo que ya salio no se reescribe: cuando hay dinero con finanzas o
      con la persona, el campo deja de ser "cuanto se le deposita" y pasa
-     a ser "cuanto mas". */
+     a ser "cuanto mas". Con el mes cerrado al dinero (seccion 105) no
+     se escribe nada. */
   const yaSalio = Number(p.depositado) > 0 || Number(p.en_camino) > 0;
   const destino = yaSalio ? "persona/agregar" : "persona";
 
-  const decide = decideElDinero();
+  const decide = decideElDinero() && !cerrado;
   const monto = entrada("monto", {
     type: "number", step: "1", min: "0", clase: "num",
     disabled: decide ? null : "disabled",

@@ -169,6 +169,51 @@ def incidencia_grave_del_servicio(db: Session, servicio_id: int):
             .first())
 
 
+MOTIVO_RETENIDA = ("Hay una incidencia grave en el servicio. "
+                   "La consecuencia la decide el director general.")
+
+
+def retener_por_incidencia(db: Session, incidencia: m.Incidencia) -> list[dict]:
+    """La grave que se autoriza cuando la comision ya se genero
+    (seccion 105, decision 2 de Salvador).
+
+    `generar` retiene la comision si al validar finanzas ya habia una
+    grave autorizada; pero la incidencia se registra despues del dia y
+    el visto bueno tarda, asi que lo normal es al reves: finanzas cierra
+    primero y la firma llega despues, y la comision seguia generada y se
+    pagaba. Aqui se retiene la que sigue generada y todavia no entro a
+    un corte con visto bueno: ese dinero no se ha movido. La que ya
+    quedo fija en un corte --o ya se pago, se ajusto o se perdio-- no se
+    toca: es dinero, y lo que haya que corregir va como diferencia.
+
+    En el implantado la comision es por mes: se retiene la del mes de la
+    incidencia, como en `generar_del_mes`. Solo escribe; guarda quien
+    llama.
+    """
+    if (incidencia.gravedad != m.GravedadIncidencia.GRAVE
+            or not incidencia.autorizada or not incidencia.servicio_id):
+        return []
+    retenidas = []
+    for comision in (db.query(m.ComisionConsultor)
+                     .filter_by(servicio_id=incidencia.servicio_id,
+                                estatus=m.EstatusComision.GENERADA,
+                                corte_id=None).all()):
+        if comision.contrato_id:
+            contrato = db.get(m.ContratoImplantado, comision.contrato_id)
+            if contrato and (contrato.anio, contrato.mes) != (
+                    incidencia.fecha.year, incidencia.fecha.month):
+                continue
+        comision.estatus = m.EstatusComision.RETENIDA
+        comision.motivo = MOTIVO_RETENIDA
+        retenidas.append({"comision_id": comision.id,
+                          "consultor": comision.consultor.nombre,
+                          "monto": comision.monto,
+                          "moneda": comision.moneda.value})
+    if retenidas:
+        db.flush()
+    return retenidas
+
+
 def generar(db: Session, servicio_id: int) -> m.ComisionConsultor:
     """Se llama cuando finanzas aprueba el cierre."""
     servicio = db.get(m.Servicio, servicio_id)

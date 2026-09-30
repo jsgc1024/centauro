@@ -7735,6 +7735,314 @@ Por dentro: `config.py` (`correo_solo_internos`), `correo.py`
 Pruebas: cinco nuevas en `tests/test_correo.py` y
 `tests/test_poner_correo.py`.
 
+## 105. Las 14 decisiones de Salvador: la Ola 5 de la revisión del 28 de septiembre
+
+La quinta tanda de la revisión completa del sistema (sección 98) y la
+única que necesitaba decisiones de negocio. Las 14 decisiones del informe
+(`REVISION_2026_09_28.md`, «Las decisiones») las resolvió Salvador una
+por una el 29 de septiembre por chat, y de resolverlas salieron dos cosas
+más: la pantalla del director de operaciones y la pantalla para cambiar
+la plantilla del mes del implantado (que él mismo topó ese día con un
+implantado de prueba). Lo que él dijo, con sus palabras, quedó en
+`/home/claude/gps/notas/decisiones_ola5.md` y manda sobre lo que
+recomendaba el informe. Cinco migraciones (`d6f8b0c2e4a6`,
+`e7a9c1d3f5b7`, `c1e3a5b7d9f1`, `c5e7a9b1d3f5`, que mueve datos —ver el
+implantado—, y `d7f9a1b3c5e7`, que completa los puestos existentes). El armazón de la app de campo sube a
+`centauro-campo-v19`.
+
+### El eventual en la calle (decisiones 3, 4 y 5)
+
+- **Cambiar la unidad por contingencia (decisión 3).** Se poncha la
+  camioneta el día 2 de 3 y el consultor solo podía «Quitar» la unidad.
+  Ahora cada unidad de la tarjeta de recursos trae **«Cambiar»**, con el
+  mismo panel que el de la persona: desde qué día, hasta cuándo, por qué,
+  qué unidad de la misma categoría entra y una vista previa que dice qué
+  días se mueven y si el de hoy se parte. Como pidió Salvador, **al
+  cliente no se le avisa** —ni correo ni al regresar la unidad—; la hoja
+  publicada se vuelve a publicar sola con la placa nueva y el equipo
+  recibe «Cambió la unidad» en su teléfono. En la tarjeta de cada cambio
+  (de persona o de unidad) hay **«Deshacer»** mientras el cambio siga en
+  curso y el dinero no se haya movido; el servidor dice qué hacer cuando
+  ya no se puede.
+- **Cada persona marca su propia llegada (decisión 4).** Con dos en el
+  equipo, la llegada la marcaba uno y valía por los dos: la app del
+  segundo ya no ofrecía marcar, el camino dejaba de vigilarlo y el bono
+  le regalaba la puntualidad del compañero. Ahora cada quien marca su
+  llegada con su GPS contra la geocerca; el día se pone «en el punto»
+  con la primera y el cliente recibe un solo «su equipo está en el
+  lugar», con la primera; la misma persona no marca dos veces; el camino
+  sigue tocando y alertando por persona a quien no ha llegado aunque el
+  día ya esté arribado, y el tablero de la central dice «No ha llegado:
+  Luis Mendoza». El bono de puntualidad mide la llegada de cada quien:
+  sin marca propia, el día cuenta en contra. Contacto y fin siguen
+  siendo uno por equipo.
+- **La hora de mañana pasa por la central (decisión 5).** Al cerrar el
+  día, la hora que capturaba el conductor se asentaba directo y movía el
+  punto de mañana con su GPS. Ahora se guarda como **propuesta**: mañana
+  sigue con la hora de la hoja, el punto no se mueve, la app dice «Hora
+  propuesta 07:30 · pendiente de la central», y en «Mañana» de la central
+  la propuesta sale con quién la propuso y su nota, con **«Confirmar»**
+  (mueve la hora, geocerca, bitácora y «cambió tu hora» a quien ya había
+  confirmado) y **«Dejar la de la hoja»** (la rechaza y avisa al que la
+  propuso). Si nadie la toca antes de las 22:00 del país, el reloj la
+  confirma como la capturó el conductor (tarea `hora-de-manana-propuesta`,
+  cada hora); otra propuesta reemplaza a la pendiente.
+
+### El cierre (decisiones 1 y 12)
+
+- **Cancelar con el equipo en la calle, y qué se cobra (decisión 1).** El
+  día que está en la calle termina a la hora de la cancelación, firmado
+  por quien canceló como «Terminado por cancelación», y cuenta como
+  trabajado: entra a la nómina, al comparativo y al cierre (si el cliente
+  canceló antes de la hora de presentación, las horas corren desde la
+  llegada). Los días que no habían arrancado se cancelan como antes. El
+  botón «Cancelar» pide el motivo y qué se cobra: **Ejecutado** (lo
+  trabajado, por omisión) o **Completo** (la cotización autorizada tal
+  cual); sin cotización autorizada solo hay «Ejecutado». La tarjeta del
+  cierre dice «Cobro al cancelar: completo · esperando el visto bueno de
+  operaciones», y quien trae la actividad nueva `cierre.autorizar_cobro`
+  (dirección de operaciones; dirección general por herencia) ve
+  **«Autorizar el cobro»**, puede cambiar lo pedido con una nota, y al
+  consultor le llega por correo y al teléfono; sin esa autorización el
+  visto bueno no se manda a finanzas. Con «completo» el comparativo, la
+  factura a Odoo (renglón por renglón de la cotización, con nota), la
+  rentabilidad y la comisión van contra lo cotizado. Los días cancelados
+  de un cancelado ya no piden recotizar (son informativos), un cancelado
+  se puede cotizar mientras su cierre no tenga visto bueno (hallazgo 6),
+  y las desviaciones graves del comparativo ganan **«Justificar»** (la
+  ruta existía sin botón). Las cancelaciones de antes de esta sección
+  siguen cobrando lo ejecutado sin pedir autorización; sus días
+  cancelados ya no frenan la revisión.
+- **Cuando vence un plazo del cierre (decisión 12).** El reloj del cierre
+  (cada cinco minutos) vigila los dos plazos del consultor —sus 24 horas
+  y las 24 horas desde que finanzas lo regresa—: a la mitad le avisa al
+  consultor titular; al vencer, al consultor y al director de operaciones
+  del país (o a los que haya), por correo y al teléfono, con hasta cuándo
+  y qué hacer. Cada aviso sale una sola vez (el cierre recuerda cuándo
+  avisó; el regreso de finanzas limpia lo avisado y arranca otro plazo).
+  El servicio no se mueve solo: sigue esperando su visto bueno, sin
+  comisión. Los vencidos salen en la pantalla del director.
+
+### Las incidencias y la pantalla «Dirección de operaciones» (decisión 2)
+
+- **Registrar y autorizar incidencias.** El motor existía (el consultor
+  clasifica, el director da el visto bueno, la leve quita las estrellas
+  del mes, la grave retiene la comisión y la ve RH) pero ninguna pantalla
+  lo usaba. Ahora **«Registrar incidencia»** está en la ficha del
+  eventual (junto a la cabeza de cada equipo) y del implantado (junto a
+  «Ver operación»), y en Clientes la calificación baja se clasifica
+  registrando la incidencia ahí mismo, con la gente del servicio, el
+  día, la gravedad —con una línea que dice qué hace cada una— y qué
+  pasó. La levanta el consultor del servicio (o quien lo cubre) **y
+  también la central** (`bonos.incidencia` suma a la central). Al
+  autorizar, si el bono del mes ya está calculado y RH no lo ha
+  autorizado, se recalcula en ese momento; si RH ya lo autorizó no se
+  toca y la respuesta lo dice. La grave autorizada le llega a RH por
+  correo y al teléfono y retiene la comisión del consultor: la que nazca
+  al cerrar y la ya generada que no haya entrado a un corte con visto
+  bueno. La descartada no toca nada y queda en el expediente de la
+  persona, que ahora trae sus incidencias.
+- **La pantalla «Dirección de operaciones»** (Operaciones EP; actividad
+  nueva `direccion.ver` para el director de operaciones y la dirección
+  general). Arriba, lo que espera su firma en tres tarjetas: las
+  incidencias por autorizar (con «Autorizar» y «Descartar» en línea y la
+  resolución), los cobros al cancelar (lo que pidió el consultor, lo que
+  vale cada opción y «Abrir» a la tarjeta del cierre) y los plazos
+  vencidos del cierre. Abajo, «Hoy, por país», con el reloj de cada país:
+  servicios hoy y mañana, en curso, con alerta abierta, cambios por
+  contingencia en curso y las incidencias del mes por gravedad; cada
+  número se abre para ver cuáles son. Los «puntos de la operación» que
+  Salvador quiera agregar se definen después.
+
+### Cambiar al titular y la cuenta bancaria (decisiones 13 y 7)
+
+- **Cambiar al consultor titular (decisión 13).** Dirección de operaciones
+  (y dirección general) cambia al titular desde la ficha del eventual y
+  del implantado —**«Cambiar titular»**, actividad `servicios.titular`—
+  a otro consultor con acceso abierto y con motivo obligatorio. Desde
+  ese momento los avisos, los plazos del cierre y la comisión, **completa
+  y sin repartir**, son del nuevo; lo cerrado y pagado al anterior no se
+  toca (un servicio cerrado ya no cambia). Bitácora del servicio y aviso
+  a los dos por correo y al teléfono; si la hoja del eventual ya estaba
+  publicada, la pantalla avisa que hay que volver a publicarla. A un
+  consultor con servicios vivos a su nombre no se le cierra el acceso
+  —ni desde Accesos ni desde la baja en Catálogos—: el sistema dice
+  cuántos y cuáles.
+- **La cuenta bancaria viene de Odoo (decisión 7).** Los registros
+  bancarios viven en Odoo: la lectura de personal de cada hora trae la
+  cuenta del empleado (número, banco y titular) en una sola lectura por
+  lote, y Odoo manda también para vaciar. Si el usuario de la conexión no
+  puede leer las cuentas, la lectura sigue sin ellas, lo anota y no toca
+  lo guardado. En Connect no se captura. El número solo lo ve quien
+  deposita (`viaticos.transferir`: finanzas, y dirección general por
+  herencia), en la bandeja de depósitos junto a la referencia; los demás
+  ven «Tiene cuenta» o **«Falta la cuenta en Odoo»** en rojo, también en
+  la ficha de la persona. El arranque cuenta a quién le falta, con
+  nombres.
+
+### Finanzas y viáticos (decisiones 8, 9 y 10)
+
+- **Sin barrido: la bandeja por fecha del servicio (decisión 8).** Se
+  quitó el barrido «un día antes» y su ventana (rutas
+  `transferencias/ventana` y `transferencias/barrido`), que nadie corría.
+  Lo pedido entra a la bandeja en cuanto se pide y finanzas decide cuándo
+  transferir: cuatro bloques —**Vencido sin depositar** (en rojo, hasta
+  arriba), **Para hoy**, **Para mañana** y **Más adelante**—, cada renglón
+  con la fecha del servicio y la cabecera del país con cuánto hay
+  vencido.
+- **El combustible se propone una vez por unidad (decisión 9).** La
+  gasolina es de la unidad: se calcula con el rendimiento de esa unidad y
+  se le propone a quien va al volante ese día; sin conductor asignado, a
+  la persona que va en ella (el agente); a los demás en cero, editable,
+  con la nota de por qué. Con dos unidades, cada conductor recibe lo de
+  la suya. Igual en el implantado con la gasolina fija del acuerdo.
+- **Dinero nuevo en un servicio cerrado (decisión 10).** En un servicio
+  cancelado, en facturación (con visto bueno) o cerrado (aprobado por
+  finanzas) ya no entra dinero nuevo: no se abre ni se fija un viático,
+  no se agrega ni se pide un depósito, y finanzas no deposita lo pedido
+  después del cierre. Lo pedido antes se deposita, se comprueba y se
+  devuelve como siempre. Cada puerta contesta con qué hacer (finanzas lo
+  regresa, se mueve el dinero y se vuelve a cerrar); la ficha esconde los
+  botones y lo dice. En el implantado se lee el cierre del mes.
+
+### La nómina (decisión 11)
+
+- **El corte que no se pagó el lunes.** El corte listo que nadie pagó
+  sigue en la pestaña hasta pagarse —martes, jueves o el lunes
+  siguiente— con la nota «pendiente de pago» y «Marcar pagado» (también
+  «Pagar» en el historial). Los lunes, si el corte de hoy no existe y hay
+  algo que pagar, **«Armar el corte de hoy»**, también después de las
+  11:00. Y la regla nueva de Salvador: **el corte nuevo absorbe al que no
+  se pagó**: al armarse el del 28 se lleva los días, horas extra, ajustes
+  y descuentos del 21 con su semana de origen, cubre del 21 al 28 y la
+  pestaña dice «incluye la semana del 21»; el del 21 queda «absorbido»
+  apuntando al del 28 (no se paga, no se tira, no se recalcula). Se van
+  juntando: el del 5 se lleva al del 28 con todo y el 21. El descuento
+  que dejó a alguien en cero una semana se cobra de la siguiente; un
+  corte pagado nunca se absorbe. Candado por país: dos vueltas del reloj
+  no absorben dos veces.
+
+### El implantado (decisiones 6 y 14 y la plantilla del mes)
+
+- **«Cambiar la plantilla del mes»** (hallazgo 70, adelantado por el
+  caso de Salvador). En la ficha del implantado, en «Asignación y
+  coordinación», abre el mismo armado de personas y unidades del alta,
+  cargado con lo que hay ese mes: se agregan o quitan personas y
+  unidades, se cambia el rol o la unidad de cada quien. Al guardar, el
+  mes se rehace de hoy en adelante sin tocar días operados, con cambio o
+  cubiertos a mano, y con la casilla **«También los meses siguientes ya
+  abiertos»** (marcada por omisión) llega a cada mes posterior, cada uno
+  con su validación y su renglón de bitácora. No en un cancelado ni en un
+  mes con visto bueno.
+- **El implantado de 12 horas con descansos por país (decisión 6).** El
+  implantado tomaba el «día completo» del país (10 h en Brasil: dos horas
+  extra cada día). Ahora tiene su propia modalidad **«Implantado»** en
+  Catálogos > Horas de cada modalidad: 12 h en México y en Brasil, hoy
+  con 0 horas de descanso y un dato nuevo, el **intervalo de descanso**
+  (de cuántas horas es cada bloque, 1). Todo mes abre con ella; las
+  horas de la jornada, las horas extra, el aviso preventivo, el
+  comparativo, la app y la nómina salen de una sola función; las horas
+  extra empiezan después de las 12 h de turno (el descanso va dentro).
+  Por contrato el consultor puede pactar otras horas desde los términos
+  del mes (vacías, van las del país, leídas en vivo: cambiar el número en
+  Catálogos el año que entra basta para todos los implantados); el 12 x
+  36 nunca lleva descanso. La app dice «Jornada de 12 h · 4 h de descanso
+  en bloques de 1 h» solo cuando hay descanso; **el cliente no lo ve**
+  (ni task sheet ni hoja). La migración `c5e7a9b1d3f5` mueve a la
+  modalidad nueva los contratos y los días de implantado que ya existían
+  y copia las comisiones y tarifas de freelance del full day; Nóminas >
+  Tabulador enseña la tabla del implantado por su modalidad.
+- **Los cambios del acuerdo aplican desde el mes siguiente (decisión
+  14).** Cambiar en el trato los días de servicio, la hora del encuentro,
+  los precios o las horas rehace solo los meses futuros ya abiertos (se
+  quitan los días que ya no son de servicio y no tienen nada, se abren
+  los nuevos con la plantilla, se mueve la hora en los días que seguían
+  con la de antes) sin tocar días con marcas, con cambio o con gente
+  puesta a mano, que se cuentan como «no se tocó». El mes en curso no se
+  toca: la consola lo dice («El cambio aplica desde 11/2026. Octubre se
+  corrige a mano desde el calendario») y enseña por mes qué días se
+  movieron. Si el servicio no ha arrancado, aplica desde su primer mes.
+  La hora del encuentro pasa a vivir en el acuerdo (columna nueva) y es
+  la que toma cada mes que se abre; la herramienta del mes sigue moviendo
+  solo ese mes. Todo con bitácora de antes y después.
+
+### Lo que hay que hacer a mano después de subir
+
+- **Puestos ya creados en producción.** `crear_puestos` no pisa un
+  puesto que ya existe, así que lo nuevo no le llegaba a quien entra con
+  puesto. Salvador pidió (30 sep) que quedara puesto directo: la
+  migración `d7f9a1b3c5e7` le da al puesto «Dirección de operaciones» la
+  pantalla `direccion` y las actividades `direccion.ver`,
+  `cierre.autorizar_cobro` y `servicios.titular`, y a «Supervisor de
+  central» y «Monitorista» la actividad `bonos.incidencia`. Solo suma (no
+  quita lo puesto a mano), no hace nada si el puesto no existe y correrla
+  dos veces no duplica. Quien entra con su rol y sin puesto (dirección
+  general) lo trae por el rol.
+- **Odoo:** el usuario de la conexión tiene que poder leer la cuenta
+  bancaria del empleado (`bank_account_id` de `hr.employee`, grupo
+  «Recursos Humanos / Usuario») y las cuentas (`res.partner.bank`); si
+  no, cada lectura deja «sin permiso para leer cuentas bancarias» en
+  Odoo > Personal y las cuentas quedan vacías. RH captura la cuenta en la
+  ficha del empleado (Información privada → Cuenta bancaria).
+
+Por dentro: `contingencia.py` (`vista_previa_vehiculo`, `deshacer` para
+la unidad), `routers/contingencia.py` (`_despues_del_cambio_de_unidad`,
+`reemplazos/vehiculo/vista-previa`), `operacion.py` (`_ya_marco`, `llego`,
+`proponer_hora_de_manana`, `resolver_hora_propuesta`,
+`confirmar_propuestas_vencidas`, `terminar_por_cancelacion`),
+`trayecto.py`, `central.py` (`sin_llegar`, `hora_propuesta`),
+`routers/central.py` (`confirmar-hora`, `rechazar-hora`), `bonos.py`
+(`medir_puntualidad`, `aplicar_visto_bueno`, `avisar_grave_a_rrhh`),
+`calidad.py`, `comisiones.py` (`retener_por_incidencia`), `cierre.py`
+(`COBROS`, `autorizar_cobro`, `cobros_por_autorizar`, `plazos_vencidos`,
+`avisar_plazos`), `routers/cierre.py` (`autorizar-cobro`), `revisor.py`,
+`cotizacion.py`, `facturacion.py`, `routers/servicios.py`
+(`cancelar_servicio` con `cobro`, `PUT /servicios/{id}/titular`),
+`titular.py` (nuevo), `accesos.py` (`no_se_va_siendo_titular`),
+`routers/bonos.py` (`GET /incidencias/opciones/{servicio_id}`, filtro
+`servicio_id`), `direccion_operaciones.py` y `routers/direccion.py`
+(nuevos, `GET /direccion/bandeja`), `odoo_personal.py` y
+`odoo_personal_reglas.py` (`cuenta_de`, `_leer_cuentas`), `arranque.py`,
+`viaticos.py` (`urgencia_del_deposito`, `al_volante`, `estimar_combustible`
+por unidad, `frenar_si_cerrado`, `pedida_tras_el_cierre`),
+`routers/viaticos.py` (`bandeja` por fecha y urgencia; sin barrido),
+`viaticos_implantado.py`, `nomina.py` (`candado_del_pais`, `_absorber`,
+`corte_pendiente`, `semana`), `implantado.py` (`horas_de`,
+`copiar_plantilla_a_meses_siguientes`, `aplicar_acuerdo_a_meses_futuros`),
+`routers/implantados.py` (`PlantillaIn.tambien_meses_siguientes`,
+`_modalidad_del_implantado`, `TerminosDelMesIn.horas_*`), `horas_extra.py`,
+`implantado_precios.py`, `seed.py`, `permisos.py` (`direccion.ver`,
+`cierre.autorizar_cobro`, `servicios.titular`; `bonos.incidencia` con la
+central), `push.py`, `textos_aviso.py`, `celery_app.py`
+(`campo.confirmar_hora_de_manana`; `cierre.avanzar` avisa), `manual.py`,
+`models.py` (`Jornada.hora_propuesta*`, `Cierre.cobro*` y `aviso_*_en`,
+`NominaSemanal.desde`/`absorbida_por_id`, `ConceptoNomina.semana_origen`,
+`EstatusNomina.ABSORBIDA`, `CodigoModalidad.IMPLANTADO`,
+`Modalidad.intervalo_descanso`, `ContratoImplantado.horas_jornada`/
+`horas_descanso`, `AcuerdoImplantado.hora_presentacion`); consola
+`servicio.js`, `implantado.js`, `central.js`, `cierre.js`, `finanzas.js`,
+`nomina.js`, `personal.js`, `encuestas.js`, `accesos.js`, `odoo.js`,
+`catalogos_pantalla.js`, `consultor.js`, `menu.js`, `app.js`, nuevos
+`direccion.js`, `incidencias.js`, `titular.js`; app `campo/app.js`.
+Pruebas: `tests/test_revision_105_implantado.py` (12),
+`test_revision_105_calle.py` (21), `test_revision_105_cierre.py` (14),
+`test_revision_105_direccion.py` (12), `test_revision_105_titular_cuenta.py`
+(14), `test_revision_105_finanzas.py` (14), `test_revision_105_nomina.py`
+(8); pruebas viejas que cambiaron por las reglas nuevas:
+`test_aviso_reemplazo.py` (el cambio de unidad ya no avisa al cliente),
+`test_campo.py` (la hora de mañana queda como propuesta), `test_ajustes.py`
+(el segundo borrador se lleva al primero), `test_viaticos.py` (sin
+barrido), `test_deposito_cancelado.py`, `test_revision_98.py`,
+`test_categorias.py`, `test_permisos.py` (miden permisos sin el barrido),
+`test_nomina_rol.py` y `test_nominas.py` (la tabla del implantado va por
+su modalidad), `test_revision_101_implantado.py` (el trato dice la hora
+acordada y la del mes), `test_odoo_personal.py`, `test_odoo_oficina.py`,
+`test_revision_100.py` (el Odoo de mentiras contesta qué campos tiene).
+Trabajo repartido en siete grupos en paralelo (`/home/claude/gps/ola5`)
+e integrado a mano; la lista de plazos vencidos vive dos veces
+(`cierre.plazos_vencidos` para los avisos y
+`direccion_operaciones.plazos_vencidos` para la pantalla) a propósito.
+
 ## 14. Lo que falta
 
 ### Abierto

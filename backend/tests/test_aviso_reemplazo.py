@@ -150,9 +150,11 @@ def test_el_correo_lleva_al_equipo_como_queda_con_telefonos(cliente, sesion,
     assert not [p for p in ficha if "Juan Ramirez" in p[1]]
 
 
-def test_el_cambio_de_unidad_tambien_se_avisa(cliente, sesion, datos):
-    """Otra placa esperando en la calle es un cambio que el cliente se
-    topa igual que el de una persona."""
+def test_el_cambio_de_unidad_no_se_le_avisa_al_cliente(cliente, sesion, datos):
+    """Otra placa esperando en la calle no le escribe al cliente.
+    Decisión 3 de Salvador (sección 105): el cambio de unidad se hace
+    sin avisarle, a diferencia del cambio de persona; el equipo sí se
+    entera, al teléfono."""
     h = sesion("consultor")
     servicio, j = _servicio(cliente, sesion, datos, dia=0)
 
@@ -166,10 +168,10 @@ def test_el_cambio_de_unidad_tambien_se_avisa(cliente, sesion, datos):
                            "motivo": "Falla mecanica"},
                      headers=h)
     assert r.status_code == 200, r.text
-    assert r.json()["cliente_avisado"] is True
+    assert r.json()["cliente_avisado"] is False
 
     placa = entra["placa"]
-    assert [a for a in _avisos(servicio["id"]) if placa in (a.cuerpo or "")]
+    assert not [a for a in _avisos(servicio["id"]) if placa in (a.cuerpo or "")]
 
 
 def test_el_dia_partido_no_manda_al_que_se_fue(cliente, sesion, datos):

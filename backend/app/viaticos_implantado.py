@@ -177,6 +177,9 @@ def panel(db: Session, servicio: m.Servicio, anio: int, mes: int) -> dict:
         "periodo": f"{mes:02d}/{anio}", "anio": anio, "mes": mes,
         "dias": len(dias),
         "moneda": pais.moneda_local.value if pais else None,
+        # Por que ya no entra dinero nuevo en ese mes --cancelado,
+        # en_facturacion, cerrado-- o nulo (seccion 105).
+        "dinero_cerrado": motor.cerrado_al_dinero(db, servicio, anio, mes),
         "personal": filas,
         "total_propuesto": sum((f["propuesto"] for f in filas), Decimal("0")),
         "total_asignado": sum((f["asignado"] for f in filas), Decimal("0")),
@@ -202,6 +205,9 @@ def fijar(db: Session, servicio: m.Servicio, anio: int, mes: int,
     tabulador, y la diferencia queda escrita como un ajuste con nombre y
     apellido: la comprobacion sigue teniendo contra que comparar.
     """
+    # Con el mes ya en facturacion o cerrado --o el servicio cancelado--
+    # no entra dinero nuevo (seccion 105).
+    motor.frenar_si_cerrado(db, servicio, anio, mes)
     dias = _dias_de_la_persona(db, servicio, anio, mes, persona_id)
     ya = _asignaciones(db, persona_id, dias)
 
@@ -261,6 +267,8 @@ def agregar(db: Session, servicio: m.Servicio, anio: int, mes: int,
     """Otro deposito encima del que ya salio, sin tocar lo anterior."""
     if Decimal(str(monto)) <= 0:
         raise HTTPException(400, "Un deposito adicional de cero no existe")
+    # Dinero nuevo en un mes cerrado, no (seccion 105).
+    motor.frenar_si_cerrado(db, servicio, anio, mes)
     dias = _dias_de_la_persona(db, servicio, anio, mes, persona_id)
     ya = {v.jornada_id: v for v in _asignaciones(db, persona_id, dias)}
     if not ya:
@@ -313,6 +321,9 @@ def solicitar(db: Session, servicio: m.Servicio, anio: int, mes: int,
               persona_id: int | None = None) -> dict:
     """Le pide a finanzas el saldo del mes, no el total: lo que ya se
     deposito o ya esta pedido no se vuelve a pedir."""
+    # Pedirlo con el mes cerrado, no (seccion 105): lo pedido antes
+    # sigue su camino en la bandeja.
+    motor.frenar_si_cerrado(db, servicio, anio, mes)
     pedidos, monto = 0, Decimal("0")
     for viatico in _del_mes(db, servicio, anio, mes, persona_id):
         # El de quien salio queda cancelado con su monto: no se pide
@@ -432,6 +443,15 @@ def calcular_dia(db: Session, jornada: m.Jornada, persona_id: int) -> dict:
     # paga un taxi de su bolsa. El tabulador dice cuanto, no cuando.
     madruga = jornada.inicio_programado.time() < motor.HORA_TRASLADO
 
+    # La gasolina del acuerdo es de la unidad, no de cada persona
+    # (decision 9, seccion 105): se le propone a quien la conduce ese
+    # dia y a los demas les sale en cero, editable. Un dia sin unidad
+    # se queda como estaba: ahi no hay a quien mas darsela.
+    con_unidad = any(a.relevado_en is None and a.vehiculo_id
+                     for a in jornada.vehiculos)
+    conduce = (motor.unidad_que_conduce(jornada, persona_id) is not None
+               if con_unidad else True)
+
     orden = {c: i for i, c in enumerate(CONCEPTOS)}
     conceptos = []
     for fila in sorted(filas, key=lambda f: orden.get(f.concepto, 99)):
@@ -443,6 +463,13 @@ def calcular_dia(db: Session, jornada: m.Jornada, persona_id: int) -> dict:
                 "concepto": fila.concepto.value, "monto": Decimal("0"),
                 "descripcion": "Solo cuando la presentacion es antes de "
                                "las 6:30",
+                "origen": m.OrigenMonto.TABULADOR.value, "editable": True})
+            continue
+        if fila.concepto == m.ConceptoViatico.COMBUSTIBLE and not conduce:
+            conceptos.append({
+                "concepto": fila.concepto.value, "monto": Decimal("0"),
+                "descripcion": "La gasolina se propone a quien conduce "
+                               "la unidad",
                 "origen": m.OrigenMonto.TABULADOR.value, "editable": True})
             continue
         if fila.monto_abierto:

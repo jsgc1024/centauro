@@ -28,8 +28,11 @@ que va a la calle en vez de capturarla a mano.
   * La tarea de cada hora no arranca sola: espera a que alguien haya
     hecho la primera sincronizacion a mano, despues de ver el ensayo.
 
-Los datos del banco no se leen en esta etapa: son lo mas delicado que
-guarda el sistema y su lectura se decide aparte.
+La cuenta bancaria tambien viene de Odoo (decision 7 de Salvador, 29 de
+septiembre, seccion 105): los registros bancarios viven alla, Connect
+solo los lee en esta misma lectura y no los captura. Si el usuario de la
+conexion no puede leer las cuentas --o esta version de Odoo no trae el
+campo-- la lectura sigue sin cuentas, lo anota y no toca lo guardado.
 
 Las reglas viven en odoo_personal_reglas.py, sin base de datos; aqui solo
 se leen las fotos fijas y se aplica lo que ellas deciden.
@@ -51,6 +54,16 @@ TIPO = "personal"
 CAMPOS = ["name", "job_id", "job_title", "work_location_id", "work_email",
           "private_email", "mobile_phone", "registration_number",
           "first_contract_date", "write_date"]
+# La cuenta bancaria del empleado (seccion 105): un many2one a
+# res.partner.bank. Va aparte de CAMPOS porque puede no estar: en Odoo
+# es un campo de RH (grupo hr.group_hr_user) y `fields_get` no se lo
+# ensena a quien no lo puede leer; pedirlo sin permiso tumbaria la
+# lectura entera del personal, cada hora.
+CAMPO_CUENTA = reglas.CAMPO_CUENTA
+MODELO_CUENTA = "res.partner.bank"
+CAMPOS_CUENTA = ["acc_number", "acc_holder_name", "bank_id", "partner_id"]
+SIN_PERMISO_CUENTAS = ("sin permiso para leer cuentas bancarias: la "
+                       "lectura siguio sin ellas y no se toco lo guardado")
 ACABADAS = (m.EstatusJornada.TERMINADA, m.EstatusJornada.CANCELADA)
 
 
@@ -71,6 +84,9 @@ def _fotos_fijas(db: Session) -> tuple:
         "referencia": p.referencia, "fecha_ingreso": p.fecha_ingreso,
         "foto": bool(p.foto_url), "sincronizado_en": p.odoo_sincronizado_en,
         "baja_odoo_en": p.baja_odoo_en, "oficina": p.oficina,
+        # A donde se le deposita (seccion 105): para comparar con lo que
+        # dice Odoo y cambiarlo solo cuando cambia.
+        "banco": p.banco, "clabe": p.clabe, "titular_cuenta": p.titular_cuenta,
     } for p in db.query(m.Persona).all()]
     correos = {u.correo.strip().lower(): u.persona_id
                for u in db.query(m.Usuario).all() if u.correo}
@@ -172,6 +188,46 @@ def _contar_fotos(odoo, ids: list) -> tuple:
     return filas, sum(1 for f in filas if reglas.foto_de(f.get(CAMPO_FOTO)))
 
 
+def _puede_leer_cuentas(odoo) -> bool:
+    """Si esta conexion ve el campo de la cuenta bancaria del empleado.
+
+    `fields_get` deja fuera los campos que el usuario no puede leer y los
+    que esta version no tiene: en los dos casos la lectura sigue sin
+    cuentas (seccion 105). Es la misma pregunta que la flota le hace a
+    Odoo por las fechas del taller.
+    """
+    return CAMPO_CUENTA in odoo.campos("hr.employee")
+
+
+def _leer_cuentas(odoo, empleados: list, con_cuenta: bool) -> tuple:
+    """(cuentas por su id de Odoo, error).
+
+    Una sola lectura por lote de `res.partner.bank`, solo de las cuentas
+    que refieren los empleados de seguridad. `None` en las cuentas quiere
+    decir que no se pudieron leer --sin permiso, o el campo no existe--:
+    la regla entonces no toca nada de lo guardado. Un diccionario, aunque
+    venga vacio, quiere decir que si se leyeron: quien no trae cuenta en
+    Odoo se queda sin cuenta aqui.
+    """
+    if not con_cuenta:
+        registro.warning("odoo: %s", SIN_PERMISO_CUENTAS)
+        return None, SIN_PERMISO_CUENTAS
+    ids = sorted({reglas.id_de(e.get(CAMPO_CUENTA)) for e in empleados
+                  if reglas.es_de_seguridad(e)
+                  and reglas.id_de(e.get(CAMPO_CUENTA))})
+    if not ids:
+        return {}, None
+    try:
+        filas = odoo.leer(MODELO_CUENTA, [["id", "in", ids]], CAMPOS_CUENTA)
+    except odoo_api.NoResponde as error:
+        # El empleado se leyo y las cuentas no: lo mas probable es que
+        # el usuario de la conexion no tenga acceso a res.partner.bank.
+        # La lectura sigue sin cuentas y no se toca lo guardado.
+        registro.warning("odoo: %s (%s)", SIN_PERMISO_CUENTAS, error)
+        return None, f"{SIN_PERMISO_CUENTAS} ({str(error)[:120]})"
+    return {f["id"]: f for f in filas}, None
+
+
 def releer_fotos(db: Session, odoo, ensayo: bool = True,
                  tanda: int = 40) -> dict:
     """Vuelve a leer de Odoo la foto de todo el personal ligado.
@@ -222,11 +278,17 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
         odoo_api.candado(db, TIPO)
     ahora = _utc()
     relojes = reloj.Relojes(db)
-    empleados = odoo.leer("hr.employee", [], CAMPOS)
+    # La cuenta bancaria solo se pide si esta conexion la puede leer
+    # (seccion 105): pedirla sin permiso tumbaba la lectura entera.
+    con_cuenta = _puede_leer_cuentas(odoo)
+    empleados = odoo.leer("hr.employee", [],
+                          CAMPOS + ([CAMPO_CUENTA] if con_cuenta else []))
+    cuentas, error_cuentas = _leer_cuentas(odoo, empleados, con_cuenta)
     plazas, personas, correos = _fotos_fijas(db)
     plan = reglas.planear(
         empleados, personas, plazas, correos,
-        lambda numero, pais_id: telefonos.normalizar(db, numero, pais_id))
+        lambda numero, pais_id: telefonos.normalizar(db, numero, pais_id),
+        cuentas=cuentas)
 
     estados = {}
     if plan["revisar_salida"]:
@@ -267,6 +329,12 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
         "fotos": {"revisadas": len(filas_de_foto), "reales": reales,
                   "sin_foto_real": len(filas_de_foto) - reales,
                   "actualizadas": 0},
+        # Las cuentas bancarias (seccion 105): cuantos de los leidos la
+        # traen en Odoo y cuantos no. Con `error`, no se leyeron y no se
+        # toco nada de lo guardado.
+        "cuentas": {"con_cuenta": plan["con_cuenta"],
+                    "sin_cuenta": plan["sin_cuenta"],
+                    "error": error_cuentas},
     }
     if ensayo:
         return informe
@@ -280,6 +348,8 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
             plaza_id=alta["plaza_id"], odoo_id=alta["odoo_id"], activo=True,
             es_freelance=False, telefono=alta["telefono"],
             referencia=alta["referencia"], fecha_ingreso=alta["fecha_ingreso"],
+            banco=alta["banco"], clabe=alta["clabe"],
+            titular_cuenta=alta["titular_cuenta"],
             odoo_sincronizado_en=ahora)
         db.add(persona)
         db.flush()
@@ -374,7 +444,8 @@ def resumen(informe: dict) -> dict:
             "accesos_cerrados": len(informe["accesos_cerrados"]),
             "sin_cambio": informe["sin_cambio"],
             "celular_no_valido": len(informe.get("celular_no_valido", [])),
-            "pendientes": faltas, "fotos": informe["fotos"]}
+            "pendientes": faltas, "fotos": informe["fotos"],
+            "cuentas": informe.get("cuentas")}
 
 
 def sincronizar_si_toca(db: Session, odoo=None) -> dict:

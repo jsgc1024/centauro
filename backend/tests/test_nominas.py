@@ -98,13 +98,14 @@ def _de(corte, persona):
 
 def _tabla_del_implantado(cliente, sesion, datos):
     """La tabla de implantado como la trae la siembra: 700 el dia y 90 la
-    hora extra. Los catalogos no se vacian entre pruebas y otra prueba la
-    cambia; esta la deja como la necesita."""
+    hora extra, en la modalidad del implantado (seccion 105). Los
+    catalogos no se vacian entre pruebas y otra prueba la cambia; esta la
+    deja como la necesita."""
     r = cliente.put("/nomina/tabulador", headers=sesion("finanzas"), json={
         "pais_id": datos["mx"]["id"], "tipo_servicio": "implantado",
         "renglones": [{
             "perfil_id": datos["perfiles"]["conductor_seguridad"]["id"],
-            "modalidad_id": datos["modalidades"]["full_day"]["id"],
+            "modalidad_id": datos["modalidades"]["implantado"]["id"],
             "monto": "700", "monto_hora_extra": "90"}]})
     assert r.status_code == 200, r.text
 

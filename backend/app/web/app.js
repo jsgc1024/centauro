@@ -17,6 +17,7 @@ import { pantallaOdoo } from "./odoo.js";
 import { pantallaCatalogos } from "./catalogos_pantalla.js";
 import { pantallaCalidad } from "./calidad.js";
 import { pantallaManual } from "./manual.js";
+import { pantallaDireccion } from "./direccion.js";
 import { botonReportar } from "./falla.js";
 import { pantallaCodigo } from "./codigo.js";
 import { pantallaEnlace, pantallaOlvide } from "./contrasena.js";
@@ -28,8 +29,8 @@ import { IDIOMAS, idioma, idiomaGuardado, ponerIdioma, t } from "./idioma.js";
 import { abrirRecorrido } from "./recorrido.js";
 import { firma } from "./firma.js";
 import { ADMINISTRA, CALIDAD, CATALOGOS, CODIGO, CONSULTA, DESEMPENO,
-         DINERO, LEE_ODOO, MANUAL, MONITOREO, NOMINAS, PANORAMA, VOZ_CLIENTE,
-         abre, destinoDe, menuDe } from "./menu.js";
+         DINERO, DIRECCION, LEE_ODOO, MANUAL, MONITOREO, NOMINAS, PANORAMA,
+         VOZ_CLIENTE, abre, destinoDe, menuDe } from "./menu.js";
 
 /* La regla de captura vale para toda la consola, no para una
    pantalla: se engancha una sola vez al documento. */
@@ -447,6 +448,8 @@ const RUTAS = [
   [/^#\/bonos$/, pantallaBonos, "bonos", DESEMPENO],
   [/^#\/encuestas$/, pantallaEncuestas, "encuestas", VOZ_CLIENTE],
   [/^#\/calidad$/, pantallaCalidad, "calidad", CALIDAD],
+  /* La ventana del director de operaciones (seccion 105). */
+  [/^#\/direccion$/, pantallaDireccion, "direccion", DIRECCION],
   [/^#\/codigo$/, pantallaCodigo, "codigo", CODIGO],
   [/^#\/accesos$/, pantallaAccesos, "accesos", ADMINISTRA],
   [/^#\/odoo$/, pantallaOdoo, "odoo", LEE_ODOO],

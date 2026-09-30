@@ -43,6 +43,9 @@ ACCIONES_QUE_IMPORTAN = (
     "quitar personal", "asignar personal",
     "quitar unidad", "asignar vehiculo",
     "agregar parada", "quitar parada", "cargar agenda",
+    # La incidencia de ese dia y su firma (seccion 105): lo que le paso
+    # a alguien ese dia se lee en el dia, no solo en el expediente.
+    "registrar incidencia", "autorizar incidencia", "descartar incidencia",
 )
 
 

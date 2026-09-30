@@ -9,9 +9,10 @@
    podia verlo: la mala calificacion llegaba, abria revision, y se
    quedaba esperando a alguien que no sabia que existia. */
 import { api, sesion } from "./api.js";
-import { aviso, conAyuda, entrada, fecha, h, mensaje } from "./util.js";
+import { aviso, conAyuda, fecha, h, mensaje } from "./util.js";
 import { t } from "./idioma.js";
 import { CONSULTA, abre, tiene } from "./menu.js";
+import { botonIncidencia, nombreGravedad } from "./incidencias.js";
 
 export async function pantallaEncuestas(main) {
   main.append(
@@ -97,16 +98,35 @@ function renglon(e, recargar) {
      nada o por que si. Una linea no alcanza: va como area de texto. */
   const texto = h("textarea", { name: "nota", rows: "3",
                                 placeholder: t("enc_que_paso") });
-  const incidencia = entrada("incidencia", {
-    type: "number", placeholder: t("enc_incidencia_id"),
-    style: "max-width:150px" });
+
+  /* Si amerita incidencia, se registra aqui mismo (seccion 105): antes
+     se pedia teclear el numero de una incidencia que nadie podia crear.
+     El panel es el de la ficha del servicio, con el servicio puesto y,
+     en la del solicitante --que califica al consultor--, con el
+     consultor elegido. Lo que se registra se liga a la encuesta al
+     guardar la revision, como siempre se ligo. */
+  let ligada = null;
+  const zonaIncidencia = h("div");
+  const liga = h("div", { clase: "chico", hidden: true });
+  const registrar = botonIncidencia(e.servicio_id, zonaIncidencia, {
+    personaId: e.tipo === "solicitante" ? e.consultor_id : null,
+    alGuardar: (r) => {
+      ligada = r;
+      liga.hidden = false;
+      liga.replaceChildren(h("span", { clase: "marca ok" },
+        t("enc_incidencia_ligada").replace("{p}", r.persona)
+          .replace("{g}", nombreGravedad(r.gravedad))));
+    },
+  });
 
   const formulario = h("div", { hidden: true, clase: "marco_revision" },
     h("p", { clase: "chico gris", style: "margin:0 0 8px" },
       t("enc_clasificar_pie")),
     texto,
+    liga,
+    zonaIncidencia,
     h("div", { clase: "acciones" },
-      incidencia,
+      registrar,
       h("button", { type: "button", onclick: async () => {
         if (texto.value.trim().length < 10) {
           return mensaje(t("enc_falta_nota"), "alerta");
@@ -114,7 +134,7 @@ function renglon(e, recargar) {
         try {
           const r = await api.post(`/encuestas/${e.id}/clasificar`, {
             nota: texto.value.trim(),
-            incidencia_id: incidencia.value ? Number(incidencia.value) : null,
+            incidencia_id: ligada ? ligada.incidencia_id : null,
           });
           // La nota del servidor, en el idioma de la consola (seccion 101).
           mensaje(r.clave ? t(r.clave) : r.nota);

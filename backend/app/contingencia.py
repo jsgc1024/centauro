@@ -978,6 +978,16 @@ def vista_previa(db: Session, **cambio) -> dict:
         db.rollback()
 
 
+def vista_previa_vehiculo(db: Session, **cambio) -> dict:
+    """Lo que haria el cambio de unidad, sin guardarlo (seccion 105,
+    decision 3): los dias que se mueven, el que se parte con su hora, la
+    revision que queda pendiente. El mismo cambio de verdad, deshecho."""
+    try:
+        return reemplazar_vehiculo(db, **cambio)
+    finally:
+        db.rollback()
+
+
 # ==================================================================
 # Deshacer: la ventana de arrepentimiento
 # ==================================================================
@@ -999,13 +1009,10 @@ def deshacer(db: Session, reemplazo_id: int) -> dict:
     reemplazo = db.get(m.ReemplazoRecurso, reemplazo_id)
     if not reemplazo:
         raise HTTPException(404, f"No existe el reemplazo {reemplazo_id}")
-    if reemplazo.tipo != m.TipoRecurso.PERSONAL:
-        raise HTTPException(409, "Solo se deshacen los cambios de personal")
 
     desde = db.get(m.Jornada, reemplazo.desde_jornada_id)
     hasta = (db.get(m.Jornada, reemplazo.hasta_jornada_id)
              if reemplazo.hasta_jornada_id else None)
-    sale_id, entra_id = reemplazo.sale_persona_id, reemplazo.entra_persona_id
 
     # Con el titular ya de vuelta, el movimiento ya no es "hace un
     # minuto" (seccion 101): devolverle sus dias chocaba con la
@@ -1020,6 +1027,13 @@ def deshacer(db: Session, reemplazo_id: int) -> dict:
                           "días, se hace un cambio en sentido contrario, "
                           "con su rastro."),
             "regreso_en": reemplazo.regreso_en.isoformat()})
+
+    # La unidad se deshace por su propio camino (seccion 105): no mueve
+    # dinero, pero si ya cambio de manos en la calle tampoco se desanda.
+    if reemplazo.tipo == m.TipoRecurso.VEHICULO:
+        return _deshacer_unidad(db, reemplazo, desde, hasta)
+
+    sale_id, entra_id = reemplazo.sale_persona_id, reemplazo.entra_persona_id
 
     # Y un dia que ya termino con el cambio hecho se queda como se
     # trabajo: antes se borraba el movimiento y ese dia se quedaba
@@ -1087,6 +1101,98 @@ def deshacer(db: Session, reemplazo_id: int) -> dict:
     db.delete(reemplazo)
     db.flush()
     return {"deshecho": reemplazo_id, "jornadas": devueltas}
+
+
+def _deshacer_unidad(db: Session, reemplazo: m.ReemplazoRecurso,
+                     desde: m.Jornada, hasta: m.Jornada | None) -> dict:
+    """Borra un cambio de unidad recien hecho (seccion 105, decision 3).
+
+    Es el gemelo del de personal, para el consultor que eligio la placa
+    equivocada hace un minuto. La unidad no mueve viaticos, asi que el
+    candado del dinero no aplica; lo que si lo frena es que el cambio ya
+    haya ocurrido en la calle: un dia que ya termino con la unidad nueva,
+    o la unidad que entro ya recibida con su revision de fotos. Desde
+    ahi lo que corresponde es el regreso de la unidad, con su rastro.
+    """
+    sale_id, entra_id = reemplazo.sale_vehiculo_id, reemplazo.entra_vehiculo_id
+
+    terminadas = _dias_terminados_con_la_unidad(db, desde, hasta, sale_id,
+                                                entra_id)
+    if terminadas:
+        raise HTTPException(409, {
+            "mensaje": ("Este cambio ya no se puede deshacer: el día "
+                        f"{', '.join(f.isoformat() for f in terminadas)} ya "
+                        "terminó con la unidad nueva."),
+            "que_hacer": ("Ese día se trabajó con esa unidad y así se queda. "
+                          "Si la unidad que salió vuelve, usa «Regresa la "
+                          "unidad» en la tarjeta del cambio."),
+            "dias": [f.isoformat() for f in terminadas]})
+
+    # La que entro ya esta en manos del equipo: la recibieron con sus
+    # fotos y no la han entregado. Deshacer el cambio dejaria una
+    # revision de una unidad que "nunca estuvo" en el servicio, y un
+    # golpe en ella sin dueno.
+    if _en_manos(db, desde, entra_id):
+        raise HTTPException(409, {
+            "mensaje": ("Este cambio ya no se puede deshacer: la unidad que "
+                        "entró ya se recibió con su revisión."),
+            "que_hacer": ("El cambio ya ocurrió en la calle. Si la unidad que "
+                          "salió vuelve al servicio, usa «Regresa la unidad» "
+                          "en la tarjeta del cambio.")})
+
+    devueltas = []
+    for j in jornadas_afectadas(db, desde, hasta):
+        suya = (db.query(m.AsignacionVehiculo)
+                .filter_by(jornada_id=j.id, vehiculo_id=sale_id).first())
+        entrante = (db.query(m.AsignacionVehiculo)
+                    .filter_by(jornada_id=j.id, vehiculo_id=entra_id).first())
+        if suya and suya.relevado_por_vehiculo_id == entra_id:
+            # El dia se habia partido: se junta otra vez.
+            suya.relevado_en = None
+            suya.relevado_por_vehiculo_id = None
+            if entrante:
+                db.delete(entrante)
+            devueltas.append(j.fecha.isoformat())
+        elif entrante and not suya:
+            # El dia se habia mutado: vuelve a su unidad.
+            entrante.vehiculo_id = sale_id
+            devueltas.append(j.fecha.isoformat())
+        else:
+            continue
+        # Y quien iba a bordo de la nueva regresa a la de siempre.
+        for persona in (db.query(m.AsignacionPersonal)
+                        .filter_by(jornada_id=j.id, vehiculo_id=entra_id)
+                        .all()):
+            persona.vehiculo_id = sale_id
+
+    db.delete(reemplazo)
+    db.flush()
+    return {"deshecho": reemplazo.id, "jornadas": devueltas}
+
+
+def _dias_terminados_con_la_unidad(db: Session, desde: m.Jornada,
+                                   hasta: m.Jornada | None, sale_id: int,
+                                   entra_id: int) -> list[date]:
+    """Los dias del tramo que ya terminaron con la unidad que entro: la
+    que salio relevada por ella, o ella sola en el dia."""
+    consulta = (db.query(m.Jornada)
+                .filter(m.Jornada.equipo_id == desde.equipo_id,
+                        m.Jornada.fecha >= desde.fecha,
+                        m.Jornada.estatus == m.EstatusJornada.TERMINADA))
+    if hasta is not None:
+        consulta = consulta.filter(m.Jornada.fecha <= hasta.fecha)
+    fechas = []
+    for j in consulta.order_by(m.Jornada.fecha).all():
+        huella = (db.query(m.AsignacionVehiculo.id)
+                  .filter(m.AsignacionVehiculo.jornada_id == j.id,
+                          ((m.AsignacionVehiculo.vehiculo_id == sale_id)
+                           & (m.AsignacionVehiculo.relevado_por_vehiculo_id
+                              == entra_id))
+                          | (m.AsignacionVehiculo.vehiculo_id == entra_id))
+                  .first())
+        if huella:
+            fechas.append(j.fecha)
+    return fechas
 
 
 def _dias_terminados_con_el_cambio(db: Session, desde: m.Jornada,

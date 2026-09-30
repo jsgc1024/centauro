@@ -13,7 +13,7 @@ O Odoo é a fonte de verdade. O Centauro **o lê e nunca escreve nele**, e o que
 - **A chave é o número interno do Odoo.** Na primeira vez, o que já estava no Centauro é reconhecido pelo e-mail, pela placa ou pelo RFC.
 
 ## O pessoal de segurança · a cada hora, aos :17
-Entra quem tem no Odoo o cargo «Personal de Seguridad» ou «Security Driver». Traz o nome, a cidade —do **local de trabalho**, e o Estado do México conta como Cidade do México—, o celular, o e-mail pessoal, o número de funcionário, a data de admissão e a foto. O círculo com iniciais que o Odoo coloca em quem não tem foto não é uma foto: não é salvo. A pessoa entra no app com o seu **e-mail pessoal**.
+Entra quem tem no Odoo o cargo «Personal de Seguridad» ou «Security Driver». Traz o nome, a cidade —do **local de trabalho**, e o Estado do México conta como Cidade do México—, o celular, o e-mail pessoal, o número de funcionário, a data de admissão, a foto e a conta bancária (número, banco e titular, da ficha do funcionário no Odoo: aqui não se cadastra, e se o usuário da conexão não pode lê-la, a leitura avisa e não mexe em nada). O círculo com iniciais que o Odoo coloca em quem não tem foto não é uma foto: não é salvo. A pessoa entra no app com o seu **e-mail pessoal**.
 Se o Odoo a arquiva, ela é desligada: o seu acesso é fechado —a não ser que deva diárias, que primeiro comprova—, e a central recebe um alerta por cada dia que ela tinha designado.
 
 ## A frota e a oficina · a cada hora, aos :27

@@ -661,6 +661,13 @@ async function mandar(e, ruta, cuerpo, recargar) {
     await recargar();
   } catch (err) {
     mensaje(err.message, "grave");
+    /* El titular de servicios vivos no se va (decision 13, seccion 105):
+       se dicen cuales, para ir a cambiarlos desde su ficha. */
+    const suyos = (err.detalle || {}).servicios || [];
+    if (suyos.length) {
+      mensaje(t("acc_titular_de").replace("{n}", suyos.length)
+                .replace("{f}", suyos.map(s => s.folio).join(", ")), "alerta");
+    }
     e.target.disabled = false;
   }
 }

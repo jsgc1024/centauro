@@ -289,10 +289,18 @@ def pulsar(db: Session, ahora: datetime | None = None) -> dict:
     margen = reloj.margen_de_paises(db)
     referencia = ahora or datetime.now()
 
+    # Tambien las que ya arrancaron (seccion 105, decision 4): con dos
+    # unidades, la llegada de Juan ponia el dia en "arribado" y esta
+    # vuelta dejaba de mirarlo, asi que a Luis, dormido, nadie le cobraba
+    # el silencio ni lo alertaba. El camino vigila a cada quien hasta
+    # que marque SU llegada; el que ya marco se apaga abajo, persona por
+    # persona. La ventana de horas de abajo es la que cierra el camino:
+    # una hora despues del inicio ya no es camino de nadie.
     jornadas = (db.query(m.Jornada)
                 .filter(m.Jornada.estatus.in_([m.EstatusJornada.PLANEADA,
                                                m.EstatusJornada.CONFIRMADA,
-                                               m.EstatusJornada.PROXIMA_A_INICIAR]),
+                                               m.EstatusJornada.PROXIMA_A_INICIAR,
+                                               *m.ARRANCADAS]),
                         m.Jornada.inicio_programado
                         >= referencia - margen - timedelta(hours=1),
                         m.Jornada.inicio_programado
@@ -373,9 +381,14 @@ def pulsar(db: Session, ahora: datetime | None = None) -> dict:
 
 
 def _ya_marco_llegada(db: Session, jornada: m.Jornada, persona_id: int) -> bool:
+    """Si ESA persona ya marco su llegada. Por persona desde siempre;
+    desde la seccion 105 es lo unico que apaga su camino: la llegada
+    del companero no cuenta por ella."""
     return bool(db.query(m.Hito)
-                .filter_by(jornada_id=jornada.id, persona_id=persona_id,
-                           tipo=m.TipoHito.LLEGADA_ORIGEN)
+                .filter(m.Hito.jornada_id == jornada.id,
+                        m.Hito.persona_id == persona_id,
+                        m.Hito.tipo == m.TipoHito.LLEGADA_ORIGEN,
+                        m.Hito.anulado_en.is_(None))
                 .first())
 
 

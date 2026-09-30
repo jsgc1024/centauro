@@ -72,8 +72,10 @@ const CONCEPTOS = [["alimentos", "cie_con_alimentos"], ["hospedaje", "cie_con_ho
                    ["traslado_personal", "cie_con_traslado"], ["otros", "cie_con_otros"]];
 const ESCENARIOS = [["full_day_local", "ctl_esc_local"], ["full_day_foraneo", "ctl_esc_foraneo"],
                     ["medio_dia", "mod_medio_dia"], ["transfer", "mod_transfer"]];
+/* La del implantado (seccion 105): su jornada, aparte del full day del
+   eventual. Es donde se cambian sus horas de descanso. */
 const MODALIDADES = [["full_day", "mod_full_day"], ["medio_dia", "mod_medio_dia"],
-                     ["transfer", "mod_transfer"]];
+                     ["transfer", "mod_transfer"], ["implantado", "cat_mod_implantado"]];
 const NIVELES = () => [
   { valor: "", texto: "—" },
   { valor: "tercer_nivel", texto: t("imp_hosp_tercero") },
@@ -416,7 +418,11 @@ function formulario(campos, alGuardar, alCancelar, textoGuardar = t("ctl_guardar
       control.value = valor;
     }
     controles[c.k] = control;
-    return campo(c.texto, control);
+    const caja = campo(c.texto, control);
+    /* Una frase de ayuda debajo del control, cuando el nombre solo no
+       alcanza (seccion 105: el intervalo de descanso). */
+    if (c.ayuda) caja.append(h("div", { clase: "gris chico" }, c.ayuda));
+    return caja;
   });
 
   const guardar = boton(textoGuardar, async () => {
@@ -1028,8 +1034,8 @@ function modalidades(caja, d, recargar) {
   let paisId = paisInicial(d);
   const zona = h("div");
   const forma = h("div");
-  const CAMPOS = ["pais_id", "codigo", "horas", "horas_descanso", "aplica_horas_extra",
-                  "bloquea_dia_completo", "km_estimados"];
+  const CAMPOS = ["pais_id", "codigo", "horas", "horas_descanso", "intervalo_descanso",
+                  "aplica_horas_extra", "bloquea_dia_completo", "km_estimados"];
 
   function pintar() {
     const filas = MODALIDADES.map(([codigo, k]) => [codigo, k,
@@ -1037,17 +1043,19 @@ function modalidades(caja, d, recargar) {
     zona.replaceChildren(...[
       h("div", { clase: "acciones", style: "margin:0 0 10px" },
         botonesDePais(d, paisId, (id) => { paisId = id; pintar(); })),
-      tabla([t("ctl_modalidad"), t("ctl_horas"), t("ctl_descanso"), t("ctl_horas_extra"),
-             t("ctl_bloquea"), t("ctl_km"), ""],
+      tabla([t("ctl_modalidad"), t("ctl_horas"), t("ctl_descanso"),
+             h("span", { title: t("cat_intervalo_descanso_ayuda") }, t("cat_intervalo_descanso")),
+             t("ctl_horas_extra"), t("ctl_bloquea"), t("ctl_km"), ""],
         filas.map(([codigo, k, x]) => h("tr", {},
           h("td", {}, h("b", {}, t(k))),
           ...(x ? [
             h("td", { clase: "num" }, `${numero(x.horas)} h`),
             h("td", { clase: "num" }, `${numero(x.horas_descanso)} h`),
+            h("td", { clase: "num" }, `${numero(x.intervalo_descanso)} h`),
             h("td", {}, siNo(x.aplica_horas_extra)),
             h("td", {}, siNo(x.bloquea_dia_completo)),
             h("td", { clase: "num" }, numero(x.km_estimados)),
-          ] : [h("td", { colspan: "5" }, etiqueta(t("ctl_no_existe"), "alerta"))]),
+          ] : [h("td", { colspan: "6" }, etiqueta(t("ctl_no_existe"), "alerta"))]),
           h("td", { style: "text-align:right" },
             puede(clave) ? boton(t(x ? "ctl_editar" : "ctl_agregar"), () => abrir(codigo, x)) : null))))].filter(Boolean));
   }
@@ -1057,6 +1065,10 @@ function modalidades(caja, d, recargar) {
       { k: "horas", texto: t("ctl_horas"), tipo: "numero", valor: x && x.horas, requerido: true },
       { k: "horas_descanso", texto: t("ctl_descanso"), tipo: "numero",
         valor: x ? x.horas_descanso : 0, requerido: true },
+      /* De cuantas horas es cada bloque de descanso (seccion 105). */
+      { k: "intervalo_descanso", texto: t("cat_intervalo_descanso"), tipo: "numero",
+        valor: x ? x.intervalo_descanso : 1, requerido: true,
+        ayuda: t("cat_intervalo_descanso_ayuda") },
       { k: "aplica_horas_extra", texto: t("ctl_horas_extra"), tipo: "si_no",
         valor: x ? x.aplica_horas_extra : false },
       { k: "bloquea_dia_completo", texto: t("ctl_bloquea"), tipo: "si_no",

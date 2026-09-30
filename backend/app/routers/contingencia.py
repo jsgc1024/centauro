@@ -4,7 +4,7 @@ La central atiende la alerta y estabiliza el servicio; el consultor
 formaliza el cambio de recurso. Son dos permisos distintos a proposito.
 """
 import logging
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -326,21 +326,88 @@ def reemplazo_vehiculo(datos: s.ReemplazoVehiculoIn,
         db, usuario, jornada.equipo.servicio, "reemplazo de unidad",
         f"entra {entra.placa} en lugar de {sale.placa}: {datos.motivo}",
         jornada_id=jornada.id)
-
-    # Otra placa esperando en la calle es un cambio que el cliente se
-    # topa; el mismo candado del dia que el de personal.
-    categoria = entra.categoria.nombre if entra.categoria else None
-    # El cambio primero. Si el correo fallara, lo que no puede pasar es
-    # que se deshaga un reemplazo que la operacion ya dio por hecho.
+    # El cambio primero. Si el aviso o la hoja fallaran, lo que no puede
+    # pasar es que se deshaga un reemplazo que la operacion ya dio por
+    # hecho.
     db.commit()
-    resultado["cliente_avisado"] = _contarle_al_cliente(
-        db, jornada,
-        f"{categoria + ' · ' if categoria else ''}{entra.placa}",
-        clase="unidad")
-    resultado["hoja_por_publicar"] = _hoja_por_publicar(
-        db, jornada, resultado["cliente_avisado"])
+
+    # Sin correo al cliente. Decision 3 de Salvador (seccion 105): el
+    # cambio de unidad se hace sin avisarle, a diferencia del cambio de
+    # persona. Lo que si sale es el aviso al equipo --en que placa se
+    # sube manana-- y la hoja publicada se vuelve a publicar con la
+    # unidad nueva, sin escribirle a nadie, para que la vigente sea la
+    # que va.
+    resultado["cliente_avisado"] = False
+    resultado.update(_despues_del_cambio_de_unidad(
+        db, usuario, jornada, resultado["jornadas_afectadas"],
+        sale.placa, entra.placa,
+        f"Cambio de unidad por contingencia: entra {entra.placa} en lugar "
+        f"de {sale.placa}"))
     db.commit()
     return resultado
+
+
+def _despues_del_cambio_de_unidad(db: Session, usuario: m.Usuario,
+                                  jornada: m.Jornada, fechas: list[str],
+                                  sale: str, entra: str, motivo: str) -> dict:
+    """Lo que sigue a un cambio de unidad ya guardado (seccion 105): el
+    aviso al telefono de quien va en esos dias y la hoja vuelta a
+    publicar si ya habia una. Ninguna de las dos tumba el cambio.
+
+    Devuelve lo que la pantalla dice: a cuantos se aviso, que version
+    quedo publicada o, si la hoja no se pudo publicar, que hay que
+    hacerlo a mano.
+    """
+    from app import tasksheet
+
+    dias = (db.query(m.Jornada)
+            .filter(m.Jornada.equipo_id == jornada.equipo_id,
+                    m.Jornada.fecha.in_([date.fromisoformat(f)
+                                         for f in fechas]))
+            .all()) if fechas else []
+    salida = {"avisado": None, "hoja_republicada": None,
+              "hoja_por_publicar": False}
+    try:
+        salida["avisado"] = push.avisar_cambio_de_unidad(
+            db, dias, jornada.equipo.servicio.folio, sale, entra)
+    except Exception:                     # noqa: BLE001
+        registro.exception("no se pudo avisar el cambio de unidad de la "
+                           "jornada %s", jornada.id)
+
+    if tasksheet.vigente(db, jornada.equipo_id) is None:
+        return salida
+    try:
+        hoja = tasksheet.publicar(db, jornada.equipo_id, usuario.persona_id,
+                                  motivo=motivo, forzar=True, avisar=False)
+        auditoria.registrar(db, usuario, jornada.equipo.servicio,
+                            "publicar task sheet",
+                            f"{jornada.equipo.alias} version {hoja.version} "
+                            "(cambio de unidad)")
+        salida["hoja_republicada"] = hoja.version
+    except Exception:                     # noqa: BLE001
+        db.rollback()
+        registro.exception("no se pudo volver a publicar la hoja del "
+                           "equipo %s", jornada.equipo_id)
+        salida["hoja_por_publicar"] = True
+    return salida
+
+
+@router.post("/reemplazos/vehiculo/vista-previa",
+             summary="Que pasaria con este cambio de unidad, sin guardarlo")
+def vista_previa_vehiculo(datos: s.ReemplazoVehiculoIn,
+                          db: Session = Depends(get_db),
+                          ahora: datetime | None = None,
+                          _: m.Usuario = Depends(CONSULTOR)):
+    """El panel de la unidad (seccion 105, decision 3) ensena lo mismo
+    que el de la persona antes de confirmar: los dias que se mueven, el
+    que se parte con su hora, la revision que queda pendiente y los que
+    chocan. Ejecutado de verdad y deshecho, como el de personal."""
+    return motor.vista_previa_vehiculo(
+        db, desde_jornada_id=datos.desde_jornada_id,
+        sale_vehiculo_id=datos.sale_vehiculo_id,
+        entra_vehiculo_id=datos.entra_vehiculo_id, motivo=datos.motivo,
+        motivo_tipo=datos.motivo_tipo, hasta_jornada_id=datos.hasta_jornada_id,
+        relevado_en=datos.relevado_en, ahora=reloj.de_prueba(ahora))
 
 
 @router.post("/reemplazos/{reemplazo_id}/regreso",
@@ -381,6 +448,18 @@ def regreso(reemplazo_id: int, datos: s.RegresoIn,
                                                     resultado)
                                 if titular and cubre else None)
         # `avisar` apaga los telefonos que ya no existen: se guarda.
+        db.commit()
+    elif reemplazo:
+        # La unidad que vuelve (seccion 105, decision 3): igual que el
+        # cambio, sin correo al cliente; el equipo se entera al telefono
+        # y la hoja publicada se vuelve a publicar con la placa de
+        # siempre.
+        arranco = db.get(m.Jornada, reemplazo.desde_jornada_id)
+        resultado["cliente_avisado"] = False
+        resultado.update(_despues_del_cambio_de_unidad(
+            db, usuario, arranco, resultado.get("jornadas_devueltas") or [],
+            resultado.get("sale") or "?", resultado.get("regresa") or "?",
+            f"Regreso de la unidad {resultado.get('regresa') or '?'}"))
         db.commit()
     return resultado
 

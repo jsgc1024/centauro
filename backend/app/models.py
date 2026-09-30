@@ -17,6 +17,11 @@ class CodigoModalidad(str, enum.Enum):
     FULL_DAY = "full_day"
     MEDIO_DIA = "medio_dia"
     TRANSFER = "transfer"
+    # La jornada del implantado, aparte del full day del eventual
+    # (seccion 105, decision 6): en Mexico y en Brasil son 12 horas
+    # corridas, y el full day de Brasil es de 10. Tomarlo a ciegas hacia
+    # que un implantado de Sao Paulo generara dos horas extra cada dia.
+    IMPLANTADO = "implantado"
 
 
 class ConceptoViatico(str, enum.Enum):
@@ -257,6 +262,13 @@ class Modalidad(Base):
     codigo: Mapped[CodigoModalidad] = mapped_column(Enum(CodigoModalidad))
     horas: Mapped[float] = mapped_column(Numeric(4, 2))
     horas_descanso: Mapped[float] = mapped_column(Numeric(4, 2), default=0)
+    # De cuantas horas es cada bloque de descanso (seccion 105): el
+    # implantado de 12 horas va a llevar 4 de descanso en bloques de 1.
+    # Los descansos van DENTRO de la jornada: no la alargan ni recortan
+    # las horas extra. Hoy solo lo lee la app; manana solo se cambia el
+    # numero en Catalogos.
+    intervalo_descanso: Mapped[float] = mapped_column(
+        Numeric(4, 2), default=1, server_default="1")
     aplica_horas_extra: Mapped[bool] = mapped_column(Boolean, default=False)
     bloquea_dia_completo: Mapped[bool] = mapped_column(Boolean, default=False)
     # Recorrido tipico del dia. Se usa para proponer el combustible sin
@@ -601,12 +613,15 @@ class Persona(Base):
     baja_odoo_en: Mapped[datetime | None] = mapped_column(DateTime,
                                                           nullable=True)
     # A donde se le deposita. Vienen de Odoo igual que el telefono y la
-    # foto: el maestro de empleados vive alla. Mientras esa conexion no
-    # exista, finanzas los puede llenar y se van poblando conforme se
-    # deposita; el dia que Odoo conecte, Odoo manda.
+    # foto: el maestro de empleados vive alla. Decision 7 de Salvador
+    # (29 sep, seccion 105): los registros bancarios van en Odoo; la
+    # lectura de cada hora los trae de la cuenta bancaria del empleado
+    # y Connect no los captura. Si Odoo no trae cuenta, aqui se vacian;
+    # si la conexion no puede leer las cuentas, no se tocan.
     #
-    # Solo finanzas y direccion los ven: es el dato mas sensible que
-    # guarda el sistema sobre su gente.
+    # Solo finanzas y direccion general ven el numero: es el dato mas
+    # sensible que guarda el sistema sobre su gente. Los demas ven si
+    # tiene cuenta o si falta en Odoo.
     banco: Mapped[str | None] = mapped_column(String(80), nullable=True)
     clabe: Mapped[str | None] = mapped_column(String(40), nullable=True)
     titular_cuenta: Mapped[str | None] = mapped_column(String(160),
@@ -1012,6 +1027,24 @@ class Jornada(Base):
     # dice en vez de aparentar que si.
     hora_confirmada: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false")
+    # La hora que el conductor capturo para este dia al cerrar el
+    # anterior (seccion 105, decision 5). No mueve nada sola: se guarda
+    # como propuesta y la central la confirma con un clic desde
+    # "Manana"; si nadie la toca antes de las 22:00 del pais, el reloj la
+    # confirma como la capturo. `hora_propuesta_resuelta` dice como
+    # termino --confirmada_central, confirmada_reloj o rechazada-- y
+    # vacia con hora quiere decir que sigue pendiente. La nota viaja con
+    # ella para que la central lea por que ("el principal sale a las
+    # 7:30 al aeropuerto") antes de decidir.
+    hora_propuesta: Mapped[time | None] = mapped_column(Time, nullable=True)
+    hora_propuesta_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    hora_propuesta_en: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True)
+    hora_propuesta_nota: Mapped[str | None] = mapped_column(
+        String(600), nullable=True)
+    hora_propuesta_resuelta: Mapped[str | None] = mapped_column(
+        String(20), nullable=True)
     es_foraneo: Mapped[bool] = mapped_column(Boolean, default=False)
     km_estimados: Mapped[int | None] = mapped_column(Integer, nullable=True)
     estatus: Mapped[EstatusJornada] = mapped_column(
@@ -1065,6 +1098,8 @@ class Jornada(Base):
     equipo: Mapped[Equipo] = relationship(back_populates="jornadas")
     cerrada_a_mano_por: Mapped["Persona"] = relationship(
         foreign_keys=[cerrada_a_mano_por_id])
+    hora_propuesta_por: Mapped["Persona | None"] = relationship(
+        foreign_keys=[hora_propuesta_por_id])
     modalidad: Mapped[Modalidad] = relationship()
     personal: Mapped[list["AsignacionPersonal"]] = relationship(
         back_populates="jornada", cascade="all, delete-orphan")
@@ -1386,7 +1421,10 @@ class DevolucionViatico(Base):
 
 
 class SolicitudTransferencia(Base):
-    """Por el volumen no se transfiere en tiempo real: ventanas y barridos por lote."""
+    """Lo que el consultor le pide a finanzas. Entra a la bandeja en cuanto
+    se pide y finanzas decide cuando transferir, con la fecha del servicio
+    a la vista (seccion 105): ya no hay ventana de un dia antes ni barrido
+    por lote. `enviada` queda para la instruccion que ya esta en Odoo."""
     __tablename__ = "solicitud_transferencia"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -2633,8 +2671,32 @@ class Cierre(Base):
     devuelto_en: Mapped[datetime | None] = mapped_column(DateTime,
                                                          nullable=True)
 
+    # Que se cobra en una cancelacion (seccion 105, decision 1 de
+    # Salvador): "completo" factura la cotizacion autorizada tal cual,
+    # con los dias cancelados; "ejecutado" factura lo trabajado, como
+    # siempre. Lo elige el consultor al cancelar y lo autoriza direccion
+    # de operaciones desde la tarjeta del cierre: sin ese visto bueno el
+    # cierre no se manda a finanzas. Vacio en un cierre por termino, y en
+    # las cancelaciones de antes de esta seccion, que siguen cobrando lo
+    # ejecutado sin pedirle nada a nadie.
+    cobro: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    cobro_autorizado_en: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True)
+    cobro_autorizado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    # Los avisos del plazo del consultor (seccion 105, decision 12): uno
+    # a la mitad y otro al vencer, cada uno una sola vez. Cuando finanzas
+    # regresa el servicio arranca otro plazo con sus propios avisos, y
+    # `regresar` los limpia.
+    aviso_mitad_en: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True)
+    aviso_vencido_en: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True)
+
     servicio: Mapped[Servicio] = relationship()
     contrato: Mapped["ContratoImplantado | None"] = relationship()
+    cobro_autorizado_por: Mapped["Persona | None"] = relationship(
+        foreign_keys=[cobro_autorizado_por_id])
     desviaciones: Mapped[list["Desviacion"]] = relationship(
         back_populates="cierre", cascade="all, delete-orphan")
 
@@ -2712,6 +2774,16 @@ class ContratoImplantado(Base):
     dias_base: Mapped[int] = mapped_column(Integer, default=22)
     hora_presentacion: Mapped[str] = mapped_column(String(8), default="08:00:00")
     modalidad_id: Mapped[int] = mapped_column(ForeignKey("modalidad.id"))
+    # Las horas de la jornada y las de descanso de ESTE acuerdo (seccion
+    # 104, decision 6). Vacias, las de la modalidad `implantado` del
+    # pais: asi el dia que Catalogos cambie el numero, cambia para toda
+    # la operacion sin tocar contrato por contrato. El consultor las
+    # corrige por contrato cuando el trato con ese cliente es otro, y lo
+    # corregido pasa solo al mes siguiente. Ver `implantado.horas_de`.
+    horas_jornada: Mapped[float | None] = mapped_column(Numeric(4, 2),
+                                                        nullable=True)
+    horas_descanso: Mapped[float | None] = mapped_column(Numeric(4, 2),
+                                                         nullable=True)
 
     # Recursos fijos del mes
     titular_id: Mapped[int | None] = mapped_column(ForeignKey("persona.id"), nullable=True)
@@ -2838,6 +2910,14 @@ class AcuerdoImplantado(Base):
     fecha_inicio: Mapped[date | None] = mapped_column(Date, nullable=True)
     dias_servicio: Mapped[DiasServicio | None] = mapped_column(
         Enum(DiasServicio), nullable=True)
+    # La hora del encuentro que se acordo con el cliente (seccion 105,
+    # decision 14). Cada mes lleva la suya en su contrato; esta es la
+    # que toma el mes que se abre. Un cambio del trato a medio mes se
+    # guarda aqui y llega a los meses futuros ya abiertos; el mes en
+    # curso no se toca, se corrige con las herramientas del mes. Vacia
+    # --los servicios de antes--, manda la del ultimo mes abierto.
+    hora_presentacion: Mapped[str | None] = mapped_column(String(8),
+                                                          nullable=True)
 
     # Como se cubre el puesto. Son dos operaciones distintas y hay que
     # decir cual es desde el alta, porque de aqui sale el calendario:
@@ -3850,6 +3930,10 @@ class ReemplazoRecurso(Base):
 class EstatusNomina(str, enum.Enum):
     CALCULADA = "calculada"        # se puede recalcular las veces que haga falta
     PAGADA = "pagada"              # ya salio el dinero, solo se corrige por ajuste
+    # Un corte que no se pago y llego al lunes siguiente (seccion 105,
+    # decision 11): el corte nuevo se lo llevo entero --sus dias y sus
+    # ajustes-- y es desde ahi donde se paga. No se paga ni se tira.
+    ABSORBIDA = "absorbida"
 
 
 class NominaSemanal(Base):
@@ -3865,6 +3949,14 @@ class NominaSemanal(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     pais_id: Mapped[int] = mapped_column(ForeignKey("pais.id"))
     fecha_corte: Mapped[date] = mapped_column(Date, index=True)
+    # Desde que lunes cubre el corte (seccion 105). Casi siempre es el
+    # mismo `fecha_corte` --y asi nace si nadie dice otra cosa--; cuando
+    # el corte absorbio al de la semana anterior que no se pago, es el
+    # lunes del mas viejo que trae: el corte del 28 "incluye la semana
+    # del 21" y va del 21 al 28.
+    desde: Mapped[date] = mapped_column(
+        Date,
+        default=lambda contexto: contexto.get_current_parameters()["fecha_corte"])
     moneda: Mapped[Moneda] = mapped_column(Enum(Moneda))
     total: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
     estatus: Mapped[EstatusNomina] = mapped_column(
@@ -3882,6 +3974,13 @@ class NominaSemanal(Base):
     # Quien lo armo la ultima vez. Vacio es el reloj del sistema.
     calculada_por_id: Mapped[int | None] = mapped_column(
         ForeignKey("persona.id"), nullable=True)
+    # El corte que se llevo a este (seccion 105, decision 11): si el
+    # corte del 21 quedo listo y nadie lo pago, el del 28 lo absorbe al
+    # armarse, y el del 21 queda `ABSORBIDA` apuntando al del 28. La
+    # cadena es lineal: el del 5 absorbe al del 28, que ya traia al 21,
+    # y el del 21 sigue apuntando al 28, que fue quien se lo llevo.
+    absorbida_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("nomina_semanal.id"), nullable=True)
 
     renglones: Mapped[list["RenglonNomina"]] = relationship(
         back_populates="nomina", cascade="all, delete-orphan")
@@ -3960,6 +4059,11 @@ class ConceptoNomina(Base):
     # compensa pasa como saldo en contra al lunes siguiente.
     saldo_en_contra: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false"))
+    # De que corte venia (seccion 105, decision 11): el lunes del corte
+    # que no se pago y que este absorbio. Vacio es "de la semana de este
+    # corte". Es lo que el recibo ensena como "semana del 21", y con lo
+    # que el historial sigue sabiendo que traia el corte absorbido.
+    semana_origen: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     renglon: Mapped[RenglonNomina] = relationship(back_populates="conceptos")
     rol: Mapped["PerfilPersonal | None"] = relationship()

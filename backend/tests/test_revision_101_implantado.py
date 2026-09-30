@@ -827,8 +827,10 @@ def test_las_entradas_del_implantado_se_validan(cliente, sesion, datos):
 
 def test_el_trato_habla_del_mes_de_hoy_en_el_pais_del_servicio(
         cliente, sesion, datos, monkeypatch):
-    """La hora del encuentro que muestra el trato es la del mes que se
-    opera hoy, con el hoy del pais del servicio y no el del servidor."""
+    """El mes del que habla el trato es el que se opera hoy, con el hoy
+    del pais del servicio y no el del servidor. La hora del mes es la de
+    ese mes; la del trato es la acordada con el cliente (seccion 105):
+    la herramienta del mes que movio abril no cambia el trato."""
     from app import implantado as motor
 
     alta, h = _alta(cliente, sesion, datos, inicio=date(2030, 3, 1))
@@ -843,11 +845,13 @@ def test_el_trato_habla_del_mes_de_hoy_en_el_pais_del_servicio(
     trato = cliente.get(f"/implantados/{sid}/acuerdo", headers=h).json()
     assert (trato["mes_anio"], trato["mes_mes"]) == (2030, 3)
     assert trato["hora_presentacion"] == "08:00:00"
+    assert trato["hora_del_mes"] == "08:00:00"
     monkeypatch.setattr(motor, "hoy_del_servicio",
                         lambda db, servicio: date(2030, 4, 2))
     trato = cliente.get(f"/implantados/{sid}/acuerdo", headers=h).json()
     assert (trato["mes_anio"], trato["mes_mes"]) == (2030, 4)
-    assert trato["hora_presentacion"] == "07:30:00"
+    assert trato["hora_del_mes"] == "07:30:00"
+    assert trato["hora_presentacion"] == "08:00:00"
 
 
 def test_el_panel_del_mes_lista_solo_sus_cambios(cliente, sesion, datos):

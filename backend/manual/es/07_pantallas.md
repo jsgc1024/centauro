@@ -4,7 +4,7 @@ parte: entender
 orden: 70
 titulo: Cada pantalla, para qué es
 resumen: Las pantallas de la consola, grupo por grupo, y la app de campo. Qué se hace en cada una y lo que conviene saber de ella.
-buscar: pantallas menu operacion eventual implantado personal unidades desempeño clientes calidad monitoreo codigo gastos facturacion nominas accesos odoo catalogos manual app de campo
+buscar: pantallas menu operacion direccion eventual implantado personal unidades desempeño clientes calidad monitoreo codigo gastos facturacion nominas accesos odoo catalogos manual app de campo
 ---
 El menú de cada quien sale de su puesto. Casi todos los bloques traen un **«?»**: para qué sirve, cuándo te enteras si falla y de dónde sale el número. Esa ayuda vive pegada a su pantalla y es la más al día que hay.
 
@@ -35,6 +35,9 @@ Lo que dijo el cliente: las encuestas, la tasa de respuesta y las calificaciones
 
 ### Calidad {#calidad}
 El mes en cifras: lo que dijo el cliente, la calle, el cierre, la gente y los datos que faltan en Odoo y en Catálogos, contra el mes de antes, con su reporte en Excel para la junta.
+
+### Dirección de operaciones {#direccion}
+Lo que espera la firma del director de operaciones —las incidencias por autorizar, los cobros al cancelar y los plazos vencidos del cierre— y las cuentas de hoy por país: servicios hoy y mañana, en curso, con alerta, cambios por contingencia e incidencias del mes. Cada número se abre para ver cuáles servicios son. La ven el director de operaciones y la dirección general.
 
 ## Operaciones CI
 

@@ -171,10 +171,12 @@ def test_las_dos_tablas_salen_completas(cliente, sesion, datos):
         for renglon in renglones:
             assert len(renglon["celdas"]) == len(tab[tipo]["modalidades"])
 
-    # El implantado es siempre dia completo: una sola columna, y es esa.
+    # El implantado es siempre su propia jornada (seccion 105): una sola
+    # columna, y es esa. El eventual no la ve.
     assert len(tab["implantado"]["modalidades"]) == 1
-    assert tab["implantado"]["modalidades"][0]["codigo"] == "full_day"
-    assert len(tab["eventual"]["modalidades"]) == len(tab["modalidades"])
+    assert tab["implantado"]["modalidades"][0]["codigo"] == "implantado"
+    assert [x["codigo"] for x in tab["eventual"]["modalidades"]] == [
+        x["codigo"] for x in tab["modalidades"] if x["codigo"] != "implantado"]
 
 
 def test_eventual_e_implantado_se_pagan_por_tablas_distintas(cliente, sesion,
@@ -185,24 +187,26 @@ def test_eventual_e_implantado_se_pagan_por_tablas_distintas(cliente, sesion,
     mx = datos["mx"]["id"]
     conductor = datos["perfiles"]["conductor_seguridad"]["id"]
     full_day = datos["modalidades"]["full_day"]["id"]
+    # La tabla del implantado va por su propia modalidad (seccion 105).
+    implantado = datos["modalidades"]["implantado"]["id"]
 
     r = cliente.put("/nomina/tabulador", json={
         "pais_id": mx, "tipo_servicio": "implantado",
-        "renglones": [{"perfil_id": conductor, "modalidad_id": full_day,
+        "renglones": [{"perfil_id": conductor, "modalidad_id": implantado,
                        "monto": "950", "monto_hora_extra": "120"}],
     }, headers=f)
     assert r.status_code == 200, r.text
 
     tab = cliente.get(f"/nomina/tabulador?pais_id={mx}", headers=f).json()
 
-    def celda(tipo):
+    def celda(tipo, modalidad_id):
         renglon = next(x for x in tab[tipo]["renglones"]
                        if x["perfil_id"] == conductor)
         return next(c for c in renglon["celdas"]
-                    if c["modalidad_id"] == full_day)
+                    if c["modalidad_id"] == modalidad_id)
 
-    assert float(celda("implantado")["monto"]) == 950
-    assert float(celda("eventual")["monto"]) == 700, "se movio el eventual"
+    assert float(celda("implantado", implantado)["monto"]) == 950
+    assert float(celda("eventual", full_day)["monto"]) == 700, "se movio el eventual"
 
 
 def test_el_dia_de_implantado_se_paga_con_la_tabla_de_implantado(
@@ -216,10 +220,11 @@ def test_el_dia_de_implantado_se_paga_con_la_tabla_de_implantado(
     f = sesion("finanzas")
     mx = datos["mx"]["id"]
     conductor = datos["perfiles"]["conductor_seguridad"]["id"]
-    full_day = datos["modalidades"]["full_day"]["id"]
+    # Los dias del implantado llevan su propia modalidad (seccion 105).
+    implantado = datos["modalidades"]["implantado"]["id"]
     cliente.put("/nomina/tabulador", json={
         "pais_id": mx, "tipo_servicio": "implantado",
-        "renglones": [{"perfil_id": conductor, "modalidad_id": full_day,
+        "renglones": [{"perfil_id": conductor, "modalidad_id": implantado,
                        "monto": "1234", "monto_hora_extra": None}],
     }, headers=f)
 

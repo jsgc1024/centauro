@@ -4,7 +4,7 @@ import logging
 from datetime import date, datetime
 from decimal import Decimal, ROUND_FLOOR
 
-from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query,
+from fastapi import (APIRouter, Depends, File, Form, HTTPException,
                      Response, UploadFile)
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -73,6 +73,8 @@ def asignar(datos: s.AsignarViaticoIn, db: Session = Depends(get_db),
     jornada = db.get(m.Jornada, datos.jornada_id)
     if not jornada:
         raise HTTPException(404, f"No existe la jornada {datos.jornada_id}")
+    # Dinero nuevo en un servicio cerrado, no (seccion 105).
+    motor.frenar_si_cerrado(db, jornada.equipo.servicio)
 
     existente = (db.query(m.AsignacionViatico)
                  .filter_by(jornada_id=datos.jornada_id, persona_id=datos.persona_id)
@@ -143,6 +145,8 @@ def adicional(viatico_id: int, datos: s.AdicionalIn, db: Session = Depends(get_d
     v = _obtener(db, viatico_id)
     if v.estatus in (m.EstatusViatico.CERRADO, m.EstatusViatico.DEVUELTO):
         raise HTTPException(409, "Los viaticos ya estan cerrados")
+    # Un adicional es dinero nuevo: con el servicio cerrado, no (seccion 105).
+    motor.frenar_si_cerrado(db, v.jornada.equipo.servicio)
 
     db.add(m.ConceptoAsignado(
         asignacion_id=v.id, concepto=datos.concepto, monto=datos.monto,
@@ -175,6 +179,8 @@ def solicitar_transferencia(viatico_id: int, db: Session = Depends(get_db),
     if v.estatus in (m.EstatusViatico.CERRADO, m.EstatusViatico.DEVUELTO,
                      m.EstatusViatico.CANCELADO):
         raise HTTPException(409, "Ese viatico ya no esta en juego")
+    # Pedirlo con el servicio cerrado, no (seccion 105).
+    motor.frenar_si_cerrado(db, v.jornada.equipo.servicio)
 
     # Se pide el saldo, no el total (seccion 98): con 1,000 ya
     # depositados y 200 de adicional, esta puerta pedia 1,200 otra vez.
@@ -182,6 +188,9 @@ def solicitar_transferencia(viatico_id: int, db: Session = Depends(get_db),
     if saldo <= 0:
         raise HTTPException(409, "No hay nada por solicitar: ya salio o "
                                  "ya esta pedido")
+    # Entra a la bandeja de finanzas en cuanto se pide (seccion 105): ya
+    # no hay ventana de "un dia antes" ni barrido que la mueva; finanzas
+    # decide cuando transferir con la fecha del servicio a la vista.
     solicitud = m.SolicitudTransferencia(
         asignacion_id=v.id, monto=saldo, moneda=v.moneda)
     db.add(solicitud)
@@ -193,47 +202,6 @@ def solicitar_transferencia(viatico_id: int, db: Session = Depends(get_db),
     db.commit()
     db.refresh(solicitud)
     return solicitud
-
-
-@router.get("/transferencias/ventana", summary="Cuando se dispara la transferencia")
-def ventana(jornada_id: int, db: Session = Depends(get_db),
-            _=Depends(LECTURA)):
-    jornada = db.get(m.Jornada, jornada_id)
-    if not jornada:
-        raise HTTPException(404, f"No existe la jornada {jornada_id}")
-    return motor.ventana_de_transferencia(jornada.fecha)
-
-
-@router.post("/transferencias/barrido", summary="Correr un barrido por lote")
-def barrido(db: Session = Depends(get_db),
-            lote: str | None = Query(None, description="Nombre del lote"),
-            _=Depends(FINANZAS)):
-    """Por el volumen de servicios en paralelo no se transfiere en tiempo real:
-    se procesan ventanas y barridos por lote."""
-    hoy = datetime.now()
-    etiqueta = lote or f"LOTE-{hoy:%Y%m%d-%H%M}"
-
-    pendientes = (db.query(m.SolicitudTransferencia)
-                  .filter_by(estatus=m.EstatusTransferencia.PENDIENTE)
-                  .all())
-
-    enviadas = []
-    for solicitud in pendientes:
-        jornada = solicitud.asignacion.jornada
-        cuando = motor.ventana_de_transferencia(jornada.fecha)
-        if not cuando["inmediata"]:
-            continue                       # todavia no toca su ventana
-        solicitud.estatus = m.EstatusTransferencia.ENVIADA
-        solicitud.lote = etiqueta
-        solicitud.enviada_en = hoy
-        enviadas.append({"solicitud_id": solicitud.id,
-                         "persona": solicitud.asignacion.persona.nombre,
-                         "monto": float(solicitud.monto),
-                         "fecha_servicio": jornada.fecha.isoformat()})
-
-    db.commit()
-    return {"lote": etiqueta, "enviadas": len(enviadas),
-            "pospuestas": len(pendientes) - len(enviadas), "detalle": enviadas}
 
 
 def _avisar_sin_tumbar(que, *args) -> None:
@@ -264,11 +232,16 @@ def confirmar(solicitud_id: int, referencia_odoo: str | None = None,
                               if solicitud.confirmada_en else None),
             "referencia_odoo": solicitud.referencia_odoo})
 
-    # Esta es la puerta del barrido por lote y de lo que llega ya
-    # confirmado de Odoo: no hay una persona subiendo una captura del
-    # banco. El deposito se crea igual —para que todo lo confirmado
-    # tenga a que colgarse— y sale marcado *sin comprobante*. Desde la
-    # pantalla, en cambio, la evidencia es obligatoria.
+    # Lo pedido con el servicio ya cerrado no se deposita (seccion 105).
+    # No deberia existir --ya no se puede pedir--, pero si existe, esta
+    # puerta tampoco lo paga.
+    motor.frenar_si_pedida_tras_el_cierre(db, [solicitud])
+
+    # Esta es la puerta de lo que llega ya confirmado de Odoo: no hay
+    # una persona subiendo una captura del banco. El deposito se crea
+    # igual —para que todo lo confirmado tenga a que colgarse— y sale
+    # marcado *sin comprobante*. Desde la pantalla, en cambio, la
+    # evidencia es obligatoria.
     deposito = motor_depositos.registrar(
         db, [solicitud.id], referencia_odoo,
         despachado_por_id=usuario.persona_id, exige_evidencia=False)
@@ -822,7 +795,11 @@ def _semaforo(dinero: dict) -> str:
 
 def _propuesta(db: Session, jornada: m.Jornada, persona_id: int) -> Decimal:
     """Lo que dice el tabulador para ese dia. Es una propuesta: el que
-    decide es el consultor, que sabe si el dia trae caseta o no."""
+    decide es el consultor, que sabe si el dia trae caseta o no.
+
+    Es por persona de verdad (seccion 105): la gasolina viene una vez
+    por unidad, para quien la conduce, asi que el total propuesto del
+    equipo lleva cada tanque una sola vez."""
     try:
         return Decimal(str(motor.calcular(db, jornada.id, persona_id)
                            ["total_propuesto"]))
@@ -922,6 +899,10 @@ def panel_de_equipo(equipo_id: int, db: Session = Depends(get_db),
         "equipo": {"id": equipo.id, "alias": equipo.alias, "dias": len(dias)},
         "servicio_id": equipo.servicio_id,
         "moneda": pais.moneda_local.value if pais else None,
+        # Por que ya no entra dinero nuevo --cancelado, en_facturacion,
+        # cerrado-- o nulo (seccion 105). La ficha esconde con esto los
+        # botones de fijar y pedir, y lo dice en su lugar.
+        "dinero_cerrado": motor.cerrado_al_dinero(db, equipo.servicio),
         "personal": filas,
         "total_propuesto": sum((f["propuesto"] for f in filas), Decimal("0")),
         "total_asignado": sum((f["asignado"] for f in filas), Decimal("0")),
@@ -1017,6 +998,8 @@ def fijar_monto(equipo_id: int, datos: s.ViaticoDeEquipoIn,
     sigue teniendo contra que comparar y se ve quien decidio que.
     """
     equipo = _equipo(db, equipo_id)
+    # Con el servicio cerrado no se abre ni se mueve dinero (seccion 105).
+    motor.frenar_si_cerrado(db, equipo.servicio)
     suyos = _dias_de(datos.persona_id, _dias_vivos(equipo))
     if not suyos:
         raise HTTPException(409, "Esa persona no esta asignada al equipo")
@@ -1105,6 +1088,8 @@ def agregar_deposito(equipo_id: int, datos: s.ViaticoDeEquipoIn,
     queda por solicitar.
     """
     equipo = _equipo(db, equipo_id)
+    # Otro deposito es dinero nuevo: con el servicio cerrado, no (seccion 105).
+    motor.frenar_si_cerrado(db, equipo.servicio)
     suyos = _dias_de(datos.persona_id, _dias_vivos(equipo))
     if not suyos:
         raise HTTPException(409, "Esa persona no esta asignada al equipo")
@@ -1168,6 +1153,9 @@ def solicitar_deposito(equipo_id: int, datos: s.SolicitarDepositoIn,
     persona sale por 500 y no por los 2,900 acumulados.
     """
     equipo = _equipo(db, equipo_id)
+    # Pedirlo con el servicio cerrado, no (seccion 105): lo que ya se
+    # habia pedido antes sigue su camino en la bandeja.
+    motor.frenar_si_cerrado(db, equipo.servicio)
     dias = _dias_vivos(equipo)
     consulta = (db.query(m.AsignacionViatico)
                 .filter(m.AsignacionViatico.jornada_id.in_([j.id for j in dias])))
@@ -1242,12 +1230,12 @@ def cancelar_solicitud(equipo_id: int, datos: s.SolicitarDepositoIn,
             continue
         suyas = 0
         for solicitud in vueltas:
-            # Lo que ya salio en el barrido esta en manos de finanzas, y
-            # puede estar transfiriendose AHORA MISMO. El unico que sabe
-            # si el dinero ya salio del banco es finanzas: cancelarlo
-            # aqui dejaria una transferencia hecha sin registro, y quien
-            # la recibio con dinero que el sistema no conoce. Queda
-            # pedida y finanzas la cierra.
+            # Lo que ya esta enviado --la instruccion en Odoo o en manos
+            # de finanzas-- puede estar transfiriendose AHORA MISMO. El
+            # unico que sabe si el dinero ya salio del banco es finanzas:
+            # cancelarlo aqui dejaria una transferencia hecha sin
+            # registro, y quien la recibio con dinero que el sistema no
+            # conoce. Queda pedida y finanzas la cierra.
             if solicitud.estatus == m.EstatusTransferencia.ENVIADA:
                 if not solicitud.cancelacion_pedida_en:
                     solicitud.cancelacion_pedida_en = ahora
@@ -1482,14 +1470,28 @@ def _imagen(data_uri: str) -> Response:
 # de los dos tipos: lo que se deposita y lo que se compra.
 
 @router.get("/finanzas/bandeja", summary="Lo que finanzas tiene pendiente")
-def bandeja(db: Session = Depends(get_db), _=Depends(LECTURA)):
-    """Separada por pais.
+def bandeja(db: Session = Depends(get_db), ahora: datetime | None = None,
+            usuario: m.Usuario = Depends(LECTURA)):
+    """Separada por pais, y ordenada por la fecha del servicio.
 
     Cada pais lleva su propia caja, su propia moneda y su propia gente:
     juntar pesos y reales en una sola lista daba un total que no
     significaba nada y ponia a quien paga en Mexico a mirar depositos de
     Brasil que no le tocan.
+
+    Sin barrido ni ventana de "un dia antes" (decision 8, seccion 105):
+    lo pedido entra aqui en cuanto se pide y finanzas decide cuando
+    transferir. Para eso cada renglon trae la fecha del servicio --el
+    primer dia pendiente de esa persona en ese equipo; en el implantado,
+    dentro del mes-- y su urgencia contra el hoy del pais: vencida, hoy,
+    manana o despues. `ahora` solo mueve el reloj fuera de produccion.
     """
+    relojes = reloj.Relojes(db, reloj.de_prueba(ahora))
+    # El numero de cuenta solo lo ve quien deposita --finanzas, y
+    # direccion general por lo que hereda-- (decision 7, seccion 105);
+    # la bandeja la abren tambien el consultor, la central y calidad, y
+    # a ellos solo se les dice si la persona tiene cuenta o le falta.
+    ve_numero = auth.puede_el_usuario(db, usuario, "viaticos.transferir")
     paises = {p.id: p for p in db.query(m.Pais).all()}
     pendientes = (db.query(m.SolicitudTransferencia)
                   .filter(m.SolicitudTransferencia.estatus.in_(
@@ -1536,17 +1538,26 @@ def bandeja(db: Session = Depends(get_db), _=Depends(LECTURA)):
             # del banco es quien lo deposita. Sale en la bandeja para
             # que se cierre antes de ir al banco, no despues.
             "cancelacion_pedida": False, "cancelacion_pedida_en": None,
-            # A donde se deposita. Viene de Odoo; mientras esa conexion
-            # no exista, finanzas lo llena y se va poblando.
-            "banco": viatico.persona.banco,
-            "clabe": viatico.persona.clabe,
-            "titular_cuenta": viatico.persona.titular_cuenta,
+            # Pedida con el servicio (o el mes) ya cerrado al dinero
+            # (seccion 105). No deberia existir; si existe, no lleva
+            # boton de depositar y la ruta la rechaza.
+            "pedida_tras_cierre": False,
+            # A donde se deposita. Viene de Odoo y solo de Odoo (decision
+            # 7, seccion 105): si falta, se captura alla. El numero solo
+            # viaja a quien deposita; los demas ven si tiene o falta.
+            "cuenta": "tiene" if viatico.persona.clabe else "falta",
+            **({"banco": viatico.persona.banco,
+                "clabe": viatico.persona.clabe,
+                "titular_cuenta": viatico.persona.titular_cuenta}
+               if ve_numero else {}),
         })
         fila["monto"] += Decimal(str(solicitud.monto))
         fila["dias"] += 1
         fila["solicitudes"].append(solicitud.id)
         fila["primera_jornada"] = min(fila["primera_jornada"],
                                       jornada.fecha.isoformat())
+        if motor.pedida_tras_el_cierre(db, solicitud):
+            fila["pedida_tras_cierre"] = True
 
         # De que se compone. Finanzas veia un total y nada mas: para
         # depositar alcanzaba, para revisar antes de depositar no. El
@@ -1601,14 +1612,30 @@ def bandeja(db: Session = Depends(get_db), _=Depends(LECTURA)):
             "moneda": pais.moneda_local.value if pais else None,
             "depositos": [], "compras": [], "rentas": [],
             "total_depositos": Decimal("0"),
+            # Lo que ya debia estar en la calle (seccion 105).
+            "total_vencido": Decimal("0"),
         })
 
+    # La fecha del servicio y su urgencia, contra el hoy de cada pais
+    # (seccion 105). El orden es el del despacho: lo vencido sin
+    # depositar, lo de hoy, lo de manana y lo demas por fecha; dentro
+    # del mismo dia, lo que se pidio primero.
+    for fila in depositos.values():
+        fila["fecha_servicio"] = fila["primera_jornada"]
+        fila["urgencia"] = motor.urgencia_del_deposito(
+            date.fromisoformat(fila["fecha_servicio"]),
+            relojes.hoy(fila["pais_id"]))
+
     for fila in sorted(depositos.values(),
-                       key=lambda f: f["primera_jornada"]):
+                       key=lambda f: (motor.ORDEN_URGENCIA[f["urgencia"]],
+                                      f["fecha_servicio"],
+                                      f["solicitada_en"] or "")):
         fila["detalle"].sort(key=lambda d: d["fecha"])
         destino = caja(fila["pais_id"])
         destino["depositos"].append(fila)
         destino["total_depositos"] += fila["monto"]
+        if fila["urgencia"] == motor.VENCIDA:
+            destino["total_vencido"] += fila["monto"]
 
     for c in compras:
         servicio = c.equipo.servicio
@@ -1957,6 +1984,10 @@ async def depositar(equipo_id: int = Form(...), persona_id: int = Form(...),
                           "dia o el servicio pudo haberse borrado y el "
                           "deposito necesita a que colgarse."),
         })
+    # Lo que se pidio con el servicio ya cerrado no se deposita (seccion
+    # 104). Lo pedido antes del cierre sigue su camino: es dinero de
+    # antes y se deposita como siempre.
+    motor.frenar_si_pedida_tras_el_cierre(db, solicitudes)
 
     comprobante = await imagenes.leer(archivo)
     deposito = motor_depositos.registrar(

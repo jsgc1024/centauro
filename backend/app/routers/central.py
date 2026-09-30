@@ -4,15 +4,22 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app import auditoria
 from app import auth
 from app import central as motor
 from app import models as m
+from app import operacion
+from app import push
 from app import schemas as s
 from app.db import get_db
 
 router = APIRouter(prefix="/central", tags=["Central de inteligencia"])
 
 MONITOREO = auth.puede("operacion.ver")
+# La hora de un dia que ya tiene gente confirmada la mueve quien corrige
+# (seccion 105, decision 5): es la misma puerta que `hora-de-manana` de
+# la central, y por la misma razon.
+CORREGIR = auth.puede("operacion.corregir")
 
 
 @router.get("/tablero", summary="Lo que va a pasar, antes de que pase")
@@ -31,6 +38,75 @@ def tablero(db: Session = Depends(get_db), ahora: datetime | None = None,
 def manana(db: Session = Depends(get_db), ahora: datetime | None = None,
            _=Depends(MONITOREO)):
     return motor.manana(db, ahora)
+
+
+def _jornada_con_propuesta(db: Session, jornada_id: int) -> m.Jornada:
+    jornada = db.get(m.Jornada, jornada_id)
+    if not jornada:
+        raise HTTPException(404, f"No existe la jornada {jornada_id}")
+    return jornada
+
+
+@router.post("/manana/{jornada_id}/confirmar-hora",
+             summary="Confirmar la hora que propuso el equipo para ese dia")
+def confirmar_hora(jornada_id: int, db: Session = Depends(get_db),
+                   usuario: m.Usuario = Depends(CORREGIR)):
+    """El clic desde "Manana" (seccion 105, decision 5).
+
+    Hace lo que hacia la captura del conductor antes: mueve la hora del
+    dia, la geocerca se mide contra la hora nueva, queda en la bitacora
+    y a quien ya habia confirmado le llega "cambio tu hora". La
+    diferencia es que ahora lo decide la central, no el telefono.
+    """
+    jornada = _jornada_con_propuesta(db, jornada_id)
+    hecho = operacion.resolver_hora_propuesta(
+        db, jornada, usuario.persona_id, operacion.CONFIRMADA_CENTRAL)
+    auditoria.registrar(db, usuario, jornada.equipo.servicio,
+                        "hora de maniana",
+                        f"{jornada.fecha} {hecho['hora']}: confirmada la "
+                        "propuesta del equipo",
+                        jornada_id=jornada.id)
+    db.commit()
+
+    avisados = None
+    if hecho["movida"]:
+        avisados = push.avisar_cambio_de_hora(db, jornada, hecho["antes"])
+        db.commit()
+    return {"resultado": "confirmada",
+            "jornada_id": jornada.id,
+            "fecha": jornada.fecha.isoformat(),
+            "inicio": jornada.inicio_programado.isoformat(),
+            "fin": jornada.fin_programado.isoformat(),
+            "avisados": avisados}
+
+
+@router.post("/manana/{jornada_id}/rechazar-hora",
+             summary="Dejar la hora de la hoja: la propuesta no se toma")
+def rechazar_hora(jornada_id: int, db: Session = Depends(get_db),
+                  usuario: m.Usuario = Depends(CORREGIR)):
+    """La central deja la hora que ya tenia el dia. Al que propuso se le
+    dice al telefono que se queda la de la hoja, para que no planee su
+    noche alrededor de una hora que no va a ser."""
+    jornada = _jornada_con_propuesta(db, jornada_id)
+    hecho = operacion.resolver_hora_propuesta(
+        db, jornada, usuario.persona_id, operacion.RECHAZADA)
+    auditoria.registrar(db, usuario, jornada.equipo.servicio,
+                        "hora de maniana",
+                        f"{jornada.fecha}: se queda la de la hoja "
+                        f"({jornada.inicio_programado:%H:%M}); no se tomó "
+                        f"la propuesta de las {hecho['hora']}",
+                        jornada_id=jornada.id)
+    db.commit()
+
+    avisado = None
+    if hecho["propuso_id"]:
+        avisado = push.avisar_hora_rechazada(db, jornada, hecho["propuso_id"])
+        db.commit()
+    return {"resultado": "rechazada",
+            "jornada_id": jornada.id,
+            "fecha": jornada.fecha.isoformat(),
+            "inicio": jornada.inicio_programado.isoformat(),
+            "avisado": avisado}
 
 
 @router.get("/camino", summary="Quien viene en camino a su meet and greet")

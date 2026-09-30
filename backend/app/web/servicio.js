@@ -13,6 +13,8 @@ import { soloConsulta, tiene } from "./menu.js";
 import { bloqueTarifario } from "./tarifarios.js";
 import { bloqueCotizacion } from "./cotizacion.js";
 import { avisoDeContactos, botonContactos } from "./contactos.js";
+import { botonIncidencia } from "./incidencias.js";
+import { bloqueTitular } from "./titular.js";
 
 export async function pantallaServicio(main, servicioId) {
   const [servicio, cat] = await Promise.all([
@@ -26,7 +28,7 @@ export async function pantallaServicio(main, servicioId) {
     main.classList.add("solo-consulta");
     main.append(aviso(t("srv_consulta"), "alerta"));
   }
-  main.append(encabezado(servicio, cliente, plaza));
+  main.append(encabezado(servicio, cliente, plaza, cat));
   /* La cotizacion autorizada (seccion 94), debajo del encabezado: sin
      ella el eventual no recibe el visto bueno. La ve quien ve el cierre;
      la arma quien cotiza. */
@@ -93,10 +95,13 @@ async function bloqueVistoBueno(servicio, cat) {
 
 /* ------------------------------------------------------------ encabezado */
 
-function encabezado(servicio, cliente, plaza) {
+function encabezado(servicio, cliente, plaza, cat) {
   /* Donde se abre «Corregir los contactos» (seccion 95): debajo de los
      contactos que corrige. */
   const zonaContactos = h("div", { id: "contactos" });
+  /* Y donde se abre «Cancelar» (seccion 105): pide el motivo y que se
+     le cobra al cliente, debajo del encabezado. */
+  const zonaCancelar = h("div", { id: "cancelar" });
   return h("div", { clase: "tarjeta" },
     h("div", { style: "display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap" },
       h("div", {},
@@ -136,7 +141,7 @@ function encabezado(servicio, cliente, plaza) {
             : "",
           !YA_NO_SE_CANCELA.includes(servicio.estatus)
             ? h("button", { clase: "claro chico", type: "button",
-                onclick: () => cancelar(servicio) }, t("srv_cancelar"))
+                onclick: () => cancelar(servicio, zonaCancelar) }, t("srv_cancelar"))
             : ""))),
     h("div", { clase: "rejilla dos", style: "margin-top:14px" },
       h("div", {},
@@ -146,8 +151,13 @@ function encabezado(servicio, cliente, plaza) {
       h("div", {},
         h("h4", {}, t("srv_solicita")),
         h("div", {}, servicio.solicitante_completo || h("span", { clase: "gris" }, "—")))),
+    /* Quien lleva el servicio, y el boton para cambiarlo (decision 13,
+       seccion 105): la cabecera no decia el titular, y cambiarlo no se
+       podia desde ningun lado. */
+    h("div", { style: "margin-top:14px" }, bloqueTitular(servicio, cat)),
     avisoDeContactos(servicio),
-    zonaContactos);
+    zonaContactos,
+    zonaCancelar);
 }
 
 const puedeCorregirContactos = (servicio) =>
@@ -185,28 +195,88 @@ const YA_NO_SE_ARMA = ["cancelado", "cerrado", "en_facturacion",
                        "sin_visto_bueno", "terminado"];
 
 /* Cancelar exige motivo: es lo primero que pregunta el cliente y lo
-   que la central necesita para saber por que se cayo el servicio. */
-async function cancelar(servicio) {
-  const motivo = prompt(
-    t("srv_cancelar_prompt").replace("{f}", servicio.folio));
-  if (motivo === null) return;
-  if (!motivo.trim()) return mensaje(t("srv_falta_motivo"), "alerta");
-  try {
-    const r = await api.post(`/servicios/${servicio.id}/cancelar`,
-                             { motivo: motivo.trim() });
-    mensaje(t("srv_cancelado").replace("{f}", r.folio));
-    for (const v of r.viaticos_por_devolver || []) {
-      mensaje(t("srv_por_devolver").replace("{p}", v.persona)
-                .replace("{m}", v.monto).replace("{c}", v.moneda), "alerta");
-    }
-    /* Lo que ya estaba con finanzas no se cancela solo: queda pedido, y
-       el consultor tiene que saber que ese dinero puede salir igual. */
-    if (r.depositos_pedidos_a_finanzas) {
-      mensaje(t("srv_dep_pedidos_finanzas")
-                .replace("{n}", r.depositos_pedidos_a_finanzas), "alerta");
-    }
-    setTimeout(() => location.reload(), r.depositos_pedidos_a_finanzas ? 3000 : 1200);
-  } catch (err) { mensaje(err.message, "grave"); }
+   que la central necesita para saber por que se cayo el servicio.
+
+   Y pide que se le cobra al cliente (seccion 105, decision 1 de
+   Salvador): lo ejecutado --lo que se trabajo-- o completo --la
+   cotizacion autorizada tal cual--. Por omision lo ejecutado; sin
+   cotizacion autorizada no hay nada que cobrar completo y solo se ofrece
+   lo ejecutado. Lo autoriza direccion de operaciones desde la tarjeta
+   del cierre. El dia que esta en la calle termina a la hora de la
+   cancelacion y se paga: la respuesta lo dice. */
+async function cancelar(servicio, zona) {
+  /* Si hay cotizacion autorizada. Quien no ve el cierre no la ve: se
+     queda con lo ejecutado, que es lo que se cobra sin cotizacion. */
+  let conCotizacion = false;
+  if (servicio.tipo === "eventual") {
+    try {
+      const d = await api.get(`/cotizaciones/servicio/${servicio.id}/bloque`);
+      conCotizacion = !!d.vigente;
+    } catch { conCotizacion = false; }
+  }
+  const motivo = entrada("motivo", { maxlength: "300",
+                                     placeholder: t("srv_cancelar_motivo_ej") });
+  const nombre = `cobro-${servicio.id}`;
+  /* Con .casilla el circulo va pegado a su texto: suelto, el radio se
+     pinta como bloque y queda flotando en medio del recuadro. */
+  const opcion = (valor, clave) => h("label", { clase: "casilla" },
+    h("input", { type: "radio", name: nombre, value: valor,
+                 checked: valor === "ejecutado" ? "checked" : null }),
+    h("span", {}, t(clave)));
+  const cobro = servicio.tipo !== "eventual" ? "" : conCotizacion
+    ? h("div", { style: "margin-top:10px" },
+        h("h4", { style: "margin:0 0 4px" }, t("srv_cobro_titulo")),
+        opcion("ejecutado", "srv_cobro_ejecutado"),
+        opcion("completo", "srv_cobro_completo"),
+        h("p", { clase: "chico gris", style: "margin:4px 0 0" }, t("srv_cobro_pie")))
+    : h("p", { clase: "chico gris", style: "margin:10px 0 0" },
+        t("srv_cobro_solo_ejecutado"));
+  const caja = h("div", { clase: "tarjeta lisa", style: "margin-top:12px" });
+  const confirmar = h("button", { clase: "chico", type: "button",
+    onclick: async (e) => {
+      if (!motivo.value.trim()) return mensaje(t("srv_falta_motivo"), "alerta");
+      const elegido = caja.querySelector(`input[name="${nombre}"]:checked`);
+      e.target.disabled = true;
+      try {
+        const r = await api.post(`/servicios/${servicio.id}/cancelar`,
+                                 { motivo: motivo.value.trim(),
+                                   cobro: elegido ? elegido.value : "ejecutado" });
+        mensaje(t("srv_cancelado").replace("{f}", r.folio));
+        /* El dia que estaba en la calle termino con la cancelacion: se
+           paga y se cobra como trabajado. */
+        if ((r.dias_terminados || []).length) {
+          mensaje(t("srv_dias_terminados")
+                    .replace("{n}", r.dias_terminados.length), "alerta");
+        }
+        for (const v of r.viaticos_por_devolver || []) {
+          mensaje(t("srv_por_devolver").replace("{p}", v.persona)
+                    .replace("{m}", v.monto).replace("{c}", v.moneda), "alerta");
+        }
+        /* Lo que ya estaba con finanzas no se cancela solo: queda pedido,
+           y el consultor tiene que saber que ese dinero puede salir
+           igual. */
+        if (r.depositos_pedidos_a_finanzas) {
+          mensaje(t("srv_dep_pedidos_finanzas")
+                    .replace("{n}", r.depositos_pedidos_a_finanzas), "alerta");
+        }
+        setTimeout(() => location.reload(),
+                   r.depositos_pedidos_a_finanzas || (r.dias_terminados || []).length
+                     ? 3000 : 1200);
+      } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
+    } }, t("srv_cancelar_confirmar"));
+  caja.append(
+    h("h4", { style: "margin:0 0 4px" },
+      t("srv_cancelar_titulo").replace("{f}", servicio.folio)),
+    h("p", { clase: "chico gris", style: "margin:0 0 8px" }, t("srv_cancelar_pie")),
+    campo(t("srv_cancelar_motivo"), motivo),
+    cobro,
+    h("div", { clase: "acciones", style: "margin-top:10px" },
+      h("button", { clase: "claro chico", type: "button",
+        onclick: () => caja.remove() }, t("srv_cancelar_dejar")),
+      confirmar));
+  zona.replaceChildren(caja);
+  llevarLaVista(zona);
+  motivo.focus();
 }
 
 /* Borrar pide el motivo: no es un tramite, es la unica huella que queda
@@ -228,6 +298,9 @@ async function borrar(ruta, advertencia, listo, destino = null) {
 /* ------------------------------------------------------------ equipo */
 
 async function bloqueEquipo(servicio, equipo, cat, cambios) {
+  /* Donde se abre «Registrar incidencia» (seccion 105): encima de la
+     tarjeta de recursos, que es donde esta la gente de la que se habla. */
+  const zonaIncidencia = h("div");
   const caja = h("div", { clase: "tarjeta" },
     h("div", { clase: "cabeza-equipo" },
         h("div", {},
@@ -235,16 +308,21 @@ async function bloqueEquipo(servicio, equipo, cat, cambios) {
         /* Donde opera este equipo: un mismo proyecto puede tener a Alfa
            en Ciudad de Mexico y a Beta en Monterrey. */
         h("div", { clase: "chico gris" }, ciudadDe(equipo, cat))),
-      /* Solo tiene sentido con mas de un equipo: el ultimo no se quita,
-         se elimina el servicio completo. */
-      servicio.equipos.length > 1
-        ? h("button", { clase: "claro chico", type: "button",
-            onclick: () => borrar(
-              `/servicios/equipos/${equipo.id}`,
-              t("srv_eliminar_eq").replace("{a}", equipo.alias)
-                .replace("{n}", equipo.jornadas.length),
-              t("srv_equipo_eliminado")) }, t("srv_eliminar_equipo"))
-        : ""),
+      h("div", { clase: "acciones" },
+        /* La incidencia de alguien de este servicio (seccion 105): la
+           registra el consultor --o quien lo cubre-- y la central, y la
+           firma direccion de operaciones desde su pantalla. */
+        botonIncidencia(servicio.id, zonaIncidencia),
+        /* Solo tiene sentido con mas de un equipo: el ultimo no se quita,
+           se elimina el servicio completo. */
+        servicio.equipos.length > 1
+          ? h("button", { clase: "claro chico", type: "button",
+              onclick: () => borrar(
+                `/servicios/equipos/${equipo.id}`,
+                t("srv_eliminar_eq").replace("{a}", equipo.alias)
+                  .replace("{n}", equipo.jornadas.length),
+                t("srv_equipo_eliminado")) }, t("srv_eliminar_equipo"))
+          : "")),
     h("p", { clase: "gris chico", style: "margin:-6px 0 14px" },
       t("srv_equipo_pie")),
     /* A quien cuida este equipo. Con un solo equipo es el del servicio,
@@ -257,6 +335,7 @@ async function bloqueEquipo(servicio, equipo, cat, cambios) {
         ? h("span", { clase: "gris num" }, ` · ${equipo.ejecutivo_telefono}`)
         : ""));
 
+  caja.append(zonaIncidencia);
   caja.append(await bloqueRecursos(servicio, equipo, cat));
   /* El dinero va pegado a la gente: en cuanto hay alguien asignado
      aparece cuanto se le deposita. Sin personal no se pinta nada,
@@ -376,24 +455,40 @@ async function pintarRecursos(caja, servicio, equipo, cat, zona, zonaCambio) {
      un solo panel abierto es mentira. */
   const botonesCambiar = [];
 
-  function botonCambiar(servicio_, equipo_, cat_, persona, datos_) {
+  /* La zona es una para personas y unidades: `dataset.persona` dice de
+     quien es el panel abierto ("p12" o "u7"), y los botones de todos
+     vuelven a decir "Cambiar" cuando se abre otro. */
+  function botonDeCambio(clave, abrir) {
     const boton = h("button", { clase: "claro chico", type: "button",
       onclick: () => {
-        const suyo = zonaCambio.dataset.persona === String(persona.persona_id);
+        const suyo = zonaCambio.dataset.persona === clave;
         for (const otro of botonesCambiar) otro.textContent = t("srv_cambiar");
         if (suyo) {
           zonaCambio.replaceChildren();
           delete zonaCambio.dataset.persona;
           return;
         }
-        zonaCambio.dataset.persona = String(persona.persona_id);
+        zonaCambio.dataset.persona = clave;
         boton.textContent = t("srv_cerrar");
-        abrirCambio(zonaCambio, servicio_, equipo_, cat_, persona, datos_);
+        abrir();
       } },
-      zonaCambio.dataset.persona === String(persona.persona_id)
-        ? t("srv_cerrar") : t("srv_cambiar"));
+      zonaCambio.dataset.persona === clave ? t("srv_cerrar") : t("srv_cambiar"));
     botonesCambiar.push(boton);
     return boton;
+  }
+
+  function botonCambiar(servicio_, equipo_, cat_, persona, datos_) {
+    return botonDeCambio(`p${persona.persona_id}`,
+      () => abrirCambio(zonaCambio, servicio_, equipo_, cat_, persona, datos_));
+  }
+
+  /* "Cambiar" en la unidad, con el mismo panel que el de la persona
+     (seccion 105, decision 3). Solo en el eventual: la unidad del
+     implantado se cambia desde su taller. */
+  function botonCambiarUnidad(servicio_, equipo_, cat_, unidad, datos_) {
+    return botonDeCambio(`u${unidad.vehiculo_id}`,
+      () => abrirCambioUnidad(zonaCambio, servicio_, equipo_, cat_, unidad,
+                              datos_));
   }
 
   /* Si esa persona ya dijo que va, y quien lo dijo.
@@ -433,7 +528,7 @@ async function pintarRecursos(caja, servicio, equipo, cat, zona, zonaCambio) {
          que la de asignar: un solo panel abierto a la vez y nada que se
          encime con la ficha que se esta leyendo. */
       const acciones = h("div", { clase: "acciones", style: "margin-top:6px" },
-        p.relevado_en
+        p.relevado_en || !puedeRelevar()
           ? ""
           : botonCambiar(servicio, equipo, cat, p, datos),
         quitar(`/servicios/equipos/${equipo.id}/personal/${p.persona_id}`,
@@ -466,6 +561,16 @@ async function pintarRecursos(caja, servicio, equipo, cat, zona, zonaCambio) {
   const flota = h("div", {}, h("h4", {}, t("srv_unidad")));
   if (datos.vehiculos.length) {
     for (const v of datos.vehiculos) {
+      /* "Cambiar" junto a "Quitar", como en la persona (seccion 105,
+         decision 3): se descompone la camioneta el dia 2 de 3 y el
+         consultor la releva con hora, con la entrega encargada y con
+         historial, en vez de quitarla y poner otra sin rastro. */
+      const acciones = h("div", { clase: "acciones", style: "margin-top:6px" },
+        servicio.tipo === "eventual" && !v.relevado_en && puedeRelevar()
+          ? botonCambiarUnidad(servicio, equipo, cat, v, datos)
+          : "",
+        quitar(`/servicios/equipos/${equipo.id}/vehiculos/${v.vehiculo_id}`,
+               v.placa, v));
       flota.append(ficha(v, t("srv_vehiculo_seguridad"), [
         h("b", {}, v.unidad || t("srv_unidad")), " ",
         h("span", { clase: "etiqueta" },
@@ -481,8 +586,14 @@ async function pintarRecursos(caja, servicio, equipo, cat, zona, zonaCambio) {
               [v.arrendadora, v.arrendadora_telefono].filter(Boolean)
                 .join(" · "))
           : "",
-      ], quitar(`/servicios/equipos/${equipo.id}/vehiculos/${v.vehiculo_id}`,
-                v.placa, v), "de-unidad"));
+        /* Relevada a media jornada: la ficha lo dice, como con la
+           persona, o el consultor lee dos unidades donde va una. */
+        v.relevado_en
+          ? h("div", { clase: "chico", style: "color:#b8860b" },
+              t("ctg_unidad_relevada").replace("{d}", fecha(v.relevado_en.slice(0, 10)))
+              .replace("{h}", v.relevado_en.slice(11, 16)))
+          : "",
+      ], acciones, "de-unidad"));
     }
   } else {
     flota.append(h("span", { clase: "gris" }, t("srv_por_asignar")));
@@ -936,6 +1047,15 @@ const MOTIVOS = [
   { valor: "otro", texto: t("srv_m_otro") },
 ];
 
+/* Los de la unidad (seccion 105): con los nombres del taller del
+   implantado, para que la cuenta de la direccion sea una sola. */
+const MOTIVOS_UNIDAD = [
+  { valor: "contingencia", texto: t("srv_m_contingencia") },
+  { valor: "mantenimiento_correctivo", texto: t("imp_taller_correctivo") },
+  { valor: "mantenimiento_preventivo", texto: t("imp_taller_preventivo") },
+  { valor: "otro", texto: t("srv_m_otro") },
+];
+
 const CERRADOS = ["cancelada", "terminada"];
 
 function diasPendientes(equipo) {
@@ -1037,10 +1157,12 @@ async function abrirCambio(zona, servicio, equipo, cat, persona, datos) {
     h("div", { clase: "rejilla dos" },
       campo(t("srv_desde_dia"), desde),
       campo(t("srv_hasta_cuando"), h("div", {},
-        h("label", { clase: "chico" }, adelante,
-          puerta.implantado ? t("srv_hasta_fin_mes") : t("srv_adelante")),
-        h("label", { clase: "chico", style: "margin-left:12px" },
-          conFin, t("srv_hasta_el_dia")), hasta,
+        /* .casilla pone el circulo junto a su texto; suelto, el radio se
+           pintaba como bloque, flotando en medio del recuadro. */
+        h("label", { clase: "casilla" }, adelante, h("span", {},
+          puerta.implantado ? t("srv_hasta_fin_mes") : t("srv_adelante"))),
+        h("label", { clase: "casilla" },
+          conFin, h("span", {}, t("srv_hasta_el_dia"))), hasta,
         h("div", { clase: "gris chico", style: "margin-top:4px" },
           puerta.implantado ? t("srv_alcance_imp_pie")
                             : t("srv_alcance_pie"))))),
@@ -1070,6 +1192,225 @@ async function abrirCambio(zona, servicio, equipo, cat, persona, datos) {
   } catch (err) {
     candidatos.replaceChildren(aviso(err.message, "grave"));
   }
+}
+
+/* Quien releva: la misma actividad para la persona, la unidad y
+   deshacer (`relevos.mover`, la que pide el servidor). A quien no la
+   tiene, el boton ni le sale. */
+function puedeRelevar() {
+  return tiene(sesion.usuario, "relevos.mover");
+}
+
+/* ------------------------------------ cambio de unidad (seccion 105)
+
+   El mismo panel que el de la persona, con lo que cambia: entra otra
+   unidad de la misma categoria, no hay viaticos que mover, y lo que
+   queda pendiente es la revision --la que sale se entrega, la que entra
+   se recibe--. Al cliente no se le avisa (decision 3 de Salvador): la
+   hoja se vuelve a publicar sola con la placa nueva y el equipo recibe
+   el aviso en su telefono. */
+async function abrirCambioUnidad(zona, servicio, equipo, cat, unidad, datos) {
+  const dias = diasPendientes(equipo);
+  if (!dias.length) {
+    return zona.replaceChildren(aviso(t("srv_sin_pendientes"), "alerta"));
+  }
+
+  const hoy = hoyLocal();
+  const desde = lista("desde", dias.map(
+    j => ({ valor: j.id, texto: fecha(j.fecha) })));
+  const suyo = dias.find(j => j.fecha === hoy);
+  desde.value = (suyo || dias[0]).id;
+
+  const hasta = lista("hasta", dias.map(
+    j => ({ valor: j.id, texto: fecha(j.fecha) })), { disabled: "disabled" });
+  hasta.value = dias[dias.length - 1].id;
+
+  const conFin = h("input", { type: "radio", name: "alcance_u" });
+  const adelante = h("input", { type: "radio", name: "alcance_u",
+                                checked: "checked" });
+  const marcar_ = () => { hasta.disabled = !conFin.checked; };
+  conFin.addEventListener("change", marcar_);
+  adelante.addEventListener("change", marcar_);
+
+  /* Los motivos de una unidad: se descompuso, entro al taller. Los de
+     la gente --enfermedad, vacaciones-- no le aplican a una camioneta,
+     y de aqui sale cuanto tiempo pasan las unidades en el taller. */
+  const motivo = lista("motivo", MOTIVOS_UNIDAD);
+  const nota = entrada("nota", { placeholder: t("srv_que_paso") });
+
+  const candidatas = h("div", { style: "margin-top:12px" },
+    h("div", { clase: "gris chico" }, t("srv_buscando_recursos")));
+  const previa = h("div", { style: "margin-top:12px" });
+
+  /* La alerta abierta del servicio, para ligarla al cambio, como en el
+     de la persona: la camioneta que se descompone suele venir de un
+     boton de panico o de una llamada. */
+  const abiertas = await api.get(
+    `/contingencia/alertas?servicio_id=${servicio.id}`).catch(() => []);
+  const alerta = abiertas[0] || null;
+
+  const armar = () => ({
+    desde_jornada_id: Number(desde.value),
+    hasta_jornada_id: conFin.checked ? Number(hasta.value) : null,
+    sale_vehiculo_id: unidad.vehiculo_id,
+    motivo: nota.value.trim()
+            || MOTIVOS_UNIDAD.find(x => x.valor === motivo.value).texto,
+    motivo_tipo: motivo.value,
+    alerta_id: alerta ? alerta.id : null,
+  });
+
+  zona.replaceChildren(h("div", { clase: "tarjeta lisa" },
+    h("h4", { style: "margin:0 0 2px" },
+      t("ctg_cambiar_unidad").replace("{p}", unidad.placa)),
+    h("p", { clase: "gris chico", style: "margin:0 0 12px" },
+      t("ctg_cambio_unidad_pie")),
+    alerta
+      ? h("div", { clase: "aviso alerta", style: "margin:0 0 12px" },
+          t("srv_liga_alerta").replace("{hora}", hora(alerta.reportada_en)))
+      : "",
+    h("div", { clase: "rejilla dos" },
+      campo(t("srv_desde_dia"), desde),
+      campo(t("srv_hasta_cuando"), h("div", {},
+        h("label", { clase: "casilla" }, adelante, h("span", {}, t("srv_adelante"))),
+        h("label", { clase: "casilla" },
+          conFin, h("span", {}, t("srv_hasta_el_dia"))), hasta,
+        h("div", { clase: "gris chico", style: "margin-top:4px" },
+          t("srv_alcance_pie"))))),
+    h("div", { clase: "rejilla dos" },
+      campo(t("ctg_por_que"), motivo), campo(t("srv_nota"), nota)),
+    previa, candidatas));
+
+  /* Las unidades libres de la misma categoria, con su disponibilidad y
+     sus choques ya resueltos, como en "Asignar recursos". */
+  try {
+    const categoria = unidad.categoria_id || (cat.categorias[0] || {}).id;
+    const rol = (cat.perfiles[0] || {}).id;
+    const r = await api.get(
+      `/servicios/equipos/${equipo.id}/recomendaciones`
+      + `?perfil_id=${rol}&categoria_id=${categoria}`);
+    candidatas.replaceChildren(
+      tablaCandidatasUnidad(r.vehiculos, unidad, armar, previa));
+  } catch (err) {
+    candidatas.replaceChildren(aviso(err.message, "grave"));
+  }
+}
+
+function tablaCandidatasUnidad(bloque, sale, armar, previa) {
+  const flota = ordenar(todos(bloque))
+    .filter(v => v.vehiculo_id !== sale.vehiculo_id);
+  const cuerpo = h("tbody");
+  for (const v of flota) {
+    const est = estadoDe(v);
+    cuerpo.append(h("tr", {},
+      h("td", {}, h("span", { clase: t("srv_f_placas") }, v.placa || v.placas),
+        v.rentado ? " " : "", v.rentado ? etiqueta("rentada", "alerta") : "",
+        h("div", { clase: "chico gris" },
+          [v.unidad, v.marca_modelo, v.color, v.anio].filter(Boolean)
+            .join(" · ")),
+        lineaCiudad(v)),
+      celdaEstado(est),
+      h("td", {}, botonElegir(est,
+        (e) => verPreviaUnidad(e, previa, armar(), v)))));
+  }
+  return caja(t("ctg_quien_entra_u").replace("{p}", sale.placa), bloque,
+              flota.length, [t("srv_unidad"), t("srv_disponibilidad"), ""],
+              cuerpo, t("ctg_ninguna_unidad"));
+}
+
+async function verPreviaUnidad(e, zona, cambio, entra) {
+  e.target.disabled = true;
+  zona.replaceChildren(h("div", { clase: "gris chico" }, t("srv_calculando")));
+  llevarLaVista(zona);
+  const cuerpo = { ...cambio, entra_vehiculo_id: entra.vehiculo_id };
+  try {
+    const r = await api.post("/contingencia/reemplazos/vehiculo/vista-previa",
+                             cuerpo);
+    zona.replaceChildren(recuadroPreviaUnidad(r, cuerpo, entra));
+  } catch (err) {
+    zona.replaceChildren(aviso(err.message, "grave"));
+  }
+  e.target.disabled = false;
+}
+
+/* La hora en que la unidad cambio de manos. Se propone la de ahora
+   --que es lo normal cuando se captura en el momento-- y el consultor
+   la corrige si fue antes: de ella cuelga la revision de entrega. Solo
+   se manda si la movio, como con la persona. */
+function campoDeHoraUnidad(r) {
+  const dia = (r.jornadas_partidas || [])[0];
+  const propuesta = (r.relevado_en || "").slice(11, 16);
+  const campo_ = h("input", { type: "time", value: propuesta,
+                              style: "width:auto;margin-left:6px" });
+  return {
+    nodo: h("div", { clase: "chico", style: "margin-top:6px" },
+      h("label", {}, t("ctg_cambio_manos_a_las"), campo_),
+      h("div", { clase: "gris" }, t("ctg_hora_unidad_pie"))),
+    leer: () => (campo_.value && campo_.value !== propuesta
+                 ? `${dia}T${campo_.value}:00` : null),
+  };
+}
+
+/* Nada se guarda hasta "Confirmar". Lo que se pinta es el cambio de
+   verdad, ejecutado y deshecho en el servidor, como el de la persona. */
+function recuadroPreviaUnidad(r, cuerpo, entra) {
+  const dias = r.jornadas_afectadas || [];
+  const partido = (r.jornadas_partidas || []).length > 0;
+  const hora_ = partido ? campoDeHoraUnidad(r) : null;
+
+  const confirmar = h("button", { clase: "chico", type: "button",
+    onclick: async (ev) => {
+      ev.target.disabled = true;
+      try {
+        const corregida = hora_ && hora_.leer();
+        const hecho = await api.post(
+          "/contingencia/reemplazos/vehiculo",
+          corregida ? { ...cuerpo, relevado_en: corregida } : cuerpo);
+        /* Lo que hay que saber al salir: que al cliente no se le
+           escribio, y si la hoja quedo publicada con la placa nueva o
+           hay que publicarla a mano. */
+        mensaje(t("ctg_cambio_u_hecho"));
+        if (hecho && hecho.hoja_republicada) {
+          mensaje(t("ctg_cambio_u_hoja").replace("{v}", hecho.hoja_republicada));
+        } else if (hecho && hecho.hoja_por_publicar) {
+          mensaje(t("ctg_cambio_u_hoja_pendiente"), "alerta");
+        }
+        setTimeout(() => location.reload(), 2500);
+      } catch (err) {
+        mensaje(err.message, "grave");
+        ev.target.disabled = false;
+      }
+    } }, t("ctg_confirmar_u"));
+
+  return h("div", { clase: "tarjeta lisa" },
+    h("h4", { style: "margin:0 0 6px" },
+      dias.length === 1
+        ? fecha(dias[0])
+        : t("srv_del_al").replace("{a}", fecha(dias[0]))
+            .replace("{b}", fecha(dias[dias.length - 1]))
+            .replace("{n}", dias.length)),
+    h("div", { clase: "chico" },
+      t("ctg_entra_unidad").replace("{p}", entra.placa || "")),
+    /* El dia en que la unidad ya rodo se parte: la que sale se entrega
+       y la que entra se recibe, con la hora en que cambiaron de manos. */
+    partido
+      ? h("div", { style: "margin-top:8px" },
+          h("div", { clase: "chico" }, h("b", {},
+            t("ctg_se_parte_u").replace("{f}", fecha(r.jornadas_partidas[0])))),
+          hora_.nodo)
+      : "",
+    bloqueRevisionUnidad(r.revision_pendiente),
+    (r.jornadas_con_choque || []).length
+      ? aviso(t("srv_choque").replace("{p}", entra.placa || "")
+                .replace("{d}", r.jornadas_con_choque.map(fecha).join(", ")),
+              "alerta")
+      : "",
+    h("div", { clase: "chico gris", style: "margin-top:8px" },
+      t("ctg_sin_aviso_cliente")),
+    h("div", { clase: "acciones", style: "margin-top:10px" },
+      h("button", { clase: "claro chico", type: "button",
+        onclick: (ev) => ev.target.closest(".tarjeta").remove() },
+        t("srv_cancelar")),
+      confirmar));
 }
 
 /* Mismo criterio que botonAsignar: a quien no se puede poner, no se le
@@ -1522,7 +1863,13 @@ function tarjetaCambio(r) {
 
   /* El boton va en la tarjeta del movimiento y no en la tabla de dias,
      porque el regreso cierra ESE movimiento: no es un cambio nuevo. Solo
-     aparece si sigue corriendo. */
+     aparece si sigue corriendo.
+
+     Y "Deshacer" al lado (seccion 105, decision 3), para el que se
+     equivoco de persona o de placa hace un minuto: mientras el cambio
+     siga en curso y nadie haya tocado el dinero ni la unidad. Eso
+     segundo lo decide el servidor, y si no se puede lo dice con que
+     hacer. */
   if (r.en_curso || r.regreso_en) {
     const zona = h("div", { style: "margin-top:10px" });
     tarjeta.append(
@@ -1533,11 +1880,34 @@ function tarjetaCambio(r) {
             ? t("srv_r_corregir")
             : (r.tipo === "vehiculo"
                ? t("srv_r_regresar_u") : t("srv_r_regresar")
-              ).replace("{p}", r.sale || "?"))),
+              ).replace("{p}", r.sale || "?")),
+        r.en_curso && !r.regreso_en && puedeRelevar()
+          ? botonDeshacer(r) : ""),
       zona);
   }
 
   return tarjeta;
+}
+
+function botonDeshacer(r) {
+  const boton = h("button", { clase: "claro chico", type: "button" },
+    t("ctg_deshacer"));
+  boton.onclick = async () => {
+    if (!confirm(t("ctg_deshacer_confirma").replace("{s}", r.sale || "?")
+                   .replace("{e}", r.entra || "?"))) return;
+    boton.disabled = true;
+    try {
+      await api.post(`/contingencia/reemplazos/${r.id}/deshacer`);
+      mensaje(t("ctg_deshecho"));
+      setTimeout(() => location.reload(), 1200);
+    } catch (err) {
+      /* El mensaje trae el por que y el que hacer (api.js): el dinero
+         ya se movio, el dia ya termino, la unidad ya se recibio. */
+      mensaje(err.message, "grave");
+      boton.disabled = false;
+    }
+  };
+  return boton;
 }
 
 /* -------------------------------------------- el dia: punto y agenda */
@@ -3102,9 +3472,13 @@ function opcionesModalidad(cat, jornada = null) {
     ? cat.modalidades.find(m => m.id === jornada.modalidad_id) : null;
   const pais = suya ? suya.pais_id : (cat.modalidades[0] || {}).pais_id;
   const NOMBRE = { full_day: t("srv_dia_completo"), medio_dia: t("srv_medio_dia"),
-                   transfer: t("srv_transfer") };
+                   transfer: t("srv_transfer"), implantado: t("cat_mod_implantado") };
   return cat.modalidades
     .filter(m => m.pais_id === pais)
+    /* La jornada del implantado (seccion 105) no es una opcion del
+       eventual: solo sale si el dia ya la trae --los dias del
+       implantado que se miran desde aqui--. */
+    .filter(m => m.codigo !== "implantado" || (suya && suya.id === m.id))
     .map(m => ({ valor: m.id,
                  texto: t("srv_modalidad_h").replace("{m}", NOMBRE[m.codigo] || m.codigo)
         .replace("{h}", Number(m.horas)) }));
@@ -3171,14 +3545,23 @@ async function pintarViaticos(caja, equipo) {
   const moneda = datos.moneda || "MXN";
   const repintar = () => pintarViaticos(caja, equipo);
 
+  /* Cancelado, en facturacion o cerrado: ya no entra dinero nuevo
+     (decision 10, seccion 105). Los campos y los botones de fijar y
+     pedir se van y en su lugar se dice por que; lo ya pedido se sigue
+     viendo, y finanzas lo deposita como siempre. */
+  const cerrado = datos.dinero_cerrado || null;
+
   const cuerpo = h("tbody");
   for (const p of datos.personal) cuerpo.append(
-    renglonViatico(p, equipo, moneda, repintar));
+    renglonViatico(p, equipo, moneda, repintar, cerrado));
 
   const porSolicitar = datos.personal.filter(
     p => p.estatus === "asignado").length;
 
-  const pedirTodo = !decideElDinero()
+  const pedirTodo = cerrado
+    ? h("span", { clase: "chico rojo" },
+        t(cerrado === "cancelado" ? "via_cancelado" : "via_cerrado"))
+    : !decideElDinero()
     ? h("span", { clase: "gris chico" },
         t(soloConsulta(sesion.usuario) ? "srv_dinero_consulta" : "srv_dinero_titular"))
     : h("button", { clase: "chico", type: "button",
@@ -3233,7 +3616,7 @@ async function pintarViaticos(caja, equipo) {
     bloqueCompras(datos, equipo, moneda, repintar)));
 }
 
-function renglonViatico(p, equipo, moneda, repintar) {
+function renglonViatico(p, equipo, moneda, repintar, cerrado = null) {
   const est = SEMAFORO[p.estatus] || SEMAFORO.por_asignar;
   /* Un deposito no cierra la puerta al siguiente: el servicio se alarga,
      se cae un dia y se repone, o simplemente falto dinero. Cuando ya
@@ -3244,8 +3627,9 @@ function renglonViatico(p, equipo, moneda, repintar) {
 
   /* En enteros: el viatico se entrega en efectivo o por transferencia y
      nadie anda partiendo pesos. Lo que se capture se sube al entero de
-     arriba, del lado del servidor. */
-  const decide = decideElDinero();
+     arriba, del lado del servidor. Con el servicio cerrado al dinero
+     (seccion 105) el campo se queda quieto: no entra dinero nuevo. */
+  const decide = decideElDinero() && !cerrado;
   const monto = entrada("monto", {
     type: "number", step: "1", min: "0", clase: "num",
     disabled: decide ? null : "disabled",

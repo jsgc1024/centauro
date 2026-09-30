@@ -82,13 +82,18 @@ def medir_puntualidad(db: Session, jornadas: list[m.Jornada], persona_id: int,
     # contacto con el ejecutivo, o sea el meet and greet. Medir la
     # llegada con esa hora es medir otra cosa --y castiga al que llego
     # temprano y espero veinte minutos a que el ejecutivo bajara--.
-    # Se mide contra la marca de LLEGADA, que es la que dice "estoy en
-    # el punto"; `inicio_real` queda de respaldo para el dia raro en que
-    # no haya marca de llegada, porque exentar ese dia seria premiarlo.
+    # Se mide contra la marca de LLEGADA de esta persona, que es la que
+    # dice "estoy en el punto". Y solo contra la suya (seccion 105,
+    # decision 4): cada quien marca su llegada, y quien no la marco en
+    # un dia que si opero no cuenta como puntual ese dia. Antes
+    # `inicio_real` --el contacto del equipo-- servia de respaldo, y al
+    # segundo de la unidad, que nunca marcaba, le regalaba la
+    # puntualidad del companero.
     llegadas = {h.jornada_id: h for h in db.query(m.Hito).filter(
         m.Hito.jornada_id.in_([j.id for j in jornadas]),
         m.Hito.persona_id == persona_id,
-        m.Hito.tipo == m.TipoHito.LLEGADA_ORIGEN).all()}
+        m.Hito.tipo == m.TipoHito.LLEGADA_ORIGEN,
+        m.Hito.anulado_en.is_(None)).all()}
 
     # Lo que decide si el criterio aplica son las JORNADAS, no las
     # marcas. Es la diferencia entre "no le toco" y "no marco", y
@@ -134,11 +139,11 @@ def medir_puntualidad(db: Session, jornadas: list[m.Jornada], persona_id: int,
     buenas, fuera, tarde, perdonables, sin_marca = [], [], [], [], []
     for j in medibles:
         marca = llegadas.get(j.id)
-        momento = marca.marcado_en if marca is not None else j.inicio_real
-        if momento is None:
+        if marca is None:
             sin_marca.append(j)
             continue
-        if marca is not None and marca.dentro_geocerca is False:
+        momento = marca.marcado_en
+        if marca.dentro_geocerca is False:
             fuera.append(j)
             continue
         retraso = (momento - j.inicio_programado).total_seconds() / 60
@@ -660,9 +665,11 @@ def calcular_el_mes(db: Session, anio: int, mes: int) -> dict:
     vuelve a calcular cada vez que corre, asi que volver a correrla el
     dia 4 levanta lo que se cerro tarde.
 
-    Y la incidencia que se autoriza despues de esto no alcanza este mes:
-    el calculo lee las que ya traen visto bueno. Por eso el visto bueno
-    tiene fecha --se puede demostrar que llego tarde, no que se ignoro--.
+    La incidencia que se autoriza despues de esto si alcanza el mes
+    mientras RRHH no lo haya autorizado (seccion 105): el visto bueno
+    vuelve a calcular la evaluacion en ese momento (`aplicar_visto_bueno`).
+    La que llega con el bono ya autorizado o pagado no lo toca, y el
+    visto bueno tiene fecha para poder demostrar que llego tarde.
     """
     calculadas, saltadas, fallidas = 0, 0, []
     personas = (db.query(m.Persona)
@@ -699,6 +706,176 @@ def calcular_el_mes(db: Session, anio: int, mes: int) -> dict:
 def mes_anterior(hoy: date) -> tuple[int, int]:
     """El mes que se cierra hoy. En enero, diciembre del ano pasado."""
     return (hoy.year - 1, 12) if hoy.month == 1 else (hoy.year, hoy.month - 1)
+
+
+# ------------------------------------------------- una incidencia, leida
+
+def renglon_incidencia(db: Session, i: m.Incidencia) -> dict:
+    """Una incidencia como la leen la bandeja de direccion, el expediente
+    de la persona y la lista (seccion 105): con quien la registro, quien
+    la firmo y su resolucion, no solo si esta autorizada."""
+    servicio = db.get(m.Servicio, i.servicio_id) if i.servicio_id else None
+    registro = db.get(m.Persona, i.clasificada_por_id)
+    firmo = db.get(m.Persona, i.visto_bueno_por_id) if i.visto_bueno_por_id else None
+    return {
+        "id": i.id, "incidencia_id": i.id,
+        "persona_id": i.persona_id, "persona": i.persona.nombre,
+        "servicio_id": i.servicio_id,
+        "folio": servicio.folio if servicio else None,
+        "tipo": servicio.tipo.value if servicio else None,
+        "jornada_id": i.jornada_id,
+        "fecha": i.fecha.isoformat(),
+        "gravedad": i.gravedad.value, "descripcion": i.descripcion,
+        "registrada_por": registro.nombre if registro else None,
+        "creada_en": i.creada_en.isoformat() if i.creada_en else None,
+        "autorizada": i.autorizada,
+        "pendiente_visto_bueno": i.visto_bueno_por_id is None,
+        "estado": ("pendiente" if i.visto_bueno_por_id is None
+                   else "autorizada" if i.autorizada else "descartada"),
+        "visto_bueno_por": firmo.nombre if firmo else None,
+        "visto_bueno_en": i.visto_bueno_en.isoformat() if i.visto_bueno_en else None,
+        "resolucion": i.resolucion_direccion,
+    }
+
+
+# ------------------------------------------------- el visto bueno de una
+
+def aplicar_visto_bueno(db: Session, incidencia: m.Incidencia) -> dict:
+    """Lo que mueve el visto bueno del director de operaciones, ademas
+    de la incidencia misma (decision 2 de Salvador, seccion 105).
+
+    Hasta aqui el visto bueno contestaba "hay que recalcular la
+    evaluacion" y nadie la recalculaba: la tarea del dia 3 corre una
+    vez, la consola no tenia boton, y RRHH autorizaba el bono completo
+    de alguien con una incidencia leve firmada el dia 4. Ahora:
+
+      - autorizada y leve o grave: si el mes ya tiene su evaluacion y
+        sigue CALCULADA, se vuelve a calcular aqui mismo y sale en cero;
+        si RRHH ya la autorizo --o ya se pago-- no se toca (el bono es
+        dinero) y se dice; si todavia no hay evaluacion, la tarea del
+        dia 3 la leera cuando corra.
+      - autorizada y grave: la comision del consultor que ya se genero y
+        no ha entrado a un corte se retiene, y RRHH recibe el aviso.
+      - descartada, o error menor: no toca bono ni comision.
+
+    Devuelve lo que paso, para que el router lo diga en la respuesta.
+    Quien llama guarda; lo unico que confirma por su cuenta es el
+    recalculo, porque `evaluar` guarda al terminar.
+    """
+    from app import comisiones
+
+    salida = {"bono": "no_aplica", "evaluacion": None,
+              "comisiones_retenidas": [], "aviso_rrhh": 0}
+    if not incidencia.autorizada:
+        salida["bono"] = "descartada"
+        return salida
+    if incidencia.gravedad == m.GravedadIncidencia.ERROR_MENOR:
+        return salida
+
+    # `evaluar` lee las incidencias con visto bueno de la base: la
+    # sesion no vacia sola (autoflush apagado) y sin esto leeria la
+    # incidencia todavia sin firma.
+    db.flush()
+    anio, mes = incidencia.fecha.year, incidencia.fecha.month
+    evaluacion = (db.query(m.EvaluacionMensual)
+                  .filter_by(persona_id=incidencia.persona_id, anio=anio,
+                             mes=mes).first())
+    if evaluacion is None:
+        salida["bono"] = "sin_evaluacion"
+    elif evaluacion.estatus != m.EstatusEvaluacion.CALCULADA:
+        salida["bono"] = "ya_autorizado"
+        salida["evaluacion"] = _resumen(evaluacion)
+    else:
+        try:
+            evaluacion = evaluar(db, incidencia.persona_id, anio, mes)
+            salida["bono"] = "recalculado"
+        except HTTPException as error:
+            # Un pais que se quedo sin criterios no puede detener la
+            # firma: la incidencia queda autorizada y se dice que el
+            # bono no se pudo recalcular.
+            salida["bono"] = "no_recalculado"
+            salida["motivo"] = (error.detail if isinstance(error.detail, str)
+                                else str(error.detail))
+        salida["evaluacion"] = _resumen(evaluacion)
+
+    if incidencia.gravedad == m.GravedadIncidencia.GRAVE:
+        salida["comisiones_retenidas"] = comisiones.retener_por_incidencia(
+            db, incidencia)
+        salida["aviso_rrhh"] = avisar_grave_a_rrhh(
+            db, incidencia, salida["comisiones_retenidas"])
+    return salida
+
+
+def _resumen(evaluacion: m.EvaluacionMensual) -> dict:
+    return {"evaluacion_id": evaluacion.id,
+            "periodo": f"{evaluacion.mes:02d}/{evaluacion.anio}",
+            "anio": evaluacion.anio, "mes": evaluacion.mes,
+            "estatus": evaluacion.estatus.value,
+            "bono": evaluacion.monto_bono,
+            "anulado_por_incidencia": evaluacion.anulado_por_incidencia}
+
+
+def avisar_grave_a_rrhh(db: Session, incidencia: m.Incidencia,
+                        retenidas: list | None = None) -> int:
+    """La grave autorizada le llega a Recursos Humanos, por correo y al
+    telefono (seccion 105): es quien la gestiona --puede derivar en
+    baja-- y hasta aqui se enteraba, si acaso, por el bono en cero.
+
+    A todos los de RRHH con acceso, en el idioma de su pais, como los
+    demas avisos a la gente de la casa. Un aviso que no sale no deshace
+    la firma. Devuelve a cuantos se les escribio.
+    """
+    from app import acceso_por_correo, correo_html, push
+    from app import textos_aviso as ta
+
+    persona = db.get(m.Persona, incidencia.persona_id)
+    servicio = (db.get(m.Servicio, incidencia.servicio_id)
+                if incidencia.servicio_id else None)
+    registro = db.get(m.Persona, incidencia.clasificada_por_id)
+    firmo = (db.get(m.Persona, incidencia.visto_bueno_por_id)
+             if incidencia.visto_bueno_por_id else None)
+    quien = persona.nombre if persona else f"#{incidencia.persona_id}"
+    folio = servicio.folio if servicio else "-"
+    avisados = 0
+    for usuario in (db.query(m.Usuario)
+                    .filter(m.Usuario.rol == m.Rol.RECURSOS_HUMANOS,
+                            m.Usuario.activo.is_(True))
+                    .order_by(m.Usuario.id).all()):
+        if not usuario.correo:
+            continue
+        lengua = acceso_por_correo.idioma_de(usuario)
+        asunto = ta.t(lengua, "inc_grave_asunto", quien=quien, folio=folio)
+        cuerpo = ta.t(lengua, "inc_grave_cuerpo", quien=quien, folio=folio,
+                      fecha=f"{incidencia.fecha:%d/%m/%Y}")
+        pares = [
+            (ta.t(lengua, "quien"), quien),
+            (ta.t(lengua, "enc_servicio"), folio),
+            (ta.t(lengua, "fecha"), f"{incidencia.fecha:%d/%m/%Y}"),
+            (ta.t(lengua, "inc_descripcion"), incidencia.descripcion),
+            (ta.t(lengua, "inc_registro"), registro.nombre if registro else "-"),
+            (ta.t(lengua, "inc_resolucion"),
+             f"{incidencia.resolucion_direccion or '-'}"
+             + (f" ({firmo.nombre})" if firmo else "")),
+            (ta.t(lengua, "inc_comision"),
+             ta.t(lengua, "inc_comision_retenida")
+             if retenidas else ta.t(lengua, "inc_comision_al_cerrar")),
+        ]
+        enlace = f"/consola/#/equipo/{incidencia.persona_id}"
+        db.add(m.Notificacion(
+            servicio_id=incidencia.servicio_id,
+            destinatario=m.Destinatario.COLABORADOR, canal=m.Canal.CORREO,
+            correo=usuario.correo, idioma=lengua, asunto=asunto[:200],
+            cuerpo=cuerpo[:2000], datos=correo_html.guardar_datos(pares),
+            enlace_seguimiento=enlace))
+        if usuario.persona_id:
+            try:
+                push.avisar(db, usuario.persona_id, asunto, cuerpo,
+                            url=enlace, etiqueta=f"incidencia-{incidencia.id}",
+                            urgente=True)
+            except Exception:                     # noqa: BLE001
+                pass
+        avisados += 1
+    return avisados
 
 
 def ficha(db: Session, evaluacion: m.EvaluacionMensual) -> dict:

@@ -76,6 +76,10 @@ export const CALIDAD = ["admin", "director_general", "director_operaciones",
    --sistema y calidad y administracion; direccion general, por lo que
    hereda--. Decision 1 de Salvador, 27 sep. */
 export const MANUAL = ["admin", "director_general", "sistema_calidad"];
+/* La ventana del director de operaciones (seccion 105): sus
+   autorizaciones y el tablero de hoy. La ve el y direccion general;
+   nadie mas, porque lo que hay adentro son firmas. */
+export const DIRECCION = ["director_operaciones", "director_general", "admin"];
 
 /* El menu de arriba, en una sola lista.
 
@@ -159,6 +163,12 @@ export const MENU = [
      mes en cifras y su reporte para la junta (seccion 89). */
   { ruta: "/calidad", clave: "calidad", necesita: "calidad.ver", texto: "nav_calidad", grupo: "nav_operaciones_ep",
     cuenta: "rec_calidad", quienes: CALIDAD },
+  /* La ventana del director de operaciones (seccion 105, decision 2 de
+     Salvador): las incidencias por autorizar, el cobro al cancelar, los
+     plazos vencidos y el tablero de hoy. En Operaciones EP, al final:
+     es de la misma operacion, vista desde quien la firma. */
+  { ruta: "/direccion", clave: "direccion", necesita: "direccion.ver", texto: "nav_direccion", grupo: "nav_operaciones_ep",
+    cuenta: "rec_direccion", quienes: DIRECCION, nueva: "2026-11-30" },
   /* A un toque, porque la llamada llega a las 5:40 y casi siempre al
      telefono. Escondida dentro de un servicio serian cuatro toques con
      una mano. */

@@ -25,6 +25,7 @@ from app import gps
 from app import horas_extra
 from app import implantado as imp
 from app import models as m
+from app import operacion
 from app import reloj
 from app.presentacion import llegada_de_la_jornada
 
@@ -340,6 +341,10 @@ def _ficha_del_dia(db: Session, jornada: m.Jornada, ahora: datetime,
         "revision": revision,
         "listo": not faltan,
         "faltan": len(faltan),
+        # La hora que el equipo propuso al cerrar el dia de hoy y nadie
+        # ha resuelto (seccion 105, decision 5): con quien la propuso y
+        # su nota, para confirmarla o dejar la de la hoja con un clic.
+        "hora_propuesta": operacion.propuesta_pendiente(jornada),
     }
 
 
@@ -491,6 +496,14 @@ def _en_curso(db: Session, jornada: m.Jornada, ahora: datetime,
         "equipo": jornada.equipo.alias,
         "consultor": nombres.get(servicio.consultor_id),
         "personal": [a.persona.nombre for a in jornada.personal if a.persona],
+        # Quien del equipo todavia no marca SU llegada (seccion 105,
+        # decision 4): con dos unidades, Juan llego y el dia esta en el
+        # punto, pero Luis sigue en camino y la central tiene que verlo
+        # por persona, no por jornada. Solo los vigentes: el relevado ya
+        # no viene.
+        "sin_llegar": [a.persona.nombre for a in jornada.personal
+                       if a.persona and a.relevado_en is None
+                       and not operacion.llego(db, jornada, a.persona_id)],
         # El dia de la jornada. Lo necesita la central para asentar una
         # marca a mano desde esta misma tarjeta: la hora que le dicta el
         # agente se arma sobre esta fecha, y un servicio de Sao Paulo

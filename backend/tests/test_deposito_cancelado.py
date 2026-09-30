@@ -36,9 +36,6 @@ def _servicio_con_deposito_pedido(cliente, sesion, datos, dias=1):
     h = sesion("consultor")
     servicio = crear_servicio(
         cliente, h, datos,
-        # Mañana, no dentro de un año: el barrido solo manda al banco
-        # lo que entra en su ventana --el día previo al servicio--, y
-        # sin eso no hay forma de probar lo que ya está con finanzas.
         [jornada(manana(1 + i), datos["modalidades"]["full_day"]["id"])
          for i in range(dias)],
         consultor_id=datos["personal"]["Ana Solis"]["id"])
@@ -58,9 +55,17 @@ def _servicio_con_deposito_pedido(cliente, sesion, datos, dias=1):
 
 
 def _enviar_al_banco(cliente, sesion):
-    """El barrido: lo que ya salió de la casa y está en manos de finanzas."""
-    return cliente.post("/viaticos/transferencias/barrido",
-                        headers=sesion("finanzas"))
+    """Lo que ya salió de la casa y está en manos de finanzas: la
+    instrucción `enviada`. Desde la sección 105 no hay barrido que la
+    ponga --la pondrá la conexión con Odoo--, así que aquí se escribe
+    directo en la base, que es lo que la prueba necesita de decorado."""
+    from app import models as m
+    from app.db import SessionLocal
+    with SessionLocal() as db:
+        for s in (db.query(m.SolicitudTransferencia)
+                  .filter_by(estatus=m.EstatusTransferencia.PENDIENTE).all()):
+            s.estatus = m.EstatusTransferencia.ENVIADA
+        db.commit()
 
 
 def _depositar(cliente, sesion, equipo_id, persona_id,

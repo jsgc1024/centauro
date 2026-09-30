@@ -46,6 +46,13 @@ class OdooFalso:
             salida.append(fila)
         return salida
 
+    def campos(self, modelo, atributos=None):
+        """Lo que este Odoo ensena de hr.employee: sin el campo de la
+        cuenta bancaria (seccion 105), como un usuario sin permiso de RH.
+        Las pruebas de las cuentas traen su propio Odoo."""
+        assert modelo == "hr.employee"
+        return {c: {"type": "char"} for c in odoo_personal.CAMPOS}
+
     def cambiar(self, n, **valores):
         self.empleados[ODOO0 + n].update(valores)
 
@@ -56,6 +63,8 @@ class OdooFalso:
 class OdooCaido:
     def leer(self, *args, **kwargs):
         raise odoo_api.NoResponde("Odoo rechazo la llave; puede que haya vencido.")
+
+    campos = leer
 
 
 def empleado(n, **cambios):

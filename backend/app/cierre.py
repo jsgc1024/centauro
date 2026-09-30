@@ -28,6 +28,17 @@ HORAS_MAXIMO_TOTAL = HORAS_PERSONAL + HORAS_CONSULTOR
 CERO = Decimal("0")
 registro = logging.getLogger(__name__)
 
+# Que se le cobra al cliente cuando el servicio se cancela (seccion 105,
+# decision 1 de Salvador, 29 sep). "Completo" es la cotizacion autorizada
+# tal cual, con los dias que ya no se trabajaron; "ejecutado" es lo que se
+# trabajo, como en un servicio que termino. Lo elige el consultor al
+# cancelar y lo autoriza direccion de operaciones.
+COBRO_COMPLETO = "completo"
+COBRO_EJECUTADO = "ejecutado"
+COBROS = (COBRO_COMPLETO, COBRO_EJECUTADO)
+# El motivo de apertura de un cierre que nacio de una cancelacion.
+CANCELACION = "cancelacion"
+
 
 def _d(valor) -> Decimal:
     return Decimal(str(valor or 0))
@@ -555,6 +566,50 @@ def horas_por_dia(jornadas: list) -> list[dict]:
     return salida
 
 
+def del_eventual(db: Session, servicio_id: int) -> m.Cierre | None:
+    """El cierre del servicio eventual, si ya nacio. El implantado lleva
+    uno por mes y se lee por su contrato."""
+    return (db.query(m.Cierre)
+            .filter_by(servicio_id=servicio_id, contrato_id=None).first())
+
+
+def cobro_del_cierre(db: Session, cierre: m.Cierre | None) -> dict | None:
+    """Como se cobra una cancelacion, para las pantallas (seccion 105):
+    lo que pidio el consultor, si direccion de operaciones ya lo
+    autorizo, quien y cuando. None cuando el cierre no lleva cobro: un
+    cierre por termino, o una cancelacion de antes de la seccion 105."""
+    if cierre is None or not cierre.cobro:
+        return None
+    quien = (db.get(m.Persona, cierre.cobro_autorizado_por_id)
+             if cierre.cobro_autorizado_por_id else None)
+    return {"cobro": cierre.cobro,
+            "autorizado": cierre.cobro_autorizado_en is not None,
+            "autorizado_en": (cierre.cobro_autorizado_en.isoformat()
+                              if cierre.cobro_autorizado_en else None),
+            "autorizado_por": quien.nombre if quien else None}
+
+
+def cobro_sin_autorizar(cierre: m.Cierre | None) -> bool:
+    """Si el cierre espera el visto bueno de operaciones sobre el cobro:
+    una cancelacion con cobro pedido y sin autorizar. Sin eso no se manda
+    a finanzas (seccion 105)."""
+    return bool(cierre is not None and cierre.cobro
+                and cierre.cobro_autorizado_en is None)
+
+
+def se_cobra_completo(cierre: m.Cierre | None) -> bool:
+    """Si el servicio cancelado se factura con la cotizacion tal cual.
+    Vale desde que el consultor lo pide: la tarjeta ensena lo que se va a
+    cobrar, y el candado de la autorizacion vive en el envio a finanzas."""
+    return bool(cierre is not None and cierre.cobro == COBRO_COMPLETO)
+
+
+def dias_cancelados(servicio: m.Servicio) -> set:
+    """{(fecha ISO, alias del equipo)} de los dias cancelados."""
+    return {(j.fecha.isoformat(), e.alias) for e in servicio.equipos
+            for j in e.jornadas if j.estatus == m.EstatusJornada.CANCELADA}
+
+
 def comparar(db: Session, servicio_id: int) -> dict:
     servicio = db.get(m.Servicio, servicio_id)
     if not servicio:
@@ -563,6 +618,16 @@ def comparar(db: Session, servicio_id: int) -> dict:
     cotizacion = cot.vigente(db, servicio_id)
     if not cotizacion:
         raise HTTPException(409, "El servicio no tiene cotizacion autorizada")
+
+    # En un servicio cancelado los dias que ya no se trabajaron no son
+    # "dias de menos" que haya que recotizar o justificar (seccion 105):
+    # se informan, y el cobro --completo o ejecutado-- lo decide
+    # operaciones. En un servicio que termino, un dia cancelado si se
+    # justifica: el consultor dice que paso con el boton de la tarjeta.
+    cierre = del_eventual(db, servicio_id)
+    cancelado = servicio.estatus == m.EstatusServicio.CANCELADO
+    sin_trabajar = dias_cancelados(servicio) if cancelado else set()
+    completo = se_cobra_completo(cierre)
 
     def referencia(l):
         if l.tipo == m.TipoLinea.PAQUETE:
@@ -601,6 +666,21 @@ def comparar(db: Session, servicio_id: int) -> dict:
     for k, v in mapa_cot.items():
         fecha, equipo, tipo, _ = k
         if k not in mapa_eje:
+            if (fecha, equipo) in sin_trabajar:
+                # El dia se cancelo con el servicio: informativo, con lo
+                # que operaciones decidio cobrar (seccion 105).
+                desviaciones.append({
+                    "tipo": m.TipoDesviacion.DIAS_DE_MENOS.value,
+                    "descripcion": (f"{fecha} {equipo}: se cotizo "
+                                    f"{v['descripcion']} y el dia se cancelo "
+                                    + ("(se cobra completo por decision de "
+                                       "operaciones)" if completo
+                                       else "(no se cobra)")),
+                    "monto": CERO if completo else -v["importe"],
+                    "informativa": True,
+                    # Para que la pantalla lo diga en su idioma.
+                    "fecha": fecha, "equipo": equipo, "que": v["descripcion"]})
+                continue
             desviaciones.append({
                 "tipo": m.TipoDesviacion.DIAS_DE_MENOS.value,
                 "descripcion": f"{fecha} {equipo}: se cotizo {v['descripcion']} "
@@ -690,10 +770,17 @@ def comparar(db: Session, servicio_id: int) -> dict:
                                             cambio)
     sin_cambio = gastos_a_facturar is None
     tc_cotizacion = cot.tipo_de_cambio(db, cotizacion) if otra else None
+    # Lo que se le cobra del servicio (seccion 105): con el cobro completo
+    # de una cancelacion, la cotizacion tal cual --los dias cancelados se
+    # cobran--; si no, lo ejecutado. Los gastos van con su propio trato
+    # en los dos casos.
+    servicio_a_facturar = servicio_cotizado if completo else real["total"]
     return {
         "servicio": servicio.folio,
         "moneda": cotizacion.moneda.value,
         "moneda_local": local.value,
+        # Como se cobra la cancelacion, y si operaciones ya lo autorizo.
+        "cobro": cobro_del_cierre(db, cierre),
         "cotizacion": {"version": cotizacion.version, "total": total_cotizado,
                        "servicio": servicio_cotizado, "gastos": fijo,
                        "moneda": cotizacion.moneda.value,
@@ -738,9 +825,11 @@ def comparar(db: Session, servicio_id: int) -> dict:
                                                           tc_cotizacion["tasa"])
                                       if otra and not netos and tc_cotizacion
                                       and fijo else None)},
-        "a_facturar": {"servicio": real["total"], "gastos": gastos_a_facturar,
+        "a_facturar": {"servicio": servicio_a_facturar,
+                       "gastos": gastos_a_facturar,
                        "total": (None if sin_cambio
-                                 else real["total"] + gastos_a_facturar)},
+                                 else servicio_a_facturar + gastos_a_facturar),
+                       "completo": completo},
         "viaticos": _viaticos_del_comparativo(
             cotizacion, asignado, comprobado, devuelto, rechazado,
             descontado, absorbido, en_paquete, cambio),
@@ -780,6 +869,13 @@ def rentabilidad(db: Session, servicio_id: int) -> dict:
         raise HTTPException(409, "El servicio no tiene cotizacion autorizada")
 
     real = ejecutado(db, servicio, cotizacion.tarifario_id)
+    # Con el cobro completo de una cancelacion (seccion 105) se le factura
+    # la cotizacion tal cual: la utilidad y la comision se miden contra
+    # eso, no contra lo trabajado. Los costos siguen siendo los de los
+    # dias que si se trabajaron.
+    if se_cobra_completo(del_eventual(db, servicio_id)):
+        real = {**real,
+                "total": _d(cotizacion.total) - gastos_cotizados(cotizacion)}
 
     # Todo en la moneda del pais, que es la de los costos (seccion 82).
     # Una cotizacion en dolares se pasa a pesos con el tipo de cambio que
@@ -919,7 +1015,8 @@ VACIO = {"existe": False, "cierre_id": None, "estatus": None, "fase": None,
          "moneda": None, "tipo_cambio_gastos": None,
          "visto_bueno_en": None, "enviado_en": None, "devuelto_en": None,
          "devuelto_motivo": None, "aprobado_en": None, "reloj": None,
-         "consultor": None, "comision": None}
+         "consultor": None, "comision": None, "cobro": None,
+         "cobro_por_autorizar": False}
 
 # Cuantas horas tiene el consultor desde que finanzas le regresa el
 # servicio (decision 1 de Salvador, 23 sep).
@@ -1004,6 +1101,11 @@ def ficha_del_cierre(db: Session, fila: m.Cierre, ahora: datetime) -> dict:
         "consultor": ({"id": consultor.id, "nombre": consultor.nombre}
                       if consultor else None),
         "comision": comisiones.del_cierre(db, fila),
+        # El cobro de la cancelacion (seccion 105): lo que pidio el
+        # consultor y si operaciones ya lo autorizo. Sin autorizar, la
+        # tarjeta lo dice y el visto bueno espera.
+        "cobro": cobro_del_cierre(db, fila),
+        "cobro_por_autorizar": cobro_sin_autorizar(fila),
     }
 
 
@@ -1035,13 +1137,16 @@ YA_TERMINO = (m.EstatusServicio.TERMINADO, m.EstatusServicio.SIN_VISTO_BUENO,
 
 
 def abrir(db: Session, servicio_id: int, abierto_en: datetime | None = None,
-          motivo: str = "termino") -> m.Cierre:
+          motivo: str = "termino", cobro: str | None = None) -> m.Cierre:
     """Arranca el primer reloj: las 24 horas del personal.
 
     `abierto_en` es T0 --el termino general, o la cancelacion--. De ahi
     salen `comprobacion_hasta` (T0 + 24 h) y, provisional, el limite
     del consultor en T0 + 48 h: el de verdad lo pone `avanzar` cuando
     llega T1.
+
+    `cobro` solo en una cancelacion (seccion 105): lo que el consultor
+    pidio cobrar, que direccion de operaciones autoriza despues.
     """
     servicio = db.get(m.Servicio, servicio_id)
     if not servicio:
@@ -1069,7 +1174,8 @@ def abrir(db: Session, servicio_id: int, abierto_en: datetime | None = None,
     cierre = m.Cierre(servicio_id=servicio_id, abierto_en=momento,
                       comprobacion_hasta=hasta,
                       limite_consultor=hasta + timedelta(hours=HORAS_CONSULTOR),
-                      motivo_apertura=motivo)
+                      motivo_apertura=motivo,
+                      cobro=cobro if motivo == CANCELACION else None)
     db.add(cierre)
     # `flush` y no `commit`: esto se llama tambien desde adentro del
     # cierre del ultimo dia, y ahi commitear a media transaccion partiria
@@ -1101,7 +1207,8 @@ def _pantalla(cierre: m.Cierre) -> str:
 
 def correo_al_consultor(db: Session, cierre: m.Cierre, asunto: str,
                         cuerpo: str, que_hacer: str, hasta: datetime,
-                        motivo: str | None = None) -> bool:
+                        motivo: str | None = None,
+                        datos: dict | None = None) -> bool:
     """Un correo al consultor titular, ademas del aviso al telefono
     (seccion 101).
 
@@ -1112,7 +1219,9 @@ def correo_al_consultor(db: Session, cierre: m.Cierre, asunto: str,
     sus 24 horas corrian y nadie se lo decia. Va en el idioma del pais,
     como los demas avisos a la gente de la casa, y dice que servicio,
     hasta cuando y que hacer. `asunto`, `cuerpo` y `que_hacer` son
-    claves de `textos_aviso`. Solo escribe; quien llama guarda.
+    claves de `textos_aviso`; `datos` son huecos de mas para el asunto y
+    el cuerpo, {hueco: clave de `textos_aviso`}, que se dicen en la misma
+    lengua (seccion 105). Solo escribe; quien llama guarda.
     """
     from app import correo_html
     from app import textos_aviso as ta
@@ -1124,6 +1233,7 @@ def correo_al_consultor(db: Session, cierre: m.Cierre, asunto: str,
         return False
     lengua = ta.idioma_de(db, servicio, m.Destinatario.CONSULTOR)
     de_que = _de_que(cierre)
+    huecos = {k: ta.t(lengua, v) for k, v in (datos or {}).items()}
     pares = [(ta.t(lengua, "enc_servicio"), de_que),
              (ta.t(lengua, "cie_vence"), f"{hasta:%d/%m/%Y %H:%M}")]
     if motivo:
@@ -1133,9 +1243,10 @@ def correo_al_consultor(db: Session, cierre: m.Cierre, asunto: str,
         servicio_id=servicio.id,
         destinatario=m.Destinatario.CONSULTOR, canal=m.Canal.CORREO,
         correo=consultor.correo, idioma=lengua,
-        asunto=ta.t(lengua, asunto, de_que=de_que)[:200],
+        asunto=ta.t(lengua, asunto, de_que=de_que, **huecos)[:200],
         cuerpo=ta.t(lengua, cuerpo, de_que=de_que,
-                    fecha=f"{hasta:%d/%m}", hora=f"{hasta:%H:%M}")[:2000],
+                    fecha=f"{hasta:%d/%m}", hora=f"{hasta:%H:%M}",
+                    **huecos)[:2000],
         datos=correo_html.guardar_datos(pares),
         enlace_seguimiento=_pantalla(cierre)))
     return True
@@ -1222,6 +1333,11 @@ def regresar(db: Session, cierre: m.Cierre, motivo: str, usuario: m.Usuario,
     # (seccion 82): mientras tanto se ve el que este puesto.
     cierre.tipo_cambio_gastos = None
     cierre.tipo_cambio_gastos_fecha = None
+    # Arranca otro plazo --las 24 horas del regreso-- y trae sus propios
+    # avisos de la mitad y del vencimiento (seccion 105): los del plazo
+    # que ya paso no cuentan para este.
+    cierre.aviso_mitad_en = None
+    cierre.aviso_vencido_en = None
     # Vuelve al consultor: el eventual regresa a sin visto bueno. El
     # implantado no cambia de estatus: la fase la lleva el mes.
     if (not cierre.contrato_id
@@ -1377,3 +1493,365 @@ def avanzar_cierres(db: Session, ahora: datetime | None = None) -> list[str]:
                 f"{cierre.contrato.anio}")
     db.commit()
     return movidos
+
+
+# ---------------------------------------------------------------- el cobro al cancelar
+#
+# Seccion 105, decision 1 de Salvador (29 sep): al cancelar, el consultor
+# elige si al cliente se le cobra la cotizacion completa o lo ejecutado,
+# y direccion de operaciones lo autoriza desde la tarjeta del cierre.
+# Mientras no lo autorice, el cierre no se manda a finanzas.
+
+LARGO_NOTA = 400
+# Con el visto bueno dado la factura ya salio, o esta por salir, con ese
+# cobro: ya no se autoriza otro. Lo que cambie lo regresa finanzas.
+YA_SE_MANDO = (m.EstatusCierre.ENVIADO_FINANZAS, m.EstatusCierre.APROBADO,
+               m.EstatusCierre.FACTURADO)
+# La clave de `textos_aviso` que dice cada cobro.
+NOMBRE_DEL_COBRO = {COBRO_COMPLETO: "cie_cobro_completo",
+                    COBRO_EJECUTADO: "cie_cobro_ejecutado"}
+
+
+def autorizar_cobro(db: Session, cierre: m.Cierre, cobro: str,
+                    nota: str | None, usuario: m.Usuario,
+                    ahora: datetime | None = None) -> dict:
+    """Direccion de operaciones decide como se cobra la cancelacion.
+
+    Puede quedarse con lo que pidio el consultor o cambiarlo; si lo
+    cambia, dice por que. Queda en la bitacora del servicio con quien y
+    cuando, y al consultor le llega por correo y al telefono: es lo que
+    destraba su visto bueno. Guarda y avisa.
+    """
+    from app import auditoria, push
+
+    if cierre.contrato_id or cierre.motivo_apertura != CANCELACION:
+        raise HTTPException(409, {
+            "mensaje": "El cobro solo se autoriza en un servicio cancelado",
+            "que_hacer": "Un servicio que terminó se factura por lo "
+                         "ejecutado: no hay nada que autorizar."})
+    if cobro not in COBROS:
+        raise HTTPException(400, {
+            "mensaje": "Di si se cobra completo o lo ejecutado",
+            "que_hacer": "Completo es la cotización autorizada tal cual; "
+                         "ejecutado es lo que se trabajó."})
+    if cierre.estatus in YA_SE_MANDO:
+        raise HTTPException(409, {
+            "mensaje": (f"El cierre ya se mandó a finanzas con el cobro "
+                        f"{cierre.cobro or COBRO_EJECUTADO}"),
+            "que_hacer": "Si hay que cambiarlo, finanzas lo regresa a "
+                         "operación y se vuelve a autorizar."})
+    nota = " ".join((nota or "").split()) or None
+    if nota and len(nota) > LARGO_NOTA:
+        raise HTTPException(400, {
+            "mensaje": "La nota es demasiado larga",
+            "que_hacer": f"Caben {LARGO_NOTA} letras."})
+    pedido = cierre.cobro
+    if pedido and cobro != pedido and not nota:
+        raise HTTPException(400, {
+            "mensaje": f"El consultor pidió cobrar {pedido}: di por qué "
+                       f"se cobra {cobro}",
+            "que_hacer": "Escribe una nota; es lo que el consultor lee "
+                         "en su correo y lo que queda en la bitácora."})
+
+    momento = reloj.ahora_del_servicio(db, cierre.servicio, ahora)
+    cierre.cobro = cobro
+    cierre.cobro_autorizado_en = momento
+    cierre.cobro_autorizado_por_id = usuario.persona_id
+    de_que = _de_que(cierre)
+    auditoria.registrar(
+        db, usuario, cierre.servicio, "autorizar cobro",
+        (f"{de_que}: se cobra {cobro}"
+         + (f" (el consultor pidió {pedido})" if pedido and pedido != cobro
+            else "")
+         + (f" · {nota}" if nota else ""))[:400])
+    # Por correo, con lo que falta: su visto bueno y hasta cuando.
+    correo_al_consultor(db, cierre, "cie_cobro_asunto", "cie_cobro_cuerpo",
+                        "cie_cobro_que_hacer", cierre.limite_consultor,
+                        motivo=nota, datos={"cobro": NOMBRE_DEL_COBRO[cobro]})
+    db.commit()
+
+    if cierre.servicio.consultor_id:
+        lengua = push.idioma_de(db, cierre.servicio.consultor_id)
+        try:
+            push.avisar(
+                db, cierre.servicio.consultor_id,
+                titulo=push.tx(lengua, "cie_cobro_titulo", de_que=de_que,
+                               cobro=push.tx(lengua, f"cobro_{cobro}")),
+                cuerpo=push.tx(lengua, "cie_cobro_cuerpo"),
+                url=_pantalla(cierre), etiqueta=f"cobro-{cierre.id}")
+            db.commit()
+        except Exception:                 # noqa: BLE001
+            # Un aviso que no sale no deshace la autorizacion.
+            db.rollback()
+            registro.exception("no se pudo avisar el cobro de %s", de_que)
+    quien = db.get(m.Persona, usuario.persona_id) if usuario.persona_id else None
+    return {"resultado": "cobro autorizado", "cobro": cobro, "pedido": pedido,
+            "autorizado_en": momento.isoformat(),
+            "autorizado_por": quien.nombre if quien else None,
+            "nota": nota}
+
+
+def _totales_de_la_cancelacion(db: Session, servicio: m.Servicio) -> tuple:
+    """(total cotizado, total ejecutado, moneda) de un cancelado, para la
+    bandeja del director. Sin cotizacion, o con algo que la lista no
+    cotiza, la cifra que no se puede decir va vacia: la bandeja no se
+    cae por un servicio a medio capturar."""
+    vigente = cot.vigente(db, servicio.id)
+    if vigente is None:
+        return None, None, None
+    try:
+        trabajado = ejecutado(db, servicio, vigente.tarifario_id)["total"]
+    except HTTPException:
+        trabajado = None
+    return _d(vigente.total), trabajado, vigente.moneda.value
+
+
+def cobros_por_autorizar(db: Session) -> list[dict]:
+    """Las cancelaciones que esperan que operaciones diga como se cobran
+    (seccion 105), para la pantalla del director de operaciones.
+
+    Un renglon por cierre de cancelacion con cobro pedido y sin
+    autorizar, del mas viejo al mas nuevo: el servicio, su cliente y su
+    consultor, lo que el consultor pidio, cuando se cancelo, y lo que
+    vale cada opcion --el total cotizado y lo trabajado--. Lo que ya
+    cerro finanzas no espera nada.
+    """
+    filas = (db.query(m.Cierre)
+             .filter(m.Cierre.contrato_id.is_(None),
+                     m.Cierre.motivo_apertura == CANCELACION,
+                     m.Cierre.cobro.isnot(None),
+                     m.Cierre.cobro_autorizado_en.is_(None),
+                     m.Cierre.estatus.notin_((m.EstatusCierre.APROBADO,
+                                              m.EstatusCierre.FACTURADO)))
+             .order_by(m.Cierre.abierto_en, m.Cierre.id).all())
+    salida = []
+    for c in filas:
+        servicio = c.servicio
+        consultor = (db.get(m.Persona, servicio.consultor_id)
+                     if servicio.consultor_id else None)
+        cotizado, trabajado, moneda = _totales_de_la_cancelacion(db, servicio)
+        salida.append({
+            "cierre_id": c.id, "servicio_id": servicio.id,
+            "folio": servicio.folio,
+            "cliente": servicio.cliente.nombre if servicio.cliente else None,
+            "consultor": consultor.nombre if consultor else None,
+            "consultor_id": servicio.consultor_id,
+            "cobro": c.cobro,
+            "cancelado_en": c.abierto_en.isoformat() if c.abierto_en else None,
+            "total_cotizado": cotizado, "total_ejecutado": trabajado,
+            "moneda": moneda,
+            "fase": FASES.get(c.estatus),
+            "pantalla": _pantalla(c),
+        })
+    return salida
+
+
+# ---------------------------------------------------------------- los plazos del cierre
+#
+# Seccion 105, decision 12 de Salvador (29 sep): vencido el plazo del
+# consultor nada se movia ni avisaba a nadie (hallazgo 59). Ahora, a la
+# mitad del plazo se le avisa al consultor y, al vencer, al consultor y
+# al director de operaciones, por correo y al telefono. El servicio sigue
+# esperando su visto bueno --o el de direccion, como cobertura--, ya sin
+# comision. Los dos plazos que se vigilan son los del consultor: sus 24
+# horas y las 24 horas del regreso de finanzas. El fin de las 24 horas
+# del personal ya tiene su aviso: "arrancan tus 24 horas" (seccion 101).
+
+DEL_CONSULTOR = (m.EstatusCierre.SIN_VISTO_BUENO, m.EstatusCierre.EN_REVISION_IA,
+                 m.EstatusCierre.DEVUELTO_A_OPERACION)
+
+
+def plazo_desde(cierre: m.Cierre, quien: str) -> datetime | None:
+    """Cuando arranco el plazo que corre: T1 para el del consultor --o
+    la apertura, en un cierre de antes de los dos relojes--, y el regreso
+    de finanzas para el suyo."""
+    if quien == "regreso":
+        return cierre.devuelto_en
+    return cierre.visto_bueno_desde or cierre.abierto_en
+
+
+def directores_de_operaciones(db: Session, pais_id: int | None) -> list:
+    """A quien se le avisa por direccion de operaciones: los de ese pais
+    con acceso abierto; si el pais no tiene el suyo, los que haya (como
+    la escalacion del task sheet, seccion 101)."""
+    filas = (db.query(m.Persona)
+             .join(m.Usuario, m.Usuario.persona_id == m.Persona.id)
+             .filter(m.Usuario.rol == m.Rol.DIRECTOR_OPERACIONES,
+                     m.Usuario.activo.is_(True))
+             .order_by(m.Persona.id).all())
+    del_pais = [p for p in filas if p.plaza and p.plaza.pais_id == pais_id]
+    return del_pais or filas
+
+
+def _desde_hace(minutos: int) -> str:
+    """"3 h 20 min", "2 d 5 h": cuanto lleva vencido, para la pantalla."""
+    if minutos < 60:
+        return f"{minutos} min"
+    horas, resto = divmod(minutos, 60)
+    if horas < 24:
+        return f"{horas} h {resto} min" if resto else f"{horas} h"
+    dias, horas = divmod(horas, 24)
+    return f"{dias} d {horas} h" if horas else f"{dias} d"
+
+
+def plazos_vencidos(db: Session, ahora: datetime | None = None) -> list[dict]:
+    """Los cierres cuyo plazo del consultor ya vencio (seccion 105), para
+    la pantalla del director de operaciones.
+
+    Un renglon por cierre --el mes del implantado con su mes-- que sigue
+    esperando el visto bueno con el plazo pasado: que plazo vencio (el
+    del consultor, o el del regreso de finanzas), cuando, desde hace
+    cuanto y si ya se aviso. Los mas vencidos primero. Todo en hora del
+    pais del servicio.
+    """
+    relojes = reloj.Relojes(db, ahora)
+    salida = []
+    for c in (db.query(m.Cierre)
+              .filter(m.Cierre.estatus.in_(DEL_CONSULTOR)).all()):
+        vigente = limite_vigente(c)
+        if not vigente:
+            continue
+        quien, hasta = vigente
+        momento = relojes.del_servicio(c.servicio)
+        if momento < hasta:
+            continue
+        servicio = c.servicio
+        consultor = (db.get(m.Persona, servicio.consultor_id)
+                     if servicio.consultor_id else None)
+        minutos = int((momento - hasta).total_seconds() // 60)
+        salida.append({
+            "cierre_id": c.id, "servicio_id": servicio.id,
+            "folio": servicio.folio, "de_que": _de_que(c),
+            "tipo": servicio.tipo.value,
+            "contrato_id": c.contrato_id,
+            "periodo": (f"{c.contrato.mes:02d}/{c.contrato.anio}"
+                        if c.contrato_id else None),
+            "cliente": servicio.cliente.nombre if servicio.cliente else None,
+            "consultor": consultor.nombre if consultor else None,
+            "consultor_id": servicio.consultor_id,
+            "plazo": quien,
+            "fase": FASES.get(c.estatus),
+            "vencio_en": hasta.isoformat(),
+            "desde_hace_minutos": minutos,
+            "desde_hace": _desde_hace(minutos),
+            "avisado_en": (c.aviso_vencido_en.isoformat()
+                           if c.aviso_vencido_en else None),
+            "pantalla": _pantalla(c),
+        })
+    salida.sort(key=lambda x: -x["desde_hace_minutos"])
+    return salida
+
+
+def _correo_al_director(db: Session, cierre: m.Cierre, director: m.Persona,
+                        quien: str, hasta: datetime,
+                        consultor: m.Persona | None) -> bool:
+    """El correo del plazo vencido a direccion de operaciones, en el
+    idioma de su pais. Solo escribe; quien llama guarda."""
+    from app import correo_html
+    from app import textos_aviso as ta
+
+    if not director.correo:
+        return False
+    pais = db.get(m.Pais, director.plaza.pais_id) if director.plaza else None
+    lengua = pais.idioma if pais else "es"
+    de_que = _de_que(cierre)
+    nombre = consultor.nombre if consultor else "—"
+    cuerpo = "cie_venc_dir_reg_cuerpo" if quien == "regreso" else "cie_venc_dir_cuerpo"
+    db.add(m.Notificacion(
+        servicio_id=cierre.servicio_id,
+        destinatario=m.Destinatario.COLABORADOR, canal=m.Canal.CORREO,
+        correo=director.correo, idioma=lengua,
+        asunto=ta.t(lengua, "cie_venc_dir_asunto", de_que=de_que,
+                    consultor=nombre)[:200],
+        cuerpo=ta.t(lengua, cuerpo, de_que=de_que, consultor=nombre,
+                    fecha=f"{hasta:%d/%m}", hora=f"{hasta:%H:%M}")[:2000],
+        datos=correo_html.guardar_datos([
+            (ta.t(lengua, "enc_servicio"), de_que),
+            (ta.t(lengua, "cie_consultor"), nombre,
+             consultor.telefono if consultor else None),
+            (ta.t(lengua, "cie_vence"), f"{hasta:%d/%m/%Y %H:%M}"),
+            (ta.t(lengua, "cie_que_hacer"),
+             ta.t(lengua, "cie_venc_dir_que_hacer"))]),
+        enlace_seguimiento=_pantalla(cierre)))
+    return True
+
+
+def _push_del_plazo(db: Session, persona_id: int, cierre: m.Cierre,
+                    titulo: str, cuerpo: str, etiqueta: str, **datos) -> None:
+    """Un aviso al telefono por el plazo, en el idioma de quien lo recibe.
+    Nunca frena el barrido."""
+    from app import push
+
+    lengua = push.idioma_de(db, persona_id)
+    try:
+        push.avisar(db, persona_id,
+                    titulo=push.tx(lengua, titulo, de_que=_de_que(cierre),
+                                   **datos),
+                    cuerpo=push.tx(lengua, cuerpo, **datos),
+                    url=_pantalla(cierre), etiqueta=f"{etiqueta}-{cierre.id}")
+    except Exception:                     # noqa: BLE001
+        registro.exception("no se pudo avisar el plazo de %s", _de_que(cierre))
+
+
+def avisar_plazos(db: Session, ahora: datetime | None = None) -> dict:
+    """El barrido de los plazos del consultor (seccion 105, decision 12).
+
+    Por cada cierre que espera el visto bueno: a la mitad del plazo que
+    corre, correo y telefono al consultor titular; al vencer, correo y
+    telefono al consultor y al director de operaciones del pais. Cada
+    aviso una sola vez, con su fecha en el cierre; la vuelta que llega
+    cuando el plazo ya vencio manda solo el del vencimiento. El regreso
+    de finanzas limpia las dos fechas y arranca sus propios avisos.
+    Devuelve los folios avisados.
+    """
+    relojes = reloj.Relojes(db, ahora)
+    mitad, vencidos = [], []
+    for cierre in (db.query(m.Cierre)
+                   .filter(m.Cierre.estatus.in_(DEL_CONSULTOR)).all()):
+        vigente = limite_vigente(cierre)
+        if not vigente:
+            continue
+        quien, hasta = vigente
+        servicio = cierre.servicio
+        momento = relojes.del_servicio(servicio)
+        de_que = _de_que(cierre)
+        consultor = (db.get(m.Persona, servicio.consultor_id)
+                     if servicio.consultor_id else None)
+        regreso = quien == "regreso"
+        datos = {"fecha": f"{hasta:%d/%m}", "hora": f"{hasta:%H:%M}"}
+
+        if cierre.aviso_vencido_en is None and momento >= hasta:
+            cierre.aviso_vencido_en = momento
+            correo_al_consultor(
+                db, cierre, "cie_venc_asunto",
+                "cie_venc_reg_cuerpo" if regreso else "cie_venc_cuerpo",
+                "cie_venc_que_hacer", hasta)
+            if consultor:
+                _push_del_plazo(db, consultor.id, cierre, "cie_venc_titulo",
+                                "cie_venc_reg_cuerpo" if regreso
+                                else "cie_venc_cuerpo", "plazo-vencido", **datos)
+            for director in directores_de_operaciones(db, servicio.pais_id):
+                _correo_al_director(db, cierre, director, quien, hasta, consultor)
+                _push_del_plazo(db, director.id, cierre, "cie_venc_dir_titulo",
+                                "cie_venc_dir_reg_cuerpo" if regreso
+                                else "cie_venc_dir_cuerpo", "plazo-vencido",
+                                consultor=consultor.nombre if consultor else "—",
+                                **datos)
+            vencidos.append(de_que)
+            continue
+
+        desde = plazo_desde(cierre, quien)
+        if (cierre.aviso_mitad_en is None and cierre.aviso_vencido_en is None
+                and desde is not None and momento < hasta
+                and momento >= desde + (hasta - desde) / 2):
+            cierre.aviso_mitad_en = momento
+            correo_al_consultor(
+                db, cierre, "cie_mitad_asunto",
+                "cie_mitad_reg_cuerpo" if regreso else "cie_mitad_cuerpo",
+                "cie_mitad_que_hacer", hasta)
+            if consultor:
+                _push_del_plazo(db, consultor.id, cierre, "cie_mitad_titulo",
+                                "cie_mitad_cuerpo", "plazo-mitad", **datos)
+            mitad.append(de_que)
+    db.commit()
+    return {"mitad": mitad, "vencidos": vencidos}

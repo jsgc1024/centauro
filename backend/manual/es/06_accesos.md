@@ -27,6 +27,7 @@ Dan y cierran accesos administración, dirección general, recursos humanos y si
 - **La llave maestra no se queda sin dueño**: no se le puede quitar a la última persona activa que la tiene, contando a dirección general.
 - **El acceso no es la puerta de atrás de una baja**: a quien está dado de baja no se le abre un acceso; si volvió, primero se le reactiva como empleado.
 - **A quien se va debiendo viáticos no se le cierra el acceso** hasta que compruebe; si ya no va a volver, finanzas lo cierra con su ajuste.
+- **Al consultor titular de servicios vivos no se le cierra el acceso**: el sistema dice cuántos y cuáles; dirección de operaciones los cambia primero desde cada ficha con «Cambiar titular».
 
 ## Cómo entra cada quien
 - **La oficina** recibe una **invitación por correo** para crear su contraseña. El enlace vale **72 horas** y sirve una sola vez. Reenviarla manda uno nuevo y apaga el anterior. Si el correo no le llega, dirección general o administración pueden **copiar el enlace** y dárselo en mano; queda escrito quién lo copió.

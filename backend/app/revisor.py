@@ -110,6 +110,7 @@ def revisar(db: Session, servicio_id: int, ahora: datetime | None = None) -> dic
     DEL_DINERO = {m.TipoDesviacion.VIATICO_SIN_COMPROBAR.value,
                   m.TipoDesviacion.VIATICO_NO_CERRADO.value}
 
+    cobro = comparativo.get("cobro")
     for d in comparativo["desviaciones"]:
         if d["tipo"] in DEL_DINERO and not d.get("respaldada"):
             continue
@@ -117,6 +118,21 @@ def revisar(db: Session, servicio_id: int, ahora: datetime | None = None) -> dic
             # Se dicen abajo, dia por dia y en horas (seccion 65): el
             # renglon de dinero ("cobra 960 mas de lo cotizado") no decia
             # cuantas horas ni por que.
+            continue
+        # El dia que se cancelo con el servicio no se recotiza ni se
+        # justifica (seccion 105): se dice, con lo que operaciones
+        # decidio cobrar. La pantalla lo traduce por su clave.
+        if d.get("informativa"):
+            completo = bool(cobro and cobro["cobro"] == motor.COBRO_COMPLETO)
+            observaciones.append({
+                "nivel": INFO, "asunto": "Dia cancelado",
+                "clave": "dia_cancelado",
+                "datos": {"completo": completo, "fecha": d.get("fecha"),
+                          "equipo": d.get("equipo"), "que": d.get("que")},
+                "mensaje": d["descripcion"],
+                "accion": ("Se cobra completo por decision de operaciones."
+                           if completo else
+                           "No se cobra: el servicio se cancelo.")})
             continue
         # El cierre con descuento ya viene resuelto: hay decision tomada,
         # motivo escrito y dinero asignado. No hay nada que justificar.
@@ -129,7 +145,24 @@ def revisar(db: Session, servicio_id: int, ahora: datetime | None = None) -> dic
         observaciones.append({
             "nivel": GRAVE, "asunto": d["tipo"],
             "mensaje": d["descripcion"],
+            # La tarjeta ofrece "Justificar" sobre estas (seccion 105): es
+            # la desviacion viva que `respaldar` acepta tal como se dice.
+            "justificable": True,
             "accion": "Recotiza y autoriza con el cliente, o justifica la desviacion."})
+
+    # El cobro de la cancelacion sin autorizar (seccion 105): el visto
+    # bueno espera a direccion de operaciones. Grave, para que la tarjeta
+    # lo diga arriba y el envio lo frene.
+    if cobro and not cobro["autorizado"]:
+        observaciones.append({
+            "nivel": GRAVE, "asunto": "Cobro por autorizar",
+            "clave": "cobro_por_autorizar",
+            "datos": {"cobro": cobro["cobro"]},
+            "mensaje": (f"El consultor pidio cobrar la cancelacion "
+                        f"{cobro['cobro']}; falta que direccion de operaciones "
+                        "lo autorice"),
+            "accion": "Direccion de operaciones lo autoriza desde «Autorizar "
+                      "el cobro», en esta tarjeta."})
 
     # --- el tipo de cambio (seccion 82). Con gastos netos y la cotizacion
     # en otra moneda, lo comprobado --en pesos-- se factura en la moneda
