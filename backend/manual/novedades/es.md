@@ -2,6 +2,9 @@
 
 Lo nuevo de cada actualización, escrito para quien usa el sistema. La más nueva va arriba.
 
+## 108 · 2026-09-30 · El puesto «Gerente de administración»
+Un puesto nuevo en Accesos: firma el dinero y la gente sin operar. Aprueba, factura o regresa los cierres, fija el tabulador de nómina y los catálogos que deciden dinero, autoriza el bono del mes y registra las diferencias de las comisiones; ve toda la operación, los viáticos, la utilidad por servicio, el desempeño, las encuestas y Calidad. No deposita, no arma ni paga el corte, no paga el bono, no opera servicios, no da accesos y no toca Odoo. Se sugiere a quien en Odoo es gerente de administración; se pone desde Accesos > Personas.
+
 ## 107 · 2026-09-30 · El fin es cuando el ejecutivo corta; la unidad se entrega después
 El fin del servicio se marca cuando el ejecutivo corta —«hasta aquí me dejas»— y ahí se cierran las horas del día, con o sin unidad por entregar; llevar la unidad a la oficina ya no cuenta como servicio ni frena el fin. Con el fin nace la entrega pendiente: 24 horas, las mismas de los viáticos. La app la pone arriba con su reloj hasta que el conductor haga la revisión de entrega; el teléfono se la recuerda; la central la ve en «Unidades por entregar»; al vencer, avisa al consultor y a dirección de operaciones; y el cierre la reclama hasta que se entregue o el consultor o la central la registren como entregada sin revisión, con la razón. Queda sin efecto lo que la sección 106 ponía en el punto 8 (la entrega antes del fin).
 

@@ -2,6 +2,9 @@
 
 O que há de novo em cada atualização, escrito para quem usa o sistema. A mais nova fica em cima.
 
+## 108 · 2026-09-30 · O cargo «Gerente de administração»
+Um cargo novo em Acessos: assina o dinheiro e as pessoas sem operar. Aprova, fatura ou devolve os fechamentos, fixa a tabela da folha e os catálogos que decidem dinheiro, autoriza o bônus do mês e registra as diferenças das comissões; vê toda a operação, as diárias, o lucro por serviço, o desempenho, as pesquisas e Qualidade. Não deposita, não monta nem paga o fechamento semanal, não paga o bônus, não opera serviços, não dá acessos e não mexe no Odoo. É sugerido a quem no Odoo é gerente de administração; se atribui em Acessos > Pessoas.
+
 ## 107 · 2026-09-30 · O fim é quando o executivo corta; a unidade se entrega depois
 O fim do serviço se marca quando o executivo corta —«até aqui você me deixa»— e aí se fecham as horas do dia, com ou sem unidade por entregar; levar a unidade ao escritório já não conta como serviço nem trava o fim. Com o fim nasce a entrega pendente: 24 horas, as mesmas das diárias. O app a põe no alto com o seu relógio até que o motorista faça a revisão de entrega; o telefone lembra; a central a vê em «Unidades por entregar»; ao vencer, avisa o consultor e a direção de operações; e o fechamento cobra até que seja entregue ou o consultor ou a central a registrem como entregue sem revisão, com o motivo. Fica sem efeito o que a seção 106 punha no ponto 8 (a entrega antes do fim).
 

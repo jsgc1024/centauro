@@ -8194,6 +8194,50 @@ informativa); `celery_app.py` (`cierre.avanzar` llama
 `tests/test_revision_candado.py` se retira —era el candado— y
 `ayudas.marcar_fin` entrega la unidad que el fin dejó pendiente.
 
+## 108. El puesto «Gerente de administración»
+
+Salvador lo pidió el 30 de septiembre, con la recomendación de Claude.
+La recomendación, en una línea: **firma el dinero y la gente sin
+operar**. Es el jefe de Finanzas, Nómina, Tesorería y Recursos Humanos
+dentro de Connect: aprueba y factura los cierres, fija los tabuladores,
+autoriza el bono del mes, registra las diferencias de las comisiones y
+ve toda la operación, las encuestas y el mes en cifras. Lo que ejecuta
+el dinero se queda en su gente, con la regla de siempre (sección 73,
+`INCOMPATIBLES`): quien autoriza no paga.
+
+- **Entra como** Finanzas; área «Administración»; orden 35, entre las
+  centrales y Finanzas. Se sugiere a quien en Odoo es Gerente de
+  Administración, Gerente Administrativo o Gerente de Administración y
+  Finanzas; a los demás se les da a mano.
+- **Su menú:** Operación, EP eventual, EP implantado, Personal de
+  Seguridad, Desempeño, Clientes, Calidad, Gastos, Facturación, Nóminas
+  y Catálogos.
+- **Firma:** `cierre.facturar` (aprobar, facturar o regresar),
+  `nomina.tabulador`, `catalogos.dinero` (el tabulador de viáticos, las
+  horas de cada modalidad y las tarifas de freelance), `bonos.autorizar`
+  y `comisiones.ajustar`.
+- **Ve:** la operación como sistema y calidad —`servicios.ver`,
+  `solicitantes.ver`, `asignaciones.ver`, `tasksheet.ver`,
+  `contingencia.ver`, `implantado.ver`, `unidades.ver`,
+  `encuestas.ver`, `profesionalismo.ver`, `panorama.ver`—, el dinero
+  —`viaticos.ver`, `viaticos.evidencia`, `archivo.ver`, `cierre.ver`,
+  `cierre.rentabilidad`, `cierre.historial`, `nomina.ver`,
+  `comisiones.ver`, `bonos.ver`— y `calidad.ver`.
+- **No hace:** depositar (Tesorería), armar el corte (Nómina), marcarlo
+  pagado ni pagar el bono (Jefe de finanzas), dar de alta o cerrar
+  servicios, corregir marcas, dar accesos (Recursos Humanos y sistema y
+  calidad), Odoo ni los catálogos que no deciden dinero.
+
+Por dentro: `puestos_base.PUESTOS` (con la razón de cada casilla) y la
+migración `f0b2d4e6a8c0`, que lo deja creado en producción si no existe
+—`crear_puestos` solo corre desde el botón de Accesos, y este no tenía
+por qué esperar un clic—; correrla dos veces no duplica, y su vuelta
+atrás le quita el puesto a quien lo traiga y lo borra. Pruebas:
+`tests/test_revision_108_gerente.py` (3): la migración y la propuesta
+dicen el mismo puesto, quien lo trae firma y no ejecuta, y no junta lo
+que no vive en la misma mano; `test_puestos.py` lo revisa como a los
+demás.
+
 ## 14. Lo que falta
 
 ### Abierto

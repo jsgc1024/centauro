@@ -118,6 +118,54 @@ PUESTOS: list[dict] = [
         "actividades": _de(R.CENTRAL) - NO_MONITORISTA,
         "puestos_odoo": "Monitorista, Asistente CI, Analista de Monitoreo",
     },
+    # Seccion 108. Salvador pidio (30 sep) un puesto de gerente de
+    # administracion, con la recomendacion de Claude: firma el dinero y la
+    # gente sin operar. Aprueba y factura los cierres, fija los
+    # tabuladores (lo que se paga por dia y lo que en los catalogos decide
+    # dinero), autoriza el bono del mes y registra las diferencias de las
+    # comisiones; ve toda la operacion, las encuestas y el mes en cifras.
+    # Lo que ejecuta el dinero se queda en su gente: quien deposita
+    # (Tesoreria), quien arma el corte (Nomina) y quien lo marca pagado y
+    # paga el bono (Jefe de finanzas); es la misma regla de siempre, quien
+    # autoriza no paga. No da accesos --Recursos Humanos y sistema y
+    # calidad-- y no toca Odoo ni los catalogos que no deciden dinero.
+    {
+        "nombre": "Gerente de administración",
+        "area": "Administración",
+        "rol": R.FINANZAS,
+        "orden": 35,
+        "descripcion": "Firma el dinero y la gente sin operar: aprueba y "
+                       "factura los cierres, fija los tabuladores, autoriza "
+                       "el bono del mes y ve toda la operación en cifras.",
+        "pantallas": ["panorama", "servicios", "implantados", "equipo",
+                      "bonos", "encuestas", "finanzas", "facturacion",
+                      "nomina", "calidad", "catalogos"],
+        "actividades": {
+            # Ve la operacion sin operarla, como sistema y calidad.
+            "panorama.ver", "servicios.ver", "solicitantes.ver",
+            "asignaciones.ver", "tasksheet.ver", "contingencia.ver",
+            "implantado.ver", "unidades.ver", "encuestas.ver",
+            "profesionalismo.ver",
+            # El dinero: lo ve, lo aprueba y lo factura; no lo deposita.
+            "viaticos.ver", "viaticos.evidencia", "archivo.ver",
+            "cierre.ver", "cierre.facturar", "cierre.rentabilidad",
+            "cierre.historial",
+            # La nomina y las comisiones: fija que se paga y registra las
+            # diferencias; el corte lo arma Nomina y lo paga finanzas.
+            "nomina.ver", "nomina.tabulador", "comisiones.ver",
+            "comisiones.ajustar",
+            # La gente: autoriza el bono del mes; el deposito es de finanzas.
+            "bonos.ver", "bonos.autorizar",
+            # Lo que en los catalogos decide dinero: el tabulador de
+            # viaticos, las horas de cada modalidad y las tarifas de freelance.
+            "catalogos.dinero",
+            # El mes en cifras.
+            "calidad.ver",
+        },
+        "puestos_odoo": "Gerente de Administración, Gerente de Administracion, "
+                        "Gerente Administrativo, Gerente Administrativa, "
+                        "Gerente de Administración y Finanzas",
+    },
     {
         "nombre": "Jefe de finanzas",
         "area": "Finanzas",
