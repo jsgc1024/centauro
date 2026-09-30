@@ -7703,6 +7703,38 @@ nuevas en `tests/test_odoo_personal.py`. La hoja congelada del task
 sheet, que lleva estas fotos incrustadas, ya no tiene tope desde la
 sección 101 (migración `b4d6f8a0c2e4`): con las de 512 px lo pasaba.
 
+## 104. El correo por etapas: primero la empresa, después los clientes
+
+Decisión de Salvador del 29 de septiembre. Amazon SES no aprobó la
+cuenta y el correo sale por Microsoft 365 desde `connect@centauro.lat`
+(ya configurado en el servidor y probado). Antes de soltar la cola quiso
+encenderlo por etapas: primero solo la gente de la empresa y después
+también los clientes. Resuelto en otra sesión (rama `correo-por-etapas`,
+pull request #3) y unido aquí después de la sección 103. Sin migración.
+
+- **`CORREO_SOLO_INTERNOS=si`**: sale lo de consultores, central,
+  personal y oficina (el papel, no el dominio: el guardia con correo
+  personal también recibe); lo de quien solicita y del ejecutivo ni se
+  toma de la cola —no gasta el cupo de la vuelta— y, pasado su tiempo de
+  vida, se vence sin salir.
+- **`poner_correo.py --solo-internos` y `--a-todos`** encienden el
+  correo en cada etapa; `--apagar` apaga todo. `--encender` y las etapas
+  ya no piden lo de Amazon cuando están los tres datos de Microsoft.
+- **`GET /sistema/correo`** dice `solo_internos` y cuántos avisos a
+  clientes esperan (`retenidos`); el estado del sistema, en el manual,
+  dice «Solo a la empresa» mientras dure la primera etapa.
+- **La guía del despliegue**: Microsoft 365 es el que se usa (7b) y las
+  dos etapas están en 7e.
+
+Encender el correo no es parte de la actualización: lo hace Salvador en
+el servidor con `poner_correo.py --solo-internos` cuando decida.
+
+Por dentro: `config.py` (`correo_solo_internos`), `correo.py`
+(`INTERNOS`, `solo_internos`, `pendientes`, `estado`), `manual.py`
+(`_estado_correo`), `despliegue/poner_correo.py`, `despliegue/LEEME.md`.
+Pruebas: cinco nuevas en `tests/test_correo.py` y
+`tests/test_poner_correo.py`.
+
 ## 14. Lo que falta
 
 ### Abierto

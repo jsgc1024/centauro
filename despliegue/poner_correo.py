@@ -33,6 +33,13 @@ sale igual-- y, ya aprobado el acceso a produccion de Amazon, se enciende:
     python3 despliegue/poner_correo.py --encender
     python3 despliegue/poner_correo.py --apagar
 
+Por etapas (decision de Salvador, 29 sep). Primero solo la gente de la
+empresa; lo de los clientes espera en la cola. Despues, todos:
+    python3 despliegue/poner_correo.py --solo-internos
+    python3 despliegue/poner_correo.py --a-todos
+Las dos encienden el correo. Con los datos de Microsoft 365 en el .env
+(paso 7b) no piden los del servicio de envio.
+
 Encendido antes de tiempo, con la llave equivocada o la cuenta todavia a
 prueba, cada aviso a un cliente gastaria sus intentos y quedaria en
 fallido.
@@ -163,8 +170,22 @@ def nuevo_texto(actual: str, poner: dict) -> str:
 
 
 INTERRUPTOR = "CORREO_ENCENDIDO"
-# Lo que tiene que estar antes de encender.
+# Lo que tiene que estar antes de encender: de donde sale y por donde,
+# el servicio de envio (SMTP) o Microsoft 365.
 PARA_ENCENDER = ("CORREO_DE", "CORREO_HOST", "CORREO_USUARIO", "CORREO_CLAVE")
+# Las etapas (29 sep): primero solo la gente de la empresa, despues los
+# clientes tambien.
+ETAPA = "CORREO_SOLO_INTERNOS"
+
+
+def faltan_para_encender(valores: dict) -> list:
+    """Lo que falta para encender. Con los tres de Microsoft llenos no se
+    piden los del servicio de envio: manda Microsoft (seccion 67)."""
+    if not valores.get("CORREO_DE"):
+        return ["CORREO_DE"]
+    if all(valores.get(c) for c in MICROSOFT):
+        return []
+    return [c for c in PARA_ENCENDER if not valores.get(c)]
 
 
 def encendido(valores: dict) -> bool:
@@ -177,7 +198,7 @@ def interruptor(encender: bool) -> int:
     actual = io.open(ENV, encoding="utf-8").read()
     valores = _valores(actual)
     if encender:
-        faltan = [c for c in PARA_ENCENDER if not valores.get(c)]
+        faltan = faltan_para_encender(valores)
         if faltan:
             print(f"Falta {', '.join(faltan)} en el .env. Primero la llave:\n"
                   "  python3 despliegue/poner_correo.py")
@@ -190,6 +211,32 @@ def interruptor(encender: bool) -> int:
     else:
         print("Listo: CORREO_ENCENDIDO=no. Desde que la aplicacion se "
               "reinicia, los avisos esperan en la cola.")
+    return 0
+
+
+def etapa(solo_internos: bool) -> int:
+    """--solo-internos o --a-todos: enciende el correo y dice a quien.
+
+    Decision de Salvador, 29 sep. Primera etapa, --solo-internos: sale lo
+    de consultores, central, personal y la gente de la oficina; lo de los
+    clientes espera en la cola y, pasado su tiempo, se vence sin salir.
+    Segunda etapa, --a-todos: sale tambien a los clientes."""
+    actual = io.open(ENV, encoding="utf-8").read()
+    faltan = faltan_para_encender(_valores(actual))
+    if faltan:
+        print(f"Falta {', '.join(faltan)} en el .env: el correo no se "
+              "enciende. No se toco nada.")
+        return 1
+    with io.open(ENV, "w", encoding="utf-8") as f:
+        f.write(nuevo_texto(actual, {INTERRUPTOR: "si",
+                                     ETAPA: "si" if solo_internos else "no"}))
+    if solo_internos:
+        print("Listo: correo encendido SOLO para la empresa (consultores, "
+              "central, personal y oficina). Lo de los clientes espera. "
+              "Vale desde que la aplicacion se reinicia.")
+    else:
+        print("Listo: correo encendido para TODOS, clientes incluidos. "
+              "Vale desde que la aplicacion se reinicia.")
     return 0
 
 
@@ -243,6 +290,8 @@ def main(argv=None, preguntar=input, secreto=getpass.getpass) -> int:
               "  cd /opt/centauro && python3 despliegue/poner_correo.py")
         return 1
     argv = sys.argv[1:] if argv is None else argv
+    if "--solo-internos" in argv or "--a-todos" in argv:
+        return etapa("--solo-internos" in argv)
     if "--encender" in argv or "--apagar" in argv:
         return interruptor("--encender" in argv)
     p = elegir(argv)

@@ -2,6 +2,9 @@
 
 O que há de novo em cada atualização, escrito para quem usa o sistema. A mais nova fica em cima.
 
+## 104 · 2026-09-30 · O e-mail por etapas: primeiro a empresa, depois os clientes
+O e-mail do sistema sai de connect@centauro.lat pelo Microsoft 365 e é ligado por etapas. Na primeira saem só os avisos para a gente da empresa —consultores, central, pessoal de segurança e escritório, seja qual for o domínio do e-mail—; os avisos para clientes (quem solicita e o executivo) esperam na fila e, passado o seu tempo de vida, vencem sem sair. O estado do sistema, no manual, diz «Só para a empresa» enquanto durar essa etapa e quantos avisos para clientes esperam. A segunda etapa libera todos.
+
 ## 103 · 2026-09-29 · As fotos da ficha do serviço, em tamanho grande
 No cartão de recursos do serviço a pessoa e a unidade apareciam em um quadro de 38 px e não se reconhecia ninguém. A pessoa aparece como uma credencial e a unidade na horizontal, com os dados ao lado; em tela estreita a foto vai em cima. Do Odoo se lê a foto de 512 px, não a de 128, que ficava borrada; quem já estava é relido uma vez ao atualizar.
 

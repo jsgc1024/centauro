@@ -326,8 +326,11 @@ referrer—, con **solo** Places API (New) y Maps Static API habilitadas, y
 con **cuota diaria**. Sin tope, un error en un ciclo se convierte en una
 factura.
 
-**7b. El correo, por Microsoft 365** *(la otra forma; no es la que se
-usa: ver 7c)*. Sale del buzón `ai@centauro.lat`
+**7b. El correo, por Microsoft 365 (el que se usa).** Decisión de
+Salvador, 29 de septiembre: Amazon SES no aprobó la cuenta y el correo
+sale de `connect@centauro.lat`, con la aplicación `Centauro correo
+(servidor)` de Entra. Donde abajo dice `ai@centauro.lat`, va
+`connect@centauro.lat`. Se enciende por etapas (7e). Sale del buzón `ai@centauro.lat`
 y no por SMTP: Microsoft apaga el SMTP con usuario y contraseña el 31 de
 diciembre de 2026. Va por Microsoft Graph, con una aplicación registrada
 en Entra que **solo puede mandar desde ese buzón**. El DNS no se toca:
@@ -380,7 +383,7 @@ en correo no deseado.
    de administración— dice cuántos avisos esperan y cuántos ya no
    saldrían por viejos.
 
-**7c. El correo, por Amazon SES (el que se usa).** Decisión de
+**7c. El correo, por Amazon SES (la otra forma; no aprobó la cuenta).** Decisión de
 Salvador, 27 de septiembre: los avisos salen de un servicio de envío,
 para no depender de nadie. Salen de `connect@mycentauro.lat` y lo que
 contesten llega a `cecc.notification@centauro.lat`. El dominio y su DNS
@@ -526,6 +529,28 @@ un DKIM (un `TXT` que termina en `._domainkey`) y un Return-Path (un
 tira, `test@blackhole.postmarkapp.com`. El 27 de septiembre Postmark no
 aceptó `mycentauro.lat` («Public domains are not allowed»): antes habría
 que resolverlo con su soporte.
+
+
+**7e. Encender por etapas.** Decisión de Salvador, 29 de septiembre:
+primero solo la gente de la empresa —consultores, central, personal de
+seguridad y oficina, sin importar el dominio de su correo— y después
+también los clientes (quien solicita y el ejecutivo). En la primera
+etapa, lo de los clientes espera en la cola y, pasado su tiempo de vida,
+se vence sin salir. Antes de encender, mira la cola (`GET
+/sistema/correo`: `saldrian`, y en la primera etapa `retenidos`).
+
+```bash
+cd /opt/centauro && python3 despliegue/poner_correo.py --solo-internos && docker compose -f docker-compose.prod.yml up -d api worker beat
+```
+
+La segunda etapa, cuando ya se vio que los correos salen bien:
+
+```bash
+cd /opt/centauro && python3 despliegue/poner_correo.py --a-todos && docker compose -f docker-compose.prod.yml up -d api worker beat
+```
+
+`--apagar` apaga todo, en la etapa que sea. El estado del sistema, en el
+manual, dice «Solo a la empresa» mientras dure la primera etapa.
 
 **8. El respaldo.** En el cron del servidor, no en Celery: si la
 aplicación está caída es justo cuando más falta hace. En Google Cloud,

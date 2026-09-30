@@ -128,6 +128,19 @@ def encendido() -> bool:
         "si", "s\u00ed", "yes", "true", "1")
 
 
+# Los papeles de la empresa. Los otros dos --quien solicita y el
+# ejecutivo-- son del cliente.
+INTERNOS = (m.Destinatario.CENTRAL, m.Destinatario.CONSULTOR,
+            m.Destinatario.PERSONAL, m.Destinatario.COLABORADOR)
+
+
+def solo_internos() -> bool:
+    """La primera etapa (29 sep): sale solo lo de la gente de la empresa;
+    lo de los clientes espera. CORREO_SOLO_INTERNOS=si."""
+    return (settings.correo_solo_internos or "").strip().lower() in (
+        "si", "sí", "yes", "true", "1")
+
+
 def configurado() -> bool:
     """Si el correo del sistema sale: listo y encendido. Sin esto, la cola
     solo se acumula."""
@@ -436,6 +449,11 @@ def pendientes(db: Session, limite: int = POR_VUELTA, solo=None,
             m.Notificacion.reintentar_en <= datetime.now()))
     if solo is not None:
         consulta = consulta.filter(m.Notificacion.id.in_(list(solo)))
+    # En la primera etapa lo de los clientes ni se toma: se queda en la
+    # cola sin gastar el cupo de la vuelta, y vencer_lo_viejo lo vence a
+    # su hora como a cualquier otro.
+    if solo_internos():
+        consulta = consulta.filter(m.Notificacion.destinatario.in_(INTERNOS))
     consulta = consulta.order_by(m.Notificacion.id).limit(limite)
     if bloquear:
         consulta = consulta.with_for_update(skip_locked=True)
@@ -627,5 +645,12 @@ def estado(db: Session) -> dict:
         "horas_de_vida": HORAS_DE_VIDA,
         "saldrian": len(en_espera) - viejos,
         "viejos": viejos,
+        # La etapa (29 sep): con solo internos, `saldrian` cuenta lo de la
+        # empresa y `retenidos` lo de los clientes que espera.
+        "solo_internos": solo_internos(),
+        "retenidos": (db.query(m.Notificacion)
+                      .filter(m.Notificacion.estado == "pendiente",
+                              m.Notificacion.destinatario.notin_(INTERNOS))
+                      .count() if solo_internos() else 0),
         "avisos": cuenta,
     }

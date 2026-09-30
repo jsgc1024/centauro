@@ -259,3 +259,44 @@ def test_encender_pide_la_llave_antes(env):
     assert dotenv_values(env)["CORREO_ENCENDIDO"] == "no"
     # La llave no se toca al mover el interruptor.
     assert dotenv_values(env)["CORREO_CLAVE"] == CLAVE_SES
+
+
+# ---------------------------------- por Microsoft y por etapas (29 sep)
+
+# Asi quedo el .env del servidor el 29 de septiembre: sale por Microsoft
+# 365 desde connect@centauro.lat, con lo de Amazon todavia escrito.
+CON_MICROSOFT = """APP_ENV=produccion
+CORREO_DE=Centauro Connect <connect@centauro.lat>
+CORREO_MS_TENANT=inquilino
+CORREO_MS_CLIENTE=cliente
+CORREO_MS_SECRETO=secreto
+CORREO_ENCENDIDO=no
+"""
+
+
+def test_con_microsoft_se_enciende_sin_pedir_lo_de_amazon(env):
+    env.write_text(CON_MICROSOFT)
+    assert _correr([], "", argv=["--encender"]) == 0
+    assert dotenv_values(env)["CORREO_ENCENDIDO"] == "si"
+
+
+def test_primero_solo_la_empresa_y_despues_todos(env, capsys):
+    """Decision de Salvador, 29 sep: el correo se enciende por etapas."""
+    env.write_text(CON_MICROSOFT)
+    assert _correr([], "", argv=["--solo-internos"]) == 0
+    v = dotenv_values(env)
+    assert (v["CORREO_ENCENDIDO"], v["CORREO_SOLO_INTERNOS"]) == ("si", "si")
+    assert "SOLO para la empresa" in capsys.readouterr().out
+
+    assert _correr([], "", argv=["--a-todos"]) == 0
+    v = dotenv_values(env)
+    assert (v["CORREO_ENCENDIDO"], v["CORREO_SOLO_INTERNOS"]) == ("si", "no")
+    assert env.read_text().count("CORREO_SOLO_INTERNOS=") == 1
+    # La llave no se toca.
+    assert v["CORREO_MS_SECRETO"] == "secreto"
+
+
+def test_sin_proveedor_la_etapa_no_enciende_nada(env):
+    env.write_text(DEL_SERVIDOR)
+    assert _correr([], "", argv=["--solo-internos"]) == 1
+    assert env.read_text() == DEL_SERVIDOR

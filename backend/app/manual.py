@@ -903,6 +903,10 @@ ESTADO = {
                             "remitente: no sale nada."),
         "encendido": "Encendido",
         "encendido_t": "{n} avisos esperando; {f} fallaron.",
+        "solo_internos": "Solo a la empresa",
+        "solo_internos_t": ("Sale a consultores, central y personal; {r} "
+                            "avisos a clientes esperan la segunda etapa. "
+                            "{f} fallaron."),
         "con_fallas": "Con fallas",
         "sin_llave": "Sin conexión",
         "sin_llave_t": "Este servidor no tiene la llave de Odoo.",
@@ -956,6 +960,10 @@ ESTADO = {
                             "remetente: não sai nada."),
         "encendido": "Ligado",
         "encendido_t": "{n} avisos esperando; {f} falharam.",
+        "solo_internos": "Só para a empresa",
+        "solo_internos_t": ("Sai para consultores, central e pessoal; {r} "
+                            "avisos para clientes esperam a segunda etapa. "
+                            "{f} falharam."),
         "con_fallas": "Com falhas",
         "sin_llave": "Sem conexão",
         "sin_llave_t": "Este servidor não tem a chave do Odoo.",
@@ -1078,9 +1086,16 @@ def _estado_correo(db, T) -> dict:
     # solo se cuentan. Y con fallidas hay boton para regresarlas a la
     # cola (seccion 100).
     fallidas = e.get("fallidas_recientes", 0)
-    tile = _tile("correo", T, "alerta" if fallidas else "ok",
-                 T["con_fallas"] if fallidas else T["encendido"],
-                 T["encendido_t"].format(n=esperando, f=fallidas), ir)
+    if e.get("solo_internos"):
+        # La primera etapa (29 sep): encendido, pero no para clientes.
+        tile = _tile("correo", T, "alerta",
+                     T["con_fallas"] if fallidas else T["solo_internos"],
+                     T["solo_internos_t"].format(r=e.get("retenidos", 0),
+                                                 f=fallidas), ir)
+    else:
+        tile = _tile("correo", T, "alerta" if fallidas else "ok",
+                     T["con_fallas"] if fallidas else T["encendido"],
+                     T["encendido_t"].format(n=esperando, f=fallidas), ir)
     if avisos.get("fallida"):
         tile["accion"] = {"ruta": "/manual/correo/reintentar",
                           "clave": "man_reintentar_correo"}
