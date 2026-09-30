@@ -116,6 +116,16 @@ class Settings(BaseSettings):
     # Studio; se busca por su nombre visible, y si no, por este tecnico.
     odoo_etiqueta_clientes: str = "Protección ejecutiva"
     odoo_campo_implantados: str = "x_studio_lista_de_implantados"
+    # Seccion 112. Odoo vende de todo --el GPS, la Central de
+    # Inteligencia, ATLAS-- y la lectura de los tarifarios los traia a
+    # todos. Ahora solo lee los productos de esta categoria de Odoo, con
+    # sus subcategorias, y las listas de precios cuyo nombre empieza asi
+    # («PE · General México», «PE · Control Risks»). Vacio: sin filtro.
+    odoo_categoria_productos: str = "Protección Ejecutiva"
+    odoo_prefijo_listas: str = "PE ·"
+    # En que idioma se leen los nombres: en Odoo cada producto guarda su
+    # nombre por idioma, y el ingles y el espanol pueden no coincidir.
+    odoo_idioma: str = "es_MX"
 
     # Pegasus, el GPS de las unidades (seccion 60). Solo lectura, con un
     # usuario propio de la conexion --no el de una persona-- que solo ve

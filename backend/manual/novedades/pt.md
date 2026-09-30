@@ -2,6 +2,9 @@
 
 O que há de novo em cada atualização, escrito para quem usa o sistema. A mais nova fica em cima.
 
+## 112 · 2026-09-30 · A leitura das tabelas de preços: só o que é de Proteção Executiva
+Do Odoo só chega o que é de Proteção Executiva: os produtos da categoria «Protección Ejecutiva» (com as suas subcategorias) e as listas de preços que começam com «PE ·». O GPS, a Central de Inteligencia e o ATLAS saem de Faturamento → Tabelas de preços. Os nomes são lidos em espanhol do México. Se um cliente tem no Odoo uma lista que não é de PE, fica com a sua tabela e isso aparece nos pendentes da leitura; se uma lista de PE nomeia um produto que não está na categoria, também. E se a categoria não existe no Odoo, nada é lido.
+
 ## 111 · 2026-09-30 · O freelancer no Connect
 O freelancer agora vive no Connect. Em Equipe de segurança há duas abas: **Do quadro** e **Freelance**. O freelancer é cadastrado ali —pelo consultor, pela direção de operações ou pelo RH— com a foto e os dados, que aparecem na folha do serviço como os da equipe do quadro. A ficha traz os custos (dia inteiro, meio dia, transfer e a hora extra do dia inteiro; definidos pela direção de operações e pela gerência administrativa, e só em eventuais) e o **prontuário**: o que o RH pede, requisito por requisito, com os arquivos, a validade e o estado; só o RH valida, e recebe o aviso trinta dias antes de algo vencer e no dia em que vence. Com o prontuário pronto e os custos, é escalado como qualquer um; se não, a lista de quem escalar diz por quê, e se é urgente pede-se a autorização à direção de operações, que dá ou não na sua caixa, só para esse serviço. O de emergência que repete tem 15 dias desde o último serviço para completar o de programado. O freelancer não é oferecido em implantados. A lista de requisitos vive em Catálogos → Requisitos do freelance, por país; as tarifas de freelance saíram de Catálogos: vivem na ficha de cada um.
 

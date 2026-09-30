@@ -67,7 +67,10 @@ class Odoo:
         if metodo not in LECTURA:
             raise RuntimeError(f"{metodo} no es de lectura: esta conexion no "
                                "escribe en Odoo")
-        contexto = {"lang": "es_MX", **args.pop("context", {})}
+        # Los nombres, en espanol de Mexico: en Odoo cada producto guarda
+        # su nombre por idioma (seccion 112, `odoo_idioma`).
+        contexto = {"lang": settings.odoo_idioma or "es_MX",
+                    **args.pop("context", {})}
         try:
             r = self.http.post(f"{self.base}/json/2/{modelo}/{metodo}",
                                json={"context": contexto, **args})

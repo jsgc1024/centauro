@@ -273,8 +273,10 @@ function tarjeta(caja, tipo, estado, repintar, mostrar = null) {
     try {
       ultimo = await api.get(cfg.ensayo, { segundos: SEGUNDOS });
       resultado.replaceChildren(informe(tipo, ultimo));
-      /* Sin la etiqueta de los clientes no hay nada que aplicar. */
-      aplicar.disabled = !!ultimo.sin_etiqueta;
+      /* Sin la etiqueta de los clientes --o sin la categoria de los
+         productos de PE, en los tarifarios (seccion 112)-- no hay nada
+         que aplicar. */
+      aplicar.disabled = !!(ultimo.sin_etiqueta || ultimo.sin_categoria);
       aplicar.textContent = reemplazar(t(cfg.etiqueta || "odo_aplicar_cifras"),
                                        (cfg.cifras || cifras)(ultimo));
       nota.textContent = "";
@@ -531,6 +533,11 @@ function informe(tipo, d) {
    atiende: primero lo que deja a un cliente sin su lista, al final lo que
    solo sobra. Cada tipo dice que va en el renglon y que al lado. */
 const PENDIENTES_DE_TARIFAS = [
+  /* El cliente cuya lista no es de Proteccion Ejecutiva (seccion 112). */
+  ["lista_no_pe", "odo_tp_no_pe",
+   (x) => [x.cliente, reemplazar(t(x.implantados ? "odo_tp_no_pe_implantados_pie"
+                                                 : "odo_tp_no_pe_pie"),
+                                 { l: x.lista || "—", p: x.prefijo || "" })]],
   ["lista_sin_precios", "odo_tp_sin_precios",
    (x) => [x.cliente, reemplazar(t("odo_tp_sin_precios_pie"), { l: x.lista || "—" })]],
   ["lista_otra_moneda", "odo_tp_cliente_otra_moneda",
@@ -538,6 +545,9 @@ const PENDIENTES_DE_TARIFAS = [
                                  { l: x.lista || "—", m: x.moneda })]],
   ["producto_sin_confirmar", "odo_tp_producto",
    (x) => [x.producto, t("odo_tp_producto_pie")]],
+  ["producto_fuera", "odo_tp_fuera",
+   (x) => [x.producto, reemplazar(t("odo_tp_fuera_pie"), {
+     l: (x.listas || []).map(n => `«${n}»`).join(", ") || "—", c: x.categoria || "" })]],
   ["conflicto", "odo_tp_conflicto",
    (x) => [x.productos.map(([n]) => n).join(" / "),
            [x.productos.map(([, p]) => p).join(" / "),
@@ -567,6 +577,12 @@ function preciosDe(l) {
 }
 
 function informeTarifas(d) {
+  /* Sin la categoria de los productos de PE en Odoo no se lee nada
+     (seccion 112): se dice que falta y donde se pone. */
+  if (d.sin_categoria) {
+    return h("div", { style: "margin:14px 0 0" },
+      aviso(reemplazar(t("odo_sin_categoria"), { c: d.sin_categoria }), "alerta"));
+  }
   const generales = d.generales || [];
   const porCliente = d.por_cliente || [];
   const suyas = d.clientes - d.clientes_con_general;
@@ -576,7 +592,10 @@ function informeTarifas(d) {
     h("p", { clase: "gris chico", style: "margin:14px 0 0" },
       reemplazar(t(d.ensayo ? "odo_ensayo_de" : "odo_aplicado_de"),
                  { hora: hora(new Date().toISOString()) }),
-      " · ", reemplazar(t("odo_leidas_listas"), { n: d.leidas })),
+      " · ", d.prefijo
+        ? reemplazar(t("odo_leidas_listas_pe"), { n: d.leidas, f: d.fuera || 0,
+                                                  p: d.prefijo })
+        : reemplazar(t("odo_leidas_listas"), { n: d.leidas })),
     h("div", { clase: "camino", style: "background:#fff;margin:8px 0 12px" },
       celda(t("odo_ta_generales"), generales.length,
             generales.length

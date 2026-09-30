@@ -22,6 +22,15 @@ son de esta lectura:
     moneda que Centauro no convierte --dolares en Brasil-- se dice y no
     se lee.
 
+Solo lo de Proteccion Ejecutiva (seccion 112, pedido de Salvador): Odoo
+vende tambien el GPS, la Central de Inteligencia y ATLAS, y antes se leia
+todo. Ahora se leen los productos de la categoria de Odoo
+`odoo_categoria_productos` --con sus subcategorias; tambien los que una
+lista nombra aunque ya no esten a la venta-- y las listas cuyo nombre
+empieza con `odoo_prefijo_listas` («PE · General México»). Si esa
+categoria no esta en Odoo no se toca nada: leer todo seria volver a traer
+el GPS.
+
 Las reglas --que es cada producto, cuanto cuesta en cada lista-- viven en
 odoo_tarifarios_reglas.py, sin base de datos.
 """
@@ -77,22 +86,97 @@ def _catalogos(db: Session) -> tuple[dict, dict]:
             reglas.categorias_por_tipo(categorias))
 
 
-def leer_productos(db: Session, odoo, referenciados=(), ahora=None) -> dict:
+class SinCategoria(Exception):
+    """La categoria de los productos de Proteccion Ejecutiva no esta en
+    Odoo (seccion 112)."""
+
+
+CAMPOS_CATEGORIA = ["name", "complete_name", "parent_path"]
+
+
+def categorias_de_pe(odoo, filas: list | None = None) -> set | None:
+    """Los ids de las categorias de productos de Proteccion Ejecutiva: la
+    de `odoo_categoria_productos` y todas las que cuelgan de ella. None:
+    la configuracion no pide filtro y se lee todo, como antes de la
+    seccion 112. Si la categoria no esta en Odoo, `SinCategoria`."""
+    nombre = (settings.odoo_categoria_productos or "").strip()
+    if not nombre:
+        return None
+    if filas is None:
+        filas = odoo.leer("product.category", [], CAMPOS_CATEGORIA)
+    buscada = normal(nombre)
+    raices = {c["id"] for c in filas
+              if buscada in (normal(c.get("name")), normal(c.get("complete_name")))}
+    if not raices:
+        raise SinCategoria(nombre)
+    salida = set()
+    for c in filas:
+        # «1/5/9/»: de la raiz a ella misma.
+        camino = {int(x) for x in texto(c.get("parent_path")).split("/")
+                  if x.isdigit()} | {c["id"]}
+        if camino & raices:
+            salida.add(c["id"])
+    return salida
+
+
+def es_de_pe(producto: dict, en_pe: set | None) -> bool:
+    """Si un producto de Odoo es de Proteccion Ejecutiva, por su categoria."""
+    return en_pe is None or reglas.id_de(producto.get("categ_id")) in en_pe
+
+
+# Los puntos que se confunden con el «·» del prefijo: el que se teclea
+# en el telefono o se copia de otro lado tambien vale.
+PUNTOS = str.maketrans({c: "·" for c in "•∙‧⋅・"})
+
+
+def _para_prefijo(texto_) -> str:
+    return " ".join(normal(texto_).translate(PUNTOS).replace("·", " · ").split())
+
+
+def es_lista_de_pe(nombre) -> bool:
+    """Si una lista de precios es de Proteccion Ejecutiva, por como empieza
+    su nombre (seccion 112): «PE · General México». Sin mayusculas,
+    acentos ni espacios de sobra, y con cualquier punto medio. Sin prefijo
+    en la configuracion, todas."""
+    prefijo = _para_prefijo(settings.odoo_prefijo_listas)
+    return not prefijo or _para_prefijo(nombre).startswith(prefijo)
+
+
+def _nombrados(db: Session, producto_id: int) -> bool:
+    """Si algun tarifario todavia nombra ese producto de la tabla."""
+    return any(db.query(modelo.id).filter_by(producto_odoo_id=producto_id).first()
+               for modelo in (m.TarifaRecurso, m.TarifaVehiculo, m.TarifaPaquete))
+
+
+# `leer_productos` sin `en_pe`: las categorias se leen ahi mismo.
+POR_LEER = object()
+
+
+def leer_productos(db: Session, odoo, referenciados=(), ahora=None,
+                   en_pe=POR_LEER) -> dict:
     """Trae de Odoo los productos que se venden --y los que nombra alguna
     lista aunque ya no se vendan-- y los deja en la tabla de productos.
 
+    Solo los de Proteccion Ejecutiva (seccion 112): los de su categoria.
+    Lo que ya estaba en la tabla y no es de ahi --el GPS, la Central de
+    Inteligencia-- sale de la tabla, salvo que algun tarifario lo nombre.
+
     Lo nuevo llega con su sugerencia. Lo que finanzas ya confirmo no se
     vuelve a sugerir: solo se le pone al dia el nombre, la unidad y el
-    «Precio de venta». Lo que Odoo ya no trae se queda, marcado como que
-    ya no se vende. No hace commit: lo hace quien llama.
+    «Precio de venta». Lo de PE que Odoo ya no trae se queda, marcado como
+    que ya no se vende. No hace commit: lo hace quien llama. `en_pe`: las
+    categorias de PE, si quien llama ya las tiene.
     """
     ahora = ahora or _utc()
+    if en_pe is POR_LEER:
+        en_pe = categorias_de_pe(odoo)
     dominio = [["sale_ok", "=", True]]
     if referenciados:
         dominio = ["|", ["sale_ok", "=", True],
                    ["id", "in", sorted(referenciados)]]
-    filas = odoo.leer("product.template", dominio, CAMPOS_PRODUCTO,
-                      archivados=True)
+    filas = [f for f in odoo.leer("product.template", dominio, CAMPOS_PRODUCTO,
+                                  archivados=True)
+             if es_de_pe(f, en_pe)]
     perfiles, categorias = _catalogos(db)
     existentes = {p.odoo_id: p for p in db.query(m.ProductoOdoo).all()}
     vistos, nuevos, sugeridos = set(), 0, 0
@@ -116,11 +200,28 @@ def leer_productos(db: Session, odoo, referenciados=(), ahora=None) -> dict:
             producto.categoria_id = s["categoria_id"]
             producto.modalidad = s["modalidad"]
             sugeridos += 1 if s["clase"] else 0
-    for odoo_id, producto in existentes.items():
-        if odoo_id not in vistos:
-            producto.vendible = False
+    faltan = [p for odoo_id, p in existentes.items() if odoo_id not in vistos]
+    for producto in faltan:
+        producto.vendible = False
+    # Lo que ya estaba y no es de Proteccion Ejecutiva --el GPS, la Central
+    # de Inteligencia, ATLAS-- sale de la tabla (seccion 112). Lo de PE que
+    # ya no se vende se queda, en gris; y lo que algun tarifario todavia
+    # nombra tambien, aunque no sea de PE: sin el, ese renglon no se lee.
+    # Lo que Odoo ya ni trae se queda como estaba.
+    quitados = 0
+    if en_pe is not None and faltan:
+        suyas = {f["id"]: f for f in odoo.leer(
+            "product.template", [["id", "in", sorted(p.odoo_id for p in faltan)]],
+            ["categ_id"], archivados=True)}
+        for producto in faltan:
+            fila = suyas.get(producto.odoo_id)
+            if fila is None or es_de_pe(fila, en_pe) or _nombrados(db, producto.id):
+                continue
+            db.delete(producto)
+            quitados += 1
     db.flush()
-    return {"leidos": len(filas), "nuevos": nuevos, "sugeridos": sugeridos}
+    return {"leidos": len(filas), "nuevos": nuevos, "sugeridos": sugeridos,
+            "quitados": quitados}
 
 
 def tabla_de_productos(db: Session) -> list[dict]:
@@ -155,9 +256,20 @@ def campo_de_implantados(odoo) -> str | None:
 
 
 def _leer_odoo(db: Session, odoo) -> dict:
-    """Todo lo que la lectura necesita de Odoo, de una vez."""
-    listas = odoo.leer("product.pricelist", [["active", "=", True]],
-                       CAMPOS_LISTA)
+    """Todo lo que la lectura necesita de Odoo, de una vez.
+
+    Solo lo de Proteccion Ejecutiva (seccion 112): las listas que empiezan
+    con el prefijo y los productos de su categoria. Las demas listas solo
+    se cuentan --y se nombran si un cliente de PE trae una de ellas--; el
+    producto que una lista de PE nombra y no es de la categoria se dice.
+    Sin la categoria en Odoo, `SinCategoria`: no se lee nada."""
+    todas = odoo.leer("product.pricelist", [["active", "=", True]],
+                      CAMPOS_LISTA)
+    listas = [l for l in todas if es_lista_de_pe(l.get("name"))]
+    fuera = [{"id": l["id"], "nombre": texto(l.get("name"))}
+             for l in todas if not es_lista_de_pe(l.get("name"))]
+    filas_categoria = odoo.leer("product.category", [], CAMPOS_CATEGORIA)
+    en_pe = categorias_de_pe(odoo, filas_categoria)
     ids = [l["id"] for l in listas]
     reglas_odoo = (odoo.leer("product.pricelist.item",
                              [["pricelist_id", "in", ids]], CAMPOS_REGLA)
@@ -165,19 +277,21 @@ def _leer_odoo(db: Session, odoo) -> dict:
     referenciados = {reglas.id_de(r.get("product_tmpl_id"))
                      for r in reglas_odoo} - {None}
     variantes = {reglas.id_de(r.get("product_id")) for r in reglas_odoo} - {None}
-    productos = odoo.leer("product.template",
-                          ["|", ["sale_ok", "=", True],
-                           ["id", "in", sorted(referenciados)]]
-                          if referenciados else [["sale_ok", "=", True]],
-                          ["list_price", "categ_id", "name"], archivados=True)
+    leidos = odoo.leer("product.template",
+                       ["|", ["sale_ok", "=", True],
+                        ["id", "in", sorted(referenciados)]]
+                       if referenciados else [["sale_ok", "=", True]],
+                       ["list_price", "categ_id", "name"], archivados=True)
+    productos = [p for p in leidos if es_de_pe(p, en_pe)]
+    productos_fuera = {p["id"]: texto(p.get("name")) for p in leidos
+                       if p["id"] in referenciados and not es_de_pe(p, en_pe)}
     de_variante = {}
     if variantes:
         de_variante = {v["id"]: reglas.id_de(v.get("product_tmpl_id"))
                        for v in odoo.leer("product.product",
                                           [["id", "in", sorted(variantes)]],
                                           ["product_tmpl_id"], archivados=True)}
-    categorias = {c["id"]: texto(c.get("parent_path"))
-                  for c in odoo.leer("product.category", [], ["parent_path"])}
+    categorias = {c["id"]: texto(c.get("parent_path")) for c in filas_categoria}
     monedas = odoo.leer("res.currency", [["active", "=", True]],
                         ["name", "rate"])
     grupos_ids = sorted({g for l in listas
@@ -201,7 +315,8 @@ def _leer_odoo(db: Session, odoo) -> dict:
     return {"listas": listas, "reglas": reglas_odoo, "productos": productos,
             "referenciados": referenciados, "variantes": de_variante,
             "categorias": categorias, "monedas": monedas, "grupos": grupos,
-            "campo_implantados": campo, "socios": socios}
+            "campo_implantados": campo, "socios": socios,
+            "fuera": fuera, "en_pe": en_pe, "productos_fuera": productos_fuera}
 
 
 def tasas_de_centauro(db: Session, tasas: dict, empresa: str) -> dict:
@@ -295,8 +410,15 @@ def _plan(db: Session, datos: dict, hoy) -> dict:
     choques = {}
     otra_moneda = {}                     # lista de Odoo -> su moneda
     sin_confirmar = {}                   # productos de las listas por confirmar
+    # Lo que una lista de PE nombra y no es de la categoria de PE: no se
+    # lee, y se dice en que listas esta (seccion 112).
+    fuera_de_categoria = {}
     for r in datos["reglas"]:
         odoo_id = reglas.id_de(r.get("product_tmpl_id"))
+        if odoo_id in datos.get("productos_fuera", {}):
+            fuera_de_categoria.setdefault(odoo_id, set()).add(
+                listas.get(reglas.id_de(r.get("pricelist_id")), {}).get("nombre", ""))
+            continue
         producto = conocidos.get(odoo_id)
         if odoo_id and (producto is None or not producto.confirmado):
             nombre = (producto.nombre if producto else
@@ -382,6 +504,12 @@ def _plan(db: Session, datos: dict, hoy) -> dict:
         pendientes.append({"tipo": "sin_general"})
     for odoo_id, nombre in sorted(sin_confirmar.items(), key=lambda x: x[1]):
         pendientes.append({"tipo": "producto_sin_confirmar", "producto": nombre})
+    for odoo_id, en in sorted(fuera_de_categoria.items(),
+                              key=lambda x: datos["productos_fuera"][x[0]]):
+        pendientes.append({"tipo": "producto_fuera",
+                           "producto": datos["productos_fuera"][odoo_id],
+                           "listas": sorted(x for x in en if x),
+                           "categoria": settings.odoo_categoria_productos})
     return {"listas": plan_listas, "lista_de": lista_de,
             "implantados_de": implantados_de, "clientes": por_id,
             "pendientes": pendientes, "campo_implantados": campo,
@@ -430,11 +558,23 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
     if not ensayo:
         odoo_api.candado(db, TIPO)
     ahora = _utc()
-    datos = _leer_odoo(db, odoo)
+    try:
+        datos = _leer_odoo(db, odoo)
+    except SinCategoria as error:
+        # Sin la categoria no se sabe que es de Proteccion Ejecutiva: no
+        # se toca nada. Leer todo seria volver a traer el GPS (seccion 112).
+        return {"ensayo": ensayo, "sin_categoria": str(error), "leidas": 0,
+                "fuera": 0, "prefijo": settings.odoo_prefijo_listas,
+                "categoria": settings.odoo_categoria_productos,
+                "generales": [], "por_cliente": [], "sin_cliente": [],
+                "precios": 0, "clientes": 0, "clientes_con_general": 0,
+                "cambian": [], "implantados": 0, "campo_implantados": None,
+                "pendientes": []}
     if not ensayo:
         # Los productos nuevos llegan con su sugerencia antes del plan:
         # asi finanzas los ve en la tabla aunque todavia no pongan precio.
-        leer_productos(db, odoo, datos["referenciados"], ahora)
+        leer_productos(db, odoo, datos["referenciados"], ahora,
+                       en_pe=datos["en_pe"])
     plan = _plan(db, datos, ahora.date())
     modalidades = _modalidades(db)
     existentes = {t.odoo_id: t for t in db.query(m.Tarifario)
@@ -467,9 +607,18 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
     # A que tarifario cambia cada cliente. A una lista sin precios que
     # Centauro sepa leer no se le cambia: se queda como estaba y se dice.
     cambios, retenidos = [], []
+    # Las listas que no son de PE no se leen (seccion 112). El cliente que
+    # trae una se queda con el tarifario que tenia --aunque sea el de esa
+    # misma lista: sus precios ya no se ponen al dia-- y se dice.
+    no_pe = {l["id"]: l["nombre"] for l in datos["fuera"]}
     for cliente_id, lista_id in sorted(plan["lista_de"].items()):
         cliente = plan["clientes"][cliente_id]
         actual = cliente.tarifario.odoo_id if cliente.tarifario else None
+        if lista_id in no_pe:
+            retenidos.append({"tipo": "lista_no_pe", "cliente": cliente.nombre,
+                              "lista": no_pe[lista_id],
+                              "prefijo": settings.odoo_prefijo_listas})
+            continue
         if lista_id is None or lista_id == actual:
             continue
         nombre = next((l["nombre"] for l in plan["listas"]
@@ -495,6 +644,12 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
         cliente = plan["clientes"][cliente_id]
         actual = (cliente.tarifario_implantado.odoo_id
                   if cliente.tarifario_implantado else None)
+        if lista_id in no_pe:
+            plan["pendientes"].append({
+                "tipo": "lista_no_pe", "cliente": cliente.nombre,
+                "lista": no_pe[lista_id], "implantados": True,
+                "prefijo": settings.odoo_prefijo_listas})
+            continue
         if lista_id != actual and (lista_id is None or lista_id in leidas):
             implantados.append({"cliente_id": cliente_id, "cliente": cliente.nombre,
                                 "lista_id": lista_id})
@@ -503,6 +658,10 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
     informe = {
         "ensayo": ensayo,
         "leidas": plan["leidas"],
+        # Las listas activas de Odoo que no son de PE: solo se cuentan.
+        "fuera": len(datos["fuera"]),
+        "prefijo": settings.odoo_prefijo_listas,
+        "categoria": settings.odoo_categoria_productos,
         "generales": generales,
         "por_cliente": [l for l in listas_informe if not l["general"]
                         and (l["clientes"] or l["implantados"])],

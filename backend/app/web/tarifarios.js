@@ -547,6 +547,8 @@ async function tarjetaProductos(caja) {
 
   caja.replaceChildren(h("div", { clase: "tarjeta" },
     conAyuda("h3", t("tar_titulo_productos"), "ay_tar_productos"),
-    h("p", { clase: "gris", style: "margin:0 0 10px" }, t("tar_productos_pie")),
+    h("p", { clase: "gris", style: "margin:0 0 10px" }, t("tar_productos_pie"),
+      /* De donde salen (seccion 112): solo la categoria de PE en Odoo. */
+      d.categoria ? " " + reemplazar(t("tar_productos_categoria"), { c: d.categoria }) : ""),
     acciones, cuerpo));
 }

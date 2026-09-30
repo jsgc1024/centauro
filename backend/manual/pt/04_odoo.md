@@ -4,7 +4,7 @@ parte: entender
 orden: 40
 titulo: O que vem do Odoo
 resumen: As cinco leituras —pessoal de segurança, frota e oficina, escritório, clientes e tabelas de preços—, o que cada uma traz, quando roda e o que deixa pendente.
-buscar: odoo leitura ensaio aplicar primeira leitura pendentes chave etiqueta protecao executiva local de trabalho email pessoal email de trabalho tabelas de precos produtos lista de implantados desligamento arquivado
+buscar: odoo leitura ensaio aplicar primeira leitura pendentes chave etiqueta protecao executiva local de trabalho email pessoal email de trabalho tabelas de precos produtos lista de implantados desligamento arquivado categoria proteccion ejecutiva PE prefijo gps atlas idioma es_MX
 ---
 O Odoo é a fonte de verdade. O Centauro **o lê e nunca escreve nele**, e o que vem do Odoo não se edita no Centauro: corrige-se lá e chega sozinho na leitura seguinte. Três regras valem para as cinco leituras:
 
@@ -27,8 +27,9 @@ Da oficina, as entradas de Flotilla → Servicios do tipo Preventivo, Correctivo
 São as empresas com a etiqueta **«Protección ejecutiva»**: assim não chegam as de GPS nem as de carga. Trazem o nome, o RFC e o país. Sem RFC chegam do mesmo jeito, mas não podem ser faturadas. Se o Odoo arquiva o cliente, ele deixa de ser oferecido para um serviço novo; se só tiram a etiqueta, fica pendente e o Centauro já não lê as suas mudanças.
 
 ## As tabelas de preços · a cada hora, aos :57
-Cada país tem a sua lista geral —a que traz o seu grupo de países no Odoo— e o cliente que negociou tem a sua, colocada na ficha dele. A dos seus implantados vai no campo «Lista de implantados». Dois cuidados:
+Cada país tem a sua lista geral —a que traz o seu grupo de países no Odoo— e o cliente que negociou tem a sua, colocada na ficha dele. A dos seus implantados vai no campo «Lista de implantados». Só se lê o que é de Proteção Executiva (seção 112): as listas cujo nome começa com **«PE ·»** —«PE · General México», «PE · Control Risks»— e os produtos da categoria **«Protección Ejecutiva»** do Odoo, com as suas subcategorias. O GPS, a Central de Inteligencia e o ATLAS já não chegam. Os nomes são lidos em espanhol do México. Três cuidados:
 - Só põe preço o que o financeiro já **confirmou** em Faturamento → Tabelas de preços: um preço mal lido é cobrado.
-- Um cliente não é trocado para uma lista da qual o Centauro ainda não sabe ler nenhum preço: fica com a tabela que tinha.
+- Um cliente não é trocado para uma lista da qual o Centauro ainda não sabe ler nenhum preço: fica com a tabela que tinha. Se a lista dele não começa com «PE ·», também não: fica nos pendentes para colocar a sua lista de PE no Odoo.
+- Se a categoria «Protección Ejecutiva» não existe no Odoo, nada é lido: ler tudo seria voltar a trazer o GPS.
 
 > Quase tudo o que «não chega do Odoo» é uma de três coisas: a leitura nunca foi aplicada à mão, o dado ficou nos pendentes, ou a chave do Odoo venceu —dura uns três meses— e o Salvador coloca uma nova no servidor.

@@ -29,6 +29,7 @@ from app import accesos, auth, odoo_api, odoo_tarifarios, tipo_cambio
 from app import cotizacion as cot
 from app import models as m
 from app import odoo_tarifarios_reglas as reglas
+from app.config import settings
 from app.db import get_db
 
 router = APIRouter(prefix="/tarifarios", tags=["Tarifarios"])
@@ -75,7 +76,9 @@ def productos(db: Session = Depends(get_db),
     return {"productos": filas, **_catalogo(db),
             "puede_editar": auth.puede_el_usuario(db, usuario, "cierre.facturar"),
             "conectado": odoo_api.hay_conexion(),
-            "leidos_en": leido.isoformat() if leido else None}
+            "leidos_en": leido.isoformat() if leido else None,
+            # De donde salen (seccion 112): la categoria de Odoo.
+            "categoria": settings.odoo_categoria_productos}
 
 
 @router.post("/productos/leer", summary="Traer los productos de Odoo")
@@ -93,6 +96,15 @@ def leer(db: Session = Depends(get_db),
         })
     try:
         cuenta = odoo_tarifarios.leer_productos(db, odoo)
+    except odoo_tarifarios.SinCategoria as error:
+        db.rollback()
+        raise HTTPException(409, {
+            "mensaje": f"En Odoo no está la categoría «{error}»: sin ella no "
+                       "se sabe qué productos son de Protección Ejecutiva.",
+            "que_hacer": "Créala en Odoo (Inventario → Configuración → "
+                         "Categorías de productos) y ponle los productos de "
+                         "Protección Ejecutiva.",
+            "codigo": "sin_categoria"})
     except odoo_api.NoResponde as error:
         db.rollback()
         raise HTTPException(502, {"mensaje": str(error),

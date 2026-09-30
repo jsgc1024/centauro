@@ -231,6 +231,22 @@ def sin_rastro(base_de_pruebas):
         con.execute(text("DELETE FROM producto_odoo"))
 
 
+@pytest.fixture(autouse=True)
+def sin_filtros(monkeypatch):
+    """Las pruebas de siempre leen todo, como antes de la seccion 112: su
+    Odoo no tiene la categoria de PE ni listas «PE ·». Las de los filtros
+    los ponen ellas, con `con_filtros`."""
+    from app.config import settings
+    monkeypatch.setattr(settings, "odoo_categoria_productos", "")
+    monkeypatch.setattr(settings, "odoo_prefijo_listas", "")
+
+
+def con_filtros(monkeypatch, categoria="Protección Ejecutiva", prefijo="PE ·"):
+    from app.config import settings
+    monkeypatch.setattr(settings, "odoo_categoria_productos", categoria)
+    monkeypatch.setattr(settings, "odoo_prefijo_listas", prefijo)
+
+
 @pytest.fixture
 def clientes(db):
     """Los tres clientes de Odoo, ya leidos, con el tarifario de antes."""
@@ -921,3 +937,164 @@ def test_el_tarifario_del_cliente_se_ve(cliente, sesion, monkeypatch, clientes):
     listado = cliente.get("/tarifarios", headers=sesion("consultor")).json()
     assert {"nombre": "HASBRO", "clientes": 1}.items() <= next(
         x for x in listado if x["nombre"] == "HASBRO").items()
+
+
+# ================================================================ solo PE (seccion 112)
+
+def mundo_pe() -> dict:
+    """El Odoo de hoy (seccion 112): la categoria «Protección Ejecutiva»
+    con una subcategoria, el GPS en la suya, las listas de PE con su
+    prefijo y una que no es de PE."""
+    tablas = mundo()
+    tablas["product.category"] = [
+        {"id": 1, "name": "All", "complete_name": "All", "parent_path": "1/"},
+        {"id": 2, "name": "Protección Ejecutiva",
+         "complete_name": "All / Protección Ejecutiva", "parent_path": "1/2/"},
+        {"id": 3, "name": "Unidades",
+         "complete_name": "All / Protección Ejecutiva / Unidades",
+         "parent_path": "1/2/3/"},
+        {"id": 4, "name": "GPS", "complete_name": "All / GPS", "parent_path": "1/4/"}]
+    # La Suburban, en la subcategoria; la Central y el rastreador, en el GPS.
+    categoria = {3: 3, 7: 4, 10: 4}
+    for f in tablas["product.template"]:
+        f["categ_id"] = [categoria.get(f["id"] - PRODUCTO0, 2), "categoria"]
+    for f in tablas["product.pricelist"]:
+        if f["id"] != LISTA0 + 5:
+            f["name"] = f"PE · {f['name']}"
+    # La General de PE nombra el rastreador, que es del GPS.
+    tablas["product.pricelist.item"].append(fija(60, 1, 10, 999))
+    # Y Amazon trae en Odoo una lista que no es de PE.
+    socio = next(s for s in tablas["res.partner"] if s["id"] == SOCIO0 + 3)
+    socio["property_product_pricelist"] = [LISTA0 + 5, "Lista vieja"]
+    return tablas
+
+
+def test_solo_lo_de_proteccion_ejecutiva(db, clientes, monkeypatch):
+    """Pedido de Salvador: la lectura traia el GPS, la Central de
+    Inteligencia y ATLAS. Solo los productos de la categoria de PE --con
+    sus subcategorias-- y las listas «PE ·»."""
+    odoo = OdooFalso(mundo_pe())
+    con_filtros(monkeypatch)
+    confirmar_todo(db, odoo)
+    fuera = db.query(m.ProductoOdoo).filter(
+        m.ProductoOdoo.odoo_id.in_([PRODUCTO0 + 7, PRODUCTO0 + 10])).count()
+    assert fuera == 0
+
+    informe = leer(db, odoo)
+    assert (informe["leidas"], informe["fuera"], informe["prefijo"]) == (5, 1, "PE ·")
+    assert db.query(m.Tarifario).filter_by(odoo_id=LISTA0 + 5).count() == 0
+    general = tarifario(db, 1)
+    assert general.nombre == "PE · General México"
+    # La Suburban viene de la subcategoria, y tiene su precio.
+    assert precios(general)[("suv_blindada", "full_day")][0] == D(8800)
+    # Lo que una lista de PE nombra y no es de la categoria, se dice.
+    assert {"tipo": "producto_fuera", "producto": "Rastreador GPS",
+            "listas": ["PE · General México"],
+            "categoria": "Protección Ejecutiva"} in informe["pendientes"]
+    assert not any(p["tipo"] == "producto_sin_confirmar"
+                   and p["producto"] == "Rastreador GPS" for p in informe["pendientes"])
+    # El cliente cuya lista no es de PE se queda con su tarifario, y se dice.
+    assert {"tipo": "lista_no_pe", "cliente": f"{PREFIJO} Amazon",
+            "lista": "Lista vieja", "prefijo": "PE ·"} in informe["pendientes"]
+    db.expire_all()
+    assert db.get(m.Cliente, clientes[3]).tarifario.odoo_id is None
+
+    # La de cada hora, igual: nada del GPS vuelve a la tabla.
+    leer(db, odoo, automatica=True)
+    db.expire_all()
+    assert db.query(m.ProductoOdoo).filter_by(odoo_id=PRODUCTO0 + 7).count() == 0
+
+
+def test_lo_que_no_es_de_pe_sale_de_la_tabla(db, monkeypatch):
+    """Lo que ya estaba en la tabla y no es de PE sale; lo de PE que ya no
+    se vende se queda en gris, y lo que un tarifario todavia nombra
+    tambien."""
+    odoo = OdooFalso(mundo_pe())
+    odoo_tarifarios.leer_productos(db, odoo)        # sin filtro: los diez
+    db.commit()
+    assert db.query(m.ProductoOdoo).count() == 10
+
+    # Un tarifario de antes nombra el rastreador: lo confirmaron mal.
+    mx = db.query(m.Pais).filter_by(codigo="MX").one()
+    viejo = m.Tarifario(nombre="Una lista vieja", pais_id=mx.id,
+                        moneda=m.Moneda.MXN, vigencia_desde=date(2026, 9, 1),
+                        odoo_id=LISTA0 + 99)
+    db.add(viejo)
+    db.flush()
+    gps = db.query(m.ProductoOdoo).filter_by(odoo_id=PRODUCTO0 + 10).one()
+    conductor = db.query(m.PerfilPersonal).filter_by(codigo="conductor_seguridad").one()
+    dia = db.query(m.Modalidad).filter_by(pais_id=mx.id,
+                                          codigo=m.CodigoModalidad.FULL_DAY).one()
+    db.add(m.TarifaRecurso(tarifario_id=viejo.id, perfil_id=conductor.id,
+                           modalidad_id=dia.id, precio=100, producto_odoo_id=gps.id))
+    db.commit()
+    odoo.producto(9)["sale_ok"] = False              # de PE, ya no se vende
+
+    con_filtros(monkeypatch)
+    cuenta = odoo_tarifarios.leer_productos(db, odoo)
+    db.commit()
+    assert (cuenta["leidos"], cuenta["quitados"]) == (7, 1)
+    db.expire_all()
+    quedan = {p.odoo_id: p for p in db.query(m.ProductoOdoo)}
+    assert PRODUCTO0 + 7 not in quedan                # la Central de Inteligencia
+    assert quedan[PRODUCTO0 + 10].vendible is False   # lo nombra un tarifario
+    assert quedan[PRODUCTO0 + 9].vendible is False    # de PE, en gris
+
+
+def test_sin_la_categoria_no_se_toca_nada(db, clientes, cliente, sesion, monkeypatch):
+    """Sin la categoria en Odoo no se sabe que es de PE: leer todo seria
+    volver a traer el GPS. No se lee nada y se dice."""
+    odoo = OdooFalso(mundo_pe())
+    con_filtros(monkeypatch, categoria="Seguridad privada")
+    informe = leer(db, odoo)
+    assert informe["sin_categoria"] == "Seguridad privada"
+    assert informe["pendientes"] == [] and informe["leidas"] == 0
+    assert db.query(m.Tarifario).filter(m.Tarifario.odoo_id.isnot(None)).count() == 0
+    assert db.query(m.ProductoOdoo).count() == 0
+    with pytest.raises(odoo_tarifarios.SinCategoria):
+        odoo_tarifarios.leer_productos(db, odoo)
+    db.rollback()
+
+    conectar(monkeypatch, odoo)
+    r = cliente.post("/tarifarios/productos/leer", headers=sesion("finanzas"))
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["codigo"] == "sin_categoria"
+    # La tabla dice de donde salen los productos.
+    d = cliente.get("/tarifarios/productos", headers=sesion("finanzas")).json()
+    assert d["categoria"] == "Seguridad privada"
+
+
+def test_las_listas_de_pe_por_su_nombre(monkeypatch):
+    con_filtros(monkeypatch)
+    assert odoo_tarifarios.es_lista_de_pe("PE · General México")
+    assert odoo_tarifarios.es_lista_de_pe("  pe ·  Control Risks")
+    assert odoo_tarifarios.es_lista_de_pe("PE•Amazon")
+    assert odoo_tarifarios.es_lista_de_pe("PE ∙ Amazon")
+    assert not odoo_tarifarios.es_lista_de_pe("Pemex · Tarifas")
+    assert not odoo_tarifarios.es_lista_de_pe("General · México")
+    assert not odoo_tarifarios.es_lista_de_pe("GPS · Tarifas")
+    con_filtros(monkeypatch, prefijo="")
+    assert odoo_tarifarios.es_lista_de_pe("GPS · Tarifas")
+
+
+def test_los_nombres_se_leen_en_espanol_de_mexico(monkeypatch):
+    """En Odoo cada producto guarda su nombre por idioma: se leen en es_MX
+    (`odoo_idioma`)."""
+    from app.config import settings
+
+    pedidos = []
+
+    class Respuesta:
+        status_code = 200
+
+        def json(self):
+            return []
+
+    odoo = odoo_api.Odoo("https://odoo.prueba", "llave")
+    monkeypatch.setattr(odoo.http, "post",
+                        lambda url, json: pedidos.append(json) or Respuesta())
+    odoo.leer("product.template", [], ["name"], archivados=True)
+    assert pedidos[0]["context"] == {"lang": "es_MX", "active_test": False}
+    monkeypatch.setattr(settings, "odoo_idioma", "es_419")
+    odoo.leer("product.template", [], ["name"])
+    assert pedidos[1]["context"] == {"lang": "es_419"}

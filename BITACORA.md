@@ -8377,6 +8377,7 @@ salir y volver a entrar con la huella, la contraseña nueva que la quita
 —el equipo lo dice claro y la vuelve a ofrecer— y el armazón v22 con
 `huella.js` guardado para abrir sin señal. De ahí salieron los puntos 4
 y 5.
+
 ## 111. El freelance en Connect
 
 Salvador (30 sep): «también tenemos al personal freelance. Me gustaría
@@ -8464,6 +8465,63 @@ consola en `web/freelance.js`, `personal.js`, `servicio.js`,
 `direccion.js` y `catalogos_pantalla.js`. Manual: el capítulo «El
 freelance» y el síntoma «Un freelance no se puede asignar». Pruebas:
 `tests/test_revision_111_freelance.py` (17).
+
+## 112. La lectura de tarifarios: solo lo de Protección Ejecutiva
+
+Pedido de Salvador (30 sep, noche): la lectura de tarifarios traía todos
+los productos que Odoo vende (`sale_ok`) y todas las listas de precios
+activas, y en Facturación → Tarifarios aparecían productos de otras
+áreas —el GPS, la Central de Inteligencia, ATLAS—. En Odoo ya existe la
+categoría «Protección Ejecutiva» con todos los productos de PE, y las
+listas de PE se llaman «PE · General México», «PE · Control Risks» y
+«PE · Amazon».
+
+- **Productos**: solo los de la categoría `odoo_categoria_productos`
+  («Protección Ejecutiva»), con sus subcategorías —se reconoce por su
+  `parent_path`—. Siguen entrando los que una lista nombra aunque ya no
+  estén a la venta. Lo que ya estaba en la tabla y no es de PE sale de
+  ella (`quitados`), salvo que algún tarifario todavía lo nombre; lo de
+  PE que ya no se vende se queda en gris, como antes.
+- **Listas**: solo las que empiezan con `odoo_prefijo_listas` («PE ·»,
+  sin distinguir mayúsculas, acentos ni espacios). Las demás se cuentan
+  («Listas de Protección Ejecutiva en Odoo: N · M más no empiezan con
+  «PE ·» y no se leen») y su tarifario, si ya existía, deja de ofrecerse.
+- **Pendientes nuevos**: el cliente cuya lista de Odoo no es de PE
+  (`lista_no_pe`) —se queda con el tarifario que tenía, aunque sea el de
+  esa misma lista, y ya no se pone al día—, también en la lista de sus
+  implantados; y el producto que una lista de PE nombra y no está en la
+  categoría (`producto_fuera`), con las listas que lo nombran.
+- **Sin la categoría en Odoo no se toca nada** (`SinCategoria`): leer
+  todo sería volver a traer el GPS. El ensayo lo dice y «Aplicar» no se
+  enciende; «Leer de Odoo» en la tabla de productos contesta 409 con qué
+  hacer. Igual que la lectura de clientes sin su etiqueta.
+- **Nombres en es_MX**: ya se leían así desde que se conectó Odoo (el
+  cliente de Odoo manda `lang: es_MX` en cada llamada); ahora sale de
+  `odoo_idioma`. En Odoo cada producto guarda su nombre por idioma: si
+  alguno se ve en inglés, es que en Odoo no tiene su nombre en español.
+- Los tres valores viven en `config.py` y se cambian en el `.env` si
+  hiciera falta (`ODOO_CATEGORIA_PRODUCTOS`, `ODOO_PREFIJO_LISTAS`,
+  `ODOO_IDIOMA`); vacíos, sin filtro.
+
+**El «Todo incluido» de PE · General México** (el mensaje del tarifario
+de la tarde): Salvador decidió no meter al agente con gastos incluidos,
+y todos los paquetes conductor + unidad de la lista son «Todo incluido».
+Con eso no hay que desarrollar nada: la casilla del tarifario «Los
+paquetes de esta lista traen los viáticos del día» (sección 79) hace que
+al cerrar no se facturen los viáticos de quien fue en el paquete.
+Finanzas la marca una vez en PE · General México después de la primera
+lectura. El «Conductor de Seguridad Bilingüe Federal» lo marca finanzas
+como «No es de PE», como ya se podía.
+
+Por dentro: `odoo_tarifarios.py` (`categorias_de_pe`, `es_de_pe`,
+`es_lista_de_pe`, `SinCategoria`, `leer_productos` con `en_pe`,
+`_leer_odoo`, `_plan`, `sincronizar`), `odoo_api.py`, `config.py`,
+`routers/tarifarios.py`, `web/odoo.js`, `web/tarifarios.js`,
+`web/idioma.js`; manual `04_odoo` (es/pt). Pruebas:
+`tests/test_odoo_tarifarios.py` (+5): solo lo de PE con su subcategoría y
+lo pendiente que se dice; lo que no es de PE sale de la tabla; sin la
+categoría no se toca nada; las listas por su nombre; los nombres en
+es_MX. Las pruebas de antes corren sin filtro.
 
 ## 14. Lo que falta
 
