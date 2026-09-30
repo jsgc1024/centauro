@@ -58,6 +58,14 @@ class Settings(BaseSettings):
     # los clientes gastando sus intentos. La prueba de probar_correo.py
     # sale aunque este apagado.
     correo_encendido: str = "no"
+    # Encender por etapas. Decision de Salvador, 29 sep: primero solo la
+    # gente de la empresa --consultores, central, personal y quien recibe
+    # su invitacion o su recuperacion--, y en una segunda etapa, tambien
+    # los clientes (quien solicita y el ejecutivo). Con "si", lo de los
+    # clientes espera en la cola y, pasado su tiempo de vida, se vence
+    # sin salir. Se pone con poner_correo.py --solo-internos y se quita
+    # con --a-todos.
+    correo_solo_internos: str = "no"
     # Microsoft 365 (seccion 67). Decision de Salvador, 25 de septiembre:
     # el correo sale del buzon de la empresa. Microsoft apaga la entrada
     # por SMTP con usuario y contrasena el 31 de diciembre de 2026, asi

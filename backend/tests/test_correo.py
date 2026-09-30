@@ -582,3 +582,71 @@ def test_con_el_interruptor_apagado_no_sale_nada(monkeypatch, db):
     for dicho in ("si", "Si", "S\u00ed", "yes", "true", "1"):
         monkeypatch.setattr(correo.settings, "correo_encendido", dicho)
         assert correo.configurado(), dicho
+
+
+# ------------------------------------------------ por etapas (29 sep)
+#
+# Decision de Salvador: el correo se enciende primero solo para la gente
+# de la empresa, y en una segunda etapa tambien para los clientes.
+
+def _aviso_para(db, destinatario, correo_destino):
+    from app import models as m
+    fila = m.Notificacion(
+        destinatario=destinatario, canal=m.Canal.CORREO,
+        correo=correo_destino, asunto="Etapa", cuerpo="El cuerpo")
+    db.add(fila)
+    db.commit()
+    db.refresh(fila)
+    return fila
+
+
+def test_en_la_primera_etapa_solo_sale_lo_de_la_empresa(db, monkeypatch):
+    from app import models as m
+    _configurado(monkeypatch)
+    monkeypatch.setattr(correo.settings, "correo_solo_internos", "si")
+    salieron = []
+    monkeypatch.setattr(correo, "entregar",
+                        lambda destino, asunto, cuerpo, html=None:
+                        salieron.append(destino))
+    cliente = _aviso_para(db, m.Destinatario.EJECUTIVO, "ejecutivo@cliente.com")
+    solicita = _aviso_para(db, m.Destinatario.SOLICITANTE, "compras@cliente.com")
+    consultor = _aviso_para(db, m.Destinatario.CONSULTOR, "consultor@centauro.lat")
+    guardia = _aviso_para(db, m.Destinatario.PERSONAL, "guardia@gmail.com")
+
+    e = correo.estado(db)
+    assert e["solo_internos"] is True
+    assert e["retenidos"] >= 2
+
+    correo.despachar(db)
+    assert "consultor@centauro.lat" in salieron
+    # Lo de la empresa sale aunque la direccion sea personal.
+    assert "guardia@gmail.com" in salieron
+    assert "ejecutivo@cliente.com" not in salieron
+    assert "compras@cliente.com" not in salieron
+    for a in (cliente, solicita):
+        db.refresh(a)
+        assert a.estado == "pendiente", "lo del cliente tenia que esperar"
+    for a in (consultor, guardia):
+        db.refresh(a)
+        assert a.estado == "enviada"
+
+    # Segunda etapa: sale lo que esperaba.
+    monkeypatch.setattr(correo.settings, "correo_solo_internos", "no")
+    assert correo.estado(db)["retenidos"] == 0
+    correo.despachar(db)
+    assert "ejecutivo@cliente.com" in salieron
+    assert "compras@cliente.com" in salieron
+
+
+def test_lo_del_cliente_que_espero_de_mas_se_vence_sin_salir(db, monkeypatch):
+    from app import models as m
+    _configurado(monkeypatch)
+    monkeypatch.setattr(correo.settings, "correo_solo_internos", "si")
+    monkeypatch.setattr(correo, "entregar",
+                        lambda *a, **k: pytest.fail("no tenia que salir"))
+    viejo = _aviso_para(db, m.Destinatario.EJECUTIVO, "ejecutivo@cliente.com")
+    viejo.enviada_en = datetime.now(timezone.utc) - timedelta(days=3)
+    db.commit()
+    correo.despachar(db)
+    db.refresh(viejo)
+    assert viejo.estado == "vencida"
