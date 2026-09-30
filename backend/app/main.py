@@ -20,8 +20,8 @@ from app.marca import logo_incrustado
 from app.db import engine, get_db
 from app.routers import (acceso, archivo, bitacora_admin, bonos, calidad,
                          campo, catalogos, central, cierre, contingencia,
-                         direccion, encuestas, gps, implantados, manual,
-                         mapas, nomina, odoo, operacion, panorama,
+                         direccion, encuestas, freelance, gps, implantados,
+                         manual, mapas, nomina, odoo, operacion, panorama,
                          profesionalismo, servicios, solicitantes,
                          tarifarios, tasksheet, viaticos)
 from app.routers import llaves as llaves_router
@@ -145,6 +145,8 @@ app.include_router(calidad.router)
 app.include_router(manual.router)
 # La ventana del director de operaciones (seccion 105).
 app.include_router(direccion.router)
+# El freelance: su alta, sus costos y su expediente (seccion 111).
+app.include_router(freelance.router)
 
 
 @app.exception_handler(IntegrityError)

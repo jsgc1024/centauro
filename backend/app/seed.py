@@ -273,6 +273,12 @@ def sembrar() -> dict:
                 {"monto": D(por_mod["full_day"]), "moneda": m.Moneda.MXN,
                  "monto_hora_extra": D(comision_he[perfil_cod])})
 
+        # Lo que Recursos Humanos pide para activar a un freelance en
+        # Mexico (seccion 111). Si Mexico ya tiene su lista no se toca: la
+        # lleva sistema y calidad en Catalogos.
+        from app import freelance as lista_del_freelance
+        lista_del_freelance.sembrar_requisitos(db)
+
         db.commit()
 
         creados = {
@@ -335,6 +341,11 @@ def sembrar_recursos() -> dict:
             _obtener_o_crear(db, m.Persona, {"correo": correo},
                              {"nombre": nombre, "plaza_id": plaza.id,
                               "es_freelance": freelance})
+        # El freelance lleva su ficha (seccion 111): programado y con el
+        # expediente por completar, como quedo el de produccion.
+        from app import freelance as fichas_del_freelance
+        db.flush()
+        fichas_del_freelance.fichas_que_faltan(db)
 
         flota = [
             ("ABC-1234", "suv_blindada", cdmx, "1800"),

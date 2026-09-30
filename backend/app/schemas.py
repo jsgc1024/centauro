@@ -287,6 +287,84 @@ class TarifaFreelanceOut(TarifaFreelanceIn):
     id: int
 
 
+# ------------------------------------------------ el freelance (seccion 111)
+
+class RequisitoFreelanceIn(Base):
+    """Un renglon de la lista de Recursos Humanos, en Catalogos."""
+    pais_id: int
+    clave: str = Field(min_length=2, max_length=40,
+                       pattern=r"^[a-z0-9_]+$")
+    nombre: str = Field(min_length=2, max_length=160)
+    detalle: str | None = Field(default=None, max_length=200)
+    programado: bool = True
+    emergencia: bool = False
+    captura: Literal["archivo", "numero", "archivo_numero", "banco", "riesgo",
+                     "entrevista", "contactos", "prueba"] = "archivo"
+    vigencia: Literal["ninguna", "meses", "documento", "servicio"] = "ninguna"
+    vigencia_meses: int | None = Field(default=None, ge=1, le=120)
+    antiguedad_meses: int | None = Field(default=None, ge=1, le=120)
+    orden: int = 0
+
+    @field_validator("vigencia_meses")
+    @classmethod
+    def _con_meses(cls, v, info):
+        if info.data.get("vigencia") == "meses" and not v:
+            raise ValueError("Con vigencia en meses, di cuántos meses vale.")
+        return v
+
+
+class RequisitoFreelanceOut(RequisitoFreelanceIn):
+    id: int
+    activo: bool
+
+
+class FreelanceIn(Base):
+    """El alta: lo que sale en la hoja del servicio y con que entra."""
+    nombre: str = Field(min_length=1, max_length=80)
+    apellidos: str = Field(min_length=1, max_length=120)
+    lada: str | None = Field(default=None, max_length=6)
+    telefono: str = Field(min_length=6, max_length=30)
+    correo: str = Field(min_length=5, max_length=160)
+    plaza_id: int
+    tipo: Literal["programado", "emergencia"]
+
+    _captura = capturado("nombre", "apellidos")
+
+
+class FreelanceCambioIn(Base):
+    """Lo que no se manda, no se toca."""
+    nombre: str | None = Field(default=None, min_length=1, max_length=80)
+    apellidos: str | None = Field(default=None, min_length=1, max_length=120)
+    lada: str | None = Field(default=None, max_length=6)
+    telefono: str | None = Field(default=None, min_length=6, max_length=30)
+    correo: str | None = Field(default=None, min_length=5, max_length=160)
+    plaza_id: int | None = None
+    tipo: Literal["programado", "emergencia"] | None = None
+
+    _captura = capturado("nombre", "apellidos")
+
+
+class CostosFreelanceIn(Base):
+    """Sus cuatro costos, en la moneda de su pais (decisiones 3 y 11)."""
+    dia_completo: Decimal | None = None
+    medio_dia: Decimal | None = None
+    transfer: Decimal | None = None
+    hora_extra: Decimal | None = None
+
+
+class UrgenciaIn(Base):
+    servicio_id: int
+    motivo: str = Field(min_length=1, max_length=400)
+
+
+class RespuestaUrgenciaIn(Base):
+    respuesta: str | None = Field(default=None, max_length=400)
+
+
+class MotivoIn(Base):
+    motivo: str = Field(min_length=1, max_length=400)
+
+
 class VehiculoIn(Base):
     placa: str
     categoria_id: int

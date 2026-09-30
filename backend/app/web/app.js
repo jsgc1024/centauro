@@ -8,6 +8,7 @@ import { pantallaNomina } from "./nomina.js";
 import { pantallaBonos } from "./bonos.js";
 import { pantallaEncuestas } from "./encuestas.js";
 import { pantallaPersonal } from "./personal.js";
+import { pantallaFreelance } from "./freelance.js";
 import { pantallaUnidades } from "./unidades.js";
 import { carteraImplantados, nuevoImplantado,
          pantallaImplantado } from "./implantado.js";
@@ -485,6 +486,8 @@ const RUTAS = [
   /* La ficha de una persona, abierta directo: desde Calidad (seccion 89),
      el certificado vencido lleva a quien lo trae. */
   [/^#\/equipo\/(\d+)$/, pantallaPersonal, "equipo", CONSULTA],
+  /* El freelance (seccion 111): su alta y su ficha, dentro de Personal. */
+  [/^#\/freelance\/(\d+|nuevo)$/, pantallaFreelance, "equipo", CONSULTA],
   [/^#\/unidades$/, pantallaUnidades, "unidades", MONITOREO],
   [/^#\/finanzas$/, bandejaFinanzas, "finanzas", DINERO],
   [/^#\/facturacion$/, pantallaFacturacion, "facturacion", DINERO],

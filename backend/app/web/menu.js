@@ -136,6 +136,8 @@ export const MENU = [
   /* El personal va en Operaciones EP: a quien se manda es una decision
      de operacion, y se toma mirando la misma cartera. */
   { ruta: "/equipo", clave: "equipo", necesita: "profesionalismo.ver", texto: "nav_personal", grupo: "nav_operaciones_ep",
+    /* La ficha del freelance vive dentro de Personal (seccion 111). */
+    tambien: ["/freelance/"],
     cuenta: "rec_personal", quienes: CONSULTA },
   /* La flota con su GPS (seccion 60), junto a Personal: a quien se
      manda y en que se manda se deciden mirando lo mismo. La abre quien

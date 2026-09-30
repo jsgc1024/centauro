@@ -450,6 +450,43 @@ ACTIVIDADES: dict[str, dict] = {
         "descripcion": "Cuanto pesa cada dimension de la calificacion",
         "roles": {R.ADMIN, R.DIRECTOR_OPERACIONES},
     },
+
+    # ------------------------------------------ el freelance (seccion 111)
+    #
+    # Decisiones de Salvador del 30 sep. Lo da de alta el consultor,
+    # direccion de operaciones o Recursos Humanos (2); su expediente lo
+    # abren Recursos Humanos, direccion de operaciones y --por lo que
+    # hereda-- direccion general (6), y lo valida solo Recursos Humanos
+    # (2); la urgencia la autoriza direccion de operaciones (4). Sus
+    # costos van con `catalogos.dinero` (3) y la lista de requisitos con
+    # `catalogos.editar` (12). Quien asigna ve si esta listo, no sus
+    # documentos.
+    "freelance.ver": {
+        "descripcion": "Ver a los freelance: su ficha, sus costos y si su "
+                       "expediente esta listo",
+        "roles": {R.CONSULTOR, R.CENTRAL, R.DIRECTOR_OPERACIONES,
+                  R.RECURSOS_HUMANOS, R.SISTEMA_CALIDAD},
+    },
+    "freelance.alta": {
+        "descripcion": "Dar de alta a un freelance y corregir su foto y sus "
+                       "datos",
+        "roles": {R.CONSULTOR, R.DIRECTOR_OPERACIONES, R.RECURSOS_HUMANOS},
+    },
+    "freelance.expediente": {
+        "descripcion": "Abrir el expediente del freelance y cargarle sus "
+                       "documentos",
+        "roles": {R.RECURSOS_HUMANOS, R.DIRECTOR_OPERACIONES},
+    },
+    "freelance.validar": {
+        "descripcion": "Validar o rechazar los documentos del expediente "
+                       "del freelance",
+        "roles": {R.RECURSOS_HUMANOS},
+    },
+    "freelance.autorizar": {
+        "descripcion": "Autorizar, por urgencia, a un freelance con el "
+                       "expediente incompleto para un servicio",
+        "roles": {R.DIRECTOR_OPERACIONES},
+    },
     "panorama.ver": {
         "descripcion": "Todo lo que esta pasando ahora, y las marcas que no "
                        "cuadran",
@@ -493,7 +530,7 @@ ACTIVIDADES: dict[str, dict] = {
     "catalogos.dinero": {
         "descripcion": "Fijar lo que en los catalogos decide dinero: el "
                        "tabulador de viaticos, las horas de cada modalidad "
-                       "y las tarifas de freelance",
+                       "y los costos de cada freelance",
         "roles": {R.ADMIN, R.DIRECTOR_OPERACIONES},
     },
     "bitacora.ver": {

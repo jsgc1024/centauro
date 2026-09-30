@@ -150,6 +150,15 @@ class Settings(BaseSettings):
     # desde que se archiva los cubren siempre. Lo confirma el contador.
     archivo_anios: int = 6
 
+    # Los expedientes del freelance (seccion 111): sus PDF y fotos van a
+    # un deposito privado de Google aparte del de los comprobantes. Aparte
+    # porque aquel borra solo a los seis anos de subida, y el expediente
+    # se guarda mientras el freelance colabore y seis anos despues de su
+    # ultimo servicio (decision 7). Vacio, los archivos se quedan en la
+    # base y la tarea de cada hora los muda en cuanto se ponga el
+    # deposito que arma despliegue/gcp/crear_expedientes.sh.
+    expedientes_destino: str = ""  # "gs://centauro-expedientes-<proyecto>"
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

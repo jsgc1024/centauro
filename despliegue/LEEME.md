@@ -12,6 +12,7 @@ así vive en `ARQUITECTURA.md`, en la raíz.
 | `gcp/crear_servidor.sh` | El servidor en Google Cloud: red, IP fija, máquina, depósito de respaldos y foto diaria del disco |
 | `gcp/preparar_maquina.sh` | La máquina lista: parches solos, Docker, hora de México, swap y el agente de Google |
 | `gcp/crear_archivo.sh` | El archivo de los comprobantes: el depósito de seis años, sus permisos y su alerta |
+| `gcp/crear_expedientes.sh` | Los expedientes del freelance: su depósito privado, en México, y sus permisos |
 | `../backend/primer_arranque.py` | Los catálogos sin nada de ejemplo y la primera cuenta |
 | `../backend/subir_a_google.py` | La copia del respaldo al depósito de Google, sin llaves |
 
@@ -187,6 +188,10 @@ RESPALDO_GCS_DESTINO=gs://centauro-respaldos-project-8fda7c0c-0799-4989-9c2/post
 # El archivo de los comprobantes (seccion 69). Vacio = no sale ninguna
 # foto de Centauro; el historial de Facturacion dice cuando se irian.
 ARCHIVO_DESTINO=
+
+# Los expedientes del freelance (seccion 111). Vacio = sus archivos se
+# quedan en la base hasta que se ponga; la tarea de cada hora los muda.
+EXPEDIENTES_DESTINO=
 ```
 
 `VAPID_PUBLIC` y `VAPID_PRIVATE` **no van**, ni siquiera vacías: las
@@ -735,6 +740,37 @@ gcloud storage buckets update gs://centauro-archivo-project-8fda7c0c-0799-4989-9
 ```bash
 gcloud storage ls -l "gs://centauro-archivo-project-8fda7c0c-0799-4989-9c2/comprobantes/**" | tail -20
 ```
+
+---
+
+## Los expedientes del freelance
+
+Sección 111 de la bitácora. Los PDF y las fotos del expediente del
+freelance —INE, antecedentes, pruebas toxicológicas, la carátula del
+banco— van a un depósito privado de Google, **en México**
+(`northamerica-south1`, junto a la máquina), y solo se abren desde
+Connect, con permiso: Recursos Humanos, dirección de operaciones y
+dirección general.
+
+Cada archivo sube sin escribir encima de nada, se le pregunta a Google
+qué recibió —tamaño y md5— y solo si cuadra se quita de la base. Si
+Google no contesta al subirlo, se queda en la base y la tarea de cada
+hora (a los :23) lo vuelve a intentar.
+
+**Sin borrado automático ni candado**, a propósito: se guardan mientras
+el freelance colabore y seis años después de su último servicio
+(decisión 7 de Salvador), y un reloj del depósito solo sabe contar desde
+el día en que se subió cada archivo. Connect no borra nada; la cuenta de
+la máquina no puede borrar.
+
+**Nace apagado.** Mientras no se ponga, los archivos se quedan en la
+base (y en su respaldo de cada noche). Para prenderlo:
+
+1. En Cloud Shell, el contenido de `gcp/crear_expedientes.sh`. Arma el
+   depósito y el permiso de la máquina (guardar y leer, no borrar). Al
+   final dice el renglón del `.env`.
+2. En el servidor, el renglón `EXPEDIENTES_DESTINO=...` en `.env`.
+3. `docker compose -f docker-compose.prod.yml up -d api worker beat`.
 
 Cada foto lleva su folio, persona, monto y fecha pegados como datos:
 el archivo se entiende solo aunque Centauro no estuviera.

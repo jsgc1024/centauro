@@ -8377,6 +8377,93 @@ salir y volver a entrar con la huella, la contraseña nueva que la quita
 —el equipo lo dice claro y la vuelve a ofrecer— y el armazón v22 con
 `huella.js` guardado para abrir sin señal. De ahí salieron los puntos 4
 y 5.
+## 111. El freelance en Connect
+
+Salvador (30 sep): «también tenemos al personal freelance. Me gustaría
+que crees un lugar donde los podamos dar de alta con su foto y sus
+datos para que pueda ser tomada para el TS. También un lugar donde se
+pueda cargar toda la información que solicita RRHH», con la tabla de
+Recursos Humanos (programado 15 requisitos, emergencia 9); «cada
+freelance tiene sus propios costos: día completo, medio día y
+transfer»; «solo aplican para servicios eventuales, no para
+implantados». Propuesta con maquetas (`Propuesta_freelance_en_Connect.pdf`)
+y doce decisiones contestadas una por una: vive en Connect (1); lo dan
+de alta el consultor, dirección de operaciones y RRHH, y el expediente
+lo valida solo RRHH (2); sus costos, con hora extra propia, los fijan
+dirección de operaciones y la gerencia de administración (3, 11); sin
+expediente completo no se asigna, salvo la urgencia que autoriza
+dirección de operaciones para ese servicio (4); el de emergencia que
+repite tiene 15 días desde su último servicio para completar lo de
+programado (5); los documentos los abren RRHH, dirección de operaciones
+y dirección general, y finanzas ve los datos bancarios (6, 9); se
+guardan mientras colabore y seis años después (7); el aviso de
+privacidad firmado es requisito en los dos tipos (8); solo eventuales
+(10); la lista de requisitos, en Catálogos por país, la lleva sistema y
+calidad (12).
+
+- **Personal de seguridad** tiene dos pestañas, *De planta* y
+  *Freelance*. La del freelance: su foto, su tipo, cómo va su
+  expediente —listo para asignar, faltan N, por revisar, vencido, pasar
+  a programado—, sus tres costos, su último servicio y su experiencia,
+  con filtros por tipo y por expediente (la lista de trabajo de RRHH).
+- **Su ficha** (`#/freelance/12`): datos y costos —la foto, que se
+  reduce en el navegador; nombre y apellidos; teléfono con lada; correo;
+  ciudad; tipo, que solo cambia RRHH—, expediente, servicios e
+  historial. El acceso a EP Connect se da desde ahí con el expediente
+  listo (o con una urgencia autorizada): crea su usuario de personal de
+  seguridad y la central le dicta su código. La baja cierra el acceso;
+  el expediente se queda.
+- **El expediente**: requisito por requisito, con su captura —archivo,
+  número (CURP y NSS, con su forma), CIF con RFC, banco con CLABE
+  revisada contra su dígito de control, Veritas con su riesgo,
+  entrevista, dos contactos, la prueba de la caseta— y su vigencia —la
+  fecha del documento, meses desde su fecha, o cada servicio—. El
+  comprobante de domicilio no entra con más de tres meses. Lo que carga
+  RRHH queda validado si así lo dice; lo que carga dirección de
+  operaciones espera a RRHH. Por requisito rigen a lo más dos: el
+  validado y el nuevo que espera, así que la renovación no le quita lo
+  asignable mientras la revisan. La cuenta bancaria pasa a la persona
+  —de ahí deposita finanzas— al validarse. Nada se borra.
+- **Al asignar** (el equipo, el día y el relevo por contingencia): el
+  freelance sin sus costos, con el expediente sin terminar, con algo
+  vencido o con el plazo de emergencia vencido no entra (409 con el
+  porqué). La lista de a quién asignar ya lo dice en su renglón, con
+  «Pedir autorización»; la urgencia le llega a dirección de operaciones
+  —aviso y su bandeja, «Freelance por urgencia»— y vale solo para ese
+  servicio. Si la pide dirección de operaciones, queda autorizada. Al
+  asignar su segundo servicio al de emergencia arranca su plazo de 15
+  días desde el último, con aviso a RRHH; al completar lo de programado
+  pasa solo a programado.
+- **Implantados**: el freelance no se ofrece (la lista del día, la
+  plantilla del mes y cubrir un día lo rechazan).
+- **Los avisos**: cada mañana a las 7:35, a RRHH (o, sin RRHH, a
+  dirección de operaciones), lo que vence en 30 días, lo que vence hoy
+  y el plazo de emergencia que se cumplió; uno por documento y fecha.
+- **Los archivos**: PDF o foto, hasta 10 MB, a un depósito privado de
+  Google en México (`EXPEDIENTES_DESTINO`), aparte del de los
+  comprobantes porque aquel borra solo a los seis años de subido. Nace
+  apagado: sin el depósito se quedan en la base y la tarea de cada hora
+  (:23) los muda con su huella comprobada. `despliegue/gcp/crear_expedientes.sh`.
+- **Catálogos**: entra *Requisitos del freelance*, por país (sistema y
+  calidad); México nace con la tabla de RRHH y el aviso de privacidad.
+  Sale el bloque *Tarifas de freelance*: los costos viven en la ficha.
+- **Los que ya existían** (Raúl Ortiz y los demás marcados como
+  freelance) pasan a programados con el expediente por completar y sus
+  tarifas como estaban. Los puestos que ya existen toman sus actividades
+  nuevas con la migración.
+
+Por dentro: `app/freelance.py` (las reglas), `routers/freelance.py`,
+cinco tablas (`freelance`, `requisito_freelance`, `documento_freelance`,
+`archivo_freelance`, `autorizacion_freelance`) con la migración
+`cd3b659a42f6`; actividades `freelance.ver`, `.alta`, `.expediente`,
+`.validar` y `.autorizar`; la puerta en `routers/servicios.py`
+(asignar el día y el equipo), `contingencia.py` e `implantado.py`; el
+estado en las recomendaciones (`freelance.enriquecer`); tareas
+`freelance.revisar_vencimientos` y `freelance.mudar_archivos`; la
+consola en `web/freelance.js`, `personal.js`, `servicio.js`,
+`direccion.js` y `catalogos_pantalla.js`. Manual: el capítulo «El
+freelance» y el síntoma «Un freelance no se puede asignar». Pruebas:
+`tests/test_revision_111_freelance.py` (17).
 
 ## 14. Lo que falta
 

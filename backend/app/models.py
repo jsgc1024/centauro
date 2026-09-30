@@ -3,7 +3,7 @@ import enum
 from datetime import date, datetime, time
 
 from sqlalchemy import (
-    Boolean, Date, DateTime, Enum, ForeignKey, Index, Integer,
+    Boolean, Date, DateTime, Enum, ForeignKey, Index, Integer, LargeBinary,
     Numeric, String, Text, Time, UniqueConstraint, false, func, text, true,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -680,6 +680,208 @@ class TarifaFreelance(Base):
     costo: Mapped[float] = mapped_column(Numeric(12, 2))
     costo_hora_extra: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     moneda: Mapped[Moneda] = mapped_column(Enum(Moneda))
+
+
+# ============================================================ EL FREELANCE
+#
+# Seccion 111. Salvador (30 sep): un lugar para dar de alta al freelance
+# con su foto y sus datos --los que salen en la hoja del servicio-- y
+# otro donde se cargue todo lo que pide Recursos Humanos para activarlo.
+# El freelance no es empleado: no llega de Odoo, vive aqui. Sus costos
+# siguen en `TarifaFreelance`; lo que se agrega es su ficha, la lista de
+# requisitos de cada pais, su expediente y la autorizacion de urgencia.
+
+class Freelance(Base):
+    """La ficha del freelance, al lado de su `Persona`.
+
+    La persona sigue siendo la que se asigna, sale en la hoja y cobra en
+    el corte del lunes; su nombre completo vive alli, armado con el
+    nombre y los apellidos de aqui. Lo propio del freelance es su tipo
+    --programado o de emergencia, que decide que requisitos le tocan-- y
+    el plazo del de emergencia que repite (decision 5): al asignarle su
+    segundo servicio tiene quince dias desde el ultimo para completar lo
+    de programado.
+    """
+    __tablename__ = "freelance"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    persona_id: Mapped[int] = mapped_column(
+        ForeignKey("persona.id", ondelete="CASCADE"), unique=True)
+    # "programado" o "emergencia". Texto y no ENUM, como el idioma del
+    # pais: un tipo nuevo no deberia pedir tocar la base.
+    tipo: Mapped[str] = mapped_column(String(12), default="programado",
+                                      server_default="programado")
+    nombre: Mapped[str] = mapped_column(String(80))
+    apellidos: Mapped[str] = mapped_column(String(120), default="",
+                                           server_default="")
+    alta_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    alta_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    # El plazo del de emergencia que repite: hasta que dia tiene para
+    # completar los requisitos de programado. Se pone una vez, al
+    # asignarle el segundo servicio, y se borra cuando pasa a programado.
+    plazo_programado: Mapped[date | None] = mapped_column(Date, nullable=True)
+    plazo_puesto_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    # El aviso a Recursos Humanos del dia que vence el plazo: uno solo.
+    plazo_avisado_en: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    persona: Mapped["Persona"] = relationship(foreign_keys=[persona_id])
+
+
+class RequisitoFreelance(Base):
+    """Lo que Recursos Humanos pide para activar a un freelance, por pais
+    (decision 12: la lista la lleva sistema y calidad en Catalogos).
+
+    `captura` dice que se pide al cargarlo: `archivo`, `numero` (CURP,
+    NSS), `archivo_numero` (la CIF con su RFC), `banco` (banco, CLABE,
+    titular y la caratula), `riesgo` (la Veritas y su riesgo 1, 2 o 3),
+    `entrevista` (fecha, quien y si salio apto), `contactos` (dos) o
+    `prueba` (la rapida de la caseta: resultado y quien la aplico).
+
+    `vigencia` dice cuando vence: `ninguna`; `meses` desde la fecha del
+    documento (el comprobante de domicilio y los antecedentes, doce; la
+    toxicologica, seis); `documento`, la fecha que trae el propio
+    documento (licencia, INE); o `servicio`, la prueba de la caseta, que
+    se aplica en cada servicio y no se pide antes de asignar.
+    `antiguedad_meses` es cuan viejo puede llegar el documento: el
+    comprobante de domicilio, no mas de tres meses.
+    """
+    __tablename__ = "requisito_freelance"
+    __table_args__ = (UniqueConstraint("pais_id", "clave",
+                                       name="uq_requisito_freelance_clave"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    pais_id: Mapped[int] = mapped_column(ForeignKey("pais.id"))
+    clave: Mapped[str] = mapped_column(String(40))
+    nombre: Mapped[str] = mapped_column(String(160))
+    detalle: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    programado: Mapped[bool] = mapped_column(Boolean, default=True,
+                                             server_default="true")
+    emergencia: Mapped[bool] = mapped_column(Boolean, default=False,
+                                             server_default="false")
+    captura: Mapped[str] = mapped_column(String(20), default="archivo",
+                                         server_default="archivo")
+    vigencia: Mapped[str] = mapped_column(String(12), default="ninguna",
+                                          server_default="ninguna")
+    vigencia_meses: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    antiguedad_meses: Mapped[int | None] = mapped_column(Integer,
+                                                         nullable=True)
+    orden: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    activo: Mapped[bool] = mapped_column(Boolean, default=True,
+                                         server_default="true")
+
+
+class DocumentoFreelance(Base):
+    """Lo que se cargo para un requisito, con su estado.
+
+    Nada se borra: el documento que se reemplaza se queda con su
+    `reemplazado_en`, porque el expediente se guarda mientras colabore y
+    seis anos despues de su ultimo servicio (decision 7). Por requisito
+    viven a lo mas dos sin reemplazar: el validado que rige y el nuevo
+    que espera a Recursos Humanos. Asi, subir la toxicologica nueva diez
+    dias antes de que venza la anterior no le quita lo asignable mientras
+    la revisan.
+    """
+    __tablename__ = "documento_freelance"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    persona_id: Mapped[int] = mapped_column(
+        ForeignKey("persona.id", ondelete="CASCADE"), index=True)
+    requisito_id: Mapped[int] = mapped_column(
+        ForeignKey("requisito_freelance.id"), index=True)
+    # por_revisar, validado o rechazado.
+    estado: Mapped[str] = mapped_column(String(12), default="por_revisar",
+                                        server_default="por_revisar")
+    # Lo capturado, como JSON de texto: el numero, el banco, el riesgo,
+    # la entrevista, los contactos o el resultado de la prueba.
+    datos: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fecha_documento: Mapped[date | None] = mapped_column(Date, nullable=True)
+    vence_en: Mapped[date | None] = mapped_column(Date, nullable=True)
+    subido_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    subido_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    revisado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    revisado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    motivo_rechazo: Mapped[str | None] = mapped_column(String(300),
+                                                       nullable=True)
+    reemplazado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    # Los dos avisos a Recursos Humanos: treinta dias antes y el dia que
+    # vence. Cada uno una vez.
+    aviso_por_vencer_en: Mapped[date | None] = mapped_column(Date,
+                                                             nullable=True)
+    aviso_vencido_en: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    requisito: Mapped[RequisitoFreelance] = relationship()
+    archivos: Mapped[list["ArchivoFreelance"]] = relationship(
+        back_populates="documento", order_by="ArchivoFreelance.id")
+
+
+class ArchivoFreelance(Base):
+    """Un PDF o una foto del expediente, hasta 10 MB.
+
+    Vive en el deposito privado de Google de los expedientes
+    (`EXPEDIENTES_DESTINO`) y aqui solo queda donde esta; mientras ese
+    deposito no este puesto, o si Google no contesta al subirlo, se
+    queda aqui adentro y la tarea de cada hora lo muda. Solo se abre
+    desde Connect, con permiso.
+    """
+    __tablename__ = "archivo_freelance"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    documento_id: Mapped[int] = mapped_column(
+        ForeignKey("documento_freelance.id", ondelete="CASCADE"), index=True)
+    nombre: Mapped[str] = mapped_column(String(200))
+    tipo: Mapped[str] = mapped_column(String(80))
+    tamano: Mapped[int] = mapped_column(Integer)
+    md5: Mapped[str] = mapped_column(String(32))
+    contenido: Mapped[bytes | None] = mapped_column(LargeBinary,
+                                                    nullable=True)
+    objeto: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    subido_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+    documento: Mapped[DocumentoFreelance] = relationship(
+        back_populates="archivos")
+
+
+class AutorizacionFreelance(Base):
+    """La urgencia: un freelance con el expediente incompleto, para un
+    servicio (decision 4).
+
+    La pide quien asigna; la autoriza o la rechaza direccion de
+    operaciones, con su motivo, y queda escrito. Vale solo para ese
+    servicio. `faltaba` guarda que le faltaba en ese momento, porque
+    dentro de un mes el expediente ya dira otra cosa.
+    """
+    __tablename__ = "autorizacion_freelance"
+    __table_args__ = (UniqueConstraint("persona_id", "servicio_id",
+                                       name="uq_autorizacion_freelance"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    persona_id: Mapped[int] = mapped_column(
+        ForeignKey("persona.id", ondelete="CASCADE"), index=True)
+    servicio_id: Mapped[int] = mapped_column(
+        ForeignKey("servicio.id", ondelete="CASCADE"), index=True)
+    # pedida, autorizada o rechazada.
+    estado: Mapped[str] = mapped_column(String(12), default="pedida",
+                                        server_default="pedida")
+    motivo: Mapped[str] = mapped_column(String(400))
+    faltaba: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    pedida_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    pedida_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    resuelta_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    resuelta_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    respuesta: Mapped[str | None] = mapped_column(String(400), nullable=True)
 
 
 class MotivoRenta(str, enum.Enum):

@@ -591,8 +591,7 @@ def agregar_dia(db: Session, contrato_id: int, fecha: date,
 
     cubre_id = persona_id or contrato.titular_id
     if cubre_id:
-        if not db.get(m.Persona, cubre_id):
-            raise HTTPException(404, f"No existe la persona {cubre_id}")
+        _que_pueda_cubrir(db, cubre_id)
         db.add(m.AsignacionPersonal(
             jornada_id=jornada.id, persona_id=cubre_id,
             rol_id=rol_del_contrato(contrato, cubre_id)))
@@ -621,8 +620,7 @@ def _cubrir(db: Session, contrato: m.ContratoImplantado, jornada: m.Jornada,
     cubre_id = persona_id or contrato.titular_id
     if not cubre_id:
         raise HTTPException(409, "No hay a quien asignarle ese dia")
-    if not db.get(m.Persona, cubre_id):
-        raise HTTPException(404, f"No existe la persona {cubre_id}")
+    _que_pueda_cubrir(db, cubre_id)
 
     dias = [jornada]
     if jornada.fecha.weekday() >= 5:
@@ -949,8 +947,11 @@ def dia_del_servicio(db: Session, servicio: m.Servicio, fecha: date) -> dict:
     for persona in (db.query(m.Persona)
                     .filter(m.Persona.plaza_id == servicio.plaza_id,
                             m.Persona.activo.is_(True),
-                            # La oficina no cubre dias (seccion 74).
-                            m.Persona.oficina.is_(False)).all()):
+                            # La oficina no cubre dias (seccion 74), y el
+                            # freelance tampoco: solo va en eventuales
+                            # (seccion 111).
+                            m.Persona.oficina.is_(False),
+                            m.Persona.es_freelance.is_(False)).all()):
         # Sin filtrar por puesto: el personal de seguridad es general y
         # el rol lo decide el consultor al cubrir el dia.
         hallazgos = disponibilidad.revisar_persona(
@@ -1091,8 +1092,7 @@ def cubrir_dia(db: Session, servicio: m.Servicio, fecha: date,
 
         for fila, rol_id in zip(personal, roles):
             persona_id = fila["persona_id"]
-            if not db.get(m.Persona, persona_id):
-                raise HTTPException(404, f"No existe la persona {persona_id}")
+            _que_pueda_cubrir(db, persona_id)
             db.add(m.AsignacionPersonal(
                 jornada_id=jornada.id, persona_id=persona_id,
                 rol_id=rol_id, vehiculo_id=fila.get("vehiculo_id")))
@@ -1583,6 +1583,19 @@ def _ciudad(db: Session, plaza_id: int | None) -> str:
     return plaza.nombre if plaza else "otra ciudad"
 
 
+def _que_pueda_cubrir(db: Session, persona_id: int) -> m.Persona:
+    """La persona que cubre un dia del implantado: que exista y que no
+    sea freelance --sus costos son solo de eventuales (seccion 111,
+    decision 10 de Salvador)--."""
+    persona = db.get(m.Persona, persona_id)
+    if not persona:
+        raise HTTPException(404, f"No existe la persona {persona_id}")
+    if persona.es_freelance:
+        from app import freelance
+        raise HTTPException(409, freelance.NO_EN_IMPLANTADO)
+    return persona
+
+
 def por_que_no_va(db: Session, persona: m.Persona,
                   plaza_id: int | None) -> str | None:
     """Por que esa persona ya no puede ir a la plantilla, o None.
@@ -1597,6 +1610,10 @@ def por_que_no_va(db: Session, persona: m.Persona,
         return f"{persona.nombre} ya no está activo"
     if persona.oficina:
         return f"{persona.nombre} es personal de oficina: no va a la calle"
+    # El freelance no se ofrece en implantados (seccion 111, decision 10).
+    if persona.es_freelance:
+        return (f"{persona.nombre} es freelance: el freelance va solo en "
+                "servicios eventuales")
     if plaza_id and persona.plaza_id != plaza_id:
         return (f"{persona.nombre} es de {_ciudad(db, persona.plaza_id)}, no "
                 f"de {_ciudad(db, plaza_id)}")

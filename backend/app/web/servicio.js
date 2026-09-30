@@ -15,6 +15,7 @@ import { bloqueCotizacion } from "./cotizacion.js";
 import { avisoDeContactos, botonContactos } from "./contactos.js";
 import { botonIncidencia } from "./incidencias.js";
 import { bloqueTitular } from "./titular.js";
+import { avisoFreelance } from "./freelance.js";
 
 export async function pantallaServicio(main, servicioId) {
   const [servicio, cat] = await Promise.all([
@@ -798,6 +799,8 @@ function tablaPersonal(bloque, equipo, rolId = () => null, hecho = null) {
       for (const [clave, fila] of filas) {
         const cabe = !q || clave.includes(q);
         fila.hidden = !cabe;
+        // El renglon del freelance que va debajo, con la persona.
+        if (fila.extra) fila.extra.hidden = !cabe;
         if (cabe) visibles += 1;
       }
       cuenta.textContent = t("srv_titulo_n")
@@ -815,7 +818,10 @@ function tablaPersonal(bloque, equipo, rolId = () => null, hecho = null) {
 
   for (const p of gente) {
     const est = estadoDe(p);
-    const fila = h("tr", {},
+    /* El freelance dice aqui si esta listo, que le falta o su plazo
+       (seccion 111): el porque se lee antes del clic, no en el rechazo. */
+    const fre = avisoFreelance(p, hecho);
+    const fila = h("tr", { clase: fre.nodo ? "con-fre" : "" },
       h("td", {}, h("b", {}, p.nombre),
         p.es_freelance ? " " : "", p.es_freelance ? etiqueta("freelance") : "",
         p.telefono ? h("div", { clase: "chico gris" }, p.telefono) : "",
@@ -829,12 +835,22 @@ function tablaPersonal(bloque, equipo, rolId = () => null, hecho = null) {
           : "",
         p.horas_en_centauro
           ? h("div", { clase: "chico gris" }, `${p.horas_en_centauro} h`) : ""),
-      h("td", {}, botonAsignar(est, (forzar) =>
-        api.post(`/servicios/equipos/${equipo.id}/asignar-personal`,
-                 { persona_id: p.persona_id, rol_id: rolId(), forzar }),
-        hecho)));
+      h("td", {}, fre.asignable
+        ? botonAsignar(est, (forzar) =>
+            api.post(`/servicios/equipos/${equipo.id}/asignar-personal`,
+                     { persona_id: p.persona_id, rol_id: rolId(), forzar }),
+            hecho)
+        : h("button", { clase: "chico claro", disabled: "disabled" },
+            t("srv_no_se_puede"))));
     filas.set(sinTildes(`${p.nombre} ${p.ciudad || ""}`), fila);
     cuerpo.append(fila);
+    /* Lo del freelance, a lo ancho debajo de su renglon: en media
+       pantalla, dentro de la celda del nombre, se leia en una tira. */
+    if (fre.nodo) {
+      fila.extra = h("tr", { clase: "fre-fila" },
+        h("td", { colspan: "4" }, fre.nodo));
+      cuerpo.append(fila.extra);
+    }
   }
 
   if (!gente.length) {
@@ -1441,11 +1457,21 @@ function tablaCandidatos(bloque, sale, armar, previa, puerta) {
   const cuerpo = h("tbody");
   for (const p of gente) {
     const est = estadoDe(p);
-    cuerpo.append(h("tr", {},
-      h("td", {}, h("b", {}, p.nombre), lineaCiudad(p)),
+    // El freelance que entra, con su estado (seccion 111).
+    const fre = avisoFreelance(p, null);
+    cuerpo.append(h("tr", { clase: fre.nodo ? "con-fre" : "" },
+      h("td", {}, h("b", {}, p.nombre),
+        p.es_freelance ? " " : "", p.es_freelance ? etiqueta("freelance") : "",
+        lineaCiudad(p)),
       celdaEstado(est),
-      h("td", {}, botonElegir(est,
-        (e) => verPrevia(e, previa, armar(), p, puerta)))));
+      h("td", {}, fre.asignable
+        ? botonElegir(est, (e) => verPrevia(e, previa, armar(), p, puerta))
+        : h("button", { clase: "chico claro", disabled: "disabled" },
+            t("srv_no_se_puede")))));
+    if (fre.nodo) {
+      cuerpo.append(h("tr", { clase: "fre-fila" },
+        h("td", { colspan: "3" }, fre.nodo)));
+    }
   }
   return caja(t("srv_quien_entra").replace("{p}", sale.nombre), bloque, gente.length,
               [t("srv_persona"), t("srv_disponibilidad"), ""], cuerpo,

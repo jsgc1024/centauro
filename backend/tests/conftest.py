@@ -88,6 +88,11 @@ TABLAS_DE_OPERACION = [
     # Lo que el arranque confirma a mano (seccion 97): cada prueba arranca
     # sin nada confirmado.
     "confirmacion_arranque",
+    # El freelance (seccion 111): su ficha, su expediente y sus urgencias.
+    # La ficha del de la semilla se vuelve a poner con el personal; la
+    # lista de requisitos es catalogo y no se toca.
+    "autorizacion_freelance", "archivo_freelance", "documento_freelance",
+    "freelance",
 ]
 
 

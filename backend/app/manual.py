@@ -402,6 +402,28 @@ TAREAS = {
         "pt": ("Certificados: avisa aos 30 dias e no dia em que vence.",
                "Que o certificado tenha a sua data de vencimento."),
     },
+    # El expediente del freelance (seccion 111).
+    "freelance-por-vencer": {
+        "es": ("Freelance: a Recursos Humanos le avisa lo que vence en 30 "
+               "días, lo que vence hoy y el plazo del de emergencia que se "
+               "cumplió.",
+               "Personal de seguridad → Freelance, con el filtro del "
+               "expediente."),
+        "pt": ("Freelance: avisa ao RH o que vence em 30 dias, o que vence "
+               "hoje e o prazo do de emergência que se cumpriu.",
+               "Pessoal de segurança → Freelance, com o filtro do "
+               "prontuário."),
+    },
+    "freelance-archivos": {
+        "es": ("Freelance: muda al depósito de Google los archivos del "
+               "expediente que se quedaron en la base. Sin "
+               "EXPEDIENTES_DESTINO no hace nada.",
+               "El renglón EXPEDIENTES_DESTINO del .env del servidor."),
+        "pt": ("Freelance: leva para o depósito do Google os arquivos do "
+               "prontuário que ficaram no banco. Sem EXPEDIENTES_DESTINO "
+               "não faz nada.",
+               "A linha EXPEDIENTES_DESTINO do .env do servidor."),
+    },
     "encuestas-pasar-lista": {
         "es": ("Encuestas: le recuerda a quien lleva 5 días sin contestar y "
                "vence lo que pasó de 15.",
@@ -557,6 +579,9 @@ NOTAS = {
         "pt": "Espera a primeira leitura à mão"},
     "Odoo no esta conectado": {
         "es": "Sin la llave de Odoo", "pt": "Sem a chave do Odoo"},
+    "sin EXPEDIENTES_DESTINO": {
+        "es": "Sin el depósito de los expedientes",
+        "pt": "Sem o depósito dos prontuários"},
 }
 
 
@@ -594,6 +619,7 @@ AREAS = {
     "odoo": {"es": "Odoo", "pt": "Odoo"},
     "archivo": {"es": "Archivo de comprobantes",
                 "pt": "Arquivo de comprovantes"},
+    "freelance": {"es": "Freelance", "pt": "Freelance"},
     "gps": {"es": "GPS y unidades", "pt": "GPS e unidades"},
     "sistema": {"es": "Sistema", "pt": "Sistema"},
 }
@@ -639,6 +665,8 @@ AREA_DE_ARCHIVO = {
     "routers/crud.py": "catalogos", "routers/bitacora_admin.py": "catalogos",
     "routers/odoo.py": "odoo",
     "routers/archivo.py": "archivo",
+    # El freelance: su alta, su expediente y la urgencia (seccion 111).
+    "freelance.py": "freelance", "routers/freelance.py": "freelance",
     "implantado_precios.py": "implantados",
     "gps.py": "gps",
     "main.py": "sistema",

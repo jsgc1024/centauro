@@ -25,11 +25,17 @@ def _puesto():
     return next(p for p in puestos_base.PUESTOS if p["nombre"] == NOMBRE)
 
 
-def _migracion():
-    spec = importlib.util.spec_from_file_location("m108", MIGRACION)
+def _migracion(archivo=MIGRACION, nombre="m108"):
+    spec = importlib.util.spec_from_file_location(nombre, archivo)
     modulo = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(modulo)
     return modulo
+
+
+# La seccion 111 le sumo al puesto ver a los freelance (sus costos los
+# fija con `catalogos.dinero`); en produccion se lo da su migracion.
+MIGRACION_111 = os.path.join(os.path.dirname(MIGRACION),
+                             "cd3b659a42f6_freelance_en_connect.py")
 
 
 def _entrar(cliente, correo):
@@ -61,7 +67,8 @@ def gerente(cliente, sesion):
 def test_la_migracion_y_la_propuesta_dicen_el_mismo_puesto():
     puesto = _puesto()
     migracion = _migracion()
-    assert set(migracion.ACTIVIDADES) == puesto["actividades"]
+    despues = _migracion(MIGRACION_111, "m111").ACTIVIDADES[NOMBRE]
+    assert set(migracion.ACTIVIDADES) | set(despues) == puesto["actividades"]
     assert migracion.PANTALLAS.split(",") == sorted(
         puesto["pantallas"], key=puestos_base.permisos.PANTALLAS.index)
     assert migracion.DESCRIPCION == puesto["descripcion"]

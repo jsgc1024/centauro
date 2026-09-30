@@ -24,9 +24,10 @@ import { bloqueTitular } from "./titular.js";
    decide el consultor titular o direccion de operaciones (seccion 73).
    El consultor JR lo ve sin moverlo. */
 /* La oficina que llega de Odoo (seccion 74) esta en el catalogo del
-   personal, pero no va a la calle: no se ofrece para un implantado. */
+   personal, pero no va a la calle: no se ofrece para un implantado. El
+   freelance tampoco: sus costos son solo de eventuales (seccion 111). */
 function deCampo(personal) {
-  return (personal || []).filter(p => !p.oficina);
+  return (personal || []).filter(p => !p.oficina && !p.es_freelance);
 }
 
 function decideElDinero() {

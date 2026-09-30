@@ -13,6 +13,7 @@ from app import auditoria
 from app import auth
 from app import contactos_servicio
 from app import cotizacion
+from app import freelance
 from app import programacion
 from app import push
 from app import reloj
@@ -415,6 +416,13 @@ def recomendaciones(jornada_id: int, categoria_id: int,
     plaza_id = jornada.equipo.ciudad_id
     bloquea = jornada.modalidad.bloquea_dia_completo
 
+    # El freelance, con su estado (seccion 111): fuera del implantado, y
+    # en el eventual con lo que le falta antes del clic.
+    personal = freelance.enriquecer(
+        db, disp.recomendar_personal(
+            db, plaza_id, perfil_id,
+            jornada.inicio_programado, jornada.fin_programado, bloquea),
+        jornada.equipo.servicio, {jornada.modalidad.codigo.value})
     return {
         "jornada": {
             "id": jornada.id,
@@ -423,9 +431,7 @@ def recomendaciones(jornada_id: int, categoria_id: int,
             "fin": jornada.fin_programado.isoformat(),
             "modalidad": jornada.modalidad.codigo.value,
         },
-        "personal": disp.recomendar_personal(
-            db, plaza_id, perfil_id,
-            jornada.inicio_programado, jornada.fin_programado, bloquea),
+        "personal": personal,
         "vehiculos": disp.recomendar_vehiculos(
             db, plaza_id, categoria_id,
             jornada.inicio_programado, jornada.fin_programado, bloquea,
@@ -466,6 +472,11 @@ def asignar_personal(jornada_id: int, datos: s.AsignarPersonalIn,
     if not persona:
         raise HTTPException(404, f"No existe la persona {datos.persona_id}")
     rol = _rol(db, datos.rol_id)
+    # El freelance entra con su expediente listo y sus costos, o con la
+    # urgencia autorizada; en implantado, nunca (seccion 111).
+    revisado = freelance.revisar_para_asignar(
+        db, persona, jornada.equipo.servicio,
+        {jornada.modalidad.codigo.value})
 
     _candado_del_recurso(db, "persona", persona.id)
     hallazgos = disp.revisar_persona(
@@ -491,10 +502,14 @@ def asignar_personal(jornada_id: int, datos: s.AsignarPersonalIn,
                                 rol_id=datos.rol_id))
     auditoria.registrar(db, usuario, jornada.equipo.servicio, "asignar personal",
                         f"{persona.nombre} como {rol.nombre if rol else 'sin rol'}"
-                        + (" (forzado sobre alerta)" if riesgos else ""),
+                        + (" (forzado sobre alerta)" if riesgos else "")
+                        + (" (urgencia autorizada)"
+                           if revisado and revisado.get("motivo") == "autorizada"
+                           else ""),
                         jornada_id=jornada.id)
     db.flush()
     servicio = jornada.equipo.servicio
+    freelance.al_asignar(db, usuario, persona, servicio, revisado)
     programacion.evaluar(servicio)
     db.commit()
     # Si ya no le toca la vispera --de hoy para hoy, o de manana
@@ -939,7 +954,10 @@ def recomendaciones_equipo(equipo_id: int, categoria_id: int,
                    "dias": len(dias),
                    "desde": dias[0].fecha.isoformat(),
                    "hasta": dias[-1].fecha.isoformat()},
-        "personal": _juntar(personal, [j.fecha for j in dias], "persona_id"),
+        # El freelance con su estado (seccion 111).
+        "personal": freelance.enriquecer(
+            db, _juntar(personal, [j.fecha for j in dias], "persona_id"),
+            equipo.servicio, {j.modalidad.codigo.value for j in dias}),
         "vehiculos": _juntar(vehiculos, [j.fecha for j in dias], "vehiculo_id"),
     }
 
@@ -1019,6 +1037,10 @@ def asignar_personal_equipo(equipo_id: int, datos: s.AsignarPersonalIn,
     dias = _dias_por_arrancar(equipo)
     if not dias:
         raise HTTPException(409, "El equipo no tiene dias pendientes que cubrir")
+    # El freelance: expediente listo y costos, o urgencia (seccion 111).
+    revisado = freelance.revisar_para_asignar(
+        db, persona, equipo.servicio,
+        {j.modalidad.codigo.value for j in dias})
 
     _candado_del_recurso(db, "persona", persona.id)
     bloqueos, riesgos = [], []
@@ -1055,11 +1077,15 @@ def asignar_personal_equipo(equipo_id: int, datos: s.AsignarPersonalIn,
 
     db.flush()
     servicio = equipo.servicio
+    freelance.al_asignar(db, usuario, persona, servicio, revisado)
     programacion.evaluar(servicio)
     auditoria.registrar(db, usuario, servicio, "asignar personal",
                         f"{persona.nombre} como {rol.nombre if rol else 'sin rol'}"
                         f" · {equipo.alias}, {puestos} dia(s)"
-                        + (" (forzado sobre alerta)" if riesgos else ""))
+                        + (" (forzado sobre alerta)" if riesgos else "")
+                        + (" (urgencia autorizada)"
+                           if revisado and revisado.get("motivo") == "autorizada"
+                           else ""))
     db.commit()
     # Lo mismo que al asignar un solo dia, mirando todos los dias del
     # equipo: basta que uno se haya quedado sin vispera.

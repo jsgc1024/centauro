@@ -161,6 +161,9 @@ PUESTOS: list[dict] = [
             "catalogos.dinero",
             # El mes en cifras.
             "calidad.ver",
+            # Los freelance y sus costos (seccion 111, decision 3): los
+            # fija con `catalogos.dinero`, desde la ficha de cada uno.
+            "freelance.ver",
         },
         "puestos_odoo": "Gerente de Administración, Gerente de Administracion, "
                         "Gerente Administrativo, Gerente Administrativa, "
@@ -222,8 +225,12 @@ PUESTOS: list[dict] = [
         "orden": 50,
         "descripcion": "Da los accesos y autoriza el bono del mes.",
         "pantallas": ["equipo", "bonos", "accesos"],
+        # El freelance (seccion 111, decisiones 2 y 6): lo da de alta,
+        # abre y carga su expediente, y es el unico que lo valida.
         "actividades": {"accesos.dar", "bonos.ver", "bonos.autorizar",
-                        "profesionalismo.ver"},
+                        "profesionalismo.ver", "freelance.ver",
+                        "freelance.alta", "freelance.expediente",
+                        "freelance.validar"},
         "puestos_odoo": "Recursos Humanos, Coordinadora de RH, "
                         "Coordinador de RH, Generalista, Analista de RH, "
                         "Analista RH",
@@ -236,7 +243,7 @@ PUESTOS: list[dict] = [
         "descripcion": "Consulta al personal, sus certificados y su "
                        "desempeño.",
         "pantallas": ["equipo", "bonos"],
-        "actividades": {"profesionalismo.ver", "bonos.ver"},
+        "actividades": {"profesionalismo.ver", "bonos.ver", "freelance.ver"},
         "puestos_odoo": "Capacitación, Capacitacion",
     },
     # Seccion 85. Decision de Salvador, 27 sep: la administracion del

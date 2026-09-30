@@ -22,7 +22,7 @@ Los servicios que se contratan por día: el alta, la cotización, los equipos, q
 Los servicios de mes, con la misma gente todos los días: los términos del mes, el calendario, los reemplazos, el taller y el cierre del mes. Ver [el implantado](#/manual/leer/implantado).
 
 ### Personal de Seguridad {#equipo}
-La gente que viene de Odoo: su ficha, sus certificados y su profesionalismo. Lo que viene de Odoo aquí no se edita: se corrige en Odoo.
+Dos pestañas. **De planta**: la gente que viene de Odoo, con su ficha, sus certificados y su profesionalismo; lo que viene de Odoo aquí no se edita, se corrige en Odoo. **Freelance**: el freelance se da de alta aquí, con su foto y sus datos —los que salen en la hoja—, sus costos y su expediente de Recursos Humanos; la lista dice quién está listo, qué le falta a cada uno y lo que espera revisión o está por vencer. Ver [el freelance](#/manual/leer/freelance).
 
 ### Unidades {#unidades}
 La flota con su GPS: qué unidad reporta, cuál no liga con Pegasus y qué hay que arreglar antes de que salga a servicio. Cada renglón dice qué le falta y dónde se corrige. No dice dónde está ninguna: no es un rastreo.
@@ -37,7 +37,7 @@ Lo que dijo el cliente: las encuestas, la tasa de respuesta y las calificaciones
 El mes en cifras: lo que dijo el cliente, la calle, el cierre, la gente y los datos que faltan en Odoo y en Catálogos, contra el mes de antes, con su reporte en Excel para la junta.
 
 ### Dirección de operaciones {#direccion}
-Lo que espera la firma del director de operaciones —las incidencias por autorizar, los cobros al cancelar y los plazos vencidos del cierre— y las cuentas de hoy por país: servicios hoy y mañana, en curso, con alerta, cambios por contingencia e incidencias del mes. Cada número se abre para ver cuáles servicios son. La ven el director de operaciones y la dirección general.
+Lo que espera la firma del director de operaciones —las incidencias por autorizar, el freelance que alguien pide por urgencia, los cobros al cancelar y los plazos vencidos del cierre— y las cuentas de hoy por país: servicios hoy y mañana, en curso, con alerta, cambios por contingencia e incidencias del mes. Cada número se abre para ver cuáles servicios son. La ven el director de operaciones y la dirección general.
 
 ## Operaciones CI
 
@@ -65,7 +65,7 @@ Quién puede entrar, con qué puesto, y cuándo entró por última vez. Aquí se
 Las cinco lecturas de Odoo: aquí se hacen el ensayo y la primera lectura de cada una, y se ve lo que falta corregir allá. Ver [lo que viene de Odoo](#/manual/leer/odoo).
 
 ### Catálogos {#catalogos}
-Lo que el sistema usa para calcular y para armar la hoja del servicio: festivos, hospitales, hoteles, ciudades, combustible, categorías de unidades, perfiles, países, modalidades, el tabulador de viáticos y las tarifas de freelance. Lo que decide dinero lo fija dirección de operaciones. Lo que se quita no se pierde: sale en gris con «Reactivar». Aquí vive también la bitácora de administración: quién cambió qué.
+Lo que el sistema usa para calcular y para armar la hoja del servicio: festivos, hospitales, hoteles, ciudades, combustible, categorías de unidades, perfiles, países, los requisitos del freelance, modalidades y el tabulador de viáticos. Los costos de cada freelance viven en su ficha, en Personal de seguridad. Lo que decide dinero lo fija dirección de operaciones. Lo que se quita no se pierde: sale en gris con «Reactivar». Aquí vive también la bitácora de administración: quién cambió qué.
 
 ### Manual del sistema {#manual}
 Este manual: cómo funciona cada pieza, qué hacer cuando algo se atora, el estado del sistema en vivo y los casos: las fallas reportadas por revisar y lo que ya se resolvió. Mientras dura el cambio a Connect, también [el arranque](#/manual/arranque): lo que falta para operar todo aquí y apagar OVH, revisándose solo, con de quién es cada cosa y dónde se arregla.

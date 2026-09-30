@@ -14,10 +14,18 @@ import { aviso, buscador, campo, coincide, conAyuda, dinero, etiqueta,
          fecha, h, lista, mensaje } from "./util.js";
 import { t } from "./idioma.js";
 import { etiquetaEstado, nombreGravedad } from "./incidencias.js";
+import { pestanaFreelance } from "./freelance.js";
+import { tiene } from "./menu.js";
 
 let paisActual = null;
 let soloPorVencer = false;
 let busqueda = "";
+/* De planta o freelance (seccion 111). El freelance tiene su pestana: su
+   lista dice otra cosa --tipo, expediente, costos-- y la de planta sigue
+   siendo la de la calificacion. Quien no ve a los freelance ve la lista
+   de siempre, con todos. */
+let pestana = "planta";
+let freelanceVisibles = null;
 
 /* La ultima lista que trajo la red. El buscador filtra sobre esto y no
    vuelve a pedirla: una consulta por cada letra que se escribe es lo
@@ -62,22 +70,58 @@ export async function pantallaPersonal(main, personaId = null) {
     recargar();
   });
 
+  const filtros = h("div", { clase: "tarjeta lisa" },
+    h("div", { clase: "rejilla tres" },
+      campo(t("pais"), selector),
+      campo(t("bus_buscar"), caja),
+      h("div", { clase: "campo" },
+        h("label", { for: "solo_por_vencer" }, " "),
+        h("label", { clase: "casilla", for: "solo_por_vencer" },
+          casilla, " ", t("per_solo_por_vencer")))));
+
+  const verFreelance = tiene(sesion.usuario, "freelance.ver");
+  const pestanas = h("div", { clase: "pestanas", style: "margin:0 0 12px" });
+  const arriba = h("div");
+  const contar = (n) => { freelanceVisibles = n; pintarPestanas(); };
+  const pintarPestanas = () => pestanas.replaceChildren(
+    ...[["planta", t("fre_tab_planta")],
+        ["freelance", freelanceVisibles === null ? t("fre_titulo_tab")
+          : `${t("fre_titulo_tab")} · ${freelanceVisibles}`]]
+      .map(([clave, texto]) => h("button", {
+        type: "button", clase: `pestana ${pestana === clave ? "activa" : ""}`.trim(),
+        onclick: () => { pestana = clave; mostrar(); } }, texto)));
+  const mostrar = async () => {
+    if (verFreelance && pestana === "freelance") {
+      pintarPestanas();
+      arriba.replaceChildren();
+      return pestanaFreelance(zona, paises, paisActual,
+                              (p) => { paisActual = p; selector.value = p; },
+                              contar);
+    }
+    pestana = "planta";
+    if (verFreelance) pintarPestanas();
+    arriba.replaceChildren(filtros);
+    await pintar(zona);
+  };
+  quienVeFreelance = verFreelance;
+  alContar = contar;
+
   main.append(
     h("h1", {}, t("personal_titulo")),
     h("p", { clase: "sub" }, t("personal_sub")),
-    h("div", { clase: "tarjeta lisa" },
-      h("div", { clase: "rejilla tres" },
-        campo(t("pais"), selector),
-        campo(t("bus_buscar"), caja),
-        h("div", { clase: "campo" },
-          h("label", { for: "solo_por_vencer" }, " "),
-          h("label", { clase: "casilla", for: "solo_por_vencer" },
-            casilla, " ", t("per_solo_por_vencer"))))),
+    verFreelance ? pestanas : "",
+    arriba,
     zona);
 
-  await pintar(zona);
+  if (personaId) pestana = "planta";
+  await mostrar();
   if (personaId) await abrirFicha(zona, { persona_id: Number(personaId) });
 }
+
+/* Lo que la lista de planta necesita saber de la pestana del freelance:
+   si existe --entonces el freelance no se repite aqui-- y como contarlo. */
+let quienVeFreelance = false;
+let alContar = () => {};
 
 /* ------------------------------------------------------------- la lista */
 
@@ -104,11 +148,14 @@ async function pintar(zona) {
   }
   if (mia !== peticion) return;
   ultimas = filas;
+  if (quienVeFreelance) alContar(filas.filter(f => f.es_freelance).length);
   dibujar(zona);
 }
 
 function dibujar(zona) {
   let filas = ultimas;
+  /* El freelance vive en su pestana (seccion 111). */
+  if (quienVeFreelance) filas = filas.filter(f => !f.es_freelance);
   if (soloPorVencer) {
     filas = filas.filter(f => ["por_vencer", "vencido"]
       .includes(f.capacitacion.estado));

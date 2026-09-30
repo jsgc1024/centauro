@@ -237,6 +237,13 @@ def reemplazar_personal(db: Session, desde_jornada_id: int, sale_persona_id: int
         revisar_hora_del_relevo(db, desde, momento, ahora,
                                 llegada_de(db, desde, sale_persona_id))
     jornadas = jornadas_afectadas(db, desde, hasta)
+    # Si entra un freelance: expediente listo y costos, o la urgencia
+    # autorizada para este servicio; en implantado, nunca (seccion 111).
+    # En la vista previa tambien, para que el consultor lo lea antes.
+    from app import freelance
+    revisado = freelance.revisar_para_asignar(
+        db, entra, desde.equipo.servicio,
+        {j.modalidad.codigo.value for j in jornadas})
     cambiadas, partidas, choques = [], [], []
 
     for j in jornadas:
@@ -301,6 +308,12 @@ def reemplazar_personal(db: Session, desde_jornada_id: int, sale_persona_id: int
         hecho_por_id=hecho_por_id)
     db.add(reemplazo)
     db.flush()
+    if revisado:
+        actor = (db.query(m.Usuario).filter_by(persona_id=hecho_por_id).first()
+                 if hecho_por_id else None)
+        if actor is not None:
+            freelance.al_asignar(db, actor, entra, desde.equipo.servicio,
+                                 revisado)
 
     return {
         "reemplazo_id": reemplazo.id,

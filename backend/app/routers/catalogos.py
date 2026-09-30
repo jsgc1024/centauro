@@ -310,6 +310,10 @@ _CATALOGOS = [
     (m.Persona, s.PersonaIn, s.PersonaOut, "/personal", "Personal"),
     (m.TarifaFreelance, s.TarifaFreelanceIn, s.TarifaFreelanceOut,
      "/tarifas-freelance", "Tarifas de freelance", "catalogos.dinero"),
+    # Lo que Recursos Humanos pide para activar a un freelance, por pais
+    # (seccion 111, decision 12): lo lleva sistema y calidad.
+    (m.RequisitoFreelance, s.RequisitoFreelanceIn, s.RequisitoFreelanceOut,
+     "/requisitos-freelance", "Requisitos del freelance", "catalogos.editar"),
     (m.Vehiculo, s.VehiculoIn, s.VehiculoOut, "/vehiculos", "Flota"),
     (m.ParametroCombustible, s.ParametroCombustibleIn, s.ParametroCombustibleOut,
      "/parametros-combustible", "Parametros de combustible", "catalogos.editar"),

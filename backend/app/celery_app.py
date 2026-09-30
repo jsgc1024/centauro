@@ -111,6 +111,22 @@ celery.conf.update(
             "task": "capacitaciones.revisar_vencimientos",
             "schedule": crontab(hour=7, minute=30),
         },
+        # El expediente del freelance (seccion 111): lo que vence en
+        # treinta dias, lo que vence hoy y el plazo del de emergencia que
+        # se cumplio, a Recursos Humanos. Cinco minutos despues de los
+        # certificados, que avisan a la misma gente.
+        "freelance-por-vencer": {
+            "task": "freelance.revisar_vencimientos",
+            "schedule": crontab(hour=7, minute=35),
+        },
+        # Los archivos del expediente que se quedaron en la base --el
+        # deposito no estaba puesto o Google no contesto al subirlos--, al
+        # deposito. Cada hora, a los 23. Sin EXPEDIENTES_DESTINO no hace
+        # nada.
+        "freelance-archivos": {
+            "task": "freelance.mudar_archivos",
+            "schedule": crontab(minute=23),
+        },
         # La encuesta que nadie contesto. Una vez al dia, temprano: le
         # recuerda a quien lleva cinco dias sin contestar y vence lo que
         # paso de quince. Sin esto la encuesta se mandaba una vez y ahi
@@ -202,15 +218,17 @@ celery.conf.update(
 
 # Las diarias que no pueden perderse: a que hora de Mexico tocan y, si
 # es de un solo dia del mes, cual. El calendario de arriba las dispara;
-# `reponer_diarias` repone la que no termino desde esa hora. Las cinco
+# `reponer_diarias` repone la que no termino desde esa hora. Las seis
 # son idempotentes: la que ya hizo lo suyo no lo hace dos veces (el
 # certificado avisado no se avisa otra vez, el mes abierto no se abre,
-# la encuesta recordada no se recuerda, el bono autorizado no se toca).
+# la encuesta recordada no se recuerda, el bono autorizado no se toca, el
+# documento del freelance avisado no se vuelve a avisar).
 DIARIAS = {
     "archivo.archivar": (1, 30, None),
     "bonos.calcular_el_mes": (5, 0, 3),
     "implantados.abrir_mes_siguiente": (6, 30, None),
     "capacitaciones.revisar_vencimientos": (7, 30, None),
+    "freelance.revisar_vencimientos": (7, 35, None),
     "encuestas.pasar_lista": (8, 0, None),
 }
 # Cuanto se le espera a la programada antes de reponerla, y cuanto dura
@@ -428,6 +446,32 @@ def revisar_vencimientos():
     db = SessionLocal()
     try:
         return capacitaciones.revisar_vencimientos(db)
+    finally:
+        db.close()
+
+
+@celery.task(name="freelance.revisar_vencimientos")
+def freelance_por_vencer():
+    """El expediente del freelance: lo que vence y el plazo cumplido."""
+    from app import freelance
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        return freelance.revisar_vencimientos(db)
+    finally:
+        db.close()
+
+
+@celery.task(name="freelance.mudar_archivos")
+def freelance_mudar_archivos():
+    """Los archivos del expediente que se quedaron en la base, a Google."""
+    from app import freelance
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        return freelance.mudar_pendientes(db)
     finally:
         db.close()
 

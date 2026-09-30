@@ -11,9 +11,9 @@
        ciudades, combustible, unidades por categoria, perfiles y paises--
        los lleva sistema y calidad.
      - Los que si --el tabulador de viaticos, las horas de cada
-       modalidad, las tarifas de freelance y los pesos del
-       profesionalismo-- los fija direccion de operaciones. Sistema y
-       calidad los ve con su candado.
+       modalidad y los pesos del profesionalismo-- los fija direccion de
+       operaciones. Sistema y calidad los ve con su candado. Los costos
+       de cada freelance viven en su ficha (seccion 111).
 
    Y lo que ya tiene su pantalla se dice donde vive, con su enlace: los
    tarifarios, lo que se paga por dia, los criterios del bono, el tipo de
@@ -44,20 +44,23 @@ const ESCRIBE = {
   "parametros-combustible": "catalogos.editar",
   "categorias-vehiculo": "catalogos.editar", paises: "catalogos.editar",
   "tabulador-viaticos": "catalogos.dinero", modalidades: "catalogos.dinero",
-  "tarifas-freelance": "catalogos.dinero",
+  "requisitos-freelance": "catalogos.editar",
   profesionalismo: "profesionalismo.pesos",
 };
+/* Los costos de cada freelance salieron de aqui (seccion 111): viven en
+   su ficha, en Personal de seguridad. Entro la lista de lo que Recursos
+   Humanos pide para activarlo, que lleva sistema y calidad. */
 const DE_SISTEMA = ["dias-festivos", "hospitales", "hoteles", "plazas",
-                    "parametros-combustible", "categorias-vehiculo", "paises"];
-const DE_DINERO = ["tabulador-viaticos", "modalidades", "tarifas-freelance",
-                   "profesionalismo"];
+                    "parametros-combustible", "categorias-vehiculo", "paises",
+                    "requisitos-freelance"];
+const DE_DINERO = ["tabulador-viaticos", "modalidades", "profesionalismo"];
 const TITULO = {
   "dias-festivos": "ctl_festivos", hospitales: "ctl_hospitales",
   hoteles: "ctl_hoteles", plazas: "ctl_ciudades",
   "parametros-combustible": "ctl_combustible",
   "categorias-vehiculo": "ctl_categorias", paises: "ctl_paises",
   "tabulador-viaticos": "ctl_tabulador", modalidades: "ctl_modalidades",
-  "tarifas-freelance": "ctl_freelance", profesionalismo: "ctl_pesos",
+  "requisitos-freelance": "ctl_requisitos", profesionalismo: "ctl_pesos",
 };
 /* Lo que ya tiene su pantalla: se dice donde vive. */
 const CON_PANTALLA = [
@@ -152,7 +155,7 @@ export async function pantallaCatalogos(main) {
    de la izquierda dice que le falta a cada uno sin abrirlo. */
 async function traer() {
   const [paises, plazas, perfiles, categorias, festivos, combustible,
-         hospitales, hoteles, modalidades, tabulador, freelance, gente,
+         hospitales, hoteles, modalidades, tabulador, requisitos_,
          colores] = await Promise.all([
     api.get("/catalogos/paises"),
     api.get("/catalogos/plazas?todas=true"),
@@ -164,8 +167,7 @@ async function traer() {
     api.get("/catalogos/hoteles?todos=true"),
     api.get("/catalogos/modalidades"),
     api.get("/catalogos/tabulador-viaticos"),
-    api.get("/catalogos/tarifas-freelance"),
-    api.get("/catalogos/freelance"),
+    api.get("/catalogos/requisitos-freelance?incluir_inactivos=true"),
     api.get("/catalogos/categorias-vehiculo/colores").catch(() => ({})),
   ]);
   const pesos = {};
@@ -187,7 +189,7 @@ async function traer() {
            combustible: vivos("combustible", combustible),
            hospitales: vivos("hospitales", hospitales),
            hoteles: vivos("hoteles", hoteles), modalidades, tabulador,
-           freelance, gente, colores, pesos, apagados };
+           requisitos: requisitos_, colores, pesos, apagados };
 }
 
 const apagadosDe = (d, clave, filtro) => (d.apagados[clave] || []).filter(filtro);
@@ -243,9 +245,12 @@ const RESUMEN = {
       return x ? `${t(texto)} ${numero(x.horas)} h` : null;
     }).filter(Boolean).join(" · ");
   },
-  "tarifas-freelance": (d) => t("ctl_res_freelance")
-    .replace("{n}", d.freelance.length)
-    .replace("{p}", new Set(d.freelance.map(x => x.persona_id)).size),
+  "requisitos-freelance": (d) => {
+    const vivos = d.requisitos.filter(x => x.activo !== false);
+    return t("ctl_res_requisitos")
+      .replace("{n}", vivos.length)
+      .replace("{p}", new Set(vivos.map(x => x.pais_id)).size);
+  },
   profesionalismo: () => t("ctl_res_pesos"),
 };
 
@@ -281,6 +286,12 @@ const FALTA = {
       !d.modalidades.some(x => x.pais_id === p.id && x.codigo === codigo)));
     return sin ? t("ctl_falta").replace("{que}", sin.nombre) : null;
   },
+  /* Sin lista, el freelance de ese pais no se puede asignar. */
+  "requisitos-freelance": (d) => {
+    const sin = d.paises.find(p => !d.requisitos.some(
+      x => x.pais_id === p.id && x.activo !== false));
+    return sin ? t("ctl_falta").replace("{que}", sin.nombre) : null;
+  },
   profesionalismo: (d) => (Object.values(d.pesos).some(p => p && !p.configurado)
     ? t("ctl_de_ejemplo") : null),
 };
@@ -289,7 +300,7 @@ const PINTA = {
   "dias-festivos": festivos, hospitales, hoteles, plazas: ciudades,
   "parametros-combustible": combustible, "categorias-vehiculo": categorias,
   paises, "tabulador-viaticos": tabulador, modalidades,
-  "tarifas-freelance": freelance, profesionalismo: pesos,
+  "requisitos-freelance": requisitos, profesionalismo: pesos,
 };
 
 async function pestanaCatalogos(zona) {
@@ -1103,61 +1114,104 @@ function modalidades(caja, d, recargar) {
   pintar();
 }
 
-/* ============================================ tarifas de freelance */
+/* ========================================= requisitos del freelance */
 
-function freelance(caja, d, recargar) {
-  const clave = "tarifas-freelance";
+/* Lo que Recursos Humanos pide para activar a un freelance, por pais
+   (seccion 111, decision 12): lo lleva sistema y calidad, a pedido de
+   Recursos Humanos. Mexico nace con su tabla; Brasil se llena cuando se
+   opere alla. Los costos de cada freelance ya no viven aqui: estan en su
+   ficha, en Personal de seguridad → Freelance. */
+const CAPTURAS = ["archivo", "numero", "archivo_numero", "banco", "riesgo",
+                  "entrevista", "contactos", "prueba"];
+const VIGENCIAS = ["ninguna", "meses", "documento", "servicio"];
+
+function vigenciaTexto(x) {
+  if (x.vigencia === "meses") {
+    return x.vigencia_meses === 12 ? t("ctl_req_un_anio")
+      : t("ctl_req_meses").replace("{n}", x.vigencia_meses);
+  }
+  return x.vigencia === "ninguna" ? "—" : t(`ctl_req_vig_${x.vigencia}`);
+}
+
+/* La clave del requisito sale de su nombre: es para el sistema, y nadie
+   tendria por que escribirla. */
+function claveDe(nombre) {
+  return (nombre || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40)
+    || "requisito";
+}
+
+function requisitos(caja, d, recargar) {
+  const clave = "requisitos-freelance";
+  let paisId = paisInicial(d);
   const zona = h("div");
   const forma = h("div");
-  const CAMPOS = ["persona_id", "modalidad_id", "costo", "costo_hora_extra", "moneda"];
-  const nombreDe = (id) => (d.gente.find(p => p.id === id) || {}).nombre || "—";
-  const modalidadTexto = (id) => {
-    const x = d.modalidades.find(mo => mo.id === id);
-    if (!x) return "—";
-    return `${t((MODALIDADES.find(mo => mo[0] === x.codigo) || [])[1])} · ${nombrePais(d, x.pais_id)}`;
-  };
+  const CAMPOS = ["pais_id", "clave", "nombre", "detalle", "programado", "emergencia",
+                  "captura", "vigencia", "vigencia_meses", "antiguedad_meses", "orden"];
 
   function pintar() {
-    const filas = [...d.freelance].sort((a, b) => nombreDe(a.persona_id).localeCompare(nombreDe(b.persona_id)));
+    const suyos = d.requisitos.filter(x => x.pais_id === paisId)
+      .sort((a, b) => a.orden - b.orden || a.id - b.id);
+    const cuenta = (tipo) => suyos.filter(x => x.activo !== false && x[tipo]).length;
     zona.replaceChildren(...[
-      tabla([t("ctl_persona"), t("ctl_modalidad"), t("ctl_costo"), t("ctl_costo_extra"), ""],
-        filas.map(x => h("tr", {},
-          h("td", {}, h("b", {}, nombreDe(x.persona_id))),
-          h("td", {}, modalidadTexto(x.modalidad_id)),
-          h("td", { clase: "num" }, dinero(x.costo, x.moneda)),
-          h("td", { clase: "num" }, x.costo_hora_extra === null ? "—" : dinero(x.costo_hora_extra, x.moneda)),
+      botonesDePais(d, paisId, (id) => { paisId = id; pintar(); }),
+      suyos.length
+        ? h("p", { clase: "chico gris" }, t("ctl_req_cuenta")
+            .replace("{p}", cuenta("programado")).replace("{e}", cuenta("emergencia")))
+        : null,
+      tabla([t("ctl_req_requisito"), t("fre_tipo_programado"), t("fre_tipo_emergencia"),
+             t("ctl_req_vigencia"), t("ctl_req_captura"), ""],
+        suyos.map(x => h("tr", filaDe(x),
+          h("td", {}, h("b", {}, x.nombre),
+            x.detalle ? h("div", { clase: "chico gris" }, x.detalle) : null),
+          h("td", {}, x.programado ? t("ctl_si") : "—"),
+          h("td", {}, x.emergencia ? t("ctl_si") : "—"),
+          h("td", { clase: "chico" }, vigenciaTexto(x)),
+          h("td", { clase: "chico gris" }, t(`fre_cap_${x.captura}`)),
           h("td", { style: "text-align:right;white-space:nowrap" },
-            puede(clave) ? boton(t("ctl_editar"), () => abrir(x)) : null,
-            puede(clave) ? quitar(`/catalogos/tarifas-freelance/${x.id}`, nombreDe(x.persona_id), recargar) : null))),
-        "ctl_sin_freelance"),
-      puede(clave) ? h("div", { clase: "acciones", style: "margin-top:10px" },
-        boton(t("ctl_agregar_tarifa"), () => abrir(null))) : null].filter(Boolean));
+            puede(clave) && x.activo !== false ? boton(t("ctl_editar"), () => abrir(x)) : null,
+            puede(clave) ? quitarOReactivar(x, `/catalogos/requisitos-freelance/${x.id}`,
+                                            x.nombre, recargar) : null))),
+        "ctl_req_vacio"),
+      h("p", { clase: "chico gris", style: "margin-top:10px" }, t("ctl_req_plazo")),
+      puede(clave) ? h("div", { clase: "acciones" },
+        boton(t("ctl_req_agregar"), () => abrir(null))) : null].filter(Boolean));
   }
 
   function abrir(x) {
     forma.replaceChildren(formulario([
-      { k: "persona_id", texto: t("ctl_persona"), tipo: "lista", entero: true, requerido: true,
-        opciones: [{ valor: "", texto: "—" }, ...d.gente.filter(p => p.activo || (x && p.id === x.persona_id))
-          .map(p => ({ valor: String(p.id), texto: p.nombre }))],
-        valor: x && x.persona_id },
-      { k: "modalidad_id", texto: t("ctl_modalidad"), tipo: "lista", entero: true, requerido: true,
-        opciones: [{ valor: "", texto: "—" }, ...d.modalidades.map(mo => ({ valor: String(mo.id), texto: modalidadTexto(mo.id) }))],
-        valor: x && x.modalidad_id },
-      { k: "costo", texto: t("ctl_costo"), tipo: "numero", valor: x && x.costo, requerido: true },
-      { k: "costo_hora_extra", texto: t("ctl_costo_extra"), tipo: "numero", valor: x && x.costo_hora_extra },
-      { k: "moneda", texto: t("ctl_moneda"), tipo: "lista", requerido: true,
-        opciones: MONEDAS.map(mo => ({ valor: mo, texto: mo })), valor: x ? x.moneda : "MXN" },
+      { k: "nombre", texto: t("ctl_req_requisito"), valor: x && x.nombre, requerido: true },
+      { k: "detalle", texto: t("ctl_req_detalle"), valor: x && x.detalle },
+      { k: "programado", texto: t("fre_tipo_programado"), tipo: "si_no",
+        valor: x ? x.programado : true },
+      { k: "emergencia", texto: t("fre_tipo_emergencia"), tipo: "si_no",
+        valor: x ? x.emergencia : false },
+      { k: "captura", texto: t("ctl_req_captura"), tipo: "lista", requerido: true,
+        opciones: CAPTURAS.map(c => ({ valor: c, texto: t(`fre_cap_${c}`) })),
+        valor: x ? x.captura : "archivo" },
+      { k: "vigencia", texto: t("ctl_req_vigencia"), tipo: "lista", requerido: true,
+        opciones: VIGENCIAS.map(v => ({ valor: v, texto: t(`ctl_req_tipo_vig_${v}`) })),
+        valor: x ? x.vigencia : "ninguna" },
+      { k: "vigencia_meses", texto: t("ctl_req_vigencia_meses"), tipo: "numero",
+        valor: x && x.vigencia_meses, ayuda: t("ctl_req_vigencia_meses_pie") },
+      { k: "antiguedad_meses", texto: t("ctl_req_antiguedad"), tipo: "numero",
+        valor: x && x.antiguedad_meses, ayuda: t("ctl_req_antiguedad_pie") },
+      { k: "orden", texto: t("ctl_req_orden"), tipo: "numero",
+        valor: x ? x.orden : (d.requisitos.filter(r => r.pais_id === paisId)
+          .reduce((m, r) => Math.max(m, r.orden), 0) + 10) },
     ], async (v) => {
-      if (x) await api.patch(`/catalogos/tarifas-freelance/${x.id}`, completo(x, CAMPOS, v));
-      else await api.post("/catalogos/tarifas-freelance", v);
-      mensaje(t("ctl_guardado").replace("{que}", nombreDe(v.persona_id)));
+      const cuerpo = { ...v, pais_id: paisId, orden: v.orden || 0,
+                       clave: x ? x.clave : claveDe(v.nombre) };
+      if (x) await api.patch(`/catalogos/requisitos-freelance/${x.id}`, completo(x, CAMPOS, cuerpo));
+      else await api.post("/catalogos/requisitos-freelance", cuerpo);
+      mensaje(t("ctl_guardado").replace("{que}", v.nombre));
       await recargar();
     }, () => forma.replaceChildren()));
   }
 
   caja.append(h("div", { clase: "tarjeta" },
-    conAyuda("h3", t("ctl_freelance"), "ay_ctl_freelance"),
-    h("p", { clase: "gris chico ctl-pie" }, t("ctl_freelance_pie")),
+    conAyuda("h3", t("ctl_requisitos"), "ay_ctl_requisitos"),
+    h("p", { clase: "gris chico ctl-pie" }, t("ctl_requisitos_pie")),
     ...[quienLoLleva(clave)].filter(Boolean), zona, forma, historial(clave)));
   pintar();
 }

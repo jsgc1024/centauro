@@ -15,8 +15,9 @@ Ao designar pessoas para uma equipe, a pessoa não aparece na lista, ou aparece 
 2. **Aparece «Ocupado»:** nesse dia já trabalha em outro serviço no mesmo horário, ou num dia inteiro. O motivo aparece abaixo do nome, com o dia.
 3. **Aparece «Com risco»:** tem menos de duas horas entre um serviço e outro, ou uma jornada que passa da meia-noite. Pode ser designada do mesmo jeito: quem decide é o consultor.
 4. **Aparece com «deslocamento»:** é de outra cidade. Pode ser enviada, com as suas diárias.
+5. **É freelancer e aparece em vermelho:** o prontuário não está pronto, falta o custo ou é um implantado. Ver [um freelancer não pode ser escalado](#/manual/leer/sintoma-freelance-no-se-asigna).
 
 ### Como se resolve
-O 1 é corrigido pelos Recursos Humanos no Odoo, e o Centauro o pega na leitura seguinte, aos :17 de cada hora. Do 2 ao 4 não há nada a corrigir: o calendário está cuidando para que ninguém se sobreponha.
+O 1 é corrigido pelos Recursos Humanos no Odoo, e o Centauro o pega na leitura seguinte, aos :17 de cada hora. Do 2 ao 4 não há nada a corrigir: o calendário está cuidando para que ninguém se sobreponha. O 5 se resolve na ficha dele, em Equipe de segurança → Freelance.
 
-> **A causa raiz:** o Centauro não cadastra pessoas; todas chegam do Odoo. Se alguém falta, quase sempre o dado está incompleto lá.
+> **A causa raiz:** o Centauro não cadastra a equipe do quadro; ela chega do Odoo. Se alguém do quadro falta, quase sempre o dado está incompleto lá. O freelancer sim é cadastrado aqui, em Equipe de segurança → Freelance.

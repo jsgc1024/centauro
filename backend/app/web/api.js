@@ -329,7 +329,12 @@ export const api = {
     if (sesion.token) cab["Authorization"] = `Bearer ${sesion.token}`;
     const cuerpo = new FormData();
     for (const [k, v] of Object.entries(campos)) {
-      if (v !== null && v !== undefined) cuerpo.append(k, v);
+      if (v === null || v === undefined) continue;
+      /* Varios archivos bajo el mismo nombre (el expediente del
+         freelance, seccion 111): uno por uno, como los manda un
+         <input multiple>. */
+      if (Array.isArray(v)) for (const x of v) cuerpo.append(k, x);
+      else cuerpo.append(k, v);
     }
     const r = await fetch(ruta, { method: metodo, headers: cab, body: cuerpo });
     if (r.status === 401) throw sesionVencida();

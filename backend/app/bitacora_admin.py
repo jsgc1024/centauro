@@ -38,7 +38,8 @@ CATALOGOS = ("paises", "plazas", "perfiles", "categorias-vehiculo",
              "categoria_vehiculo", "modalidades", "clientes", "tarifarios",
              "tarifario", "tarifas-recurso", "tarifas-vehiculo",
              "tabulador-viaticos", "comisiones", "personal",
-             "tarifas-freelance", "vehiculos", "parametros-combustible",
+             "tarifas-freelance", "requisitos-freelance", "vehiculos",
+             "parametros-combustible",
              "dias-festivos", "hospitales", "hoteles", "profesionalismo",
              # Lo que vale cada criterio del bono y lo que el arranque
              # confirma a mano (seccion 97).
@@ -71,6 +72,8 @@ DE_CADA_CATALOGO = {
     "tabulador-viaticos": ("tabulador-viaticos",),
     "modalidades": ("modalidades",),
     "tarifas-freelance": ("tarifas-freelance",),
+    # La lista de Recursos Humanos del freelance (seccion 111).
+    "requisitos-freelance": ("requisitos-freelance",),
     "profesionalismo": ("profesionalismo",),
 }
 
@@ -96,6 +99,7 @@ TEXTOS = {
             "tabulador-viaticos": "Tabulador de viáticos",
             "comisiones": "Lo que se paga por día", "personal": "Personal",
             "tarifas-freelance": "Tarifas de freelance", "vehiculos": "Flota",
+            "requisitos-freelance": "Requisitos del freelance",
             "parametros-combustible": "Combustible",
             "dias-festivos": "Días festivos", "hospitales": "Hospitales",
             "hoteles": "Hoteles", "profesionalismo": "Pesos del profesionalismo",
@@ -196,6 +200,7 @@ TEXTOS = {
             "tabulador-viaticos": "Allowance table",
             "comisiones": "Daily pay", "personal": "Staff",
             "tarifas-freelance": "Freelance rates", "vehiculos": "Fleet",
+            "requisitos-freelance": "Freelance requirements",
             "parametros-combustible": "Fuel",
             "dias-festivos": "Public holidays", "hospitales": "Hospitals",
             "hoteles": "Hotels", "profesionalismo": "Professionalism weights",
@@ -296,6 +301,7 @@ TEXTOS = {
             "tabulador-viaticos": "Tabela de diárias",
             "comisiones": "O que se paga por dia", "personal": "Pessoal",
             "tarifas-freelance": "Tarifas de freelance", "vehiculos": "Frota",
+            "requisitos-freelance": "Requisitos do freelance",
             "parametros-combustible": "Combustível",
             "dias-festivos": "Feriados", "hospitales": "Hospitais",
             "hoteles": "Hotéis", "profesionalismo": "Pesos do profissionalismo",

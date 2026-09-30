@@ -34,6 +34,7 @@ async function pintar(zona) {
   const recargar = () => pintar(zona);
   zona.replaceChildren(
     tarjetaIncidencias(d.incidencias_por_autorizar, recargar),
+    tarjetaFreelance(d.freelance_por_autorizar || [], recargar),
     h("div", { clase: "rejilla dos" },
       tarjetaCobros(d.cobros_por_autorizar),
       tarjetaPlazos(d.plazos_vencidos)),
@@ -112,6 +113,61 @@ function renglonIncidencia(i, recargar) {
       t("dir_inc_registro").replace("{q}", i.registrada_por || "—")
         .replace("{f}", i.creada_en ? fecha(i.creada_en.slice(0, 10)) : "—")),
     resolucion,
+    h("div", { clase: "acciones", style: "margin-top:8px" }, ...botones));
+}
+
+/* ------------------------------------ el freelance por urgencia (111)
+
+   Un freelance con el expediente incompleto que alguien quiere mandar a
+   un servicio (decision 4 de Salvador): vale solo para ese servicio y
+   queda escrito quien lo autorizo y por que. */
+function tarjetaFreelance(filas, recargar) {
+  return h("div", { clase: "tarjeta" },
+    h("h3", {}, t("dir_fre_titulo")),
+    h("p", { clase: "chico gris", style: "margin:0 0 12px" }, t("dir_fre_pie")),
+    ...(filas.length
+      ? filas.map(u => renglonFreelance(u, recargar))
+      : [h("div", { clase: "vacio" }, t("dir_fre_vacio"))]));
+}
+
+function renglonFreelance(u, recargar) {
+  const respuesta = h("input", { name: "respuesta_urgencia",
+                                 placeholder: t("dir_fre_respuesta") });
+  const resolver = async (si) => {
+    if (!si && respuesta.value.trim().length < 5) {
+      return mensaje(t("dir_fre_falta_respuesta"), "alerta");
+    }
+    for (const b of botones) b.disabled = true;
+    try {
+      await api.post(`/freelance/urgencias/${u.id}/${si ? "autorizar" : "rechazar"}`,
+                     { respuesta: respuesta.value.trim() || null });
+      mensaje(t(si ? "dir_fre_autorizada" : "dir_fre_rechazada"), si ? "ok" : "alerta");
+      recargar();
+    } catch (err) {
+      mensaje(err.message, "grave");
+      for (const b of botones) b.disabled = false;
+    }
+  };
+  const botones = [
+    h("button", { type: "button", onclick: () => resolver(true) }, t("dir_autorizar")),
+    h("button", { clase: "claro", type: "button", onclick: () => resolver(false) },
+      t("dir_fre_no_autorizar")),
+  ];
+  return h("div", { clase: "caso" },
+    h("div", { clase: "cabeza_caso" },
+      h("div", {},
+        h("a", { clase: "enlace", href: `#/freelance/${u.persona_id}` }, h("b", {}, u.persona)),
+        h("span", { clase: "chico gris" }, " · "),
+        h("a", { clase: "enlace", href: u.ruta }, u.folio || `#${u.servicio_id}`),
+        u.cliente ? h("span", { clase: "chico gris" }, ` · ${u.cliente}`) : "",
+        h("div", { clase: "chico gris" },
+          t("dir_fre_pidio").replace("{q}", u.pidio || "—")
+            .replace("{f}", u.pedida_en ? fecha(u.pedida_en.slice(0, 10)) : "—"))),
+      etiqueta(t("inc_estado_pendiente"), "alerta")),
+    h("p", { style: "margin:8px 0 4px" }, u.motivo),
+    h("div", { clase: "chico", style: "margin:0 0 8px;color:var(--grave)" },
+      t("dir_fre_le_falta").replace("{x}", u.faltaba || "—")),
+    respuesta,
     h("div", { clase: "acciones", style: "margin-top:8px" }, ...botones));
 }
 

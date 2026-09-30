@@ -706,6 +706,10 @@ AYUDA_POR_PANTALLA = {
     # La ventana del director de operaciones (seccion 105): uno para la
     # bandeja de firmas y otro para el tablero de hoy, que trae numeros.
     "direccion.js": 2,
+    # El freelance (seccion 111): la lista --la de trabajo de Recursos
+    # Humanos--, sus costos y su expediente. Lo demas de la ficha lo dice
+    # su propio pie.
+    "freelance.js": 3,
 
     # --- las que no, y por que
     "api.js": 0,        # habla con el servidor; no pinta nada
