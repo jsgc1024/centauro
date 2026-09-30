@@ -9,14 +9,14 @@ se guarda la llave publica que el telefono crea para este sistema.
 Una tabla nueva, `llave_acceso`. Lo que ya existe no cambia.
 
 Revision ID: f1b3d5a7c9e2
-Revises: e9c1a3b5d7f9
+Revises: f0b2d4e6a8c0
 Create Date: 2026-09-30
 """
 import sqlalchemy as sa
 from alembic import op
 
 revision = "f1b3d5a7c9e2"
-down_revision = "e9c1a3b5d7f9"
+down_revision = "f0b2d4e6a8c0"
 branch_labels = None
 depends_on = None
 
