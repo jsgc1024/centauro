@@ -9,7 +9,7 @@ import { catalogos, faltaConsultor, listaDeConsultores } from "./catalogos.js";
 import { aviso, buscador, campo, coincide, conAyuda, datosDeFormulario,
          dinero, entrada, estatus, etiqueta, fecha, fechaLocal, h, hora,
          hoyLocal, lista, listaBuscable, mensaje, plegable, telefono,
-         textoDe, vaciar } from "./util.js";
+         pieObligatorios, textoDe, vaciar } from "./util.js";
 import { IDIOMAS, t } from "./idioma.js";
 import { queda } from "./cierre.js";
 
@@ -436,7 +436,9 @@ export async function nuevoServicio(main) {
       valor: () => (select.value && select.value !== "nueva"
         ? Number(select.value) : null),
       nodo: h("div", { clase: "campo" },
-              h("label", {}, t("ciudad_opera")), select, caja),
+              h("label", {}, t("ciudad_opera"),
+                h("span", { clase: "obligatorio", title: t("obligatorio") }, " *")),
+              select, caja),
     };
   }
 
@@ -1007,8 +1009,8 @@ export async function nuevoServicio(main) {
         t("ejecutivo_sub")),
       cajaMismo,
       h("div", { clase: "rejilla cuatro" },
-        campo(t("nombre"), ejecutivoNombre),
-        campo(t("apellido"), ejecutivoApellidos),
+        campo(t("nombre"), ejecutivoNombre, { obligatorio: true }),
+        campo(t("apellido"), ejecutivoApellidos, { obligatorio: true }),
         campo(t("correo_campo"), ejecutivoCorreo),
         campo(t("telefono"), ejecutivoTelefono)),
 
@@ -1021,7 +1023,7 @@ export async function nuevoServicio(main) {
         t("inicio_y_dias_sub")),
       h("div", { clase: "punto-inicio" },
         h("div", {},
-          campo(t("direccion_encuentro"), direccion),
+          campo(t("direccion_encuentro"), direccion, { obligatorio: true }),
           resultados),
         cajaMapa),
       h("label", { clase: "casilla" }, esAeropuerto,
@@ -1041,8 +1043,10 @@ export async function nuevoServicio(main) {
       h("p", { clase: "gris chico", style: "margin:0 0 10px" }, t("dias_sub")),
       h("table", {},
         h("thead", {}, h("tr", {},
-          h("th", {}, ""), h("th", {}, t("fecha_col")),
-          h("th", {}, t("modalidad")), h("th", {}, t("presentacion")),
+          h("th", {}, ""),
+          h("th", {}, t("fecha_col"), h("span", { clase: "obligatorio" }, " *")),
+          h("th", {}, t("modalidad")),
+          h("th", {}, t("presentacion"), h("span", { clase: "obligatorio" }, " *")),
           h("th", { clase: "col-km" }, "Km"), h("th", {}, ""))),
         tablaJornadas),
       h("div", { clase: "acciones", style: "margin-top:12px" },
@@ -1355,10 +1359,11 @@ export async function nuevoServicio(main) {
     h("div", { clase: "tarjeta" },
       plegable(t("cliente"), [
         h("div", { clase: "rejilla tres" },
-          campo(t("cliente"), listaBuscable(clientes, t("buscar_cliente"))),
-          campo(t("consultor_asignado"), consultores)),
+          campo(t("cliente"), listaBuscable(clientes, t("buscar_cliente")),
+                { obligatorio: true }),
+          campo(t("consultor_asignado"), consultores, { obligatorio: true })),
         h("div", { clase: "rejilla tres" },
-          campo(t("pais"), paises)),
+          campo(t("pais"), paises, { obligatorio: true })),
       ], () => unidos(clientes.value ? textoDe(clientes) : "",
                       textoDe(paises), textoDe(consultores))),
 
@@ -1366,8 +1371,8 @@ export async function nuevoServicio(main) {
         campo(t("elegir_solicitante"), solicitanteElegido),
         h("div", { clase: "rejilla cuatro" },
           campo(t("correo_campo"), solicitanteCorreo),
-          campo(t("nombre"), solicitante),
-          campo(t("apellido"), solicitanteApellidos),
+          campo(t("nombre"), solicitante, { obligatorio: true }),
+          campo(t("apellido"), solicitanteApellidos, { obligatorio: true }),
           campo(t("telefono"), solicitanteTelefono)),
       ], () => unidos(
         [solicitante.value, solicitanteApellidos.value]
@@ -1413,7 +1418,8 @@ export async function nuevoServicio(main) {
     h("p", { clase: "sub" }, t("alta_sub")),
     h("div", { clase: "tarjeta minimo-caja" },
       conAyuda("h4", t("para_planeado"), "ay_alta_minimo"),
-      listaMinimo),
+      listaMinimo,
+      pieObligatorios()),
     formulario);
 
   agregarEquipo();

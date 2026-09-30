@@ -206,6 +206,14 @@ def _ficha(db: Session, jornada: m.Jornada, persona_id: int,
         "folio": servicio.folio,
         "cliente": servicio.cliente.nombre if servicio.cliente else None,
         "ejecutivo": servicio.ejecutivo_completo,
+        # El telefono del principal y donde se hospeda (seccion 106, caso
+        # 7 de Alberto): el equipo los buscaba en la app y solo estaban
+        # en la hoja. El del equipo, si el equipo tiene principal propio.
+        "ejecutivo_telefono": jornada.equipo.ejecutivo_telefono_efectivo,
+        "hospedaje": [{"hotel": x["hotel"], "direccion": x["direccion"],
+                       "telefono": x["telefono"], "desde": x["desde"],
+                       "hasta": x["hasta"], "notas": x["notas"]}
+                      for x in tasksheet.hospedaje_de(db, jornada.equipo)],
         # Como hay que ir vestido. Se manda tambien en la tarjeta de
         # manana a proposito: cuando de verdad sirve es la noche
         # anterior, que es cuando se decide que ponerse.
@@ -230,6 +238,12 @@ def _ficha(db: Session, jornada: m.Jornada, persona_id: int,
         "estatus": jornada.estatus.value,
         "mi_rol": asignacion.rol.nombre if asignacion and asignacion.rol else None,
         "confirmado": bool(asignacion and asignacion.confirmado),
+        # La hora o la fecha cambiaron despues de que confirmo (seccion
+        # 106): la app lo dice junto al boton, para que no parezca que
+        # su confirmacion se perdio sola.
+        "reconfirmar": bool(asignacion and not asignacion.confirmado
+                            and (asignacion.nota_confirmacion or "")
+                            .startswith("por reconfirmar")),
         "companeros": [{"nombre": a.persona.nombre,
                         "rol": a.rol.nombre if a.rol else None,
                         "telefono": a.persona.telefono}

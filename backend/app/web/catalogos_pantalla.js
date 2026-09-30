@@ -418,7 +418,9 @@ function formulario(campos, alGuardar, alCancelar, textoGuardar = t("ctl_guardar
       control.value = valor;
     }
     controles[c.k] = control;
-    const caja = campo(c.texto, control);
+    // El asterisco sale del mismo `requerido` que ya frenaba el guardado
+    // (seccion 106): lo obligatorio se ve antes de intentar.
+    const caja = campo(c.texto, control, { obligatorio: !!c.requerido });
     /* Una frase de ayuda debajo del control, cuando el nombre solo no
        alcanza (seccion 105: el intervalo de descanso). */
     if (c.ayuda) caja.append(h("div", { clase: "gris chico" }, c.ayuda));

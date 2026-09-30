@@ -9,7 +9,7 @@
    el trato, que no cambia, y la plantilla del primer mes. */
 import { api, sesion } from "./api.js";
 import { catalogos, faltaConsultor, listaDeConsultores } from "./catalogos.js";
-import { aviso, buscador, campo, coincide, conAyuda, dinero, entrada,
+import { aviso, pieObligatorios, buscador, campo, coincide, conAyuda, dinero, entrada,
          estatus, etiqueta, fechaLocal, h, hoyLocal, lista, listaBuscable,
          mensaje, tasa, telefono, vaciar } from "./util.js";
 import { buscadorDeLugar } from "./mapa.js";
@@ -1399,12 +1399,15 @@ export async function nuevoImplantado(main) {
     h("div", { clase: "tarjeta" },
       h("h4", {}, t("cliente")),
       h("div", { clase: "rejilla tres" },
-        campo(t("cliente"), listaBuscable(clientes, t("buscar_cliente"))),
-        campo(t("consultor_asignado"), consultores),
-        campo(t("pais"), paises)),
+        campo(t("cliente"), listaBuscable(clientes, t("buscar_cliente")),
+              { obligatorio: true }),
+        campo(t("consultor_asignado"), consultores, { obligatorio: true }),
+        campo(t("pais"), paises, { obligatorio: true })),
       h("div", { clase: "rejilla tres" },
         h("div", { clase: "campo" },
-          h("label", {}, t("ciudad_opera")), ciudades, cajaCiudad),
+          h("label", {}, t("ciudad_opera"),
+            h("span", { clase: "obligatorio", title: t("obligatorio") }, " *")),
+          ciudades, cajaCiudad),
         h("div", { clase: "campo" },
           h("label", {}, t("imp_turno")), turno, pieTurno)),
 
@@ -1412,13 +1415,13 @@ export async function nuevoImplantado(main) {
       campo(t("elegir_solicitante"), solicitanteElegido),
       h("div", { clase: "rejilla cuatro" },
         campo(t("correo_campo"), solicitanteCorreo),
-        campo(t("nombre"), solicitante),
+        campo(t("nombre"), solicitante, { obligatorio: true }),
         campo(t("apellido"), solicitanteApellidos),
         campo(t("telefono"), solicitanteTelefono)),
 
       h("h4", { clase: "grupo" }, t("ejecutivo_principal")),
       h("div", { clase: "rejilla cuatro" },
-        campo(t("nombre"), ejecutivoNombre),
+        campo(t("nombre"), ejecutivoNombre, { obligatorio: true }),
         campo(t("apellido"), ejecutivoApellidos),
         campo(t("correo_campo"), ejecutivoCorreo),
         campo(t("telefono"), ejecutivoTelefono)),
@@ -1434,7 +1437,7 @@ export async function nuevoImplantado(main) {
       h("h4", {}, t("imp_trato")),
       h("p", { clase: "gris chico", style: "margin:0 0 12px" },
         t("imp_trato_sub")),
-      campo(t("imp_punto_fijo"), punto.direccion),
+      campo(t("imp_punto_fijo"), punto.direccion, { obligatorio: true }),
       punto.resultados,
       punto.cajaMapa,
       h("div", { clase: "rejilla tres" },
@@ -1442,7 +1445,7 @@ export async function nuevoImplantado(main) {
         campo(t("imp_lon"), punto.lon),
         campo(t("imp_geocerca"), punto.metros)),
       h("div", { clase: "rejilla tres" },
-        campo(t("imp_fecha_inicio"), fechaInicio),
+        campo(t("imp_fecha_inicio"), fechaInicio, { obligatorio: true }),
         h("div", { clase: "campo" },
           h("label", {}, t("imp_dias_semana")), diasServicio, pieDias),
         campo(t("imp_hora"), horaPresentacion)),
@@ -1474,7 +1477,8 @@ export async function nuevoImplantado(main) {
 
     h("div", { clase: "tarjeta minimo-caja" },
       h("h4", {}, t("imp_falta")),
-      faltantes),
+      faltantes,
+      pieObligatorios()),
 
     h("div", { clase: "acciones" }, botonAlta,
       h("button", { clase: "claro", type: "button",

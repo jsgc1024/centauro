@@ -213,8 +213,20 @@ export function textoDe(select) {
   return opcion ? opcion.text.trim() : "";
 }
 
-export function campo(etiqueta, control) {
-  return h("div", { clase: "campo" }, h("label", {}, etiqueta), control);
+/* Un campo con su etiqueta. Con `obligatorio`, la etiqueta lleva el
+   asterisco (seccion 106, caso 3 de Salvador): asi se sabe que llenar
+   antes de que el boton diga que falta algo. */
+export function campo(etiqueta, control, opciones = {}) {
+  const marca = opciones.obligatorio
+    ? h("span", { clase: "obligatorio", title: t("obligatorio") }, " *")
+    : null;
+  return h("div", { clase: "campo" }, h("label", {}, etiqueta, marca), control);
+}
+
+/* La leyenda de abajo de un formulario con asteriscos. */
+export function pieObligatorios() {
+  return h("div", { clase: "chico gris pie-obligatorios" },
+    h("span", { clase: "obligatorio" }, "*"), " ", t("obligatorio_pie"));
 }
 
 export function entrada(nombre, atributos = {}) {

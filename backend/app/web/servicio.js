@@ -268,7 +268,7 @@ async function cancelar(servicio, zona) {
     h("h4", { style: "margin:0 0 4px" },
       t("srv_cancelar_titulo").replace("{f}", servicio.folio)),
     h("p", { clase: "chico gris", style: "margin:0 0 8px" }, t("srv_cancelar_pie")),
-    campo(t("srv_cancelar_motivo"), motivo),
+    campo(t("srv_cancelar_motivo"), motivo, { obligatorio: true }),
     cobro,
     h("div", { clase: "acciones", style: "margin-top:10px" },
       h("button", { clase: "claro chico", type: "button",
@@ -426,7 +426,13 @@ async function pintarRecursos(caja, servicio, equipo, cat, zona, zonaCambio) {
   const ficha = (x, titulo, cuerpo, boton, tipo = "retrato") => h("div", {
     clase: "persona recurso" },
     x.foto ? h("img", { clase: `foto ${tipo}`, src: x.foto, alt: "" })
-           : h("div", { clase: `foto ${tipo}` }),
+           /* Sin foto, el cuadro dice de donde sale (seccion 106, caso 1
+              de Martha): la de la persona viene de Odoo y la de la
+              unidad es la de su categoria, que se carga en Catalogos. */
+           : h("div", { clase: ["foto", tipo, "sin-foto-de"].join(" "), title: t(
+               tipo === "retrato" ? "srv_sin_foto_persona" : "srv_sin_foto_unidad") },
+               h("span", {}, t(tipo === "retrato" ? "srv_sin_foto_persona"
+                                                  : "srv_sin_foto_unidad"))),
     h("div", {}, h("h4", { style: "margin:0 0 1px" }, titulo), ...cuerpo,
       /* Lo normal es que este todos los dias. Si no, es que hubo un
          cambio a media semana y eso hay que verlo. */

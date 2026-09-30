@@ -107,8 +107,8 @@ function panel(servicio, otros, zona) {
 
   return h("div", { clase: "tarjeta lisa", style: "margin-top:10px" },
     h("p", { clase: "chico gris", style: "margin:0 0 10px" }, t("tit_pie")),
-    campo(t("tit_nuevo"), quien),
-    campo(t("tit_motivo"), motivo),
+    campo(t("tit_nuevo"), quien, { obligatorio: true }),
+    campo(t("tit_motivo"), motivo, { obligatorio: true }),
     h("div", { clase: "acciones" },
       guardar,
       h("button", { clase: "claro chico", type: "button",

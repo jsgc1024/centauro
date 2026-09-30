@@ -8043,6 +8043,77 @@ e integrado a mano; la lista de plazos vencidos vive dos veces
 (`cierre.plazos_vencidos` para los avisos y
 `direccion_operaciones.plazos_vencidos` para la pantalla) a propósito.
 
+## 106. Los casos reportados desde Connect
+
+Los nueve casos que estaban abiertos en Manual del sistema → Casos al
+30 de septiembre (sección 92: el botón «Reportar una falla» de la
+consola y de la app). Tres eran los de Alberto Arredondo de la app,
+resueltos en la sección 102; los otros seis se resuelven aquí. Sin
+migración. El armazón de la app sube a `centauro-campo-v20`.
+
+- **Caso 1 · «No se ve la foto del vehículo asignado»** (Martha Gómez,
+  consultora). No es una falla: la unidad no lleva su foto real sino la
+  de su categoría, en su color (decisión de Salvador, 23 sep), y esa
+  foto se carga en Catálogos > Unidades por categoría; en producción no
+  estaba cargada. Lo que sí faltaba era decirlo: el cuadro sin foto de
+  la ficha del servicio ahora dice «Sin foto de la categoría: se carga
+  en Catálogos > Unidades por categoría» (y «Sin foto en Odoo» en el de
+  la persona).
+- **Caso 2 · «Se modificó el horario del meet and greet y no pidió al
+  conductor reconfirmar de enterado»** (Martha). El aviso «Cambió tu
+  hora» ya salía desde la sección 101, pero la confirmación de la
+  víspera seguía en pie sobre una hora que ya no era. Ahora, al cambiar
+  la hora o la fecha de un día, quien ya había confirmado vuelve a
+  quedar por confirmar, con la razón anotada («por reconfirmar: cambió
+  la hora, antes 07:00»): el aviso le pide confirmar de nuevo, la app
+  se lo pide con la razón junto al botón y la central lo ve pendiente
+  en «Mañana», con la razón junto al «?» (la nota que la central
+  escribe al confirmar por teléfono también sale ahí, que antes no se
+  pintaba). Corregir el día sin mover la hora no toca nada.
+- **Caso 3 · «Colocar un asterisco en los campos obligatorios»**
+  (Salvador). `campo(..., {obligatorio: true})` pinta el asterisco y
+  `pieObligatorios()` la leyenda; los llevan las altas del eventual y
+  del implantado (cliente, consultor, país, ciudad, solicitante,
+  ejecutivo, punto, fecha y hora), la cotización autorizada, el panel
+  de incidencia, el cambio de titular, cancelar, accesos y los
+  formularios de Catálogos (donde sale del `requerido` que ya frenaba
+  el guardado).
+- **Caso 7 · «No veo los datos de contacto del principal ni la agenda,
+  hospitales ni hospedaje»** (Alberto, app). La agenda y el hospital
+  más cercano ya iban en la app cuando están capturados (la agenda la
+  captura el consultor en «Meet and greet y agenda»; los hospitales
+  viven en Catálogos por ciudad, y en producción faltan); lo que no
+  iba era el teléfono del ejecutivo ni el hotel. Ahora la tarjeta del
+  día trae el teléfono del principal (con enlace para llamar) y el
+  hotel del ejecutivo con su dirección y teléfono; la de mañana, el
+  hotel, que es cuando se planea a dónde ir por él.
+- **Caso 8 · «Terminé el día y no hay opción para cortar»** (Alberto,
+  app). El servidor rechazaba el fin porque faltaba entregar la unidad
+  (sección 98) y el aviso se perdía en un letrero de dos segundos. Con
+  la unidad por entregar hoy, la app ya no ofrece «Terminar el
+  servicio»: pone la entrega primero, grande, y dice que el fin aparece
+  en cuanto la unidad quede entregada y que las horas del día se cortan
+  con esa marca. Lo demás que pedía ya existía: al cerrar el día la app
+  pregunta la hora de mañana (que ahora pasa por la central, sección
+  105) y cada día se corta con su propio fin.
+- **Caso 9 · «Ver el timer para saber cuánto tiempo tengo para cerrar
+  viáticos»** (Alberto, app). Ya existía: en Pagos, cada servicio dice
+  «Vence hoy a las 19:55 · te quedan 18 h» en cuanto termina el
+  servicio, que es cuando corre el plazo; mientras está en curso dice
+  que el plazo de 24 horas corre al terminar. Queda como está, con una
+  prueba que lo deja escrito.
+
+Por dentro: `push.py` (`avisar_cambio_de_hora` reinicia la
+confirmación y sus textos piden confirmar de nuevo), `routers/campo.py`
+(`mi_dia`: `reconfirmar`, `ejecutivo_telefono`, `hospedaje`),
+`web/campo/app.js` (`hospedaje`, `finDespues`, el aviso de reconfirmar),
+`web/central.js` (la razón junto al «?»), `web/util.js` (`campo` con `obligatorio`, `pieObligatorios`),
+`web/consultor.js`, `web/implantado.js`, `web/incidencias.js`,
+`web/titular.js`, `web/servicio.js` (cancelar y el cuadro sin foto),
+`web/cotizacion.js`, `web/accesos.js`, `web/catalogos_pantalla.js`,
+`web/estilo.css`, `web/idioma.js` (bloque `seccion 106`). Pruebas:
+`tests/test_revision_106_casos.py` (8).
+
 ## 14. Lo que falta
 
 ### Abierto

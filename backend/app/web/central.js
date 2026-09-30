@@ -847,6 +847,14 @@ function renglonDePersona(f, p) {
     p.confirmado && p.confirmado_por
       ? ` · ${t("cen_por_telefono")} ${p.confirmado_por}`
       : "");
+  /* La razon de que siga en "?" cuando la hay (seccion 106, caso 2):
+     "por reconfirmar: cambio la hora, antes 07:00" le dice a la central
+     que Juan si habia confirmado y que lo que falta es que se entere
+     del cambio, que no es lo mismo que no haber contestado nunca. La
+     nota que la central escribio al confirmar por telefono sale igual. */
+  const razon = p.nota_confirmacion
+    ? h("span", { clase: "gris chico" }, ` · ${p.nota_confirmacion}`)
+    : null;
 
   const boton = h("button", { clase: "claro chico",
                               style: "margin-left:8px" },
@@ -867,7 +875,7 @@ function renglonDePersona(f, p) {
     marca,
     h("span", {}, p.nombre,
       p.rol ? h("span", { clase: "gris chico" }, ` · ${p.rol}`) : null,
-      sello),
+      sello, razon),
     p.confirmado ? null : boton);
 }
 

@@ -513,8 +513,8 @@ function armar(caja, d) {
 
   const autorizacion = h("div", {},
     h("div", { clase: "rejilla tres" },
-      h("div", {}, h("label", {}, t("cot_quien")), quien, otra),
-      h("div", {}, h("label", {}, t("cot_el_dia")), dia),
+      h("div", {}, h("label", {}, t("cot_quien"), h("span", { clase: "obligatorio", title: t("obligatorio") }, " *")), quien, otra),
+      h("div", {}, h("label", {}, t("cot_el_dia"), h("span", { clase: "obligatorio", title: t("obligatorio") }, " *")), dia),
       h("div", {}, h("label", {}, t("cot_folio")), folio)),
     recotiza ? h("div", { style: "margin-top:12px" },
       h("label", {}, t("cot_motivo")), motivo) : "");

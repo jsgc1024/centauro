@@ -132,12 +132,12 @@ export async function panelIncidencia(zona, servicioId,
     h("p", { clase: "chico gris", style: "margin:0 0 10px" }, t("inc_pie")),
     o.personas.length
       ? h("div", { clase: "rejilla tres" },
-          campo(t("inc_persona"), personas),
-          campo(conDias ? t("inc_dia") : t("inc_fecha"), dias),
-          campo(t("inc_gravedad"), gravedad))
+          campo(t("inc_persona"), personas, { obligatorio: true }),
+          campo(conDias ? t("inc_dia") : t("inc_fecha"), dias, { obligatorio: true }),
+          campo(t("inc_gravedad"), gravedad, { obligatorio: true }))
       : aviso(t("inc_sin_gente"), "alerta"),
     ayuda,
-    campo(t("inc_descripcion"), descripcion),
+    campo(t("inc_descripcion"), descripcion, { obligatorio: true }),
     h("div", { clase: "acciones", style: "margin-top:10px" }, guardar)));
 }
 

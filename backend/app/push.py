@@ -165,9 +165,9 @@ TEXTOS_PUSH = {
         "cancelacion_titulo": "Se canceló un servicio",
         "cancelacion_cuerpo": "{folio}: {rango} ya no va. No te presentes; revisa tu día en la app.",
         "cambio_hora_titulo": "Cambió tu hora",
-        "cambio_hora_cuerpo": "{fecha}: ahora es a las {hora} (antes {antes}). Revisa tu día en la app.",
+        "cambio_hora_cuerpo": "{fecha}: ahora es a las {hora} (antes {antes}). Entra a la app y vuelve a confirmar de enterado.",
         "cambio_fecha_titulo": "Cambió tu fecha",
-        "cambio_fecha_cuerpo": "Ahora es el {fecha} a las {hora} (antes el {antes_fecha} a las {antes}). Revisa tu día en la app.",
+        "cambio_fecha_cuerpo": "Ahora es el {fecha} a las {hora} (antes el {antes_fecha} a las {antes}). Entra a la app y vuelve a confirmar de enterado.",
         "prueba": "Los avisos están funcionando en este teléfono.",
         "accion_confirmar": "Confirmo que voy",
         "accion_en_camino": "Voy en camino",
@@ -245,9 +245,9 @@ TEXTOS_PUSH = {
         "cie_venc_dir_titulo": "{de_que}: venceu o prazo de {consultor}",
         "cie_venc_dir_cuerpo": "{consultor} não deu o visto a tempo: o serviço continua esperando, já sem comissão.",
         "cie_venc_dir_reg_cuerpo": "{consultor} não mandou de novo nas 24 horas da devolução de finanças.",
-        "cambio_hora_cuerpo": "{fecha}: agora é às {hora} (antes {antes}). Veja o seu dia no app.",
+        "cambio_hora_cuerpo": "{fecha}: agora é às {hora} (antes {antes}). Entre no app e confirme de novo que está ciente.",
         "cambio_fecha_titulo": "A sua data mudou",
-        "cambio_fecha_cuerpo": "Agora é dia {fecha} às {hora} (antes dia {antes_fecha} às {antes}). Veja o seu dia no app.",
+        "cambio_fecha_cuerpo": "Agora é dia {fecha} às {hora} (antes dia {antes_fecha} às {antes}). Entre no app e confirme de novo que está ciente.",
         "prueba": "Os avisos estão funcionando neste telefone.",
         "accion_confirmar": "Confirmo que vou",
         "accion_en_camino": "Estou a caminho",
@@ -807,6 +807,21 @@ def avisar_cambio_de_hora(db: Session, jornada, antes) -> dict:
     # al mover solo el dia, el aviso decia "ahora es a las 08:00 (antes
     # 08:00)" y nadie entendia que habia cambiado.
     cambio_de_fecha = antes.date() != jornada.inicio_programado.date()
+    # La confirmacion de enterado era sobre la hora vieja (seccion 106,
+    # caso 2 de Martha): quien ya habia confirmado vuelve a "por
+    # confirmar", con la razon anotada, para que la app se lo vuelva a
+    # pedir y la central lo vea pendiente en la vispera.
+    reconfirman = 0
+    for a in jornada.personal:
+        if a.confirmado and a.relevado_en is None:
+            a.confirmado = False
+            a.confirmado_en = None
+            a.confirmado_por_id = None
+            a.nota_confirmacion = (
+                f"por reconfirmar: cambió la fecha, antes {antes:%d/%m %H:%M}"
+                if cambio_de_fecha else
+                f"por reconfirmar: cambió la hora, antes {antes:%H:%M}")
+            reconfirman += 1
     avisados = []
     for persona_id in _asignados(db, [jornada]):
         lengua = idioma_de(db, persona_id)
@@ -822,4 +837,4 @@ def avisar_cambio_de_hora(db: Session, jornada, antes) -> dict:
                    etiqueta="cambio-hora", urgente=True)
         if r["enviados"]:
             avisados.append(persona_id)
-    return {"avisados": len(avisados)}
+    return {"avisados": len(avisados), "reconfirman": reconfirman}

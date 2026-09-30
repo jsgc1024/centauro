@@ -4299,6 +4299,14 @@ const TEXTOS = {
     dir_cobro_pidio: "El consultor pidió cobrar {c}",
     dir_cobro_montos: "Cotizado {a} · Ejecutado {b}",
     dir_cobro_cancelado: "cancelado el {f}",
+    /* --- seccion 106 (casos reportados) */
+    obligatorio: "Obligatorio",
+    obligatorio_pie: "Los campos con asterisco son obligatorios.",
+    srv_sin_foto_persona: "Sin foto en Odoo",
+    srv_sin_foto_unidad: "Sin foto de la categoría: se carga en Catálogos > Unidades por categoría",
+    cmp_fin_despues_de_entregar: "En cuanto entregues la unidad aparece aquí «Terminar el servicio». Las horas del día se cortan con esa marca.",
+    cmp_hotel: "Hotel del ejecutivo",
+    cmp_reconfirmar: "Cambió tu hora después de que confirmaste: vuelve a confirmar de enterado.",
   },
 
   en: {
@@ -8564,6 +8572,14 @@ const TEXTOS = {
     dir_cobro_pidio: "The consultant asked to charge {c}",
     dir_cobro_montos: "Quoted {a} · Delivered {b}",
     dir_cobro_cancelado: "cancelled on {f}",
+    /* --- seccion 106 (casos reportados) */
+    obligatorio: "Required",
+    obligatorio_pie: "Fields marked with an asterisk are required.",
+    srv_sin_foto_persona: "No photo in Odoo",
+    srv_sin_foto_unidad: "No category photo: upload it in Catalogs > Vehicle categories",
+    cmp_fin_despues_de_entregar: "As soon as you hand the vehicle back, «End the service» appears here. The day's hours stop with that mark.",
+    cmp_hotel: "Executive's hotel",
+    cmp_reconfirmar: "Your time changed after you acknowledged: please acknowledge again.",
   },
 
   pt: {
@@ -12828,6 +12844,14 @@ const TEXTOS = {
     dir_cobro_pidio: "O consultor pediu cobrar {c}",
     dir_cobro_montos: "Cotado {a} · Executado {b}",
     dir_cobro_cancelado: "cancelado em {f}",
+    /* --- seccion 106 (casos reportados) */
+    obligatorio: "Obrigatório",
+    obligatorio_pie: "Os campos com asterisco são obrigatórios.",
+    srv_sin_foto_persona: "Sem foto no Odoo",
+    srv_sin_foto_unidad: "Sem foto da categoria: carregue em Catálogos > Unidades por categoria",
+    cmp_fin_despues_de_entregar: "Assim que você entregar a unidade, «Terminar o serviço» aparece aqui. As horas do dia param com essa marcação.",
+    cmp_hotel: "Hotel do executivo",
+    cmp_reconfirmar: "O seu horário mudou depois que você confirmou: confirme de novo que está ciente.",
   },
 };
 

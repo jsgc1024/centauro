@@ -21,7 +21,7 @@
 // v13: Reportar una falla desde «Yo», y la caja negra (seccion 92).
 // v14: el icono de Android con su filo dorado, dentro de la zona que
 //      ningun telefono recorta (seccion 97).
-const CACHE = "centauro-campo-v19";
+const CACHE = "centauro-campo-v20";
 const ARMAZON = [
   "/app/",
   "/app/index.html",

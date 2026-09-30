@@ -607,6 +607,8 @@ function tarjetaHoy(f) {
        Desaparece en cuanto confirma: en la pantalla de las seis de la
        manana no sobra espacio para un boton que ya cumplio. */
     f.confirmado ? null : h("div", { clase: "marco" },
+      f.reconfirmar ? h("div", { clase: "chico ambar", style: "margin-bottom:8px;text-align:center;font-weight:650" },
+        t("cmp_reconfirmar")) : null,
       h("button", { clase: "claro", onclick: (e) => confirmar(e, f) },
         t("cmp_confirmar")),
       h("div", { clase: "chico gris", style: "margin-top:8px;text-align:center" },
@@ -629,8 +631,15 @@ function tarjetaHoy(f) {
         : null,
       h("div", { clase: "dato" },
         h("span", { clase: "clave" }, t("cmp_ejecutivo")),
-        f.ejecutivo || "—"),
+        f.ejecutivo || "—",
+        /* Su telefono, para el meet and greet (seccion 106): estaba
+           solo en la hoja y el equipo lo buscaba aqui. */
+        f.ejecutivo_telefono
+          ? h("div", {}, h("a", { href: `tel:${f.ejecutivo_telefono}` },
+              f.ejecutivo_telefono))
+          : null),
       senalDelDia(f),
+      ...hospedaje(f),
       /* Como hay que ir vestido. Si el servicio no trae codigo no se
          pinta el renglon: un servicio sin acuerdo no es "casual". */
       f.vestimenta
@@ -681,10 +690,18 @@ function tarjetaHoy(f) {
      Si ese paso ya esta marcado y esperando salir, el boton no se
      vuelve a ofrecer: durante esos segundos la pantalla todavia trae el
      dato del servidor --que no sabe nada-- y el dedo volveria. */
+  /* Con la unidad por entregar hoy, el fin no se ofrece todavia
+     (seccion 106, caso 8 de Alberto): el servidor lo rechazaba y el
+     aviso se perdia en un letrero de dos segundos, y el equipo se
+     quedaba con "no hay como cortar" mientras corrian las horas. La
+     entrega va primero, grande, y el boton de terminar aparece en
+     cuanto la unidad queda entregada. */
+  const porEntregar = (f.revision && f.revision.entregar_hoy) || [];
+  const finDespues = paso === "fin_servicio" && porEntregar.length > 0;
   if (paso && enCola(f.jornada_id, paso)) {
     caja.append(h("div", { clase: "marco" },
       h("button", { disabled: "disabled" }, t("cmp_marca_enviando"))));
-  } else if (paso) {
+  } else if (paso && !finDespues) {
     caja.append(h("div", { clase: "marco" },
       h("button", { onclick: (e) => marcar(e, f, paso) },
         hitos()[paso].texto),
@@ -740,17 +757,23 @@ function tarjetaHoy(f) {
      marca sin esa revisión, y enterarse de eso al intentar cerrar —a las
      ocho de la noche, con el cliente en el coche— es el peor momento
      posible. Que lo sepa desde que abre la pantalla. */
-  const hoy = (f.revision && f.revision.entregar_hoy) || [];
+  const hoy = porEntregar;
   if (hoy.length) {
     const atorado = hoy.some(u => u.sin_recepcion);
-    caja.append(h("div", { clase: "marco alerta" },
+    const entrega = h("div", { clase: "marco alerta" },
       h("a", { href: `#/revision/${f.servicio_id}`, clase: "botonazo" },
         hoy.length > 1 ? t("cmp_entregar_unidades") : t("cmp_entregar")),
       h("div", { clase: "chico", style: "margin-top:8px;text-align:center" },
         atorado
           ? t("cmp_nunca_revisada")
           : t("cmp_sin_esto_fin").replace("{placas}", hoy
-              .map(u => u.placa).filter(Boolean).join(", ")))));
+              .map(u => u.placa).filter(Boolean).join(", "))));
+    if (finDespues) {
+      entrega.append(h("div", { clase: "chico",
+                               style: "margin-top:6px;text-align:center;font-weight:650" },
+                       t("cmp_fin_despues_de_entregar")));
+    }
+    caja.append(entrega);
   } else if (f.revision && f.revision.por_recibir) {
     caja.append(h("div", { clase: "marco" },
       h("a", { href: `#/revision/${f.servicio_id}`, clase: "botonazo" },
@@ -776,6 +799,19 @@ function tarjetaHoy(f) {
   const suAgenda = agenda(f);
   if (suAgenda) caja.append(suAgenda);
   return caja;
+}
+
+/* Donde se hospeda el ejecutivo (seccion 106, caso 7 de Alberto): el
+   hotel con su direccion y telefono, como en la hoja. Sin hospedaje
+   capturado no se pinta nada. */
+function hospedaje(f) {
+  const lista = (f.hospedaje || []).filter(x => x.hotel);
+  return lista.map(x => h("div", { clase: "dato" },
+    h("span", { clase: "clave" }, t("cmp_hotel")),
+    h("div", {}, x.hotel),
+    x.direccion ? h("div", { clase: "chico gris" }, x.direccion) : null,
+    x.telefono ? h("a", { href: `tel:${x.telefono}` }, x.telefono) : null,
+    x.notas ? h("div", { clase: "chico" }, x.notas) : null));
 }
 
 /* ------------------------------------------------- la agenda del dia
@@ -837,6 +873,13 @@ function tarjetaManana(f) {
     ? h("span", { clase: "marca ok" }, t("cmp_confirmado"))
     : h("button", { onclick: (e) => confirmar(e, f) },
         t("cmp_confirmar"));
+  /* Cambio la hora despues de que confirmo (seccion 106): se dice
+     junto al boton, para que la confirmacion pedida otra vez tenga
+     razon y no parezca que se perdio. */
+  const reconfirmar = f.reconfirmar && !f.confirmado
+    ? h("div", { clase: "chico ambar", style: "margin:6px 0;font-weight:650" },
+        t("cmp_reconfirmar"))
+    : null;
 
   return h("div", { clase: "caja" },
     identificacion(f),
@@ -888,6 +931,9 @@ function tarjetaManana(f) {
        vez, y abrirla con red es lo que la deja guardada en el telefono
        para la manana siguiente. */
     f.senal ? h("div", { clase: "marco" }, senalDelDia(f)) : null,
+    /* El hotel del ejecutivo (seccion 106): la noche anterior es cuando
+       se planea a donde ir por el. */
+    hospedaje(f).length ? h("div", { clase: "marco" }, ...hospedaje(f)) : null,
     /* El inventario de la unidad tambien vive aqui. Decision de
        Salvador, 20 sep.
 
@@ -919,7 +965,7 @@ function tarjetaManana(f) {
           h("div", { clase: "chico gris", style: "margin-top:8px;text-align:center" },
             t("cmp_voy_en_camino_pie")))
       : null,
-    h("div", { clase: "marco" }, boton));
+    h("div", { clase: "marco" }, reconfirmar, boton));
 }
 
 /* Confirmar de una vez todo lo que falte, que es lo que pidio quien
