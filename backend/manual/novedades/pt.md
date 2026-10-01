@@ -2,6 +2,9 @@
 
 O que há de novo em cada atualização, escrito para quem usa o sistema. A mais nova fica em cima.
 
+## 113 · 2026-09-30 · A hora extra de cada papel, e a unidade ao lado na folha do implantado
+Em Faturamento → Tabelas de preços, a tabela de produtos permite dizer de qual papel é cada hora extra —«Hora extra · Agente de seguridad»— e o Connect sugere pelo nome do produto: cada papel cobra a sua e não a do motorista. Na folha do implantado, a unidade fica à direita de quem a dirige, no seu próprio cartão, como na folha do eventual.
+
 ## 112 · 2026-09-30 · A leitura das tabelas de preços: só o que é de Proteção Executiva
 Do Odoo só chega o que é de Proteção Executiva: os produtos da categoria «Protección Ejecutiva» (com as suas subcategorias) e as listas de preços que começam com «PE ·». O GPS, a Central de Inteligencia e o ATLAS saem de Faturamento → Tabelas de preços. Os nomes são lidos em espanhol do México. Se um cliente tem no Odoo uma lista que não é de PE, fica com a sua tabela e isso aparece nos pendentes da leitura; se uma lista de PE nomeia um produto que não está na categoria, também. E se a categoria não existe no Odoo, nada é lido.
 

@@ -65,6 +65,10 @@ def _capacitacion(cursos: list, t: dict) -> str:
 
 
 def _unidad(u: dict, t: dict) -> str:
+    """La unidad, en su propia tarjeta a la derecha de quien la maneja
+    (seccion 113). Antes iba debajo del conductor, dentro de su ficha, y
+    la mitad derecha del bloque se quedaba vacia: en la hoja del eventual
+    la unidad siempre ha ido a un costado."""
     if not u:
         return ""
     detalle = " · ".join(filter(None, [
@@ -74,10 +78,10 @@ def _unidad(u: dict, t: dict) -> str:
             if u.get("foto_url") else '<div class="foto-unidad sin"></div>')
     blindada = (f'<span class="sello-blindada">{_esc(t["armored"])}</span>'
                 if u.get("blindada") else "")
-    return (f'<div class="unidad">{foto}'
-            f'<div><h5>{_esc(t["vehicle"])}</h5>'
+    return (f'<article class="ficha ficha-unidad">{foto}'
+            f'<div class="cuerpo-ficha"><h5>{_esc(t["vehicle"])}</h5>'
             f'<b class="placa">{_esc(u["placa"])}</b> {blindada}'
-            f'<div class="gris">{_esc(detalle)}</div></div></div>')
+            f'<div class="gris">{_esc(detalle)}</div></div></article>')
 
 
 def _ficha(p: dict, t: dict) -> str:
@@ -106,8 +110,17 @@ def _ficha(p: dict, t: dict) -> str:
            if p.get("telefono") else "")
         + (f'<div class="marcas">{"".join(marcas)}</div>' if marcas else "")
         + _capacitacion(p.get("capacitacion") or [], t)
-        + _unidad(p.get("unidad"), t)
         + "</div></article>")
+
+
+def _equipo(equipo: list, t: dict) -> str:
+    """Quien cubre y, a su derecha, la unidad que maneja: la pareja ocupa
+    su renglon completo. Quien no lleva unidad va en su lugar, de dos en
+    dos."""
+    piezas = [f'<div class="par">{_ficha(p, t)}{_unidad(p["unidad"], t)}</div>'
+              if p.get("unidad") else _ficha(p, t)
+              for p in equipo]
+    return f'<div class="fichas">{"".join(piezas)}</div>'
 
 
 def _hospitales(lista: list, t: dict) -> str:
@@ -246,7 +259,11 @@ def render(contenido: dict, version: int = 1, actualizado: str | None = None,
   .dato .valor {{ margin-top: 2px; white-space: pre-wrap; }}
   .mitad p {{ margin: 0 0 6px; }}
   /* La ficha de quien cubre: es el bloque que vende el servicio. */
-  .fichas {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }}
+  .fichas {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+            grid-auto-flow: row dense; }}
+  /* Quien maneja y su unidad, lado a lado (seccion 113). */
+  .par {{ grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr;
+         gap: 16px; }}
   .ficha {{ display: flex; gap: 12px; border: 1px solid #e7e9ec;
            border-radius: 8px; padding: 12px; background: #fcfdfe; }}
   .retrato {{ width: 72px; height: 72px; border-radius: 8px;
@@ -263,10 +280,8 @@ def render(contenido: dict, version: int = 1, actualizado: str | None = None,
   .cursos ul {{ margin: 0; padding-left: 16px; font-size: 11.5px; }}
   .cursos li {{ margin-bottom: 4px; }}
   .vencida {{ color: #c0392b; font-weight: 600; }}
-  .unidad {{ display: flex; gap: 10px; margin-top: 12px;
-            border-top: 1px dashed #e7e9ec; padding-top: 10px; }}
-  .foto-unidad {{ width: 64px; height: 44px; border-radius: 6px;
-                 object-fit: cover; flex: 0 0 64px; }}
+  .foto-unidad {{ width: 112px; height: 76px; border-radius: 8px;
+                 object-fit: cover; flex: 0 0 112px; }}
   .foto-unidad.sin {{ background: #e7e9ec; }}
   .placa {{ font-variant-numeric: tabular-nums; letter-spacing: .5px; }}
   .sello-blindada {{ font-size: 10px; background: var(--centauro); color: #fff;
@@ -285,11 +300,11 @@ def render(contenido: dict, version: int = 1, actualizado: str | None = None,
   @media print {{
     body {{ background: #fff; padding: 0; }}
     .hoja {{ border: 0; border-radius: 0; max-width: none; }}
-    .ficha {{ break-inside: avoid; }}
+    .ficha, .par {{ break-inside: avoid; }}
     .bloque {{ break-inside: avoid; }}
   }}
   @media (max-width: 700px) {{
-    .rejilla, .rejilla.dos, .fichas {{ grid-template-columns: 1fr; }}
+    .rejilla, .rejilla.dos, .fichas, .par {{ grid-template-columns: 1fr; }}
   }}
 </style></head>
 <body><div class="hoja">
@@ -321,9 +336,7 @@ def render(contenido: dict, version: int = 1, actualizado: str | None = None,
               f'<div class="valor">{_parrafo(contenido.get("protocolo"))}</div></div>'
               if contenido.get("protocolo") else ""))}
   {_bloque(titulo_equipo,
-           f'<div class="fichas">'
-           f'{"".join(_ficha(p, t) for p in contenido.get("equipo") or [])}</div>'
-           if contenido.get("equipo") else "")}
+           _equipo(contenido["equipo"], t) if contenido.get("equipo") else "")}
   {_bloque(t["escalation"], _escalacion(contenido.get("escalacion") or [], t))}
   {_bloque(t["hospitals"], _hospitales(contenido.get("hospitales") or [], t))}
 </div>

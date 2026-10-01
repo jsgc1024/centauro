@@ -8523,6 +8523,47 @@ lo pendiente que se dice; lo que no es de PE sale de la tabla; sin la
 categoría no se toca nada; las listas por su nombre; los nombres en
 es_MX. Las pruebas de antes corren sin filtro.
 
+## 113. La hora extra de cada rol, y la unidad a un costado en la hoja del implantado
+
+Dos arreglos chicos, de la revisión de la noche del 30 de septiembre con
+Salvador.
+
+**La hora extra de cada rol.** La lista PE · General México trae en Odoo
+una hora extra por rol —conductor $326, agente $578, coordinador $924 y
+consultor $1,733: el 10 % de su día completo—. La tabla de productos
+(Facturación → Tarifarios) solo ofrecía «Hora extra», sin rol: las
+cuatro decían lo mismo, la del conductor quedó como la que manda y todas
+las listas cobraban la hora extra del conductor para todos los roles (un
+agente a $326 en vez de $578).
+
+- El selector trae «Hora extra · <rol>» para cada rol y «Hora extra · la
+  de todos los roles».
+- La lectura lo sugiere por el nombre: «Hora Extra Agente de Seguridad
+  Bilingüe» es la del agente. Sin rol en el nombre, es la de todos.
+- En producción ya quedó corregido en la revisión: a cada hora extra se
+  le dijo su rol por la puerta de la tabla —queda en la bitácora de
+  administración a nombre de Salvador— y se aplicó la lectura. La General
+  quedó en 326 / 578 / 924 / 1,733 y Control Risks en 342 / 524 / 646 /
+  1,819. En la misma revisión se confirmaron los tres paquetes «Conductor
+  + SUV Suburban Blindada Nivel III (Todo incluido)» y se marcó «Los
+  paquetes de esta lista traen los viáticos del día» en PE · General
+  México, PE · Amazon, PE · Crisol y PE · UHC Global.
+
+**La unidad a un costado, en la hoja del implantado.** En la hoja de
+EP/IM-001 la unidad salía debajo del conductor, dentro de su ficha, y la
+mitad derecha del bloque del equipo se quedaba vacía. Ahora quien maneja y
+su unidad van lado a lado, como en la hoja del eventual: la persona a la
+izquierda y la unidad a la derecha, con su foto más grande. Quien no lleva
+unidad va en su lugar, de dos en dos; en el teléfono, una debajo de la
+otra. La hoja de cobertura, igual. La hoja se arma cada vez que se abre:
+la que ya se liberó se ve bien en cuanto se sube esto.
+
+Por dentro: `odoo_tarifarios_reglas.sugerir`, `web/tarifarios.js`
+(`opciones`), `web/idioma.js` (`tar_g_hora_extra`,
+`tar_hora_extra_todos`), `hoja_implantado_html.py` (`_unidad`, `_equipo`,
+`.par`). Pruebas: `tests/test_odoo_tarifarios.py` (+2, y la sugerencia de
+la hora extra por rol).
+
 ## 14. Lo que falta
 
 ### Abierto

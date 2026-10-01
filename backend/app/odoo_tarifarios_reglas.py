@@ -173,7 +173,10 @@ def sugerir(producto: dict, perfiles: dict, categorias: dict) -> dict:
     if texto(producto.get("type")) in ("consu", "product", "combo"):
         return {**nada, "clase": NO_EP}
     if any(x in f for x in HORA_EXTRA_FRASES):
-        return {**nada, "clase": HORA_EXTRA}
+        # La de un solo rol lo dice en el nombre: «Hora Extra Agente de
+        # Seguridad Bilingüe» (seccion 113). Sin rol, es la de todos.
+        return {**nada, "clase": HORA_EXTRA,
+                "perfil_id": perfiles.get(tipo_de_rol(nombre))}
     if p & VIATICOS_PALABRAS or any(x in f for x in VIATICOS_FRASES):
         return {**nada, "clase": VIATICOS}
     if any(x in f for x in NO_EP_FRASES):

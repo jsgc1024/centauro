@@ -335,6 +335,9 @@ def test_sugiere_que_es_cada_producto():
     assert que("Conductor + Suburban Blindada (Transfer)") == (
         "paquete", 1, 11, "transfer")
     assert que("Hora Extra Conductor")[0] == "hora_extra"
+    # La de un rol dice cual (seccion 113); sin rol, es la de todos.
+    assert que("Hora Extra Agente de Seguridad Bilingüe") == ("hora_extra", 2, None, None)
+    assert que("Hora Extra") == ("hora_extra", None, None, None)
     assert que("Travel expenses")[0] == "viaticos"
     assert que("Booking fee")[0] == "viaticos"
     assert que("Central de Inteligencia")[0] == "no_ep"
@@ -1098,3 +1101,46 @@ def test_los_nombres_se_leen_en_espanol_de_mexico(monkeypatch):
     monkeypatch.setattr(settings, "odoo_idioma", "es_419")
     odoo.leer("product.template", [], ["name"])
     assert pedidos[1]["context"] == {"lang": "es_419"}
+
+
+# ================================================================ la hora extra (seccion 113)
+
+def test_la_hora_extra_de_cada_rol(db):
+    """En Odoo cada rol trae su hora extra: «Hora Extra Agente de
+    Seguridad Bilingüe». Antes la tabla no dejaba decir de que rol era:
+    todas decian lo mismo y cobraba la del conductor para todos. Ahora se
+    sugiere por el nombre y cada rol cobra la suya; la de todos queda
+    para el rol que no trae la propia."""
+    tablas = mundo()
+    tablas["product.template"].append(
+        {"id": PRODUCTO0 + 11, "name": "Hora Extra Agente de Seguridad",
+         "list_price": 578, "type": "service", "sale_ok": True, "active": True,
+         "categ_id": [1, "All"], "uom_id": [1, "Horas"]})
+    regla = fija(4, 1, 1, 578)
+    regla["product_tmpl_id"] = [PRODUCTO0 + 11, "Hora Extra Agente de Seguridad"]
+    tablas["product.pricelist.item"].append(regla)
+    odoo = OdooFalso(tablas)
+    confirmar_todo(db, odoo)
+    agente = db.query(m.PerfilPersonal).filter_by(codigo="agente_seguridad").one()
+    suya = db.query(m.ProductoOdoo).filter_by(odoo_id=PRODUCTO0 + 11).one()
+    assert (suya.clase, suya.perfil_id) == ("hora_extra", agente.id)
+    general = db.query(m.ProductoOdoo).filter_by(odoo_id=PRODUCTO0 + 5).one()
+    assert (general.clase, general.perfil_id) == ("hora_extra", None)
+
+    informe = leer(db, odoo)
+    assert not [p for p in informe["pendientes"] if p["tipo"] == "conflicto"]
+    extras = {x.perfil.codigo: x.precio_hora_extra
+              for x in tarifario(db, 1).tarifas_recurso
+              if x.modalidad.codigo.value == "full_day"}
+    assert extras["agente_seguridad"] == D(578)
+    assert extras["conductor_seguridad"] == D(330)      # la de todos
+
+
+def test_la_tabla_ofrece_la_hora_extra_de_cada_rol():
+    """El selector de la tabla de productos trae la hora extra de cada
+    rol, y la de todos."""
+    import pathlib
+    js = (pathlib.Path(__file__).parent.parent / "app" / "web" / "tarifarios.js").read_text(
+        encoding="utf-8")
+    assert "value: `hora_extra:${p.id}:`" in js
+    assert 't("tar_hora_extra_todos")' in js

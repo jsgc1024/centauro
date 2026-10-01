@@ -76,8 +76,8 @@ function porModalidad(filas) {
   return salida;
 }
 
-/* La hora extra: en Odoo es un producto para todos, asi que casi siempre
-   es un solo precio. Si cada rol trae el suyo, se dice cada uno. */
+/* La hora extra: en Odoo cada rol trae la suya (seccion 113); si todos
+   cuestan lo mismo, se dice un solo precio. */
 function horaExtra(tar, perfiles) {
   const moneda = tar.moneda;
   const conExtra = tar.personal.filter(x => x.precio_hora_extra !== null
@@ -384,8 +384,13 @@ function opciones(d) {
     grupo(t("tar_g_paquete"), d.perfiles.flatMap(p => d.categorias.map(c =>
       h("option", { value: `paquete:${p.id}:${c.id}` },
         `${t("tar_paquete")} · ${p.nombre} + ${c.nombre}`)))),
+    /* La hora extra de cada rol (seccion 113): en Odoo cada rol trae la
+       suya. Sin rol, la de todos. */
+    grupo(t("tar_g_hora_extra"), [
+      h("option", { value: "hora_extra::" }, t("tar_hora_extra_todos")),
+      ...d.perfiles.map(p => h("option", { value: `hora_extra:${p.id}:` },
+                               `${t("tar_hora_extra")} · ${p.nombre}`))]),
     grupo(t("tar_g_otro"), [
-      h("option", { value: "hora_extra::" }, t("tar_hora_extra")),
       h("option", { value: "viaticos::" }, t("tar_viaticos")),
       h("option", { value: "no_ep::" }, t("tar_no_ep"))]),
   ];
@@ -396,8 +401,8 @@ function filaDeProducto(p, d, repintar, gemelos) {
   const que = h("select", { style: "width:auto;min-width:250px;max-width:360px",
                             disabled: editable ? false : "disabled" }, ...opciones(d));
   que.value = valorDe(p);
-  /* Lo que se dijo por la API y no esta entre las opciones --la hora
-     extra de un solo rol-- se muestra tal cual, para no perderlo. */
+  /* Lo que se dijo por la API y no esta entre las opciones --un rol que
+     ya no existe-- se muestra tal cual, para no perderlo. */
   if (que.value !== valorDe(p)) {
     que.append(h("option", { value: valorDe(p) }, p.clase));
     que.value = valorDe(p);

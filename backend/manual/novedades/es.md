@@ -2,6 +2,9 @@
 
 Lo nuevo de cada actualización, escrito para quien usa el sistema. La más nueva va arriba.
 
+## 113 · 2026-09-30 · La hora extra de cada rol, y la unidad a un costado en la hoja del implantado
+En Facturación → Tarifarios, la tabla de productos deja decir de qué rol es cada hora extra —«Hora extra · Agente de seguridad»— y Connect lo sugiere por el nombre del producto: cada rol cobra la suya y no la del conductor. En la hoja del implantado, la unidad va a la derecha de quien la maneja, en su propia tarjeta, como en la hoja del eventual.
+
 ## 112 · 2026-09-30 · La lectura de tarifarios: solo lo de Protección Ejecutiva
 De Odoo ya solo llega lo de Protección Ejecutiva: los productos de la categoría «Protección Ejecutiva» (con sus subcategorías) y las listas de precios que empiezan con «PE ·». El GPS, la Central de Inteligencia y ATLAS salen de Facturación → Tarifarios. Los nombres se leen en español de México. Si un cliente trae en Odoo una lista que no es de PE, se queda con su tarifario y lo dice en los pendientes de la lectura; si una lista de PE nombra un producto que no está en la categoría, también. Y si la categoría no está en Odoo, no se lee nada.
 
