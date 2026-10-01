@@ -9278,6 +9278,53 @@ Ubicación de cada unidad (la Ubicación con el nombre de una ciudad de
 Brasil que exista en Connect, como «Sao Paulo»), y la lectura de cada
 hora las completa.
 
+## 119. La prefactura sale a la compañía de su país
+
+Lo encontró el programa que revisa Odoo (`reconocer_facturacion.py`), ya
+en el servidor con las secciones 116 a 118: en Odoo hay dos diarios de
+ventas «Ventas» (INV), uno por compañía, porque desde la sección 118 el
+usuario de la conexión tiene también la compañía Centauro Brasil. La
+prefactura no decía a qué compañía iba, y Odoo la ponía en la compañía
+predeterminada de ese usuario: si alguien la cambiaba, las de México se
+habrían ido a la de Brasil. Antes de poner la llave de la factura:
+
+- **La compañía va siempre dicha**: la del país del servicio,
+  `odoo_api.COMPANIAS` —CENTAURO ASS (1) en México, Centauro Brasil (5)
+  en Brasil—, en la prefactura del eventual y en la del mes. La conexión
+  de la factura no deja salir una sin compañía o con una que no sea de
+  esas dos. Un país sin compañía en Odoo no se manda, y se dice.
+- **Brasil también** (decisión de Salvador, 1 oct). Con la llave, el
+  cliente sin ficha en Odoo frena el visto bueno en México y en Brasil
+  (decisión 3 de la 117); en un país sin compañía allá no frena nada,
+  porque ahí no hay prefactura. Hoy la de Brasil no saldría todavía: sus
+  precios no vienen de listas de Odoo con producto; en cuanto vengan,
+  sale sola a Centauro Brasil, en reales.
+- **El programa que revisa Odoo** dice la compañía y el diario de ventas
+  de cada país, revisa también el real (BRL), y ya lee los filtros de
+  Odoo 19 (pedía el campo `user_id`, que ahí ya no existe).
+
+De la misma revisión, para finanzas: 16 clientes sin código postal en su
+ficha de Odoo (9 empresas mexicanas con su RFC; 5 con el RFC genérico de
+extranjero, a las que les falta el país; 2 con el de público en general);
+el borrador sale igual, pero no se timbra. Y EP/E-001 (Henkel) tuvo su
+visto bueno antes de la llave y hoy suma 3,383 contra 3,482 de su visto
+bueno: no sale sola ni con «Mandar a Odoo»; si ya se facturó a mano, se
+anota, y si no, se regresa y se le vuelve a dar el visto bueno.
+
+Por dentro: `odoo_api.COMPANIAS` (también lo usa `odoo_flota_reglas.FLOTAS`);
+`odoo_facturacion.compania_de`, `la_compania`, `CAMPOS` con
+`company_id`, `es_prefactura` que lo exige, y el faltante
+`pais_sin_compania`; `odoo_facturacion_mes` igual; `revisor.cliente_sin_ficha_en_odoo`
+solo donde hay compañía. Manual: «La prefactura en Odoo» con la compañía,
+en español y portugués. Pruebas: `tests/test_odoo_facturacion.py`, con la
+compañía en lo que se manda, dos casos nuevos del candado y
+`test_la_prefactura_sale_a_la_compania_de_su_pais`. Sin pantallas nuevas.
+
+**Lo que sigue.** Subirla con el bloque de siempre (sin migración);
+después de la lectura de los tarifarios de las :57, correr otra vez el
+programa que revisa Odoo; si dice las variantes y la compañía de cada
+país, poner la llave de la factura en el `.env` y reiniciar.
+
 ## 14. Lo que falta
 
 ### Abierto

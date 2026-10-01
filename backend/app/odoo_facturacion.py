@@ -27,8 +27,14 @@ el programa que revisa Odoo (`reconocer_facturacion.py`), que no escribe.
   crea otra. La cancelada no cuenta: al corregir sale una nueva.
 
 El IVA lo pone Odoo con el impuesto de cada producto, como cuando la hace
-el facturista a mano; el diario, el de ventas de siempre; la fecha, la
+el facturista a mano; el diario, el de ventas de su compania; la fecha, la
 del dia en que el facturista la confirma.
+
+La compania va siempre dicha (seccion 119): la del pais del servicio,
+CENTAURO ASS en Mexico y Centauro Brasil en Brasil (decision de Salvador,
+1 oct: Brasil tambien). Sin decirla, Odoo la ponia en la compania
+predeterminada del usuario de la conexion, que desde la seccion 118 ve las
+dos.
 """
 import json
 import logging
@@ -49,7 +55,7 @@ TIPO = "out_invoice"
 # Lo unico que Connect le pone a la factura. La crea en borrador porque
 # asi nace toda factura en Odoo; el folio lo pone Odoo al confirmarla.
 CAMPOS = frozenset({"move_type", "partner_id", "ref", "currency_id",
-                    "invoice_origin", "invoice_line_ids"})
+                    "invoice_origin", "invoice_line_ids", "company_id"})
 CAMPOS_RENGLON = frozenset({"product_id", "name", "quantity", "price_unit"})
 # La nota del renglon --la cancelacion que se cobra completa--: texto y
 # nada mas.
@@ -91,6 +97,10 @@ def es_prefactura(args: dict) -> bool:
             or not _entero(v.get("currency_id"))
             or not isinstance(v.get("ref"), str)
             or not str(v.get("invoice_origin") or "").startswith(ORIGEN)):
+        return False
+    # Siempre con la compania de un pais de Connect (seccion 119): sin
+    # ella Odoo la pondria en la predeterminada de la conexion.
+    if v.get("company_id") not in odoo_api.COMPANIAS.values():
         return False
     renglones = v.get("invoice_line_ids")
     if not isinstance(renglones, list) or not renglones:
@@ -184,6 +194,8 @@ FALTA = {
                         "sabe con cuál se facturan los gastos.",
     "sin_tipo_de_cambio": "{texto}",
     "no_cuadra": "Los renglones suman {suma} y el servicio {total}.",
+    "pais_sin_compania": "Connect no sabe en qué compañía de Odoo se "
+                         "factura {pais}.",
 }
 
 # Lo mismo que falta en varios renglones, dicho una vez: «A», «B» y «C».
@@ -278,6 +290,22 @@ def _producto_de_la_linea(db: Session, tarifario_id: int | None,
     return fila.producto_odoo_id if fila else None
 
 
+def compania_de(db: Session, servicio: m.Servicio) -> int | None:
+    """La compania de Odoo a la que sale la prefactura: la del pais del
+    servicio (seccion 119)."""
+    pais = db.get(m.Pais, servicio.pais_id) if servicio.pais_id else None
+    return odoo_api.COMPANIAS.get(pais.codigo) if pais else None
+
+
+def la_compania(db: Session, servicio: m.Servicio, salida: dict,
+                faltan) -> None:
+    """Pone en la prefactura su compania, o dice que falta."""
+    salida["compania"] = compania_de(db, servicio)
+    if salida["compania"] is None:
+        pais = db.get(m.Pais, servicio.pais_id) if servicio.pais_id else None
+        faltan("pais_sin_compania", pais=pais.nombre if pais else "su país")
+
+
 def producto_de_gastos(db: Session) -> tuple:
     """(producto, lo que falta) con que se facturan los gastos: el de la
     tabla que se llama como `odoo_producto_gastos`."""
@@ -322,10 +350,11 @@ def _del_eventual(db: Session, cierre: m.Cierre) -> dict:
                           "nombre": cliente.nombre if cliente else None,
                           "odoo_id": cliente.odoo_id if cliente else None},
               "moneda": None, "nota": None, "renglones": [], "total": CERO,
-              "faltan": faltan.lista}
+              "compania": None, "faltan": faltan.lista}
     if cliente is None or not cliente.odoo_id:
         faltan("cliente_sin_odoo",
                cliente=cliente.nombre if cliente else "del servicio")
+    la_compania(db, servicio, salida, faltan)
     cotizacion = cot.vigente(db, servicio.id)
     if cotizacion is None:
         faltan("sin_cotizacion")
@@ -511,7 +540,8 @@ def valores(pre: dict, moneda_id: int) -> dict:
                                  "name": pre["nota"]}])
     return {"move_type": TIPO, "partner_id": pre["cliente"]["odoo_id"],
             "ref": pre["referencia"], "currency_id": moneda_id,
-            "invoice_origin": pre["origen"], "invoice_line_ids": lineas}
+            "invoice_origin": pre["origen"], "invoice_line_ids": lineas,
+            "company_id": pre["compania"]}
 
 
 def moneda_de(odoo, codigo: str) -> int | None:

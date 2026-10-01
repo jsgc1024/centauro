@@ -38,10 +38,18 @@ def cliente_sin_ficha_en_odoo(servicio: m.Servicio) -> dict | None:
     cuando la factura ya va a Odoo --la llave esta puesta--: antes, el
     visto bueno no manda nada y frenarlo no serviria de nada. Igual para
     el eventual y para el mes del implantado."""
+    from sqlalchemy.orm import object_session
+
     from app import odoo_facturacion
 
     cliente = servicio.cliente
     if not odoo_facturacion.hay_llave() or (cliente and cliente.odoo_id):
+        return None
+    # Solo donde la factura va a Odoo: los paises con su compania alla
+    # (seccion 119, Mexico y Brasil). En otro pais no hay prefactura que
+    # frenar.
+    db = object_session(servicio)
+    if db is not None and odoo_facturacion.compania_de(db, servicio) is None:
         return None
     nombre = cliente.nombre if cliente else "del servicio"
     return {

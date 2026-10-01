@@ -2,6 +2,9 @@
 
 Lo nuevo de cada actualización, escrito para quien usa el sistema. La más nueva va arriba.
 
+## 119 · 2026-10-01 · La prefactura sale a la compañía de su país
+La prefactura en Odoo ya dice a qué compañía va: la del país del servicio, **CENTAURO ASS** en México y **Centauro Brasil** en Brasil. Antes Odoo la ponía en la compañía predeterminada de la conexión, que ahora ve las dos. Brasil también: con la llave de la factura puesta, el servicio o el mes de Brasil cuyo cliente no tiene ficha en Odoo no recibe el visto bueno, igual que en México. Y el programa que revisa Odoo dice la compañía y el diario de ventas de cada país, y si el real brasileño está activo. Ver [la prefactura en Odoo](#/manual/leer/odoo).
+
 ## 118 · 2026-10-01 · La flota de Brasil desde Odoo
 La lectura de la flota ya separa los países: **México** lee las unidades de la compañía CENTAURO ASS con la etiqueta «PROTECCION EJECUTIVA» o «pe»; **Brasil**, las de la compañía Centauro Brasil con «PROTECCION EJECUTIVA BRASIL». Nunca se mezclan: la etiqueta de un país con la compañía de otro no entra en ninguna y sale en Pendientes, y la unidad que ya estaba no cambia de país sola. La ciudad de cada unidad se busca entre las de su país. Las de Brasil llegan sin color ni Ubicación y **entran igual**: lo que les falta sale aparte, en «Por capturar», sin detener nada, y la siguiente lectura lo toma en cuanto se capture en Odoo. Mientras no tenga ciudad, la unidad se ofrece en los eventuales de Brasil como «sin ciudad» y no va a un implantado; su GPS se liga igual. Al asignar, las unidades de otro país ya no se ofrecen. Y hay una categoría nueva, **CUV Blindada**, la que usa Brasil. Ver [lo que viene de Odoo](#/manual/leer/odoo).
 

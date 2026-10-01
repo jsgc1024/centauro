@@ -304,10 +304,11 @@ def prefactura_del_mes(db: Session, cierre: m.Cierre) -> dict:
                           "nombre": cliente.nombre if cliente else None,
                           "odoo_id": cliente.odoo_id if cliente else None},
               "moneda": None, "nota": None, "renglones": [], "total": CERO,
-              "faltan": faltan.lista}
+              "compania": None, "faltan": faltan.lista}
     if cliente is None or not cliente.odoo_id:
         faltan("cliente_sin_odoo",
                cliente=cliente.nombre if cliente else "del servicio")
+    of.la_compania(db, servicio, salida, faltan)
     try:
         comparativo = cierre_mes.comparar(db, contrato)
     except HTTPException as error:

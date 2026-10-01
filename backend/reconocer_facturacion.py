@@ -11,7 +11,8 @@ proyecto «La factura del eventual en Odoo» dejo por ver:
   2. Como se llaman en este Odoo el UUID del CFDI y el estado del timbre,
      y si se puede leer el historial de la factura, que es de donde sale
      quien la timbro.
-  3. El diario de ventas, y MXN y USD activas.
+  3. La compania de cada pais (seccion 119), su diario de ventas, y
+     MXN, USD y BRL activas.
   4. El producto «Gastos de Operación (Viáticos)», las variantes de los
      productos de PE y el producto de la hora extra de cada lista.
   5. Los clientes de Connect con lo que pide el CFDI: RFC, codigo postal
@@ -71,6 +72,13 @@ def mal(texto: str) -> None:
 
 def nota(texto: str) -> None:
     print(f"      {texto}")
+
+
+def _id(valor):
+    """El numero de un many2one ([id, nombre])."""
+    if isinstance(valor, (list, tuple)) and valor:
+        return valor[0]
+    return valor or None
 
 
 def _nombre(valor) -> str:
@@ -163,22 +171,33 @@ def la_factura(odoo) -> None:
 
 
 def diario_y_monedas(odoo) -> None:
-    titulo("3. El diario de ventas y las monedas")
+    titulo("3. La compania de cada pais, su diario de ventas y las monedas")
+    # La prefactura sale a la compania del pais del servicio (seccion
+    # 119): que la conexion las vea, y con su diario de ventas.
+    companias = {c["id"]: c for c in odoo.leer(
+        "res.company", [["id", "in", list(odoo_api.COMPANIAS.values())]],
+        ["name"])}
     diarios = odoo.leer("account.journal", [["type", "=", "sale"]],
-                        ["name", "code", "currency_id", "active"],
-                        archivados=True)
-    activos = [d for d in diarios if d.get("active", True)]
-    if not activos:
-        mal("No hay diario de ventas activo")
-    for d in diarios:
-        (bien if d.get("active", True) else nota)(
-            f"Diario de ventas «{d.get('name')}» ({d.get('code')}), moneda "
-            f"{_nombre(d.get('currency_id'))}"
-            + ("" if d.get("active", True) else ", archivado"))
-    if len(activos) > 1:
-        nota("Hay varios: Odoo usa el primero de la lista, como cuando la "
-             "factura se hace a mano.")
-    for codigo in ("MXN", "USD"):
+                        ["name", "code", "currency_id", "active",
+                         "company_id"], archivados=True)
+    for pais, compania_id in odoo_api.COMPANIAS.items():
+        compania = companias.get(compania_id)
+        if compania is None:
+            mal(f"{pais}: la conexion no ve la compania {compania_id} de "
+                "Odoo; hay que darsela al usuario de la conexion")
+            continue
+        suyos = [d for d in diarios
+                 if _id(d.get("company_id")) == compania_id]
+        activos = [d for d in suyos if d.get("active", True)]
+        (bien if activos else mal)(
+            f"{pais}: «{compania.get('name')}» ({compania_id}), "
+            + (f"diario de ventas «{activos[0].get('name')}» "
+               f"({activos[0].get('code')})" if activos
+               else "sin diario de ventas activo"))
+        if len(activos) > 1:
+            nota(f"   tiene {len(activos)}: Odoo usa el primero, como cuando "
+                 "la factura se hace a mano")
+    for codigo in ("MXN", "USD", "BRL"):
         moneda = odoo_facturacion.moneda_de(odoo, codigo)
         (bien if moneda else mal)(
             f"{codigo}: " + (f"activa (id {moneda})" if moneda
@@ -308,8 +327,10 @@ def clientes(odoo, db) -> None:
 def filtro_y_folios(odoo) -> None:
     titulo("6. El filtro del facturista y las facturas de hoy")
     try:
+        # Sin el usuario del filtro: en Odoo 19 ese campo ya no se llama
+        # asi, y pedirlo tumbaba el paso entero.
         filtros = odoo.leer("ir.filters", [["model_id", "=", "account.move"]],
-                            ["name", "domain", "user_id"])
+                            ["name", "domain"])
         suyo = [f for f in filtros if "connect" in (f.get("name") or "").lower()]
         if suyo:
             for f in suyo:
@@ -455,8 +476,8 @@ def lo_mandado(odoo, db) -> None:
 
 def main() -> int:
     print("Reconocimiento de la factura en Odoo, del eventual y del mes del "
-          "implantado (secciones 116 y 117). Solo lee: no escribe en Odoo "
-          "ni en Connect.")
+          "implantado (secciones 116, 117 y 119). Solo lee: no escribe en "
+          "Odoo ni en Connect.")
     if not settings.odoo_base:
         mal("Falta ODOO_BASE en el .env")
         return 1

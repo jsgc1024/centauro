@@ -29,6 +29,7 @@ Las decisiones de Salvador (23 de septiembre) que viven aqui:
 import collections
 import re
 
+from app.odoo_api import COMPANIAS
 from app.odoo_personal_reglas import (ALIAS_PLAZA, corto, fecha, nombre_de,
                                       normal, texto)
 
@@ -44,10 +45,10 @@ from app.odoo_personal_reglas import (ALIAS_PLAZA, corto, fecha, nombre_de,
 # que se capturan despues: entra igual, y lo que le falta se dice aparte,
 # como por capturar, sin detener nada. Connect no lee el VIN.
 FLOTAS = (
-    {"pais": "MX", "nombre": "México", "compania": 1,
+    {"pais": "MX", "nombre": "México", "compania": COMPANIAS["MX"],
      "etiquetas": frozenset({"proteccion ejecutiva", "pe"}),
      "ciudad_obligatoria": True},
-    {"pais": "BR", "nombre": "Brasil", "compania": 5,
+    {"pais": "BR", "nombre": "Brasil", "compania": COMPANIAS["BR"],
      "etiquetas": frozenset({"proteccion ejecutiva brasil"}),
      "ciudad_obligatoria": False},
 )

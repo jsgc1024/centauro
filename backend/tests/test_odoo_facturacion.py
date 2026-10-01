@@ -158,6 +158,7 @@ def _claves(pre) -> list:
 def _valida(**cambios) -> dict:
     v = {"move_type": "out_invoice", "partner_id": PARTNER, "ref": "EP/E-031",
          "currency_id": 33, "invoice_origin": "Connect · EP/E-031",
+         "company_id": 1,
          "invoice_line_ids": [
              [0, 0, {"display_type": "line_note", "name": "Servicio cancelado"}],
              [0, 0, {"product_id": 7001, "name": "Conductor · 28/10/2026",
@@ -191,6 +192,11 @@ def test_la_conexion_de_la_factura_solo_crea_el_borrador():
                          {"vals_list": [_valida(name="INV/2026/00412")]}),
         "con su diario": ("account.move", "create",
                           {"vals_list": [_valida(journal_id=1)]}),
+        # La compania va siempre, y es la de un pais de Connect (119).
+        "sin compania": ("account.move", "create", {"vals_list": [
+            {k: v for k, v in _valida().items() if k != "company_id"}]}),
+        "de otra compania": ("account.move", "create",
+                             {"vals_list": [_valida(company_id=99)]}),
         "nota de credito": ("account.move", "create",
                             {"vals_list": [_valida(move_type="out_refund")]}),
         "de proveedor": ("account.move", "create",
@@ -278,7 +284,7 @@ class HttpFalso:
 
 
 PRE = {"faltan": [], "nota": None, "cliente": {"odoo_id": PARTNER},
-       "referencia": "EP/E-031", "origen": "Connect · EP/E-031",
+       "referencia": "EP/E-031", "origen": "Connect · EP/E-031", "compania": 1,
        "renglones": [{"variante_odoo_id": 7001, "etiqueta": "Conductor",
                       "cantidad": 2, "precio": Decimal("3200.00")}]}
 
@@ -296,7 +302,8 @@ def test_mandarla_no_duplica():
         "move_type": "out_invoice", "partner_id": PARTNER, "ref": "EP/E-031",
         "currency_id": 33, "invoice_origin": "Connect · EP/E-031",
         "invoice_line_ids": [[0, 0, {"product_id": 7001, "name": "Conductor",
-                                     "quantity": 2.0, "price_unit": 3200.0}]]}]
+                                     "quantity": 2.0, "price_unit": 3200.0}]],
+        "company_id": 1}]
     # El contexto es solo el idioma: nada que la cree confirmada.
     assert set(cuerpo["context"]) == {"lang"}
 
@@ -369,6 +376,8 @@ def test_la_prefactura_dice_lo_mismo_que_la_factura(cliente, sesion, datos,
     assert odoo_facturacion.es_prefactura({"vals_list": [vals]})
     assert (vals["partner_id"], vals["ref"], vals["currency_id"]) == (
         PARTNER, servicio["folio"], 33)
+    # En la compania de su pais: el servicio es de Mexico (seccion 119).
+    assert vals["company_id"] == 1
     assert len(vals["invoice_line_ids"]) == 6
 
 
@@ -530,3 +539,49 @@ def test_el_programa_que_revisa_odoo_no_escribe(cliente, sesion, datos,
     assert "l10n_mx_edi_cfdi_uuid" in salida
     assert f"{servicio['folio']} ·" in salida and "Asi llegaria" in salida
     assert "Listo. No se escribio nada" in salida
+
+
+# ======================================== la compania de su pais (seccion 119)
+
+def test_la_prefactura_sale_a_la_compania_de_su_pais(cliente, sesion, datos,
+                                                       monkeypatch):
+    """Mexico, CENTAURO ASS; Brasil, Centauro Brasil (decision de Salvador,
+    1 oct: Brasil tambien). Sin decirla, Odoo la ponia en la compania
+    predeterminada del usuario de la conexion, que ve las dos."""
+    from types import SimpleNamespace
+
+    from app import revisor
+    from app.config import settings
+    from app.db import SessionLocal
+
+    with SessionLocal() as db:
+        paises = {p.codigo: p.id for p in db.query(m.Pais)}
+        de = odoo_facturacion.compania_de
+        assert de(db, SimpleNamespace(pais_id=paises["MX"])) == 1
+        assert de(db, SimpleNamespace(pais_id=paises["BR"])) == 5
+        # Un pais sin compania en Odoo: no se manda, y se dice.
+        lejos = SimpleNamespace(pais_id=999999)
+        salida, faltan = {}, odoo_facturacion._Faltan()
+        odoo_facturacion.la_compania(db, lejos, salida, faltan)
+        assert salida["compania"] is None
+        assert [f["clave"] for f in faltan.lista] == ["pais_sin_compania"]
+
+    # Brasil tambien: con la llave, su cliente sin ficha en Odoo frena el
+    # visto bueno, como el de Mexico. Donde la factura no va a Odoo --un
+    # pais sin compania alla--, no frena nada.
+    h = sesion("admin")
+    sp = next(p for p in cliente.get("/catalogos/plazas?todas=true",
+                                     headers=h).json()
+              if p["pais_id"] == paises["BR"])
+    servicio = crear_servicio(cliente, sesion("consultor"), datos,
+                              [jornada(manana(2120),
+                                       datos["modalidades"]["full_day"]["id"])],
+                              pais_id=paises["BR"], plaza_id=sp["id"])
+    monkeypatch.setattr(settings, "odoo_base", "https://odoo.prueba")
+    monkeypatch.setattr(settings, "odoo_facturacion_api_key", "llave-119")
+    with SessionLocal() as db:
+        s = db.get(m.Servicio, servicio["id"])
+        assert s.cliente.odoo_id is None
+        assert revisor.cliente_sin_ficha_en_odoo(s)["clave"] == "cliente_sin_odoo"
+        monkeypatch.delitem(odoo_api.COMPANIAS, "BR")
+        assert revisor.cliente_sin_ficha_en_odoo(s) is None

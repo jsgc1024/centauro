@@ -21,6 +21,12 @@ from app.config import settings
 
 LECTURA = frozenset({"search_read", "fields_get"})
 
+# En que compania de Odoo vive cada pais (decision de Salvador, 1 de
+# octubre; secciones 118 y 119): Mexico es CENTAURO ASS y Brasil, Centauro
+# Brasil. La flota se lee de la suya y la prefactura sale a la suya. El
+# usuario de la conexion tiene las dos entre sus companias permitidas.
+COMPANIAS = {"MX": 1, "BR": 5}
+
 
 class SinConexion(Exception):
     """Odoo no esta configurado en este servidor."""
