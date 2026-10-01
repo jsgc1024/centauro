@@ -59,7 +59,9 @@ CAMPOS_REGLA = ["pricelist_id", "applied_on", "product_tmpl_id", "product_id",
                 "price_min_margin", "price_max_margin", "date_start",
                 "date_end"]
 CAMPOS_PRODUCTO = ["name", "list_price", "categ_id", "uom_id", "type",
-                   "sale_ok", "active"]
+                   "sale_ok", "active",
+                   # La variante con que se factura (seccion 116).
+                   "product_variant_id", "product_variant_count"]
 MONEDAS = {mo.value: mo for mo in m.Moneda}
 
 
@@ -143,9 +145,22 @@ def es_lista_de_pe(nombre) -> bool:
 
 
 def _nombrados(db: Session, producto_id: int) -> bool:
-    """Si algun tarifario todavia nombra ese producto de la tabla."""
-    return any(db.query(modelo.id).filter_by(producto_odoo_id=producto_id).first()
-               for modelo in (m.TarifaRecurso, m.TarifaVehiculo, m.TarifaPaquete))
+    """Si algun tarifario todavia nombra ese producto de la tabla: por un
+    precio o por su hora extra (seccion 116)."""
+    return (any(db.query(modelo.id).filter_by(producto_odoo_id=producto_id).first()
+                for modelo in (m.TarifaRecurso, m.TarifaVehiculo, m.TarifaPaquete))
+            or any(db.query(modelo.id)
+                   .filter_by(producto_hora_extra_id=producto_id).first()
+                   for modelo in (m.TarifaRecurso, m.Tarifario)))
+
+
+def es_el_de_gastos(producto: dict | str | None) -> bool:
+    """Si es el producto con que se facturan los gastos del eventual
+    (seccion 116): «Gastos de Operación (Viáticos)», por su nombre, sin
+    mayusculas ni acentos. Vale la fila de Odoo o el nombre."""
+    buscado = normal(settings.odoo_producto_gastos or "")
+    nombre = producto.get("name") if isinstance(producto, dict) else producto
+    return bool(buscado) and normal(texto(nombre)) == buscado
 
 
 # `leer_productos` sin `en_pe`: las categorias se leen ahi mismo.
@@ -174,9 +189,11 @@ def leer_productos(db: Session, odoo, referenciados=(), ahora=None,
     if referenciados:
         dominio = ["|", ["sale_ok", "=", True],
                    ["id", "in", sorted(referenciados)]]
+    # El de los gastos entra aunque no sea de la categoria de PE: con el
+    # se facturan los gastos del eventual (seccion 116).
     filas = [f for f in odoo.leer("product.template", dominio, CAMPOS_PRODUCTO,
                                   archivados=True)
-             if es_de_pe(f, en_pe)]
+             if es_de_pe(f, en_pe) or es_el_de_gastos(f)]
     perfiles, categorias = _catalogos(db)
     existentes = {p.odoo_id: p for p in db.query(m.ProductoOdoo).all()}
     vistos, nuevos, sugeridos = set(), 0, 0
@@ -192,6 +209,13 @@ def leer_productos(db: Session, odoo, referenciados=(), ahora=None,
         producto.tipo_odoo = texto(f.get("type"))[:20] or None
         producto.precio_venta = f.get("list_price") or 0
         producto.vendible = bool(f.get("sale_ok")) and f.get("active", True) is not False
+        # La variante con que Odoo lo factura (seccion 116): con una sola,
+        # esa; con varias, ninguna --no se adivina-- y la lectura lo dice.
+        cuantas = f.get("product_variant_count")
+        producto.variantes = (cuantas if isinstance(cuantas, int)
+                              and not isinstance(cuantas, bool) else None)
+        producto.variante_odoo_id = (reglas.id_de(f.get("product_variant_id"))
+                                     if producto.variantes == 1 else None)
         producto.odoo_sincronizado_en = ahora
         if not producto.confirmado:
             s = reglas.sugerir(f, perfiles, categorias)
@@ -232,7 +256,12 @@ def tabla_de_productos(db: Session) -> list[dict]:
              "categoria_id": p.categoria_id, "modalidad": p.modalidad,
              "confirmado": p.confirmado, "preferido": p.preferido,
              "confirmado_en": (p.confirmado_en.isoformat()
-                               if p.confirmado_en else None)}
+                               if p.confirmado_en else None),
+             # Para la factura (seccion 116): cuantas variantes tiene en
+             # Odoo --con varias no se sabe con cual cobrar-- y si es el de
+             # los gastos.
+             "variantes": p.variantes,
+             "de_gastos": es_el_de_gastos(p.nombre)}
             for p in db.query(m.ProductoOdoo)
             .order_by(m.ProductoOdoo.vendible.desc(), m.ProductoOdoo.nombre)]
 
@@ -539,10 +568,12 @@ def _filas_de(precios: dict, pais_id: int, modalidades: dict) -> tuple:
                 "origen": p["origen"], "producto_odoo_id": p["producto_id"]}
         if clase == reglas.ROL:
             extra = extras.get(perfil) or extra_general
+            lleva = bool(extra) and modalidad.aplica_horas_extra
             recurso.append({**fila, "perfil_id": perfil,
-                            "precio_hora_extra": (extra["precio"]
-                                                  if extra and modalidad.aplica_horas_extra
-                                                  else None)})
+                            "precio_hora_extra": extra["precio"] if lleva else None,
+                            # Con que producto sale en la factura (seccion 116).
+                            "producto_hora_extra_id": (extra["producto_id"]
+                                                       if lleva else None)})
         elif clase == reglas.UNIDAD:
             vehiculo.append({**fila, "categoria_id": categoria})
         else:
@@ -576,6 +607,18 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
         leer_productos(db, odoo, datos["referenciados"], ahora,
                        en_pe=datos["en_pe"])
     plan = _plan(db, datos, ahora.date())
+    # Lo que la factura no sabria con que producto cobrar (seccion 116):
+    # el que pone un precio --o el de los gastos-- y en Odoo tiene varias
+    # variantes.
+    for p in (db.query(m.ProductoOdoo)
+              .filter(m.ProductoOdoo.vendible.is_(True),
+                      m.ProductoOdoo.variantes > 1)
+              .order_by(m.ProductoOdoo.nombre)):
+        if ((p.confirmado and p.clase in reglas.CON_PRECIO)
+                or es_el_de_gastos(p.nombre)):
+            plan["pendientes"].append({"tipo": "producto_variantes",
+                                       "producto": p.nombre,
+                                       "variantes": p.variantes})
     modalidades = _modalidades(db)
     existentes = {t.odoo_id: t for t in db.query(m.Tarifario)
                   .filter(m.Tarifario.odoo_id.isnot(None)).all()}
@@ -695,6 +738,8 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
         t.general = pl["general"]
         t.resto_de = pl["resto_de"]
         t.precio_hora_extra = pl["extra"]["precio"] if pl["extra"] else None
+        t.producto_hora_extra_id = (pl["extra"]["producto_id"] if pl["extra"]
+                                    else None)
         t.odoo_sincronizado_en = ahora
         db.flush()
         # Lo de Odoo se reemplaza entero: una lista es lo que dice hoy.

@@ -25,8 +25,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models as m
-from app import (odoo, odoo_api, odoo_clientes, odoo_flota, odoo_oficina,
-                 odoo_personal, odoo_tarifarios, schemas as s)
+from app import (odoo, odoo_api, odoo_clientes, odoo_facturacion, odoo_flota,
+                 odoo_oficina, odoo_personal, odoo_tarifarios, schemas as s)
 from app.auth import puede, requiere
 from app.config import settings
 from app.db import get_db
@@ -160,6 +160,9 @@ def estado(db: Session = Depends(get_db),
     return {
         "conectado": odoo_api.hay_conexion(),
         "sitio": sitio,
+        # La llave de la factura del eventual (seccion 116): si esta puesta
+        # en el .env. Nunca la llave misma.
+        "factura": {"llave": odoo_facturacion.hay_llave()},
         **{tipo: {"primera_hecha": a_mano is not None,
                   "ultima_a_mano": _renglon(a_mano, nombres),
                   "ultima_sola": _renglon(sola, nombres)}

@@ -65,7 +65,7 @@ O fechamento do pessoal de cada segunda-feira e a comissão dos consultores de c
 Quem pode entrar, com que cargo, e quando entrou pela última vez. Aqui se montam os cargos, se envia ou se copia o convite e se fecham os acessos. Ver [acessos, papéis e cargos](#/manual/leer/accesos).
 
 ### Odoo {#odoo}
-As cinco leituras do Odoo: aqui se fazem o ensaio e a primeira leitura de cada uma, e se vê o que falta corrigir lá. Ver [o que vem do Odoo](#/manual/leer/odoo).
+As cinco leituras do Odoo: aqui se fazem o ensaio e a primeira leitura de cada uma, e se vê o que falta corrigir lá. Em cima diz se o servidor já tem a chave da fatura do eventual. Ver [o que vem do Odoo](#/manual/leer/odoo).
 
 ### Catálogos {#catalogos}
 O que o sistema usa para calcular e para montar a folha do serviço: feriados, hospitais, hotéis, cidades, combustível, categorias de unidades, perfis, países, os requisitos do freelance, modalidades e a tabela de diárias; e os textos da cotação e da proposta ao cliente. Os custos de cada freelancer vivem na ficha dele, em Equipe de segurança. O que decide dinheiro é definido pela direção de operações. O que se retira não se perde: aparece em cinza com «Reativar». Aqui vive também o registro da administração: quem mudou o quê.

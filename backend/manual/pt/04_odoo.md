@@ -3,8 +3,8 @@ id: odoo
 parte: entender
 orden: 40
 titulo: O que vem do Odoo
-resumen: As cinco leituras —pessoal de segurança, frota e oficina, escritório, clientes e tabelas de preços—, o que cada uma traz, quando roda e o que deixa pendente.
-buscar: odoo leitura ensaio aplicar primeira leitura pendentes chave etiqueta protecao executiva local de trabalho email pessoal email de trabalho tabelas de precos produtos lista de implantados desligamento arquivado categoria proteccion ejecutiva PE prefijo gps atlas idioma es_MX
+resumen: As cinco leituras —pessoal de segurança, frota e oficina, escritório, clientes e tabelas de preços—, o que cada uma traz, quando roda e o que deixa pendente. E a fatura do eventual no Odoo, em preparação.
+buscar: odoo leitura ensaio aplicar primeira leitura pendentes chave etiqueta protecao executiva local de trabalho email pessoal email de trabalho tabelas de precos produtos lista de implantados desligamento arquivado categoria proteccion ejecutiva PE prefijo gps atlas idioma es_MX fatura pre-fatura rascunho emitir faturista variante variantes gastos de operacion viaticos chave da fatura ODOO_FACTURACION_API_KEY hora extra produto
 ---
 O Odoo é a fonte de verdade. O Centauro **o lê e nunca escreve nele**, e o que vem do Odoo não se edita no Centauro: corrige-se lá e chega sozinho na leitura seguinte. Três regras valem para as cinco leituras:
 
@@ -31,5 +31,11 @@ Cada país tem a sua lista geral —a que traz o seu grupo de países no Odoo—
 - Só põe preço o que o financeiro já **confirmou** em Faturamento → Tabelas de preços: um preço mal lido é cobrado.
 - Um cliente não é trocado para uma lista da qual o Centauro ainda não sabe ler nenhum preço: fica com a tabela que tinha. Se a lista dele não começa com «PE ·», também não: fica nos pendentes para colocar a sua lista de PE no Odoo.
 - Se a categoria «Protección Ejecutiva» não existe no Odoo, nada é lido: ler tudo seria voltar a trazer o GPS.
+
+De cada produto também se lê a **variante** com que o Odoo o fatura; se no Odoo ele tem várias, os pendentes o dizem, porque a fatura não saberia com qual cobrar. E cada preço de hora extra guarda de qual produto saiu: o da hora extra da sua função ou o de todas.
+
+## A fatura do eventual · em preparação {#factura}
+A única coisa que o Connect vai escrever no Odoo é a **pré-fatura do eventual**: ao dar o visto, uma fatura de cliente em rascunho que o faturista revisa, confirma e emite lá. Ela vai com a sua própria chave —a da fatura, separada da de leitura— e essa conexão só sabe criar o rascunho: não o confirma, não o emite, não o altera depois e não o apaga. A tela de [Odoo](#/odoo) diz se o servidor já tem essa chave.
+Cada linha sai com o produto do Odoo do seu preço na lista do cliente; a hora extra, com o da sua função; e as despesas, com **«Gastos de Operación (Viáticos)»**, que entra na tabela de produtos mesmo sem ser da categoria de Proteção Executiva —mudá-lo de categoria no Odoo mudaria a sua conta contábil— e a tabela o marca com «Fatura as despesas». **Por enquanto nada é enviado**: a fatura continua sendo feita no Odoo e é anotada com «Já faturado no Odoo».
 
 > Quase tudo o que «não chega do Odoo» é uma de três coisas: a leitura nunca foi aplicada à mão, o dado ficou nos pendentes, ou a chave do Odoo venceu —dura uns três meses— e o Salvador coloca uma nova no servidor.

@@ -377,6 +377,10 @@ class Tarifario(Base):
     # paquete, los viaticos de quien fue en el no se facturan aparte.
     paquetes_con_viaticos: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false"))
+    # El producto de Odoo de esa hora extra (seccion 116): con el sale en
+    # la factura la del rol que no trae la suya.
+    producto_hora_extra_id: Mapped[int | None] = mapped_column(
+        ForeignKey("producto_odoo.id", ondelete="SET NULL"), nullable=True)
 
     clientes: Mapped[list[Cliente]] = relationship(
         back_populates="tarifario", foreign_keys="Cliente.tarifario_id")
@@ -404,6 +408,11 @@ class TarifaRecurso(Base):
     origen: Mapped[str | None] = mapped_column(String(20), nullable=True)
     producto_odoo_id: Mapped[int | None] = mapped_column(
         ForeignKey("producto_odoo.id"), nullable=True)
+    # El producto de Odoo de su hora extra --«Hora Extra Conductor de
+    # Seguridad Bilingüe», o la de todos-- (seccion 116): con el que sale
+    # en la factura.
+    producto_hora_extra_id: Mapped[int | None] = mapped_column(
+        ForeignKey("producto_odoo.id", ondelete="SET NULL"), nullable=True)
 
     tarifario: Mapped[Tarifario] = relationship(back_populates="tarifas_recurso")
     perfil: Mapped[PerfilPersonal] = relationship()
@@ -507,6 +516,12 @@ class ProductoOdoo(Base):
                                                            nullable=True)
     odoo_sincronizado_en: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True)
+    # La variante con que Odoo factura este producto (seccion 116): en una
+    # factura el renglon lleva el product.product, y `odoo_id` es el
+    # product.template. Los de PE tienen una sola; con varias, la lectura
+    # no escoge y lo dice en sus pendientes. `variantes`: cuantas tiene.
+    variante_odoo_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    variantes: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     perfil: Mapped[PerfilPersonal | None] = relationship()
     categoria: Mapped[CategoriaVehiculo | None] = relationship()

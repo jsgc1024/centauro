@@ -7,9 +7,9 @@ cabecera. La API vieja (XML-RPC y JSON-RPC) desaparece con Odoo 20, asi
 que aqui ni se toca.
 
 Este cliente SOLO LEE: los metodos permitidos estan en LECTURA y cualquier
-otro truena antes de salir a la red. La conexion de Centauro no escribe en
-Odoo; lo unico que algun dia escribira es la factura en borrador, y eso
-tendra su propio cliente, probado primero en una copia de Odoo.
+otro truena antes de salir a la red. Lo unico que Connect escribe en Odoo
+es la prefactura del eventual en borrador (seccion 116), y eso va por su
+propio cliente, con su propia llave: `odoo_facturacion`.
 
 La llave es la del usuario de la conexion --no la de una persona--, vive
 solo en el .env del servidor (ODOO_API_KEY) y dura a lo mas tres meses:
@@ -63,10 +63,17 @@ class Odoo:
             cabeceras["X-Odoo-Database"] = bd
         self.http = httpx.Client(headers=cabeceras, timeout=timeout)
 
+    # Lo que se dice cuando se le pide lo que no puede.
+    NO_PUEDE = "no es de lectura: esta conexion no escribe en Odoo"
+
+    def permitido(self, modelo: str, metodo: str, args: dict) -> bool:
+        """Lo que esta conexion le puede pedir a Odoo: leer. La de la
+        factura (seccion 116) agrega una sola cosa."""
+        return metodo in LECTURA
+
     def llamar(self, modelo: str, metodo: str, **args):
-        if metodo not in LECTURA:
-            raise RuntimeError(f"{metodo} no es de lectura: esta conexion no "
-                               "escribe en Odoo")
+        if not self.permitido(modelo, metodo, args):
+            raise RuntimeError(f"{modelo}/{metodo} {self.NO_PUEDE}")
         # Los nombres, en espanol de Mexico: en Odoo cada producto guarda
         # su nombre por idioma (seccion 112, `odoo_idioma`).
         contexto = {"lang": settings.odoo_idioma or "es_MX",

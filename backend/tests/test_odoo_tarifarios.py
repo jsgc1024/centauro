@@ -1144,3 +1144,105 @@ def test_la_tabla_ofrece_la_hora_extra_de_cada_rol():
         encoding="utf-8")
     assert "value: `hora_extra:${p.id}:`" in js
     assert 't("tar_hora_extra_todos")' in js
+
+
+# ================================================================ la factura (seccion 116)
+
+def test_la_variante_con_que_se_factura(db):
+    """En una factura de Odoo el renglon lleva el producto exacto --la
+    variante, product.product-- y la tabla guardaba su plantilla. La
+    lectura trae la variante del que tiene una sola; del que tiene varias
+    no escoge ninguna y lo dice en sus pendientes."""
+    tablas = mundo()
+    for f in tablas["product.template"]:
+        f["product_variant_id"] = [f["id"] + 50_000, f["name"]]
+        f["product_variant_count"] = 1
+    suburban = next(f for f in tablas["product.template"]
+                    if f["id"] == PRODUCTO0 + 3)
+    suburban["product_variant_count"] = 3
+    odoo = OdooFalso(tablas)
+    confirmar_todo(db, odoo)
+    db.expire_all()
+    conductor = db.query(m.ProductoOdoo).filter_by(odoo_id=PRODUCTO0 + 1).one()
+    assert (conductor.variante_odoo_id, conductor.variantes) == (PRODUCTO0 + 50_001, 1)
+    tres = db.query(m.ProductoOdoo).filter_by(odoo_id=PRODUCTO0 + 3).one()
+    assert (tres.variante_odoo_id, tres.variantes) == (None, 3)
+
+    informe = leer(db, odoo)
+    assert {"tipo": "producto_variantes", "producto": "SUBURBAN Blindada",
+            "variantes": 3} in informe["pendientes"]
+    # Un Odoo que no dice cuantas tiene: no se adivina.
+    for f in tablas["product.template"]:
+        f.pop("product_variant_count")
+    odoo_tarifarios.leer_productos(db, OdooFalso(tablas))
+    db.commit()
+    db.expire_all()
+    conductor = db.query(m.ProductoOdoo).filter_by(odoo_id=PRODUCTO0 + 1).one()
+    assert (conductor.variante_odoo_id, conductor.variantes) == (None, None)
+
+
+def test_la_hora_extra_sabe_con_que_producto_se_cobra(db):
+    """La hora extra sale en la factura con el producto de la de su rol, o
+    con la de todos: cada renglon del tarifario guarda de cual salio su
+    precio, y la lista el de la de todos."""
+    tablas = mundo()
+    tablas["product.template"].append(
+        {"id": PRODUCTO0 + 11, "name": "Hora Extra Agente de Seguridad",
+         "list_price": 578, "type": "service", "sale_ok": True, "active": True,
+         "categ_id": [1, "All"], "uom_id": [1, "Horas"]})
+    regla = fija(4, 1, 1, 578)
+    regla["product_tmpl_id"] = [PRODUCTO0 + 11, "Hora Extra Agente de Seguridad"]
+    tablas["product.pricelist.item"].append(regla)
+    odoo = OdooFalso(tablas)
+    confirmar_todo(db, odoo)
+    leer(db, odoo)
+    suya = db.query(m.ProductoOdoo).filter_by(odoo_id=PRODUCTO0 + 11).one()
+    de_todos = db.query(m.ProductoOdoo).filter_by(odoo_id=PRODUCTO0 + 5).one()
+    general = tarifario(db, 1)
+    productos = {(x.perfil.codigo, x.modalidad.codigo.value): x.producto_hora_extra_id
+                 for x in general.tarifas_recurso}
+    assert productos[("agente_seguridad", "full_day")] == suya.id
+    assert productos[("conductor_seguridad", "full_day")] == de_todos.id
+    assert general.producto_hora_extra_id == de_todos.id
+
+    # La de cada hora vuelve a poner todo igual.
+    leer(db, odoo, automatica=True)
+    assert tarifario(db, 1).producto_hora_extra_id == de_todos.id
+
+
+def test_el_producto_de_los_gastos_entra_aunque_no_sea_de_pe(db, monkeypatch):
+    """«Gastos de Operación (Viáticos)» es con el que se facturan los
+    gastos del eventual. Se lee a la tabla aunque no sea de la categoria
+    de PE: moverlo de categoria en Odoo le cambiaria su cuenta contable."""
+    tablas = mundo_pe()
+    tablas["product.template"].append(
+        {"id": PRODUCTO0 + 12, "name": "Gastos de Operacion (viaticos)",
+         "list_price": 0, "type": "service", "sale_ok": True, "active": True,
+         "categ_id": [4, "GPS"], "uom_id": [1, "Unidades"],
+         "product_variant_id": [PRODUCTO0 + 50_012, "Gastos"],
+         "product_variant_count": 1})
+    odoo = OdooFalso(tablas)
+    con_filtros(monkeypatch)
+    odoo_tarifarios.leer_productos(db, odoo)
+    db.commit()
+    db.expire_all()
+    gastos = db.query(m.ProductoOdoo).filter_by(odoo_id=PRODUCTO0 + 12).one()
+    assert gastos.variante_odoo_id == PRODUCTO0 + 50_012
+    assert gastos.clase == "viaticos"                  # sugerido por su nombre
+    fila = next(p for p in odoo_tarifarios.tabla_de_productos(db)
+                if p["odoo_id"] == PRODUCTO0 + 12)
+    assert fila["de_gastos"] is True
+    assert not any(p["de_gastos"] for p in odoo_tarifarios.tabla_de_productos(db)
+                   if p["odoo_id"] != PRODUCTO0 + 12)
+
+    # La siguiente lectura no lo saca de la tabla.
+    odoo_tarifarios.leer_productos(db, odoo)
+    db.commit()
+    assert db.query(m.ProductoOdoo).filter_by(odoo_id=PRODUCTO0 + 12).count() == 1
+    # Y si en el .env se llama de otro modo, ese ya no es.
+    from app.config import settings
+    monkeypatch.setattr(settings, "odoo_producto_gastos", "Viáticos")
+    assert odoo_tarifarios.es_el_de_gastos("Viaticos")
+    assert not odoo_tarifarios.es_el_de_gastos("Gastos de Operación (Viáticos)")
+    monkeypatch.setattr(settings, "odoo_producto_gastos", "")
+    assert not odoo_tarifarios.es_el_de_gastos("")

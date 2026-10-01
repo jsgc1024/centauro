@@ -458,16 +458,26 @@ function filaDeProducto(p, d, repintar, gemelos) {
     : editable ? h("button", { type: "button", clase: "chico claro", onclick: mandar },
                    t("tar_que_mande"))
     : "";
+  /* Para la factura del eventual (seccion 116): el de los gastos, y el
+     que en Odoo tiene varias variantes, que no se sabe con cual cobrar. */
+  const variantes = p.variantes > 1 && (p.de_gastos || CON_PRECIO.includes(p.clase))
+    ? h("div", { clase: "chico", style: "color:var(--alerta);margin-top:2px" },
+        reemplazar(t("tar_variantes"), { n: p.variantes }))
+    : "";
   return h("tr", p.vendible ? {} : { style: "opacity:.65" },
     h("td", {}, h("div", { style: "font-weight:600" }, p.nombre),
-      p.vendible ? "" : h("div", { clase: "chico gris" }, t("tar_ya_no_se_vende"))),
+      p.vendible ? "" : h("div", { clase: "chico gris" }, t("tar_ya_no_se_vende")),
+      p.de_gastos ? h("div", { clase: "chico gris", style: "margin-top:2px" },
+                      t("tar_de_gastos_pie")) : "",
+      variantes),
     h("td", { clase: "gris" }, p.unidad || "—"),
     h("td", {}, que,
       gemelos ? h("div", { clase: "chico gris", style: "margin-top:4px" },
                   reemplazar(t("tar_gemelos"), { n: gemelos.length - 1 })) : ""),
     h("td", {}, modalidad),
     h("td", {}, h("div", { style: "display:flex;gap:8px;align-items:center;white-space:nowrap" },
-      etiqueta(t(clave), tono), confirmar, manda)));
+      etiqueta(t(clave), tono), confirmar, manda,
+      p.de_gastos ? etiqueta(t("tar_de_gastos"), "info") : "")));
 }
 
 async function tarjetaProductos(caja) {

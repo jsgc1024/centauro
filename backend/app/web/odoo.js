@@ -219,11 +219,15 @@ export async function pantallaOdoo(main) {
     }
   };
 
-  cabeza.replaceChildren(estado.conectado
-    ? h("p", { clase: "gris chico", style: "margin:0 0 14px" },
-        reemplazar(t("odo_conectado"), { sitio: estado.sitio || "Odoo" }))
-    : h("div", { style: "margin:0 0 14px" },
-        aviso(t("odo_sin_conexion"), "alerta")));
+  /* La llave de la factura del eventual (seccion 116): si esta puesta. */
+  const llaveFactura = h("p", { clase: "gris chico", style: "margin:0 0 14px" },
+    t(estado.factura?.llave ? "odo_factura_llave" : "odo_factura_sin_llave"));
+  cabeza.replaceChildren(...(estado.conectado
+    ? [h("p", { clase: "gris chico", style: "margin:0 0 2px" },
+         reemplazar(t("odo_conectado"), { sitio: estado.sitio || "Odoo" })),
+       llaveFactura]
+    : [h("div", { style: "margin:0 0 14px" },
+         aviso(t("odo_sin_conexion"), "alerta"))]));
   tarjeta(personal, "personal", estado, repintar);
   tarjeta(flota, "flota", estado, repintar);
   tarjeta(oficina, "oficina", estado, repintar);
@@ -545,6 +549,9 @@ const PENDIENTES_DE_TARIFAS = [
                                  { l: x.lista || "—", m: x.moneda })]],
   ["producto_sin_confirmar", "odo_tp_producto",
    (x) => [x.producto, t("odo_tp_producto_pie")]],
+  /* La factura no sabria con cual cobrar (seccion 116). */
+  ["producto_variantes", "odo_tp_variantes",
+   (x) => [x.producto, reemplazar(t("odo_tp_variantes_pie"), { n: x.variantes })]],
   ["producto_fuera", "odo_tp_fuera",
    (x) => [x.producto, reemplazar(t("odo_tp_fuera_pie"), {
      l: (x.listas || []).map(n => `«${n}»`).join(", ") || "—", c: x.categoria || "" })]],

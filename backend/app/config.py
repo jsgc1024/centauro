@@ -126,6 +126,18 @@ class Settings(BaseSettings):
     # En que idioma se leen los nombres: en Odoo cada producto guarda su
     # nombre por idioma, y el ingles y el espanol pueden no coincidir.
     odoo_idioma: str = "es_MX"
+    # La factura del eventual en Odoo (seccion 116): la llave con que
+    # Connect crea la prefactura en borrador --y nada mas: no la confirma,
+    # no la timbra, no la borra--. Va aparte de `odoo_api_key`, que solo
+    # lee, para poder cambiarla sin tocar codigo; por decision de Salvador
+    # (1 oct), por ahora lleva el mismo valor. Vacia: no se manda nada y el
+    # servicio se queda en Facturacion con el aviso de que falta.
+    odoo_facturacion_api_key: str = ""
+    # Con que producto de Odoo se facturan los gastos del eventual, por su
+    # nombre (documento de Salvador, 1 oct). Se lee a la tabla de productos
+    # aunque no sea de la categoria de PE: moverlo de categoria en Odoo le
+    # cambiaria su cuenta contable.
+    odoo_producto_gastos: str = "Gastos de Operación (Viáticos)"
 
     # Pegasus, el GPS de las unidades (seccion 60). Solo lectura, con un
     # usuario propio de la conexion --no el de una persona-- que solo ve

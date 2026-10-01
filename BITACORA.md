@@ -8883,6 +8883,146 @@ lo diga— se hace cuando arranque Brasil, con sus textos en portugués
 (Salvador, 1 de octubre); mientras, el consultor lo pone en el acuerdo
 antes de abrir el primer mes.
 
+## 116. La factura del eventual en Odoo, entrega 1: la conexión y los productos
+
+Salvador, 1 de octubre, con su documento «Cerrar el proceso de
+facturación de eventuales (Connect → Odoo)»: al dar el visto bueno,
+Connect manda a Odoo una prefactura en borrador; el facturista la
+revisa, la confirma y la timbra allá; Connect la lee de vuelta y cierra
+el servicio. «Nunca action_post ni timbrar: eso lo hace el facturista.»
+Sus puntos 1 (el paquete solo con gastos incluidos) y 6 (las cuentas
+bancarias) ya entraron en la 115. Pidió revisar si se podía y un
+proyecto antes de desarrollar: el proyecto, en PDF con sus maquetas
+(«La factura del eventual, en Odoo»), y sus cuatro decisiones el mismo
+día:
+
+1. **La comisión** nace cuando la factura queda timbrada, con lo
+   facturado sin gastos; su mes es el del timbre.
+2. **«Facturado con diferencia»** lo explica el consultor del servicio o
+   finanzas, el que llegue primero; el aviso les llega a los dos.
+3. **El cliente sin ficha en Odoo**: la revisión del cierre no deja dar
+   el visto bueno hasta que la tenga.
+4. **La prueba de punta a punta**, con el primer servicio real que se
+   cierre después de subirlo: la factura es de verdad y no hay que
+   cancelar ningún CFDI.
+
+Lo que propuse sin preguntar y quedó: los implantados siguen como hoy
+(finanzas los aprueba y su factura se queda para después); la llave va
+en `ODOO_FACTURACION_API_KEY` —por decisión de Salvador, por ahora con
+el mismo valor que `ODOO_API_KEY`— y se cambia sin tocar código; Connect
+solo crea el borrador y lee; el servicio queda cerrado cuando queda
+facturado; «Ya se facturó en Odoo» (sección 96) se queda para cuando
+falle la conexión. Va en tres entregas. Esta es la primera, y **todavía
+no se manda nada a Odoo**: nadie llama a la prefactura desde el visto
+bueno.
+
+**La conexión que solo crea borradores** (`app/odoo_facturacion.py`,
+`Conexion`). Lee como la de siempre y le agrega una sola cosa: crear
+UNA factura de cliente (`account.move`, `move_type` `out_invoice`) con
+cliente, referencia, moneda, documento de origen («Connect · EP/E-031»)
+y renglones; cada renglón, «crear este renglón» (0, 0, {...}) con
+producto, descripción, cantidad y precio, o una nota (`line_note`).
+Nada más pasa: ni `state`, ni `name`, ni el diario, ni impuestos, ni
+contexto —con un `default_state` en el contexto Odoo la crearía
+confirmada—, ni dos facturas, ni notas de crédito, ni facturas de
+proveedor, ni ligar, cambiar o borrar renglones; `action_post`,
+`write`, `unlink`, `button_cancel` y `message_post` truenan antes de
+salir a la red. El IVA lo pone Odoo con el impuesto del producto, el
+diario es el de ventas de siempre y la fecha la del día en que el
+facturista la confirma. El cliente de lectura (`odoo_api.Odoo`) ganó
+`permitido()`, el gancho donde cada conexión dice lo que puede; la de
+siempre sigue sin escribir nada. `Revision`, la del programa que revisa
+Odoo: con la llave de la factura, pero solo lee y pregunta si podría
+(`has_access`, `check_access_rights`).
+
+**La prefactura** (`prefactura(db, cierre)`): lo que se mandaría, sin
+mandarlo, y lo que le falta. Suma lo mismo que la factura de siempre
+(`facturacion.armar`): un renglón por día, equipo y lo que se cobra —el
+paquete, el rol o la unidad— con el producto de Odoo de su precio en la
+lista del cliente; la hora extra en su renglón, con el producto de la de
+su rol (cantidad: las horas); los gastos en uno solo, monto fijo o
+comprobados, con su origen si van en otra moneda; la cancelación que se
+cobra completa, con la cotización tal cual y su nota. La descripción, en
+el idioma de la cotización: «Conductor de Seguridad Bilingüe ·
+28/10/2026 · Equipo Alfa · Día completo». Lo que falta se dice una vez
+cada cosa, para quien lo corrige: el cliente sin ficha en Odoo, el
+precio de una lista capturada a mano, el producto sin su variante o con
+varias, la hora extra cuyo producto todavía no trae la lectura, el
+producto de los gastos que no está o está dos veces, el tipo de cambio,
+y que los renglones no sumen lo del servicio. El mes del implantado no
+va por aquí.
+
+**Mandarla sin duplicar** (`crear`): antes de crear busca en Odoo la
+factura de cliente con el mismo documento de origen; si hay una viva
+—en borrador o timbrada— no crea otra. La cancelada no cuenta: al
+corregir sale una nueva con la misma referencia. `moneda_de`: el id de
+MXN o USD en Odoo, si está activa.
+
+**Los productos.** En una factura de Odoo el renglón lleva el producto
+exacto (`product.product`) y la tabla de productos guardaba su
+plantilla: la lectura de los tarifarios trae ahora la **variante** del
+producto que tiene una sola; el que tiene varias se queda sin ella y lo
+dicen los pendientes («Productos con varias variantes en Odoo») y la
+tabla. Cada precio de **hora extra** guarda de qué producto salió —el de
+la de su rol o el de la de todos (sección 113)— en el renglón del
+tarifario y en la lista. **«Gastos de Operación (Viáticos)»**
+(`odoo_producto_gastos`, por su nombre) entra a la tabla aunque no sea
+de la categoría de Protección Ejecutiva —moverlo de categoría en Odoo le
+cambiaría su cuenta contable—, ninguna lectura lo saca, y la tabla lo
+marca con «Factura los gastos». Todo se llena con la lectura de cada
+hora: la primera después de subir.
+
+**El programa que revisa Odoo** (`reconocer_facturacion.py`, solo lee,
+con `Revision`; nunca hace commit ni imprime la llave):
+
+    docker compose -f docker-compose.prod.yml run --rm api python reconocer_facturacion.py
+
+Dice si la llave entra y si podría crear facturas y sus renglones y
+leer su historial (de ahí sale quién la timbró); los campos de la
+factura y del renglón, y los del CFDI (`l10n_mx_edi_*`: cómo se llaman
+el UUID y el estado del timbre); el diario de ventas; MXN y USD; el
+producto de los gastos con su categoría, variantes e impuestos; las
+variantes de los productos de PE y la hora extra sin producto; los
+clientes de Connect sin RFC, código postal o régimen fiscal en Odoo; el
+filtro «Prefacturas de Connect»; cuántas facturas ya llevan un folio de
+Connect; y la prefactura, en ensayo, de los últimos ocho eventuales con
+visto bueno, con lo que les falta y cómo llegaría a Odoo la primera que
+está completa.
+
+**En la pantalla.** Odoo dice arriba si el servidor tiene la llave de la
+factura («Todavía no se manda nada: la factura se sigue haciendo en
+Odoo»). En Facturación → Tarifarios, la tabla marca el producto de los
+gastos y avisa del que tiene varias variantes.
+
+Por dentro: `odoo_facturacion_api_key` y `odoo_producto_gastos` en la
+configuración; `ProductoOdoo.variante_odoo_id` y `variantes`,
+`TarifaRecurso.producto_hora_extra_id` y
+`Tarifario.producto_hora_extra_id`; migración `c5e2a9d7f1b3`.
+`cierre.hora_extra_del_rol` (precio y producto); los renglones de
+`cierre.ejecutado` llevan su producto (`producto_odoo_id`,
+`producto_hora_extra_id`) y el rol. `odoo_tarifarios` (la variante, el
+producto de la hora extra, `es_el_de_gastos`, el pendiente
+`producto_variantes`), `odoo_api.py`, `routers/odoo.py`
+(`/odoo/estado` dice `factura.llave`, nunca la llave); en la consola
+`odoo.js`, `tarifarios.js` e `idioma.js` (7 textos nuevos en tres
+idiomas). Manual: «La factura del eventual · en preparación» en lo que
+viene de Odoo, y la pantalla de Odoo. Pruebas:
+`tests/test_odoo_facturacion.py` (12) y tres en
+`tests/test_odoo_tarifarios.py`.
+
+**Lo que sigue.** Salvador pega la llave en el servidor
+(`ODOO_FACTURACION_API_KEY`), reinicia, corre el programa que revisa
+Odoo y manda lo que diga. Entrega 2 (sección 117): al dar el visto
+bueno, el borrador en Odoo; el paso «Prefactura en Odoo» en el
+servicio; Facturación con «En Odoo» y «No se pudo mandar»; el reintento
+cada hora sin duplicar; y el punto de la revisión del cierre para el
+cliente sin ficha (decisión 3). La aprobación de finanzas sigue
+mientras tanto. Entrega 3 (sección 118): la lectura de vuelta cada hora
+—facturado con folio, UUID y fecha; con diferencia, a explicar;
+cancelada, de regreso al consultor—, la comisión y la rentabilidad con
+lo facturado, y se quita la aprobación de finanzas de los eventuales.
+Después, la prueba de punta a punta con el primer servicio real.
+
 ## 14. Lo que falta
 
 ### Abierto

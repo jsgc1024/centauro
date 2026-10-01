@@ -61,24 +61,31 @@ def _horas_extra(jornada: m.Jornada) -> int:
     return horas_extra.horas(jornada)
 
 
-def _precio_hora_extra(db: Session, tarifario_id: int, rol_id: int | None,
-                       modalidad: m.Modalidad | None):
-    """El precio de la hora extra de un rol: el de su renglon del
-    tarifario en esa modalidad y, si el tarifario no le pone precio suelto
-    a ese rol --el conductor que solo va en paquete--, el de la lista, en
-    las modalidades que llevan horas extra (seccion 79)."""
+def hora_extra_del_rol(db: Session, tarifario_id: int, rol_id: int | None,
+                       modalidad: m.Modalidad | None) -> tuple:
+    """(precio, producto de Odoo) de la hora extra de un rol: los de su
+    renglon del tarifario en esa modalidad y, si el tarifario no le pone
+    precio suelto a ese rol --el conductor que solo va en paquete--, los
+    de la lista, en las modalidades que llevan horas extra (seccion 79).
+    El producto es con el que sale en la factura (seccion 116)."""
     if modalidad is None:
-        return None
+        return None, None
     fila = (db.query(m.TarifaRecurso)
             .filter_by(tarifario_id=tarifario_id, perfil_id=rol_id,
                        modalidad_id=modalidad.id).first()) if rol_id else None
     if fila and fila.precio_hora_extra:
-        return fila.precio_hora_extra
+        return fila.precio_hora_extra, fila.producto_hora_extra_id
     if modalidad.aplica_horas_extra:
         tarifario = db.get(m.Tarifario, tarifario_id)
         if tarifario and tarifario.precio_hora_extra:
-            return tarifario.precio_hora_extra
-    return None
+            return tarifario.precio_hora_extra, tarifario.producto_hora_extra_id
+    return None, None
+
+
+def _precio_hora_extra(db: Session, tarifario_id: int, rol_id: int | None,
+                       modalidad: m.Modalidad | None):
+    """El precio de la hora extra de un rol (ver `hora_extra_del_rol`)."""
+    return hora_extra_del_rol(db, tarifario_id, rol_id, modalidad)[0]
 
 
 def _se_ejecuto(j: m.Jornada) -> bool:
@@ -170,7 +177,7 @@ def ejecutado(db: Session, servicio: m.Servicio, tarifario_id: int,
     # horas y no solo en dinero (seccion 65).
     dias_con_extra = []
 
-    def horas_de_mas(linea, extras, precio_extra, rol):
+    def horas_de_mas(linea, extras, precio_extra, rol, producto=None):
         """Suma al renglon las horas extra de quien las trabajo."""
         nonlocal importe_extra_total
         if extras and precio_extra:
@@ -180,6 +187,8 @@ def ejecutado(db: Session, servicio: m.Servicio, tarifario_id: int,
             linea["importe_horas_extra"] = extra_importe
             linea["precio_hora_extra"] = _d(precio_extra)
             linea["rol_hora_extra"] = rol
+            # Con que producto de Odoo sale en la factura (seccion 116).
+            linea["producto_hora_extra_id"] = producto
             linea["importe"] = linea["importe"] + extra_importe
         elif extras:
             # Sin precio de hora extra no se cobran, y antes nadie se
@@ -217,11 +226,15 @@ def ejecutado(db: Session, servicio: m.Servicio, tarifario_id: int,
                          "referencia_id": f"{paquete.perfil_id}-{paquete.categoria_id}",
                          "descripcion": cot.nombre_del_paquete(paquete),
                          "cantidad": 1, "importe": precio,
-                         "modalidad": codigo, "precio": precio}
-                horas_de_mas(linea, extras,
-                             _precio_hora_extra(db, tarifario_id, a.rol_id,
-                                                j.modalidad),
-                             a.rol.nombre if a.rol else None)
+                         "modalidad": codigo, "precio": precio,
+                         # Con que producto de Odoo se factura (seccion 116):
+                         # el del mismo precio de la lista.
+                         "producto_odoo_id": paquete.producto_odoo_id,
+                         "rol_id": a.rol_id}
+                precio_extra, producto_extra = hora_extra_del_rol(
+                    db, tarifario_id, a.rol_id, j.modalidad)
+                horas_de_mas(linea, extras, precio_extra,
+                             a.rol.nombre if a.rol else None, producto_extra)
                 detalle.append(linea)
                 total += linea["importe"]
 
@@ -235,9 +248,12 @@ def ejecutado(db: Session, servicio: m.Servicio, tarifario_id: int,
                          "tipo": "recurso", "referencia_id": a.rol_id,
                          "descripcion": a.rol.nombre if a.rol else None,
                          "cantidad": 1, "importe": precio,
-                         "modalidad": codigo, "precio": precio}
+                         "modalidad": codigo, "precio": precio,
+                         "producto_odoo_id": tarifa.producto_odoo_id,
+                         "rol_id": a.rol_id}
                 horas_de_mas(linea, extras, tarifa.precio_hora_extra,
-                             a.rol.nombre if a.rol else None)
+                             a.rol.nombre if a.rol else None,
+                             tarifa.producto_hora_extra_id)
                 detalle.append(linea)
                 total += linea["importe"]
 
@@ -249,7 +265,8 @@ def ejecutado(db: Session, servicio: m.Servicio, tarifario_id: int,
                                 "tipo": "vehiculo", "referencia_id": a.vehiculo.categoria_id,
                                 "descripcion": a.vehiculo.categoria.nombre,
                                 "cantidad": 1, "importe": precio,
-                                "modalidad": codigo, "precio": precio})
+                                "modalidad": codigo, "precio": precio,
+                                "producto_odoo_id": tarifa.producto_odoo_id})
                 total += precio
 
     return {"detalle": detalle, "total": total, "horas_extra": horas_extra_total,
