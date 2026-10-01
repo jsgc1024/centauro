@@ -23,9 +23,15 @@
 
    La quinta, los tarifarios (seccion 77): que es cada producto de Odoo
    --lo confirma finanzas-- y el tarifario de cada cliente, como quedo de
-   su lista de Odoo. Vive en tarifarios.js. */
+   su lista de Odoo. Vive en tarifarios.js.
+
+   Con la llave de la factura (seccion 117) lo que sale con el visto
+   bueno es la prefactura en borrador: «Por facturar» se parte en «En
+   Odoo» --lo que espera al facturista-- y «No se pudo mandar», con su
+   porque. Los eventuales y los meses de los implantados van juntos;
+   «Ver» los separa. Finanzas sigue aprobando aqui. */
 import { api, sesion } from "./api.js";
-import { tablaDeRenglones } from "./cierre.js";
+import { botonOdoo, tablaDeRenglones } from "./cierre.js";
 import { pestanaHistorial } from "./historial.js";
 import { pestanaTarifarios } from "./tarifarios.js";
 import { aviso, conAyuda, dinero, etiqueta, h, hora, mensaje,
@@ -64,6 +70,11 @@ const QUE_PASO = {
   rechazada: "fac_paso_rechazada",
   sin_respuesta: "fac_paso_sin_respuesta",
   falta_dato: "fac_paso_falta_dato",
+  /* Los de la prefactura (seccion 117). */
+  sin_llave: "fac_paso_sin_llave",
+  anterior_viva: "fac_paso_anterior_viva",
+  no_cuadra: "fac_paso_no_cuadra",
+  de_antes: "fac_paso_de_antes",
 };
 
 const MESES = ["bon_mes_1", "bon_mes_2", "bon_mes_3", "bon_mes_4",
@@ -76,6 +87,25 @@ function servicio(f) {
     f.periodo ? h("span", {}, " ", etiqueta(
       `${t(MESES[f.mes - 1]).slice(0, 3)} ${f.anio}`, "info")) : "",
     h("div", { clase: "chico gris" }, f.cliente || ""));
+}
+
+/* Hace cuanto, para la prefactura: «hace 2 h», «ayer 18:20». */
+function haceCuanto(iso) {
+  if (!iso) return "";
+  const minutos = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  /* Un reloj adelantado no dice «hace»: dice el dia. */
+  if (minutos < 0) return dia(iso);
+  if (minutos < 60) return reemplazar(t("fac_hace_min"), { n: Math.max(minutos, 1) });
+  if (minutos < 12 * 60) return reemplazar(t("fac_hace_h"), { n: Math.floor(minutos / 60) });
+  return dia(iso);
+}
+
+/* La prefactura de un renglon: «Prefactura en Odoo» y su borrador. */
+function prefacturaDe(f) {
+  return h("div", {}, etiqueta(t("fac_prefactura_en_odoo"), "azul"),
+    h("div", { clase: "chico gris", style: "margin-top:4px" },
+      reemplazar(t("fac_borrador_hace"), { n: f.prefactura.id,
+                                           h: haceCuanto(f.prefactura.en) })));
 }
 
 function vistoBueno(f) {
@@ -103,6 +133,7 @@ function aFacturar(f, moneda) {
 
 function factura(f) {
   if (f.factura) return h("td", {}, folioDe(f));
+  if (f.prefactura) return h("td", {}, prefacturaDe(f));
   return h("td", {}, etiqueta(t("fac_sin_factura"), "alerta"),
     f.que_paso ? h("div", { clase: "chico gris", style: "margin-top:4px" },
                    t(QUE_PASO[f.que_paso] || "fac_paso_falta_dato")) : "");
@@ -110,12 +141,13 @@ function factura(f) {
 
 export async function pantallaFacturacion(main) {
   const moneda = "MXN";
-  main.append(
-    conAyuda("h1", t("fac_titulo"), "ay_fac_titulo"),
-    h("p", { clase: "sub" }, t("fac_sub")));
+  const sub = h("p", { clase: "sub" }, t("fac_sub"));
+  main.append(conAyuda("h1", t("fac_titulo"), "ay_fac_titulo"), sub);
   const zona = h("div");
   main.append(zona);
   let pestana = "aprobar";
+  /* Todos, solo los eventuales o solo los meses de los implantados. */
+  let ver = "todos";
 
   const pintar = async () => {
     let b;
@@ -126,47 +158,96 @@ export async function pantallaFacturacion(main) {
       return;
     }
     const r = b.resumen;
-    const corte = h("div", { clase: "corte" },
-      h("div", {}, h("div", { clase: "chico gris" }, t("fac_por_aprobar")),
-        h("div", { clase: "cifra" }, r.por_aprobar.cuantos),
-        /* Uno por moneda (seccion 82): los dolares no se suman a los
-           pesos. */
-        h("div", { clase: "chico gris num" },
-          r.por_aprobar.montos ? montos(r.por_aprobar.montos, moneda)
-                               : dinero(r.por_aprobar.monto, moneda))),
-      h("div", {}, h("div", { clase: "chico gris" }, t("fac_por_facturar")),
-        h("div", { clase: "cifra", style: r.por_facturar.cuantos
-                     ? "color:var(--alerta)" : "" }, r.por_facturar.cuantos),
-        h("div", { clase: "chico gris" },
-          b.odoo_configurado ? t("fac_odoo_no_acepto") : t("fac_sin_odoo"))),
-      h("div", {}, h("div", { clase: "chico gris" },
-          reemplazar(t("fac_cerrados_en"), { m: t(MESES[r.cerrados.mes - 1]) })),
-        h("div", { clase: "cifra" }, r.cerrados.cuantos),
-        h("div", { clase: "chico gris num" },
-          r.cerrados.montos ? montos(r.cerrados.montos, moneda)
-                            : dinero(r.cerrados.monto, moneda))));
+    /* Con la llave de la factura (seccion 117): En Odoo y No se pudo
+       mandar en lugar de Por facturar. */
+    const llave = !!b.llave;
+    sub.textContent = t(llave ? "fac_sub_llave" : "fac_sub");
+    if (llave && pestana === "facturar") pestana = "en_odoo";
+    if (!llave && ["en_odoo", "no_se_pudo"].includes(pestana)) pestana = "facturar";
+
+    const tarjeta = (titulo, cifra, pie, color = "") => h("div", {},
+      h("div", { clase: "chico gris" }, titulo),
+      h("div", { clase: "cifra", style: color ? `color:var(${color})` : "" }, cifra),
+      h("div", { clase: "chico gris num" }, pie));
+    const porAprobarCifra = tarjeta(t("fac_por_aprobar"), r.por_aprobar.cuantos,
+      /* Uno por moneda (seccion 82): los dolares no se suman a los
+         pesos. */
+      r.por_aprobar.montos ? montos(r.por_aprobar.montos, moneda)
+                           : dinero(r.por_aprobar.monto, moneda));
+    const cerradosCifra = tarjeta(
+      reemplazar(t("fac_cerrados_en"), { m: t(MESES[r.cerrados.mes - 1]) }),
+      r.cerrados.cuantos,
+      r.cerrados.montos ? montos(r.cerrados.montos, moneda)
+                        : dinero(r.cerrados.monto, moneda));
+    const corte = h("div", { clase: "corte" }, porAprobarCifra,
+      ...(llave
+        ? [tarjeta(t("fac_en_odoo_por_timbrar"), r.en_odoo.cuantos,
+                   r.en_odoo.cuantos ? montos(r.en_odoo.montos, moneda)
+                                     : t("fac_nada_en_odoo_corto")),
+           tarjeta(t("fac_no_se_pudo"), r.no_se_pudo.cuantos,
+                   r.no_se_pudo.de_antes
+                     ? reemplazar(t("fac_n_de_antes"), { n: r.no_se_pudo.de_antes })
+                     : t("fac_se_reintenta"),
+                   r.no_se_pudo.cuantos ? "--grave" : "")]
+        : [tarjeta(t("fac_por_facturar"), r.por_facturar.cuantos,
+                   b.odoo_configurado ? t("fac_odoo_no_acepto") : t("fac_sin_odoo"),
+                   r.por_facturar.cuantos ? "--alerta" : "")]),
+      cerradosCifra);
 
     const boton = (clave, texto) => h("button", {
       clase: `pestana ${pestana === clave ? "activa" : ""}`.trim(), type: "button",
       onclick: () => { pestana = clave; pintar(); } }, texto);
     const pestanas = h("div", { clase: "pestanas", style: "margin:0 0 12px" },
       boton("aprobar", reemplazar(t("fac_tab_aprobar"), { n: b.por_aprobar.length })),
-      boton("facturar", reemplazar(t("fac_tab_facturar"), { n: b.por_facturar.length })),
+      ...(llave
+        ? [boton("en_odoo", reemplazar(t("fac_tab_en_odoo"), { n: b.en_odoo.length })),
+           boton("no_se_pudo", reemplazar(t("fac_tab_no_se_pudo"),
+                                          { n: b.no_se_pudo.length }))]
+        : [boton("facturar", reemplazar(t("fac_tab_facturar"),
+                                        { n: b.por_facturar.length }))]),
       boton("cerrados", t("fac_tab_cerrados")),
       tiene(sesion.usuario, "cierre.historial")
         ? boton("historial", t("fac_tab_historial")) : "",
       tiene(sesion.usuario, "cierre.ver")
         ? boton("tarifarios", t("fac_tab_tarifarios")) : "");
 
-    const cuerpo = pestana === "aprobar" ? porAprobar(b.por_aprobar, moneda, pintar)
-      : pestana === "facturar" ? porFacturar(b.por_facturar, moneda, pintar,
+    const listas = { aprobar: b.por_aprobar, en_odoo: b.en_odoo,
+                     no_se_pudo: b.no_se_pudo, facturar: b.por_facturar,
+                     cerrados: b.cerrados };
+    const lista = listas[pestana];
+    const filtrar = (filas) => (ver === "todos" ? filas
+      : filas.filter(f => (ver === "implantados") === !!f.contrato_id));
+    const filas = lista ? filtrar(lista) : null;
+
+    const cuerpo = pestana === "aprobar" ? porAprobar(filas, moneda, pintar)
+      : pestana === "en_odoo" ? enOdoo(filas, moneda, pintar)
+      : pestana === "no_se_pudo" ? noSePudo(filas, moneda, pintar)
+      : pestana === "facturar" ? porFacturar(filas, moneda, pintar,
                                              b.odoo_configurado)
       : pestana === "historial" ? pestanaHistorial()
       : pestana === "tarifarios" ? pestanaTarifarios()
-      : cerrados(b.cerrados, moneda, pintar);
-    zona.replaceChildren(corte, pestanas, cuerpo);
+      : cerrados(filas, moneda, pintar);
+    zona.replaceChildren(corte, pestanas,
+      lista ? filtroVer(lista, ver, (v) => { ver = v; pintar(); }) : "",
+      cuerpo);
   };
   await pintar();
+}
+
+/* «Ver»: todos, los eventuales o los implantados, con cuantos hay de
+   cada uno en la pestana que esta abierta. */
+function filtroVer(lista, ver, cambiar) {
+  const implantados = lista.filter(f => f.contrato_id).length;
+  const cuantos = { todos: lista.length, eventuales: lista.length - implantados,
+                    implantados };
+  const boton = (clave, texto) => h("button", {
+    clase: ver === clave ? "pestana chico activa" : "pestana chico", type: "button",
+    onclick: () => cambiar(clave) }, reemplazar(texto, { n: cuantos[clave] }));
+  return h("div", { clase: "pestanas", style: "margin:0 0 12px;align-items:center" },
+    h("span", { clase: "chico gris", style: "margin-right:4px" }, t("fac_ver")),
+    boton("todos", t("fac_ver_todos")),
+    boton("eventuales", t("fac_ver_eventuales")),
+    boton("implantados", t("fac_ver_implantados")));
 }
 
 /* ------------------------------------------------------------ por aprobar */
@@ -317,7 +398,9 @@ function formularioRegreso(f, repintar) {
                                  { motivo: motivo.value.trim() });
         mensaje(r.factura_anulada
           ? reemplazar(t("fac_regresado_anulada"), { f: r.factura_anulada })
-          : t("fac_regresado"));
+          : r.prefactura_anulada
+            ? reemplazar(t("fac_regresado_prefactura"), { n: r.prefactura_anulada })
+            : t("fac_regresado"));
         await repintar();
       } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
     } }, t("fac_regresar"));
@@ -327,6 +410,139 @@ function formularioRegreso(f, repintar) {
       h("button", { clase: "chico claro", type: "button",
         onclick: (e) => e.target.closest(".tarjeta").remove() }, t("cancelar"))),
     h("p", { clase: "chico gris", style: "margin:10px 0 0" }, t("fac_regresar_pie")));
+}
+
+/* ------------------------------------------------------------ en Odoo (seccion 117) */
+
+/* Las prefacturas que Connect mando y que el facturista todavia no
+   timbra. Mientras Connect no las lee de vuelta, la timbrada se anota
+   aqui con «Ya se facturó en Odoo», con su folio y su fecha. */
+function enOdoo(filas, moneda, repintar) {
+  if (!filas.length) {
+    return h("div", { clase: "tarjeta" }, h("div", { clase: "vacio" },
+      t("fac_nada_en_odoo")));
+  }
+  const cuerpo = h("tbody");
+  for (const f of filas) {
+    const extra = h("tr", { clase: "fila-extra", hidden: true },
+      h("td", { colspan: "4", style: "padding:2px 14px 16px" }));
+    const cerrar = () => {
+      extra.hidden = true;
+      extra.firstChild.replaceChildren();
+    };
+    const anotar = !puedeFacturar() ? "" : h("button", { clase: "chico", type: "button",
+      onclick: () => {
+        if (!extra.hidden) return cerrar();
+        extra.firstChild.replaceChildren(formaFactura(f, repintar, cerrar));
+        extra.hidden = false;
+        extra.querySelector("input").focus();
+      } }, t("fac_ya_en_odoo"));
+    cuerpo.append(
+      h("tr", {},
+        h("td", {}, servicio(f),
+          h("div", { clase: "chico gris" }, vistoBuenoCorto(f))),
+        h("td", { clase: "der num" },
+          h("b", {}, dinero(f.prefactura.total ?? f.total, f.moneda || moneda)),
+          h("div", { clase: "chico gris" },
+            reemplazar(t("fac_antes_de_iva"), { m: f.moneda || moneda }))),
+        h("td", {}, prefacturaDe(f)),
+        h("td", { clase: "der", style: "width:1%;white-space:nowrap" },
+          h("div", { clase: "acciones", style: "justify-content:flex-end" },
+            f.prefactura.url ? botonOdoo(f.prefactura.url) : "", anotar))),
+      extra);
+  }
+  return h("div", {},
+    h("table", { clase: "lista" },
+      h("thead", {}, h("tr", {},
+        h("th", {}, t("fac_col_servicio")),
+        h("th", { clase: "der" }, t("cie_col_a_facturar")),
+        h("th", {}, t("fac_col_en_odoo")), h("th"))),
+      cuerpo),
+    h("p", { clase: "chico gris", style: "margin:10px 0 0" }, t("fac_en_odoo_pie")));
+}
+
+/* «Ana Solis · visto bueno a tiempo». */
+function vistoBuenoCorto(f) {
+  const fuera = f.dentro_de_plazo === false;
+  return h("span", {}, `${f.consultor || "—"} · `,
+    h("span", { style: `color:var(${fuera ? "--grave" : "--ok"})` },
+      t(fuera ? "fac_vb_fuera" : "fac_vb_a_tiempo")));
+}
+
+/* ------------------------------------------------------------ no se pudo mandar (seccion 117) */
+
+/* Lo que tiene el visto bueno y no llego a Odoo, con su porque. La
+   tarea de cada hora lo vuelve a intentar, sin duplicar; lo que tuvo su
+   visto bueno antes de la llave no sale solo: lo manda finanzas. */
+function noSePudo(filas, moneda, repintar) {
+  if (!filas.length) {
+    return h("div", { clase: "tarjeta" }, h("div", { clase: "vacio" },
+      t("fac_nada_no_se_pudo")));
+  }
+  const cuerpo = h("tbody");
+  for (const f of filas) {
+    const extra = h("tr", { clase: "fila-extra", hidden: true },
+      h("td", { colspan: "4", style: "padding:2px 14px 16px" }));
+    const cerrar = () => {
+      extra.hidden = true;
+      extra.firstChild.replaceChildren();
+    };
+    const anotar = h("button", { clase: "chico", type: "button",
+      onclick: () => {
+        if (!extra.hidden) return cerrar();
+        extra.firstChild.replaceChildren(formaFactura(f, repintar, cerrar));
+        extra.hidden = false;
+        extra.querySelector("input").focus();
+      } }, t("fac_ya_en_odoo"));
+    const mandar = h("button", { clase: "chico claro", type: "button",
+      onclick: async (e) => {
+        if (f.de_antes && !confirm(t("fac_confirmar_mandar_de_antes"))) return;
+        e.target.disabled = true;
+        try {
+          const r = await api.post(`/cierre/${f.cierre_id}/facturar`, {});
+          if (r.resultado === "en odoo" || r.resultado === "ya estaba en odoo") {
+            mensaje(reemplazar(t("fac_prefactura_salio"), { n: r.prefactura }), "ok");
+          } else {
+            mensaje(t("fac_sigue_sin_salir"), "alerta");
+          }
+          await repintar();
+        } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
+      } }, t(f.de_antes ? "fac_mandar_a_odoo" : "fac_mandar_otra_vez"));
+    const titulo = t(QUE_PASO[f.que_paso] || "fac_paso_falta_dato");
+    const debajo = f.de_antes ? t("fac_de_antes_pie")
+      : f.que_paso === "anterior_viva"
+        ? reemplazar(t("fac_anterior_viva_pie"), { n: f.prefactura_anulada || "" })
+        : [f.que_paso === "sin_llave" ? t("fac_sin_llave_pie") : f.error,
+           reemplazar(t("fac_intentos_hora"), {
+             n: f.intentos, f: f.ultimo_intento ? dia(f.ultimo_intento) : "—" })]
+            .filter(Boolean).join(" · ");
+    cuerpo.append(
+      h("tr", {},
+        h("td", { style: "min-width:190px" }, servicio(f)),
+        h("td", { clase: "der num", style: "white-space:nowrap" },
+          h("b", {}, dinero(f.total, f.moneda || moneda))),
+        h("td", {},
+          h("span", { style: `color:var(${f.de_antes ? "--centauro" : "--alerta"});font-weight:650` },
+            titulo),
+          h("div", { clase: "chico gris" }, debajo),
+          f.que_paso === "anterior_viva" && f.prefactura_url_anulada
+            ? h("div", { style: "margin-top:6px" }, botonOdoo(f.prefactura_url_anulada))
+            : ""),
+        h("td", { clase: "der", style: "width:1%;white-space:nowrap" },
+          !puedeFacturar() ? ""
+            : h("div", { clase: "acciones",
+                         style: "flex-direction:column;align-items:stretch" },
+                mandar, anotar))),
+      extra);
+  }
+  return h("div", {},
+    h("table", { clase: "lista" },
+      h("thead", {}, h("tr", {},
+        h("th", {}, t("fac_col_servicio")),
+        h("th", { clase: "der", style: "white-space:nowrap" }, t("cie_col_a_facturar")),
+        h("th", {}, t("fac_col_que_paso")), h("th"))),
+      cuerpo),
+    h("p", { clase: "chico gris", style: "margin:10px 0 0" }, t("fac_no_se_pudo_pie")));
 }
 
 /* ------------------------------------------------------------ por facturar */

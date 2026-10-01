@@ -24,6 +24,7 @@ bandeja de "por facturar" con el error a la vista y se reintenta. Un
 envio que falla en silencio deja un servicio aprobado que nadie cobra.
 """
 import logging
+import re
 from datetime import date, datetime, time
 from decimal import Decimal
 
@@ -34,6 +35,7 @@ from sqlalchemy.orm import Session
 
 from app import cierre as motor_cierre
 from app import models as m
+from app import odoo_facturacion
 from app import reloj
 from app import tipo_cambio
 from app.config import settings
@@ -52,11 +54,31 @@ def hay_conexion() -> bool:
 def que_paso(error: str | None) -> str | None:
     """Por que no salio la factura, en una palabra que la pantalla sabe
     decir en tres idiomas: sin conexion, Odoo la rechazo, Odoo no
-    contesto, o falta un dato de este lado."""
+    contesto, o falta un dato de este lado. Y los de la prefactura
+    (seccion 117): falta la llave, la anterior sigue viva en Odoo, o no
+    cuadra con el visto bueno."""
     if not error:
         return None
     if error == SIN_CONEXION:
         return "sin_conexion"
+    # Los de la prefactura van antes: los de abajo buscan «connect» en el
+    # texto, y estos lo dicen.
+    of = odoo_facturacion
+    if error == of.SIN_LLAVE:
+        return "sin_llave"
+    if error.startswith(of.FALTA_DATO):
+        return "falta_dato"
+    if error.startswith(of.ANTERIOR_VIVA.split("(")[0]):
+        return "anterior_viva"
+    if error.startswith(of.NO_CUADRA_VB.split("{")[0]):
+        return "no_cuadra"
+    if error.startswith(of.NO_SE_ENTIENDE) or error.startswith("Odoo no contesto"):
+        return "sin_respuesta"
+    if error.startswith("Odoo rechazo la llave"):
+        return "rechazada"
+    codigo = re.match(r"Odoo contesto (\d)\d\d", error)
+    if codigo:
+        return "sin_respuesta" if codigo.group(1) == "5" else "rechazada"
     if "Client error" in error or "Odoo contesto sin folio" in error:
         return "rechazada"
     if ("Server error" in error or "timed out" in error.lower()
@@ -180,11 +202,18 @@ def descripcion_del_origen(origen: dict) -> str:
             f"de cambio {tipo_cambio.corto(origen['tipo_cambio'])})")
 
 
-def enviar(db: Session, cierre: m.Cierre) -> dict:
+def enviar(db: Session, cierre: m.Cierre, usuario: m.Usuario | None = None,
+           primera_vez: bool = True) -> dict:
     """Manda la factura y guarda lo que conteste Odoo.
 
     No levanta excepcion nunca: devuelve que paso. Quien la llama ya
     tiene algo guardado que no puede perder.
+
+    Con la llave de la factura (seccion 117) lo que sale es la prefactura
+    en borrador (`odoo_facturacion.mandar`): el facturista la timbra en
+    Odoo y el cierre sigue por facturar hasta entonces. `usuario`: quien
+    la hizo salir, para la bitacora del servicio. `primera_vez=False`
+    --la aprobacion de finanzas-- solo reintenta la que ya se intento.
     """
     if cierre.estatus == m.EstatusCierre.FACTURADO or cierre.facturado_en:
         # Salio con el visto bueno del consultor. Si finanzas ya aprobo,
@@ -199,6 +228,20 @@ def enviar(db: Session, cierre: m.Cierre) -> dict:
                               m.EstatusCierre.APROBADO):
         return {"resultado": "no se factura",
                 "motivo": f"el cierre esta en {cierre.estatus.value}"}
+
+    if odoo_facturacion.hay_llave():
+        resultado = odoo_facturacion.mandar(db, cierre,
+                                            primera_vez=primera_vez)
+        if usuario is not None and resultado["resultado"] == "en odoo":
+            from app import auditoria
+            auditoria.registrar(
+                db, usuario, cierre.servicio, "prefactura en odoo",
+                f"{_de_que(cierre)}: borrador #{resultado['prefactura']}, "
+                f"{Decimal(resultado['total']):,.2f} {resultado['moneda']} "
+                f"antes de IVA"
+                + ("" if resultado["nueva"] else ", ya estaba en Odoo"))
+            db.flush()
+        return resultado
 
     # Cada intento se cuenta: la bandeja dice "3 intentos, el ultimo a
     # las 09:40", que es lo que decide si se reintenta o se llama a
@@ -375,6 +418,15 @@ def _de_que(cierre: m.Cierre) -> str:
     return cierre.servicio.folio
 
 
+def sin_factura(db: Session) -> list[m.Cierre]:
+    """Los cierres que ya tienen visto bueno y todavia no tienen factura."""
+    return (db.query(m.Cierre)
+            .filter(m.Cierre.estatus.in_((m.EstatusCierre.ENVIADO_FINANZAS,
+                                          m.EstatusCierre.APROBADO)),
+                    m.Cierre.facturado_en.is_(None))
+            .order_by(m.Cierre.enviado_en).all())
+
+
 def por_facturar(db: Session) -> list[dict]:
     """Lo que ya tiene visto bueno y todavia no tiene factura.
 
@@ -382,18 +434,24 @@ def por_facturar(db: Session) -> list[dict]:
     fallo se queda esperando para siempre y nadie se entera hasta que el
     cliente no paga.
     """
-    filas = (db.query(m.Cierre)
-             .filter(m.Cierre.estatus.in_((m.EstatusCierre.ENVIADO_FINANZAS,
-                                           m.EstatusCierre.APROBADO)),
-                     m.Cierre.facturado_en.is_(None))
-             .order_by(m.Cierre.enviado_en).all())
-    return [renglon(db, c) for c in filas]
+    return [renglon(db, c) for c in sin_factura(db)]
+
+
+def de_antes(c: m.Cierre, llave: bool | None = None) -> bool:
+    """Si tuvo su visto bueno antes de la llave de la factura: su
+    prefactura no sale sola (seccion 117), la manda finanzas si toca."""
+    if llave is None:
+        llave = odoo_facturacion.hay_llave()
+    return bool(llave and c.enviado_en and not c.prefactura_desde
+                and not c.prefactura_odoo_id)
 
 
 def renglon(db: Session, c: m.Cierre) -> dict:
     """Un cierre como lo lee finanzas en su bandeja."""
     def iso(momento):
         return momento.isoformat() if momento else None
+
+    antes = de_antes(c)
 
     servicio = c.servicio
     consultor = (db.get(m.Persona, servicio.consultor_id)
@@ -432,11 +490,25 @@ def renglon(db: Session, c: m.Cierre) -> dict:
         "factura_a_mano": bool(c.factura_anotada_por_id),
         "factura_anotada_por": (anoto.nombre if anoto else None),
         "factura_anulada": c.factura_anulada,
-        "error": c.factura_error,
-        "que_paso": que_paso(c.factura_error),
+        "error": None if antes else c.factura_error,
+        "que_paso": "de_antes" if antes else que_paso(c.factura_error),
         "intentos": c.factura_intentos or 0,
         "ultimo_intento": iso(c.factura_intento_en),
         "devuelto_en": iso(c.devuelto_en),
+        # La prefactura en Odoo (seccion 117): su numero, cuando salio y
+        # donde se abre. La anulada: la que se quedo en Odoo al regresarlo,
+        # que cancela el facturista.
+        "prefactura": ({"id": c.prefactura_odoo_id,
+                        "en": iso(c.prefactura_en),
+                        "total": (str(c.prefactura_total)
+                                  if c.prefactura_total is not None else None),
+                        "url": odoo_facturacion.url_en_odoo(
+                            c.prefactura_odoo_id)}
+                       if c.prefactura_odoo_id else None),
+        "prefactura_anulada": c.prefactura_anulada_id,
+        "prefactura_url_anulada": odoo_facturacion.url_en_odoo(
+            c.prefactura_anulada_id),
+        "de_antes": antes,
     }
 
 
@@ -497,6 +569,10 @@ def bandeja(db: Session, ahora: datetime | None = None) -> dict:
     Por aprobar: lo que ya tiene el visto bueno del consultor. Por
     facturar: lo que Odoo no acepto, con lo que dijo. Cerrados: lo que
     finanzas ya cerro este mes. Un implantado va por mes.
+
+    Con la llave de la factura (seccion 117) «Por facturar» se parte en
+    dos: «En Odoo», las prefacturas que esperan al facturista, y «No se
+    pudo mandar», con su porque. Los eventuales y los meses, juntos.
     """
     from app import comisiones
 
@@ -514,7 +590,11 @@ def bandeja(db: Session, ahora: datetime | None = None) -> dict:
                                               m.EstatusCierre.FACTURADO)),
                         m.Cierre.aprobado_en >= primero)
                 .order_by(m.Cierre.aprobado_en.desc()).all())
-    facturar = por_facturar(db)
+    pendientes = sin_factura(db)
+    facturar = [renglon(db, c) for c in pendientes]
+    llave = odoo_facturacion.hay_llave()
+    en_odoo = [c for c in pendientes if c.prefactura_odoo_id]
+    no_salio = [c for c in pendientes if not c.prefactura_odoo_id]
 
     def suma(filas):
         return sum((Decimal(str(c.total_ejecutado or 0)) for c in filas),
@@ -523,6 +603,11 @@ def bandeja(db: Session, ahora: datetime | None = None) -> dict:
     return {
         "momento": ahora.isoformat(),
         "odoo_configurado": hay_conexion(),
+        # La llave de la factura (seccion 117): con ella, las pestanas son
+        # «En Odoo» y «No se pudo mandar»; sin ella, «Por facturar».
+        "llave": llave,
+        "en_odoo": [f for f in facturar if f["prefactura"]] if llave else [],
+        "no_se_pudo": [f for f in facturar if not f["prefactura"]] if llave else [],
         "resumen": {
             # `monto` se queda para quien ya lo leia; `montos` es el que
             # vale: uno por moneda (seccion 82). Sumar dolares con pesos
@@ -530,6 +615,12 @@ def bandeja(db: Session, ahora: datetime | None = None) -> dict:
             "por_aprobar": {"cuantos": len(aprobar), "monto": suma(aprobar),
                             "montos": montos(db, aprobar)},
             "por_facturar": {"cuantos": len(facturar)},
+            "en_odoo": {"cuantos": len(en_odoo) if llave else 0,
+                        "montos": montos(db, en_odoo) if llave else []},
+            "no_se_pudo": {"cuantos": len(no_salio) if llave else 0,
+                           "de_antes": (sum(1 for c in no_salio
+                                            if de_antes(c, llave))
+                                        if llave else 0)},
             "cerrados": {"cuantos": len(cerrados), "monto": suma(cerrados),
                          "montos": montos(db, cerrados),
                          "mes": ahora.month, "anio": ahora.year},

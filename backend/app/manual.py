@@ -360,6 +360,19 @@ TAREAS = {
                "depois da primeira leitura feita à mão.",
                "O cartão do Odoo: a chave e a primeira leitura."),
     },
+    "odoo-prefacturas": {
+        "es": ("Odoo: vuelve a mandar las prefacturas con visto bueno que no "
+               "llegaron a Odoo --Odoo no contestó, faltaba un dato, la "
+               "anterior seguía viva--, sin duplicar. Sin la llave de la "
+               "factura no hace nada.",
+               "Facturación → «No se pudo mandar»: lo que sigue ahí y por qué."),
+        "pt": ("Odoo: volta a enviar as pré-faturas com visto bom que não "
+               "chegaram ao Odoo --o Odoo não respondeu, faltava um dado, a "
+               "anterior seguia viva--, sem duplicar. Sem a chave da fatura "
+               "não faz nada.",
+               "Faturamento → «Não foi possível enviar»: o que continua lá e "
+               "por quê."),
+    },
     "gps-cerrar-dias": {
         "es": ("GPS: cierra el día de cada unidad, con sus kilómetros y su "
                "manejo, dos horas después del fin.",

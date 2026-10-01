@@ -176,12 +176,15 @@ ODOO_TOKEN=
 ODOO_BASE=https://centauro.odoo.com
 ODOO_API_KEY=
 
-# La factura del eventual (seccion 116): la llave con que Connect crea
-# en Odoo la prefactura en borrador, y nada mas --no la confirma, no la
-# timbra, no la borra--. Va aparte de ODOO_API_KEY para poder cambiarla
-# sin tocar codigo; por decision de Salvador, por ahora el mismo valor.
-# Vacia = no se manda nada. Si en Odoo el producto de los gastos no se
-# llama «Gastos de Operación (Viáticos)», ODOO_PRODUCTO_GASTOS lo dice.
+# La factura en Odoo (secciones 116 y 117): la llave con que Connect
+# crea en Odoo la prefactura en borrador del visto bueno --del eventual y
+# del mes del implantado--, y nada mas: no la confirma, no la timbra, no
+# la borra. Va aparte de ODOO_API_KEY para poder cambiarla sin tocar
+# codigo; por decision de Salvador, por ahora el mismo valor. Vacia = no
+# se manda nada y la factura se hace en Odoo como antes. Con ella, la
+# tarea de cada hora (odoo.mandar_prefacturas, a los :07) reintenta lo
+# que no salio. Si en Odoo el producto de los gastos no se llama
+# «Gastos de Operación (Viáticos)», ODOO_PRODUCTO_GASTOS lo dice.
 ODOO_FACTURACION_API_KEY=
 
 # Pegasus, el GPS de las unidades. Vacio = no se lee nada.

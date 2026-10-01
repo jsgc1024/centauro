@@ -4,7 +4,7 @@ parte: resolver
 orden: 520
 area: Dinero
 titulo: El visto bueno no sale y el servicio no llega a facturación
-buscar: cierre visto bueno no sale mandar a facturar finanzas puntos por corregir cotizacion autorizada jornada sin termino viaticos sin cerrar tipo de cambio desviacion regresado plazo vencido factura por facturar
+buscar: cierre visto bueno no sale mandar a facturar prefactura no se pudo mandar odoo no contesto finanzas puntos por corregir cotizacion autorizada jornada sin termino viaticos sin cerrar tipo de cambio desviacion regresado plazo vencido factura por facturar
 ---
 ### Qué ves
 En la tarjeta **Visto bueno y facturación** del servicio, «Antes de mandarlo» dice que hay puntos por corregir; o el botón **Dar visto bueno y mandar a facturar** no aparece.
@@ -31,7 +31,7 @@ Cada punto dice su acción:
 
 ### Y después del visto bueno
 - **Finanzas lo regresa** con su motivo: hay 24 horas desde el regreso para corregir y volver a mandarlo. Lo en plazo del primer visto bueno se queda como estaba.
-- **La factura no sale.** El visto bueno ya quedó: el servicio espera en Facturación → Por facturar con lo que pasó, y finanzas lo aprueba igual. Mientras la factura hacia Odoo no esté conectada, todo lo aprobado espera ahí.
+- **La prefactura no sale a Odoo.** El visto bueno ya quedó: el servicio —o el mes— espera en Facturación → «No se pudo mandar» con lo que pasó —Odoo no contestó, falta un dato, la anterior sigue viva en Odoo— y se vuelve a intentar solo cada hora; finanzas lo aprueba igual. Sin la llave de la factura, todo lo aprobado espera en «Por facturar» y la factura se hace en Odoo.
 - **Se pasó el plazo.** No frena: el servicio se factura igual, pero la comisión de ese servicio se pierde.
 
 > **La causa de fondo:** el visto bueno es la puerta al dinero: lo que pasa por ella se factura y se paga. Por eso no deja pasar nada que todavía se mueva —un viático abierto, un día sin fin, un precio sin respaldo—.

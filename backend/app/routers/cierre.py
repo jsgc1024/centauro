@@ -654,7 +654,7 @@ def enviar_finanzas(cierre_id: int, db: Session = Depends(get_db),
     # commit a proposito: el envio ya quedo guardado y un Odoo caido no
     # lo deshace; el servicio se queda en la bandeja de por facturar
     # con el error a la vista y se reintenta desde ahi.
-    factura = facturacion.enviar(db, cierre)
+    factura = facturacion.enviar(db, cierre, usuario)
     db.commit()
 
     return {"resultado": "enviado a finanzas", "cierre_id": cierre.id,
@@ -753,8 +753,10 @@ def aprobar(cierre_id: int, db: Session = Depends(get_db),
     # reintenta si aquel envio fallo y, si ya esta, el cierre pasa a
     # facturado. Va despues del commit a proposito: el cierre ya quedo
     # aprobado y la comision ya se genero; si Odoo no contesta, eso no
-    # se deshace y el servicio sigue en la bandeja de por facturar.
-    factura = facturacion.enviar(db, cierre)
+    # se deshace y el servicio sigue en la bandeja de por facturar. La
+    # prefactura (seccion 117) que nunca se intento --visto bueno de antes
+    # de la llave-- no sale aqui: la manda finanzas si toca.
+    factura = facturacion.enviar(db, cierre, usuario, primera_vez=False)
     db.commit()
 
     return {"resultado": "aprobado", "cierre_id": cierre.id,
@@ -795,12 +797,14 @@ def facturar(cierre_id: int, db: Session = Depends(get_db),
              usuario: m.Usuario = Depends(FINANZAS)):
     """El mismo envio de la aprobacion, a mano. Sirve para el dia que
     Odoo estaba caido, y para el primer envio cuando la conexion se
-    configura despues."""
+    configura despues. Con la llave de la factura (seccion 117) manda la
+    prefactura en borrador, sin duplicar: tambien la de lo que tuvo su
+    visto bueno antes de la llave, que no sale sola."""
     cierre = db.get(m.Cierre, cierre_id)
     if not cierre:
         raise HTTPException(404, f"No existe el cierre {cierre_id}")
 
-    resultado = facturacion.enviar(db, cierre)
+    resultado = facturacion.enviar(db, cierre, usuario)
     if resultado["resultado"] == "facturado":
         auditoria.registrar(db, usuario, cierre.servicio, "facturar",
                             f"factura {cierre.factura_odoo} en Odoo")

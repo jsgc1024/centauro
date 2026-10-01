@@ -25,7 +25,7 @@ Una máquina en Google Cloud, en Querétaro, con el reloj en hora de México. Ah
 Veinte tareas que corren solas: leer el GPS cada dos minutos, sacar los correos cada cinco, avanzar los cierres, leer Odoo cada hora, el corte del lunes, las estrellas del mes. Cada tarea anota su última vuelta: en [lo que el sistema hace solo](#/manual/reloj) se ve cuándo corrió cada una. Si el reloj se para, deja de pasar todo lo que pasa solo, aunque la consola siga abriendo.
 
 ### Odoo
-La fuente de verdad del personal de seguridad, de la oficina, de la flota y el taller, de los clientes y de los tarifarios. Centauro **lo lee y nunca escribe en él**: lo que viene de Odoo se corrige en Odoo, y llega solo en la siguiente lectura. Ver [lo que viene de Odoo](#/manual/leer/odoo).
+La fuente de verdad del personal de seguridad, de la oficina, de la flota y el taller, de los clientes y de los tarifarios. Centauro **lo lee**, y lo único que escribe en él es la prefactura en borrador que sale con el visto bueno: lo que viene de Odoo se corrige en Odoo, y llega solo en la siguiente lectura. Ver [lo que viene de Odoo](#/manual/leer/odoo).
 
 ### El GPS
 Pegasus, de Centauro Satelital. Con servicios en la calle, cada dos minutos se leen las unidades: el pánico, el camino al punto, el inhibidor, la corriente y el segundo testigo de las marcas. Sin nadie en la calle, cada quince, solo para saber cuál reporta. Cada unidad de Pegasus se liga sola con la de Centauro **por la placa**, y la placa sale de la flota de Odoo: sin la flota leída, no liga ninguna.

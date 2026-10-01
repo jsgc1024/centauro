@@ -24,4 +24,4 @@ Em [Odoo](#/odoo), o **Ensaio** dessa leitura: lê o Odoo naquele momento, diz o
 - Se ficou pendente: corrigir no Odoo o que o ensaio diz.
 - Se a chave venceu: o Salvador coloca uma nova no servidor.
 
-> **A causa raiz:** o Centauro nunca escreve no Odoo e nunca adivinha. O que não chega, ou ainda não teve a sua vez, ou o Odoo o tem incompleto.
+> **A causa raiz:** o Centauro só lê do Odoo —a única coisa que escreve é a pré-fatura em rascunho— e nunca adivinha. O que não chega, ou ainda não teve a sua vez, ou o Odoo o tem incompleto.

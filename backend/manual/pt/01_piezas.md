@@ -25,7 +25,7 @@ Uma máquina no Google Cloud, em Querétaro, com o relógio no horário do Méxi
 Vinte tarefas que rodam sozinhas: ler o GPS a cada dois minutos, enviar os e-mails a cada cinco, avançar os fechamentos, ler o Odoo a cada hora, o fechamento de segunda-feira, as estrelas do mês. Cada tarefa anota a sua última volta: em [o que o sistema faz sozinho](#/manual/reloj) se vê quando cada uma rodou. Se o relógio para, deixa de acontecer tudo o que acontece sozinho, mesmo que o console continue abrindo.
 
 ### O Odoo
-A fonte de verdade do pessoal de segurança, do escritório, da frota e da oficina, dos clientes e das tabelas de preços. O Centauro **o lê e nunca escreve nele**: o que vem do Odoo se corrige no Odoo e chega sozinho na leitura seguinte. Ver [o que vem do Odoo](#/manual/leer/odoo).
+A fonte de verdade do pessoal de segurança, do escritório, da frota e da oficina, dos clientes e das tabelas de preços. O Centauro **o lê**, e a única coisa que escreve nele é a pré-fatura em rascunho que sai com o aval: o que vem do Odoo se corrige no Odoo e chega sozinho na leitura seguinte. Ver [o que vem do Odoo](#/manual/leer/odoo).
 
 ### O GPS
 O Pegasus, da Centauro Satelital. Com serviços na rua, a cada dois minutos as unidades são lidas: o pânico, o caminho até o ponto, o bloqueador de sinal, a corrente e a segunda testemunha das marcações. Sem ninguém na rua, a cada quinze, só para saber qual reporta. Cada unidade do Pegasus se liga sozinha à do Centauro **pela placa**, e a placa sai da frota do Odoo: sem a frota lida, nenhuma se liga.

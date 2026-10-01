@@ -31,6 +31,29 @@ SIN_COTIZACION = ("El servicio no tiene una cotizacion autorizada, y sin "
 SIN_PRECIO = "Sin precio en la lista"
 
 
+def cliente_sin_ficha_en_odoo(servicio: m.Servicio) -> dict | None:
+    """El cliente que no tiene su ficha en Odoo no deja dar el visto bueno
+    (seccion 117, decision 3 de Salvador): con el visto bueno sale la
+    prefactura a Odoo, y sin la ficha no hay a quien facturarle. Solo
+    cuando la factura ya va a Odoo --la llave esta puesta--: antes, el
+    visto bueno no manda nada y frenarlo no serviria de nada. Igual para
+    el eventual y para el mes del implantado."""
+    from app import odoo_facturacion
+
+    cliente = servicio.cliente
+    if not odoo_facturacion.hay_llave() or (cliente and cliente.odoo_id):
+        return None
+    nombre = cliente.nombre if cliente else "del servicio"
+    return {
+        "nivel": GRAVE, "asunto": "Cliente sin ficha en Odoo",
+        "clave": "cliente_sin_odoo", "datos": {"cliente": nombre},
+        "mensaje": (f"El cliente {nombre} no tiene su ficha en Odoo: sin ella "
+                    "no se le puede mandar la prefactura"),
+        "accion": ("Que finanzas lo dé de alta en Odoo con su RFC y la "
+                   "etiqueta «Protección ejecutiva»; la lectura de clientes "
+                   "de cada hora lo trae.")}
+
+
 def revisar(db: Session, servicio_id: int, ahora: datetime | None = None) -> dict:
     servicio = db.get(m.Servicio, servicio_id)
     if not servicio:
@@ -163,6 +186,11 @@ def revisar(db: Session, servicio_id: int, ahora: datetime | None = None) -> dic
                         "lo autorice"),
             "accion": "Direccion de operaciones lo autoriza desde «Autorizar "
                       "el cobro», en esta tarjeta."})
+
+    # --- el cliente sin ficha en Odoo (seccion 117, decision 3 de Salvador)
+    sin_ficha = cliente_sin_ficha_en_odoo(servicio)
+    if sin_ficha:
+        observaciones.append(sin_ficha)
 
     # --- el tipo de cambio (seccion 82). Con gastos netos y la cotizacion
     # en otra moneda, lo comprobado --en pesos-- se factura en la moneda

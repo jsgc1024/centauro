@@ -3357,6 +3357,30 @@ class Cierre(Base):
     aviso_vencido_en: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True)
 
+    # La prefactura en Odoo (seccion 117): la factura de cliente en
+    # borrador que Connect manda con el visto bueno --del servicio o del
+    # mes--. El facturista la confirma y la timbra alla. Se guarda su
+    # numero en Odoo, cuando salio, cuanto mando antes de impuestos y lo
+    # que se mando renglon por renglon (JSON), que es lo que el consultor
+    # ve en su tarjeta. `prefactura_anulada_id`: la que se quedo viva en
+    # Odoo cuando finanzas regreso el servicio; Connect no la borra --no
+    # puede--, y no manda la nueva mientras el facturista no la cancele.
+    prefactura_odoo_id: Mapped[int | None] = mapped_column(Integer,
+                                                           nullable=True)
+    prefactura_en: Mapped[datetime | None] = mapped_column(DateTime,
+                                                           nullable=True)
+    prefactura_total: Mapped[float | None] = mapped_column(Numeric(12, 2),
+                                                           nullable=True)
+    prefactura_detalle: Mapped[str | None] = mapped_column(Text, nullable=True)
+    prefactura_anulada_id: Mapped[int | None] = mapped_column(Integer,
+                                                              nullable=True)
+    # Desde cuando le toca a Connect mandarla: el primer intento, que es
+    # el del visto bueno. Lo que tuvo su visto bueno antes de la llave de
+    # la factura no la tiene, y no se manda solo: pudo haberse facturado a
+    # mano en Odoo sin anotarlo. Finanzas decide, renglon por renglon.
+    prefactura_desde: Mapped[datetime | None] = mapped_column(DateTime,
+                                                              nullable=True)
+
     servicio: Mapped[Servicio] = relationship()
     contrato: Mapped["ContratoImplantado | None"] = relationship()
     cobro_autorizado_por: Mapped["Persona | None"] = relationship(

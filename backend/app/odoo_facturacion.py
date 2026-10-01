@@ -30,6 +30,9 @@ El IVA lo pone Odoo con el impuesto de cada producto, como cuando la hace
 el facturista a mano; el diario, el de ventas de siempre; la fecha, la
 del dia en que el facturista la confirma.
 """
+import json
+import logging
+from datetime import datetime
 from decimal import Decimal
 
 from fastapi import HTTPException
@@ -59,6 +62,8 @@ ORIGEN = "Connect"
 
 CERO = Decimal("0")
 CENTAVO = Decimal("0.01")
+
+registro = logging.getLogger("centauro.facturacion")
 
 
 def hay_llave() -> bool:
@@ -181,6 +186,44 @@ FALTA = {
     "no_cuadra": "Los renglones suman {suma} y el servicio {total}.",
 }
 
+# Lo mismo que falta en varios renglones, dicho una vez: «A», «B» y «C».
+FALTA_VARIOS = {
+    "sin_producto": "{lista}: sus precios no salieron de un producto de Odoo; "
+                    "la lista del cliente se capturó a mano en Connect.",
+    "producto_por_leer": "{lista}: todavía no se sabe con qué productos de "
+                         "Odoo se cobran; los trae la lectura de los "
+                         "tarifarios.",
+    "sin_variante": "{lista}: todavía no se sabe con qué variante de Odoo se "
+                    "cobra cada uno; la trae la lectura de los tarifarios.",
+    "sin_producto_puesto": "{lista}: no se sabe con qué producto de Odoo se "
+                           "cobran; dilo en Facturación → Tarifarios, en la "
+                           "tabla de productos.",
+}
+
+
+def _y(nombres: list) -> str:
+    """«A», «B» y «C»."""
+    citados = [f"«{n}»" for n in nombres]
+    return (", ".join(citados[:-1]) + " y " + citados[-1]
+            if len(citados) > 1 else "".join(citados))
+
+
+def resumen_de_faltan(faltan: list) -> str:
+    """Lo que falta, en un parrafo corto: lo que se repite en varios
+    renglones --cuatro precios de una lista capturada a mano-- va junto."""
+    grupos: dict = {}
+    for f in faltan:
+        grupos.setdefault(f["clave"], []).append(f)
+    partes = []
+    for clave, lista in grupos.items():
+        nombres = [f.get("que") or f.get("producto") for f in lista]
+        if len(lista) > 1 and clave in FALTA_VARIOS and all(nombres):
+            partes.append(FALTA_VARIOS[clave].format(lista=_y(nombres)))
+        else:
+            partes.extend(f["texto"] for f in lista)
+    return " ".join(partes)
+
+
 # El orden de los renglones de un dia: lo que va junto primero y la hora
 # extra al final, como en el cierre.
 ORDEN = {"paquete": 0, "recurso": 1, "vehiculo": 2, "horas_extra": 3}
@@ -250,20 +293,25 @@ def producto_de_gastos(db: Session) -> tuple:
 
 
 def prefactura(db: Session, cierre: m.Cierre) -> dict:
-    """La prefactura de un eventual tal como se mandaria a Odoo, sin
-    mandarla. `faltan` vacio: se puede mandar.
+    """La prefactura de un cierre tal como se mandaria a Odoo, sin
+    mandarla: la del servicio eventual o, desde la seccion 117, la del mes
+    del implantado (`odoo_facturacion_mes`). `faltan` vacio: se puede
+    mandar."""
+    if cierre.contrato_id:
+        from app.odoo_facturacion_mes import prefactura_del_mes
+        return prefactura_del_mes(db, cierre)
+    return _del_eventual(db, cierre)
 
-    Un renglon por dia, equipo y lo que se cobra --el paquete, el rol o
-    la unidad--, con el producto de Odoo de su precio en la lista del
-    cliente; la hora extra en su renglon, con el producto de la de su
-    rol; y los gastos en uno solo.
+
+def _del_eventual(db: Session, cierre: m.Cierre) -> dict:
+    """La del eventual. Un renglon por dia, equipo y lo que se cobra --el
+    paquete, el rol o la unidad--, con el producto de Odoo de su precio
+    en la lista del cliente; la hora extra en su renglon, con el producto
+    de la de su rol; y los gastos en uno solo.
     """
     from app import cotizacion as cot
     from app.cotizacion_pdf import MODALIDAD
 
-    if cierre.contrato_id:
-        raise ValueError("El mes del implantado se factura como hoy: no va "
-                         "a Odoo como prefactura.")
     servicio = cierre.servicio
     cliente = servicio.cliente
     faltan = _Faltan()
@@ -482,16 +530,228 @@ def buscar(odoo, origen: str) -> list:
                      ["name", "state", "ref", "amount_untaxed", "currency_id"])
 
 
-def crear(odoo: Conexion, pre: dict, moneda_id: int) -> dict:
+class AnteriorViva(Exception):
+    """La prefactura de antes del regreso sigue viva en Odoo."""
+
+
+def crear(odoo: Conexion, pre: dict, moneda_id: int,
+          anterior: int | None = None) -> dict:
     """Manda la prefactura sin duplicar: si en Odoo ya hay una viva del
     mismo servicio --en borrador o timbrada-- no crea otra. La cancelada
     no cuenta: al corregir el servicio sale una nueva, con la misma
-    referencia."""
+    referencia. `anterior`: la que se quedo en Odoo cuando finanzas
+    regreso el servicio; mientras siga viva no se manda la nueva --serian
+    dos--, y el facturista la cancela."""
     vals = valores(pre, moneda_id)
     vivas = [f for f in buscar(odoo, pre["origen"]) if f.get("state") != "cancel"]
+    if anterior and any(f["id"] == anterior for f in vivas):
+        raise AnteriorViva(anterior)
     if vivas:
         return {"id": vivas[0]["id"], "nueva": False,
                 "estado": vivas[0].get("state")}
     ids = odoo.llamar(MODELO, "create", vals_list=[vals])
     nuevo = ids[0] if isinstance(ids, list) else ids
     return {"id": int(nuevo), "nueva": True, "estado": "draft"}
+
+
+# ================================================================ mandarla
+
+# Por que no salio, como se guarda en el cierre (`factura_error`) y como
+# la pantalla lo reconoce (`facturacion.que_paso`).
+SIN_LLAVE = ("Falta la llave de la factura (ODOO_FACTURACION_API_KEY) en el "
+             "servidor: no sale ninguna prefactura.")
+FALTA_DATO = "Falta un dato para la prefactura:"
+ANTERIOR_VIVA = ("La prefactura anterior (#{id}) sigue viva en Odoo: el "
+                 "facturista la cancela y Connect manda la nueva.")
+SIN_MONEDA = "la moneda {moneda} no está activa en Odoo."
+NO_CUADRA_VB = ("La prefactura suma {suma} y el visto bueno fue por {total}: "
+                "algo cambió después del visto bueno --un precio de la lista "
+                "o un día--. Finanzas lo regresa al consultor para que lo "
+                "revise.")
+# Lo que tuvo su visto bueno antes de la llave no se manda solo: pudo
+# haberse facturado a mano en Odoo sin anotarlo aqui.
+DE_ANTES = ("Tuvo su visto bueno antes de la conexión de la factura: no se "
+            "manda sola.")
+NO_SE_ENTIENDE = "Odoo contesto algo que no se entiende:"
+# Cuantas reintenta la tarea de cada hora en una vuelta.
+POR_VUELTA = 30
+
+
+def url_en_odoo(odoo_id: int | None) -> str | None:
+    """Donde se abre la prefactura en Odoo, para quien tenga acceso alla."""
+    if not odoo_id or not settings.odoo_base:
+        return None
+    base = settings.odoo_base.strip().rstrip("/")
+    base = base if base.startswith("http") else "https://" + base
+    return f"{base}/web#id={odoo_id}&model={MODELO}&view_type=form"
+
+
+def _detalle(pre: dict) -> str:
+    """Lo que se mando, para la tarjeta del cierre: renglon por renglon."""
+    return json.dumps({
+        "referencia": pre["referencia"], "origen": pre["origen"],
+        "moneda": pre["moneda"], "nota": pre.get("nota"),
+        "total": str(pre["total"]),
+        "renglones": [{"producto": r["producto"], "etiqueta": r["etiqueta"],
+                       "cantidad": r["cantidad"], "precio": str(r["precio"]),
+                       "importe": str(r["importe"])}
+                      for r in pre["renglones"]],
+    }, ensure_ascii=False)
+
+
+def detalle(cierre: m.Cierre) -> dict | None:
+    """La prefactura de un cierre, para las pantallas: su numero en Odoo,
+    cuando salio, cuanto, donde se abre y lo que se mando."""
+    if not cierre.prefactura_odoo_id:
+        return None
+    try:
+        guardado = json.loads(cierre.prefactura_detalle or "{}")
+    except ValueError:
+        guardado = {}
+    return {"id": cierre.prefactura_odoo_id,
+            "en": (cierre.prefactura_en.isoformat()
+                   if cierre.prefactura_en else None),
+            "total": (str(cierre.prefactura_total)
+                      if cierre.prefactura_total is not None else None),
+            "moneda": guardado.get("moneda"),
+            "referencia": guardado.get("referencia"),
+            "nota": guardado.get("nota"),
+            "renglones": guardado.get("renglones") or [],
+            "url": url_en_odoo(cierre.prefactura_odoo_id)}
+
+
+def mandar(db: Session, cierre: m.Cierre, ahora: datetime | None = None,
+           primera_vez: bool = True) -> dict:
+    """La prefactura de ese cierre, a Odoo, en borrador (seccion 117).
+
+    No levanta excepcion nunca: devuelve que paso y lo deja en el cierre.
+    Quien la llama ya guardo el visto bueno, y un Odoo que no contesta no
+    lo deshace: el cierre se queda en «No se pudo mandar» con el porque, y
+    la tarea de cada hora la vuelve a intentar sin duplicar.
+
+    `primera_vez=False` --la aprobacion de finanzas-- solo reintenta la
+    que ya se habia intentado: lo que tuvo su visto bueno antes de la
+    llave no sale solo (`DE_ANTES`); lo manda finanzas con «Mandar a
+    Odoo».
+    """
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from app import reloj
+
+    # Uno a la vez por cierre, con su fila tomada hasta que quien llama
+    # guarde (como el visto bueno, seccion 101): la tarea de cada hora y
+    # «Mandar otra vez» en el mismo minuto buscaban los dos en Odoo, no
+    # encontraban nada y creaban dos. El segundo espera y la encuentra.
+    db.flush()
+    cierre = motor_cierre.tomar(db, cierre.id)
+    if cierre.prefactura_odoo_id:
+        return {"resultado": "ya estaba en odoo",
+                "prefactura": cierre.prefactura_odoo_id}
+    if not primera_vez and cierre.prefactura_desde is None:
+        return {"resultado": "sin mandar", "motivo": DE_ANTES}
+    momento = reloj.ahora_del_servicio(db, cierre.servicio, ahora)
+    if cierre.prefactura_desde is None:
+        # Los intentos de antes eran de la factura de siempre, que no
+        # salia: estos cuentan desde la primera prefactura.
+        cierre.prefactura_desde = momento
+        cierre.factura_intentos = 0
+    cierre.factura_intentos = (cierre.factura_intentos or 0) + 1
+    cierre.factura_intento_en = momento
+
+    def fallo(motivo: str, **mas) -> dict:
+        cierre.factura_error = motivo[:400]
+        db.flush()
+        registro.warning("no salio la prefactura de %s: %s",
+                         cierre.servicio.folio, motivo)
+        return {"resultado": "fallo", "motivo": cierre.factura_error, **mas}
+
+    if not hay_llave():
+        return fallo(SIN_LLAVE)
+    try:
+        pre = prefactura(db, cierre)
+    except SQLAlchemyError:
+        raise
+    except Exception as error:                        # noqa: BLE001
+        # Un error de este lado no deshace el visto bueno: se dice y la
+        # tarea de cada hora lo vuelve a intentar.
+        registro.exception("no se pudo armar la prefactura de %s",
+                           cierre.servicio.folio)
+        detalle = getattr(error, "detail", None) or error
+        if isinstance(detalle, dict):
+            detalle = detalle.get("mensaje") or detalle
+        return fallo(f"{FALTA_DATO} {detalle}")
+    if pre["faltan"]:
+        return fallo(f"{FALTA_DATO} {resumen_de_faltan(pre['faltan'])}",
+                     faltan=pre["faltan"])
+    # Lo que se manda es lo que el consultor aprobo: si cambio algo
+    # despues del visto bueno, no sale.
+    if (cierre.total_ejecutado is not None
+            and _d(cierre.total_ejecutado).quantize(CENTAVO)
+            != pre["total"].quantize(CENTAVO)):
+        return fallo(NO_CUADRA_VB.format(
+            suma=f"{pre['total']:,.2f}",
+            total=f"{_d(cierre.total_ejecutado):,.2f}"))
+    try:
+        odoo = conexion()
+        moneda_id = moneda_de(odoo, pre["moneda"])
+        if moneda_id is None:
+            return fallo(f"{FALTA_DATO} " + SIN_MONEDA.format(moneda=pre["moneda"]))
+        hecha = crear(odoo, pre, moneda_id, anterior=cierre.prefactura_anulada_id)
+    except AnteriorViva as viva:
+        return fallo(ANTERIOR_VIVA.format(id=viva.args[0]))
+    except odoo_api.SinConexion:
+        return fallo(SIN_LLAVE)
+    except (odoo_api.NoResponde, RuntimeError) as error:
+        return fallo(str(error))
+    except (ValueError, TypeError, KeyError) as error:
+        # Odoo contesto, pero no lo que se esperaba. Si la creo, la
+        # siguiente vuelta la encuentra por su origen y no hace otra.
+        return fallo(f"{NO_SE_ENTIENDE} {error}")
+
+    cierre.prefactura_odoo_id = hecha["id"]
+    cierre.prefactura_en = momento
+    cierre.prefactura_total = pre["total"]
+    cierre.prefactura_detalle = _detalle(pre)
+    # La de antes ya se cancelo en Odoo: esta la sustituye.
+    cierre.prefactura_anulada_id = None
+    cierre.factura_error = None
+    db.flush()
+    registro.info("prefactura %s de %s en Odoo%s", hecha["id"],
+                  cierre.servicio.folio, "" if hecha["nueva"] else " (ya estaba)")
+    return {"resultado": "en odoo", "prefactura": hecha["id"],
+            "nueva": hecha["nueva"], "total": str(pre["total"]),
+            "moneda": pre["moneda"]}
+
+
+def reintentar(db: Session, ahora: datetime | None = None) -> dict:
+    """La tarea de cada hora: lo que tiene visto bueno y no llego a Odoo
+    --Odoo no contesto, faltaba un dato que ya se corrigio, la anterior ya
+    se cancelo-- se vuelve a mandar, sin duplicar. Solo lo que ya se
+    intento: lo de antes de la llave lo decide finanzas. Sin la llave no
+    hace nada."""
+    if not hay_llave():
+        return {"omitido": "falta la llave de la factura"}
+    ids = [c.id for c in (db.query(m.Cierre)
+                          .filter(m.Cierre.estatus.in_(
+                              (m.EstatusCierre.ENVIADO_FINANZAS,
+                               m.EstatusCierre.APROBADO)),
+                                  m.Cierre.facturado_en.is_(None),
+                                  m.Cierre.prefactura_odoo_id.is_(None),
+                                  m.Cierre.prefactura_desde.isnot(None))
+                          .order_by(m.Cierre.enviado_en.nullsfirst(),
+                                    m.Cierre.id)
+                          .limit(POR_VUELTA))]
+    salieron, siguen = [], []
+    for cierre_id in ids:
+        try:
+            cierre = db.get(m.Cierre, cierre_id)
+            resultado = mandar(db, cierre, ahora)
+            db.commit()
+        except Exception:                             # noqa: BLE001
+            db.rollback()
+            registro.exception("la prefactura del cierre %s reventó", cierre_id)
+            siguen.append(cierre_id)
+            continue
+        (salieron if resultado["resultado"] == "en odoo" else siguen).append(
+            cierre.servicio.folio)
+    return {"intentadas": len(ids), "en_odoo": salieron, "siguen": len(siguen)}

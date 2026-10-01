@@ -169,6 +169,10 @@ def de_la_lista(db: Session, contrato: m.ContratoImplantado) -> dict:
             en_paquete.add(unidad.id)
             precio = _d(paquete.precio)
             renglones.append({"tipo": "paquete", "quien": quien, "rol": rol,
+                              # De que rol y que unidad: con ellos sale el
+                              # producto de Odoo de la factura (seccion 117).
+                              "perfil_id": fila.rol_id,
+                              "categoria_id": unidad.categoria_id,
                               "unidad": unidad.categoria.nombre,
                               "placa": unidad.placa, "precio_dia": precio,
                               "precio_hora_extra": extra})
@@ -182,6 +186,7 @@ def de_la_lista(db: Session, contrato: m.ContratoImplantado) -> dict:
                 continue
             precio = _d(tarifa.precio)
             renglones.append({"tipo": "recurso", "quien": quien, "rol": rol,
+                              "perfil_id": fila.rol_id,
                               "precio_dia": precio, "precio_hora_extra": extra})
         dia += precio
         if extra:
@@ -207,6 +212,7 @@ def de_la_lista(db: Session, contrato: m.ContratoImplantado) -> dict:
         precio = _d(tarifa.precio)
         mes = (precio * contrato.dias_base).quantize(CENTAVO)
         renglones.append({"tipo": "unidad", "placa": v.placa,
+                          "categoria_id": v.categoria_id,
                           "unidad": v.categoria.nombre, "precio_dia": precio,
                           "dias": contrato.dias_base, "precio_mes": mes})
         vehiculo_mes += mes

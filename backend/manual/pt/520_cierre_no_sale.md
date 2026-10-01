@@ -4,7 +4,7 @@ parte: resolver
 orden: 520
 area: Dinheiro
 titulo: O aval não sai e o serviço não chega ao faturamento
-buscar: fechamento aval nao sai mandar faturar financeiro pontos para corrigir cotacao autorizada jornada sem termino diarias sem fechar taxa de cambio desvio devolvido prazo vencido fatura a faturar
+buscar: fechamento aval nao sai mandar faturar pre-fatura nao foi possivel enviar odoo nao respondeu financeiro pontos para corrigir cotacao autorizada jornada sem termino diarias sem fechar taxa de cambio desvio devolvido prazo vencido fatura a faturar
 ---
 ### O que você vê
 No cartão **Aval e faturamento** do serviço, «Antes de enviar» diz que há pontos para corrigir; ou o botão **Dar o aval e mandar faturar** não aparece.
@@ -31,7 +31,7 @@ Cada ponto diz a sua ação:
 
 ### E depois do aval
 - **O financeiro o devolve** com o seu motivo: há 24 horas desde a devolução para corrigir e mandar de novo. O «no prazo» do primeiro aval fica como estava.
-- **A fatura não sai.** O aval já ficou: o serviço espera em Faturamento → A faturar, com o que aconteceu, e o financeiro o aprova do mesmo jeito. Enquanto a fatura para o Odoo não estiver conectada, tudo o que é aprovado espera ali.
+- **A pré-fatura não sai para o Odoo.** O aval já ficou: o serviço —ou o mês— espera em Faturamento → «Não foi possível enviar» com o que aconteceu —o Odoo não respondeu, falta um dado, a anterior continua viva no Odoo— e tenta-se de novo sozinho a cada hora; o financeiro o aprova do mesmo jeito. Sem a chave da fatura, tudo o que é aprovado espera em «A faturar» e a fatura é feita no Odoo.
 - **O prazo passou.** Não trava: o serviço é faturado do mesmo jeito, mas a comissão desse serviço se perde.
 
 > **A causa raiz:** o aval é a porta do dinheiro: o que passa por ela é faturado e pago. Por isso não deixa passar nada que ainda se mexe —uma diária aberta, um dia sem fim, um preço sem respaldo—.

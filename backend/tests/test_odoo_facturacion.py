@@ -455,10 +455,15 @@ def test_lo_que_falta_se_dice_para_quien_lo_corrige(cliente, sesion, datos,
     assert _claves(pre) == ["varios_de_gastos"]
 
 
-def test_el_implantado_no_va_por_aqui():
-    """El mes del implantado se factura como hoy (decision de Salvador)."""
-    with pytest.raises(ValueError):
-        odoo_facturacion.prefactura(None, m.Cierre(contrato_id=5))
+def test_el_mes_del_implantado_va_por_su_camino(monkeypatch):
+    """Desde la seccion 117 el mes del implantado tambien sale a Odoo
+    (decision 5 de Salvador), con su propia prefactura: un renglon por
+    puesto y por unidad. Sus pruebas viven en test_prefactura_odoo.py."""
+    from app import odoo_facturacion_mes
+    monkeypatch.setattr(odoo_facturacion_mes, "prefactura_del_mes",
+                        lambda db, cierre: {"del_mes": cierre.contrato_id})
+    assert odoo_facturacion.prefactura(None, m.Cierre(contrato_id=5)) == {
+        "del_mes": 5}
 
 
 # ================================================================ lo que se ve

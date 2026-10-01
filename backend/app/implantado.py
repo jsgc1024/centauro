@@ -230,6 +230,23 @@ def empieza_a_medio_mes(anio: int, mes: int, dias_servicio,
                for d in range(1, desde_dia))
 
 
+def termina_a_medio_mes(anio: int, mes: int, dias_servicio,
+                        hasta: date | None,
+                        turno: str = TURNO_NATURAL) -> bool:
+    """Si el implantado se cancelo con el mes a medias: despues de su
+    ultimo dia de servicio todavia quedaban dias de su modalidad en el mes
+    (seccion 117, decision 4 de Salvador). Ese mes, como el primero que
+    empieza a la mitad, se cobra por dia de servicio. Cancelado el ultimo
+    dia de su modalidad --el lunes 30, con lunes a viernes--, el mes ya se
+    trabajo entero y se cobra su mensual."""
+    if hasta is None or (hasta.year, hasta.month) != (anio, mes):
+        return False
+    tope = 7 if turno == TURNO_12X36 else hasta_donde(dias_servicio)
+    ultimo = calendar.monthrange(anio, mes)[1]
+    return any(date(anio, mes, d).weekday() < tope
+               for d in range(hasta.day + 1, ultimo + 1))
+
+
 def dias_del_mes(anio: int, mes: int, dias_servicio,
                 desde_dia: int | None = None,
                 turno: str = TURNO_NATURAL) -> list[date]:
@@ -1319,7 +1336,8 @@ def base_del_mensual(db: Session, contrato: m.ContratoImplantado) -> int | None:
 
 
 def cobro_del_mensual(db: Session, contrato: m.ContratoImplantado,
-                      trabajados: list[date]) -> dict | None:
+                      trabajados: list[date],
+                      hasta: date | None = None) -> dict | None:
     """Como se cobra el mes en las modalidades de la propuesta (seccion
     115), con los dias que se trabajaron:
 
@@ -1328,6 +1346,9 @@ def cobro_del_mensual(db: Session, contrato: m.ContratoImplantado,
       su modalidad (`empieza_a_medio_mes`)--, por dia de servicio: el
       mensual entre los dias de la modalidad, por los dias trabajados
       dentro de ella;
+    * igual el mes en que el implantado se cancela a la mitad (seccion
+      117, decision 4): `hasta` es el dia de la cancelacion
+      (`termina_a_medio_mes`);
     * el dia trabajado fuera de la modalidad --el sabado o el domingo de
       lunes a viernes, el domingo de lunes a sabado--, aparte, al precio
       del dia adicional. El 12x36 y el mes completo no tienen.
@@ -1347,14 +1368,17 @@ def cobro_del_mensual(db: Session, contrato: m.ContratoImplantado,
     mensual = Decimal(str(contrato.precio_mes_completo or 0))
     precio_dia = (mensual / base).quantize(centavo, rounding=ROUND_HALF_UP)
     turno = TURNO_12X36 if es_12x36 else TURNO_NATURAL
-    parcial = empieza_a_medio_mes(contrato.anio, contrato.mes,
+    empieza = empieza_a_medio_mes(contrato.anio, contrato.mes,
                                   contrato.dias_servicio, contrato.desde_dia,
                                   turno)
+    termina = termina_a_medio_mes(contrato.anio, contrato.mes,
+                                  contrato.dias_servicio, hasta, turno)
+    parcial = empieza or termina
     contratados = None
     if parcial:
-        contratados = len(dias_del_mes(
+        contratados = len([d for d in dias_del_mes(
             contrato.anio, contrato.mes, contrato.dias_servicio,
-            contrato.desde_dia, turno))
+            contrato.desde_dia, turno) if not termina or d <= hasta])
         importe_mes = precio_dia * len(dentro)
         contratado = precio_dia * contratados
     else:
@@ -1362,6 +1386,10 @@ def cobro_del_mensual(db: Session, contrato: m.ContratoImplantado,
     adicional = Decimal(str(contrato.precio_dia_adicional or 0))
     return {
         "base": base, "parcial": parcial, "desde_dia": contrato.desde_dia,
+        # Si el primer mes empezo a la mitad, y el dia en que se cancelo
+        # si termino a la mitad.
+        "empieza": empieza,
+        "hasta_dia": hasta.day if termina else None,
         "dentro": len(dentro), "contratados": contratados,
         "fuera": [d.isoformat() for d in fuera],
         "precio_dia": precio_dia, "importe_mes": importe_mes,
@@ -1473,9 +1501,12 @@ def resumen_mensual(db: Session, contrato_id: int) -> dict:
     adicionales = [j for j in vivas if j.es_dia_adicional]
 
     # Las modalidades de la propuesta (seccion 115): el precio fijo, o
-    # por dia el primer mes a medias, y aparte los dias fuera de ella.
+    # por dia el primer mes a medias --y el que se cancelo a medias,
+    # seccion 117--, y aparte los dias fuera de ella.
+    from app.cierre_mes import dia_de_la_cancelacion
     cobro = cobro_del_mensual(db, contrato,
-                              [j.fecha for j in vivas if j.personal])
+                              [j.fecha for j in vivas if j.personal],
+                              hasta=dia_de_la_cancelacion(db, contrato))
     if cobro is not None:
         desglose = {"mes_completo": cobro["importe_mes"]}
         if cobro["fuera"]:

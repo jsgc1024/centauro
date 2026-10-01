@@ -1051,7 +1051,7 @@ def estado(db: Session, servicio_id: int,
     fila = (db.query(m.Cierre)
             .filter_by(servicio_id=servicio_id, contrato_id=None).first())
     if not fila:
-        return {"momento": ahora.isoformat(), **VACIO}
+        return {"momento": ahora.isoformat(), **vacio()}
     return {"momento": ahora.isoformat(), **ficha_del_cierre(db, fila, ahora)}
 
 
@@ -1067,7 +1067,17 @@ VACIO = {"existe": False, "cierre_id": None, "estatus": None, "fase": None,
          "visto_bueno_en": None, "enviado_en": None, "devuelto_en": None,
          "devuelto_motivo": None, "aprobado_en": None, "reloj": None,
          "consultor": None, "comision": None, "cobro": None,
-         "cobro_por_autorizar": False}
+         "cobro_por_autorizar": False, "llave_factura": False,
+         "prefactura": None, "prefactura_anulada": None,
+         "prefactura_url_anulada": None, "que_paso": None,
+         "prefactura_de_antes": False}
+
+def vacio() -> dict:
+    """VACIO, y si ya hay llave de la factura: la tarjeta dice desde antes
+    que el tercer paso es la prefactura en Odoo (seccion 117)."""
+    from app import odoo_facturacion
+    return {**VACIO, "llave_factura": odoo_facturacion.hay_llave()}
+
 
 # Cuantas horas tiene el consultor desde que finanzas le regresa el
 # servicio (decision 1 de Salvador, 23 sep).
@@ -1157,6 +1167,29 @@ def ficha_del_cierre(db: Session, fila: m.Cierre, ahora: datetime) -> dict:
         # tarjeta lo dice y el visto bueno espera.
         "cobro": cobro_del_cierre(db, fila),
         "cobro_por_autorizar": cobro_sin_autorizar(fila),
+        # La prefactura en Odoo (seccion 117): su numero, lo que se mando
+        # y donde se abre; o por que no salio.
+        **prefactura_de(fila),
+    }
+
+
+def prefactura_de(fila: m.Cierre) -> dict:
+    """Lo de la prefactura para la tarjeta del cierre: si hay llave, la
+    que salio, la que se quedo en Odoo al regresarlo y por que no sale."""
+    from app import facturacion, odoo_facturacion
+
+    llave = odoo_facturacion.hay_llave()
+    return {
+        "llave_factura": llave,
+        "prefactura": odoo_facturacion.detalle(fila),
+        "prefactura_anulada": fila.prefactura_anulada_id,
+        "prefactura_url_anulada": odoo_facturacion.url_en_odoo(
+            fila.prefactura_anulada_id),
+        "que_paso": (facturacion.que_paso(fila.factura_error)
+                     if fila.factura_error else None),
+        "prefactura_de_antes": bool(llave and fila.enviado_en
+                                    and not fila.prefactura_desde
+                                    and not fila.prefactura_odoo_id),
     }
 
 
@@ -1351,6 +1384,8 @@ def regresar(db: Session, cierre: m.Cierre, motivo: str, usuario: m.Usuario,
     regreso, y lo "en plazo" de su primer visto bueno se queda. Si la
     factura ya salio, se anula: con el nuevo visto bueno sale otra, que
     lleva el folio de la anulada para que en Odoo se sepa cual sustituye.
+    La prefactura en borrador (seccion 117) la cancela el facturista en
+    Odoo; la nueva sale cuando ya este cancelada.
     """
     from app import auditoria
 
@@ -1376,6 +1411,16 @@ def regresar(db: Session, cierre: m.Cierre, motivo: str, usuario: m.Usuario,
         cierre.factura_anulada = cierre.factura_odoo
         cierre.factura_odoo = None
         cierre.facturado_en = None
+    # La prefactura en Odoo (seccion 117) se queda alla: Connect no la
+    # cancela ni la borra --no puede--. Se recuerda cual era para no
+    # mandar la nueva mientras siga viva; la cancela el facturista.
+    prefactura = cierre.prefactura_odoo_id
+    if prefactura:
+        cierre.prefactura_anulada_id = prefactura
+        cierre.prefactura_odoo_id = None
+        cierre.prefactura_en = None
+        cierre.prefactura_total = None
+        cierre.prefactura_detalle = None
     # La que se anoto a mano se anula igual (seccion 96): la que sigue
     # puede llegar de Odoo o anotarse otra vez.
     cierre.factura_anotada_por_id = None
@@ -1398,6 +1443,9 @@ def regresar(db: Session, cierre: m.Cierre, motivo: str, usuario: m.Usuario,
     auditoria.registrar(db, usuario, cierre.servicio, "devolver a operacion",
                         (f"{de_que}: {motivo}"
                          + (f" (factura {anulada} anulada)" if anulada
+                            else "")
+                         + (f" (la prefactura #{prefactura} quedo en Odoo: "
+                            f"la cancela el facturista)" if prefactura
                             else ""))[:400])
     hasta = momento + timedelta(hours=HORAS_REGRESO)
     # El correo se guarda con el regreso (seccion 101): el push de abajo
@@ -1423,7 +1471,8 @@ def regresar(db: Session, cierre: m.Cierre, motivo: str, usuario: m.Usuario,
             db.rollback()
             registro.exception("no se pudo avisar el regreso de %s", de_que)
     return {"resultado": "devuelto a operacion", "motivo": motivo,
-            "hasta": hasta.isoformat(), "factura_anulada": anulada}
+            "hasta": hasta.isoformat(), "factura_anulada": anulada,
+            "prefactura_anulada": prefactura}
 
 
 # ---------------------------------------------------------------- el segundo reloj

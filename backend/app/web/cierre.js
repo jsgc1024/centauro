@@ -155,18 +155,135 @@ function fases(c, tuyo) {
                                        : t("cie_en_plazo"));
   }
 
-  const tres = actual === 2 ? t("cie_paso_finanzas_revisa")
-    : actual > 2 ? esc(c.factura || t("cie_sin_factura"))
-    : t("cie_paso_finanzas");
+  /* Con la llave de la factura (seccion 117) el tercer paso es la
+     prefactura en Odoo: su borrador, o que no salio. Finanzas sigue
+     aprobando, y el cuarto paso sigue siendo su cierre. */
+  const conLlave = !!(c.llave_factura || c.prefactura);
+  const borrador = c.prefactura
+    ? esc(reemplazar(t("cie_paso_borrador"), { n: c.prefactura.id })) : "";
+  let tres;
+  if (!conLlave) {
+    tres = actual === 2 ? t("cie_paso_finanzas_revisa")
+      : actual > 2 ? esc(c.factura || t("cie_sin_factura"))
+      : t("cie_paso_finanzas");
+  } else if (actual < 2) {
+    tres = t("cie_paso_sale_con_vb");
+  } else if (c.factura) {
+    tres = esc(c.factura);
+  } else if (c.prefactura) {
+    tres = actual === 2 ? `${borrador}<br>${t("cie_paso_la_timbra")}` : borrador;
+  } else {
+    tres = c.prefactura_de_antes ? t("cie_paso_por_mandar")
+                                 : t("cie_paso_no_salio");
+  }
   const cuatro = actual === 3 ? esc(diaHora(c.aprobado_en)) : "";
 
   return h("ol", { clase: "fases" },
     paso(estado(0), marca(0), t("cie_fase_comprobacion"), uno),
     paso(claseDos, claseDos === "regresada" ? "2" : marca(1),
          t("cie_fase_visto_bueno"), dos),
-    paso(estado(2), marca(2), t("cie_fase_facturacion"), tres),
+    paso(estado(2), marca(2),
+         t(conLlave ? "cie_fase_prefactura" : "cie_fase_facturacion"), tres),
     paso(estado(3), marca(3), t("cie_fase_cerrado"), cuatro));
 }
+
+/* ------------------------------------------------------------ la prefactura en Odoo
+
+   Lo que Connect mando a Odoo con el visto bueno (seccion 117), tal como
+   llego: el producto de Odoo de cada renglon, su descripcion, cantidad,
+   precio e importe. El IVA lo pone Odoo. */
+export function tablaPrefactura(pre, moneda) {
+  const renglones = pre.renglones || [];
+  if (!renglones.length) return null;
+  const cuerpo = h("tbody", {}, ...renglones.map(r => h("tr", {},
+    h("td", {}, r.producto || ""),
+    h("td", { clase: "gris" }, descripcionDe(r)),
+    h("td", { clase: "der num" }, String(Number(r.cantidad))),
+    h("td", { clase: "der num" }, dinero(r.precio, moneda)),
+    h("td", { clase: "der num" }, dinero(r.importe, moneda)))));
+  return h("table", { clase: "tabla-cierre prefactura" },
+    h("thead", {}, h("tr", {},
+      h("th", {}, t("cie_pre_col_producto")),
+      h("th", {}, t("cie_pre_col_descripcion")),
+      h("th", { clase: "der" }, t("cie_pre_col_cantidad")),
+      h("th", { clase: "der" }, t("cie_pre_col_precio")),
+      h("th", { clase: "der" }, t("cie_pre_col_importe")))),
+    cuerpo,
+    h("tfoot", {}, h("tr", {},
+      h("td", { colspan: "4", clase: "der" }, t("cie_pre_subtotal")),
+      h("td", { clase: "der num" }, h("b", {}, dinero(pre.total, moneda))))));
+}
+
+/* La etiqueta del renglon sin el producto, que ya va en su columna:
+   «Conductor · 28/10/2026 · Equipo Alfa · Día completo» → lo de despues. */
+function descripcionDe(r) {
+  const etiqueta = r.etiqueta || "";
+  const inicio = `${r.producto} · `;
+  return etiqueta.startsWith(inicio) ? etiqueta.slice(inicio.length) : etiqueta;
+}
+
+/* La prefactura en la tarjeta del cierre: cuando salio y cuanto, lo que
+   se mando y «Abrir en Odoo»; o por que no salio. */
+function bloquePrefactura(c, moneda) {
+  const nodos = [];
+  const pre = c.prefactura;
+  if (pre) {
+    const mf = pre.moneda || moneda;
+    nodos.push(h("div", { clase: "nota-prefactura", html: reemplazar(
+      t(c.factura ? "cie_pre_salio_facturada" : "cie_pre_salio"), {
+        f: esc(diaHora(pre.en)), m: esc(dinero(pre.total, mf)),
+        mo: esc(mf || ""), r: esc(pre.referencia || ""),
+        n: esc(String(pre.id)) }) }));
+    if (pre.nota) {
+      nodos.push(h("p", { clase: "chico gris", style: "margin:0 0 6px" },
+        h("i", {}, pre.nota)));
+    }
+    const tabla = tablaPrefactura(pre, mf);
+    if (tabla) {
+      nodos.push(h("h4", { clase: "seccion" }, t("cie_pre_lo_que_se_mando")),
+                 tabla);
+    }
+    if (pre.url) {
+      nodos.push(h("div", { clase: "acciones", style: "margin-top:10px" },
+        botonOdoo(pre.url)));
+    }
+    return nodos;
+  }
+  if (c.prefactura_de_antes) {
+    nodos.push(aviso(t("cie_pre_de_antes")));
+    return nodos;
+  }
+  if (c.que_paso === "anterior_viva" && c.prefactura_anulada) {
+    nodos.push(aviso(reemplazar(t("cie_pre_anterior_viva"),
+                                { n: c.prefactura_anulada }), "alerta"));
+    return nodos;
+  }
+  if (c.factura_error) {
+    const caja = aviso("", "alerta");
+    caja.append(h("b", {}, t(QUE_PASO_PRE[c.que_paso] || "fac_paso_falta_dato")),
+                ". ", t("cie_pre_no_salio"));
+    nodos.push(caja,
+      h("p", { clase: "chico gris", style: "margin:4px 0 6px" }, c.factura_error));
+  }
+  return nodos;
+}
+
+/* «Abrir en Odoo»: la factura en Odoo, en otra pestana, para quien
+   tenga acceso alla. Es de consulta: sale tambien en solo lectura. */
+export function botonOdoo(url) {
+  return h("button", { clase: "claro chico consulta-si", type: "button",
+    onclick: () => window.open(url, "_blank", "noopener") }, t("cie_pre_abrir"));
+}
+
+/* Por que no salio, en las palabras de Facturacion. */
+const QUE_PASO_PRE = {
+  sin_llave: "fac_paso_sin_llave",
+  rechazada: "fac_paso_rechazada",
+  sin_respuesta: "fac_paso_sin_respuesta",
+  falta_dato: "fac_paso_falta_dato",
+  anterior_viva: "fac_paso_anterior_viva",
+  no_cuadra: "fac_paso_no_cuadra",
+};
 
 /* ------------------------------------------------------------ lo cotizado contra lo ejecutado */
 
@@ -818,6 +935,12 @@ function paraRevisar(o) {
                mensaje: reemplazar(t("cie_sin_precio_mensaje"),
                                    { q: d.que, m: d.modalidad }),
                accion: t("cie_sin_precio_accion") };
+    /* El cliente sin ficha en Odoo no deja dar el visto bueno: con el
+       sale la prefactura (seccion 117). */
+    case "cliente_sin_odoo":
+      return { asunto: t("cie_asu_sin_odoo"),
+               mensaje: reemplazar(t("cie_sin_odoo_mensaje"), { c: d.cliente || "" }),
+               accion: t("cie_sin_odoo_accion") };
     default:
       return { asunto: asunto(o.asunto), mensaje: o.mensaje || "" };
   }
@@ -1252,6 +1375,12 @@ async function cuerpo(c, op, recargar) {
     if (c.fase === "devuelto") {
       nodos.push(aviso(reemplazar(t("cie_regresado_por"), {
         f: diaHora(c.devuelto_en), m: c.devuelto_motivo || "" }), "alerta"),
+        /* La prefactura de antes se quedo en Odoo (seccion 117): la
+           cancela el facturista y la nueva sale con el visto bueno. */
+        c.prefactura_anulada
+          ? h("p", { clase: "gris chico", style: "margin:6px 0 0" },
+              reemplazar(t("cie_pre_quedo_en_odoo"), { n: c.prefactura_anulada }))
+          : null,
         reloj(c.reloj && c.reloj.hasta, c.momento, t("cie_reloj_regreso"), true),
         h("p", { clase: "gris chico", style: "margin:6px 0 0" },
           reemplazar(c.dentro_de_plazo === false ? t("cie_regreso_fuera_pie")
@@ -1281,8 +1410,15 @@ async function cuerpo(c, op, recargar) {
       try {
         const envio = await api.post(`/cierre/${c.cierre_id}/enviar-finanzas`, {});
         mensaje(t("srv_enviado_finanzas"));
-        if (envio.factura && envio.factura.resultado !== "facturado") {
-          mensaje(t("cie_factura_pendiente"), "alerta");
+        /* Con la llave de la factura sale la prefactura (seccion 117). */
+        const salio = envio.factura && envio.factura.resultado;
+        if (salio === "en odoo") {
+          mensaje(reemplazar(t("cie_pre_salio_corto"),
+                             { n: envio.factura.prefactura }));
+        } else if (salio && salio !== "facturado"
+                   && salio !== "ya estaba en odoo") {
+          mensaje(t(c.llave_factura ? "cie_pre_pendiente"
+                                    : "cie_factura_pendiente"), "alerta");
         }
         await recargar();
         if (op.alCambiar) op.alCambiar();
@@ -1328,10 +1464,20 @@ async function cuerpo(c, op, recargar) {
                                           m: dinero(c.total, mf) })
     : reemplazar(t("cie_factura_no_sale"), { m: dinero(c.total, mf) });
 
+  /* Con la llave de la factura (seccion 117): la prefactura en Odoo,
+     con lo que se mando. Finanzas sigue aprobando aqui. */
+  const conLlave = !!(c.llave_factura || c.prefactura);
   if (c.fase === "en_facturacion") {
     nodos.push(
       h("p", { clase: plazo ? "rojo" : "verde",
-               style: "margin:0 0 6px;font-weight:650" }, vb),
+               style: "margin:0 0 6px;font-weight:650" }, vb));
+    if (conLlave) {
+      nodos.push(...bloquePrefactura(c, mf),
+        h("p", { clase: "gris chico", style: "margin:8px 0 0" },
+          [t("cie_pre_finanzas"), lineaComision].filter(Boolean).join(" · ")));
+      return nodos;
+    }
+    nodos.push(
       h("p", { style: "margin:0 0 6px" }, factura),
       c.factura_error && !c.factura
         ? h("p", { clase: "chico gris", style: "margin:0 0 6px" }, c.factura_error)
@@ -1345,7 +1491,9 @@ async function cuerpo(c, op, recargar) {
     h("p", { style: "margin:0 0 6px" },
       reemplazar(t("cie_cerrado_por_finanzas"), { f: diaHora(c.aprobado_en) })),
     h("p", { clase: "gris chico", style: "margin:0" },
-      [factura, lineaComision].filter(Boolean).join(" · ")));
+      [conLlave && !c.factura ? null : factura, lineaComision]
+        .filter(Boolean).join(" · ")));
+  if (conLlave) nodos.push(...bloquePrefactura(c, mf));
   return nodos;
 }
 

@@ -184,6 +184,14 @@ celery.conf.update(
             "task": "odoo.sincronizar_tarifarios",
             "schedule": crontab(minute=57),
         },
+        # Las prefacturas con visto bueno que no llegaron a Odoo (seccion
+        # 117): cada hora a los :07, despues de la lectura de los
+        # tarifarios de los :57, que es la que trae el producto que les
+        # faltaba. Sin duplicar. Sin la llave de la factura no hace nada.
+        "odoo-prefacturas": {
+            "task": "odoo.mandar_prefacturas",
+            "schedule": crontab(minute=7),
+        },
         # El GPS de las unidades (seccion 60). Cada dos minutos: el
         # panico del vehiculo, el camino al punto, el inhibidor y la
         # corriente, y el segundo testigo de las marcas. Sin nadie en la
@@ -645,6 +653,20 @@ def sincronizar_tarifarios_de_odoo():
     db = SessionLocal()
     try:
         return odoo_tarifarios.sincronizar_si_toca(db)
+    finally:
+        db.close()
+
+
+@celery.task(name="odoo.mandar_prefacturas")
+def mandar_prefacturas_a_odoo():
+    """Las prefacturas con visto bueno que no llegaron a Odoo (seccion
+    117), otra vez y sin duplicar."""
+    from app.db import SessionLocal
+    from app import odoo_facturacion
+
+    db = SessionLocal()
+    try:
+        return odoo_facturacion.reintentar(db)
     finally:
         db.close()
 

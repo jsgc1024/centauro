@@ -9023,6 +9023,172 @@ cancelada, de regreso al consultor—, la comisión y la rentabilidad con
 lo facturado, y se quita la aprobación de finanzas de los eventuales.
 Después, la prueba de punta a punta con el primer servicio real.
 
+## 117. La factura en Odoo, entrega 2: la prefactura del eventual y del mes del implantado
+
+Salvador, 1 de octubre. La entrega 1 se quedó en su Mac, sin subir
+(«No puedo actualizar ahora, ¿podemos dejarlo para después?»), y pidió
+un proyecto igual para el implantado: «la facturación de implantado: el
+corte es mensual a mes vencido respetando los tiempos de operaciones,
+24 hrs de cierre de gastos más las 24 hrs de validación de servicio más
+el envío a facturación». El proyecto, en PDF con sus maquetas («La
+factura del implantado, en Odoo»), y sus cinco decisiones el mismo día,
+todas como se recomendaron:
+
+1. **La segunda mano del mes, como el eventual**: la prefactura del mes
+   sale con el visto bueno del consultor; finanzas deja de aprobar el
+   mes en Connect —su visto bueno es timbrar— y «Implantados por
+   aprobar» desaparece. Eso último llega con la lectura de vuelta
+   (entrega 3): mientras, finanzas sigue aprobando.
+2. **Una factura por implantado y por mes**: referencia «EP/IM-004 ·
+   11/2026», origen «Connect · EP/IM-004 · 11/2026».
+3. **Un renglón por puesto y por unidad**, como en la propuesta, cada
+   uno con su producto de Odoo (el rol en día completo, la categoría de
+   la unidad). Precio escrito a mano sin desglose: un renglón con el
+   producto del puesto principal. El centavo que sobra al repartir, en
+   el último renglón.
+4. **El mes que se cancela a la mitad**, por día de servicio, como el
+   primero que empieza a la mitad (hasta hoy, el mensual completo).
+   Cancelado el miércoles 18 de noviembre tras 13 días: $70,081.83.
+5. **Se construye junto con el eventual**, en sus entregas 2 y 3.
+
+Lo que propuse sin preguntar y quedó: la comisión del 1 % al timbre,
+con lo facturado sin gastos y en el mes del timbre; «con diferencia» lo
+explica el consultor o finanzas; la cancelada en Odoo regresa al
+consultor con sus 24 horas; el cliente sin ficha en Odoo no deja dar el
+visto bueno del mes; el mes con visto bueno no se reabre; la prueba de
+punta a punta con el primer mes real; «Ya se facturó en Odoo» se queda.
+No entra: el 12x36 de Brasil en reales y el cobro. Las tres primeras
+son de la entrega 3.
+
+Esta es la entrega 2, de los dos: **la prefactura sale con el visto
+bueno**. Finanzas sigue aprobando en Connect y, mientras Connect no lee
+de vuelta lo timbrado, la timbrada se anota a mano con «Ya se facturó
+en Odoo».
+
+**Al dar el visto bueno** (`facturacion.enviar` →
+`odoo_facturacion.mandar`). Con la llave de la factura, lo que sale es
+la prefactura en borrador; sin ella, la factura de siempre, sin cambios.
+`mandar` nunca levanta excepción: el visto bueno ya quedó guardado y un
+Odoo caído no lo deshace. Toma la fila del cierre hasta guardar (como el
+visto bueno, sección 101): la tarea de cada hora y «Mandar otra vez» en
+el mismo minuto buscaban los dos en Odoo, no encontraban nada y creaban
+dos; el segundo espera y la encuentra. Cuenta el intento; si a la
+prefactura le falta algo, no sale a la red y lo dice para quien lo
+corrige —lo que se repite en varios renglones, una vez: «A», «B» y «C»:
+sus precios no salieron de un producto de Odoo—; si sus renglones no
+suman lo que aprobó el consultor (`total_ejecutado`) —cambió un precio
+de la lista o un día después del visto bueno—, no sale; la moneda
+apagada en Odoo, tampoco. Antes de crear busca la del mismo origen: si
+ya hay una viva no crea otra —también cuando la de antes se creó y su
+respuesta se perdió—. Lo que salió se guarda en el cierre: el número
+del borrador, cuándo, el total antes de impuestos y lo que se mandó,
+renglón por renglón; y en la bitácora del servicio, «prefactura en
+odoo», con quien la hizo salir.
+
+**El mes del implantado** (`app/odoo_facturacion_mes.py`). Las cifras
+son las del cierre del mes (`cierre_mes.comparar`), las que ve el
+consultor en su visto bueno: aquí solo se reparten en renglones y se
+les pone su producto. Lo de cada puesto sale de la propuesta que el
+cliente autorizó (sección 115) o, si el mes va con los precios de la
+lista, de la plantilla con su lista; el producto, del precio de la lista
+del cliente en día completo o, si no lo trae, del que dice lo mismo en
+la tabla de productos (el único, o el que manda). El mensual de cada
+puesto y de cada unidad en su renglón; el mes que empieza o se cancela
+a la mitad, sus días de servicio al precio por día de cada uno
+(`reparto_por_dia`: el mensual entre los días de la modalidad, y el
+centavo que sobra en el último puesto que es uno solo); por día
+trabajado, los días de cada persona y la unidad por mes; el día
+adicional al precio del día de las personas; la hora extra con el
+producto de la de su rol; los gastos en un solo renglón. Si lo de los
+puestos no suma lo que dice el mes —un precio escrito a mano—, ese
+concepto va en un renglón con el producto del puesto principal. La
+descripción dice el mes y la modalidad: «Conductor de Seguridad
+Bilingüe · noviembre 2026 · lunes a viernes · el mensual», «Toyota RAV4
+· noviembre 2026 · el mensual».
+
+**La decisión 4.** `implantado.termina_a_medio_mes`: si después del día
+de la cancelación todavía quedaban días de la modalidad en el mes;
+`cierre_mes.dia_de_la_cancelacion`: el día en que se abrió el cierre por
+la cancelación. Con eso `cobro_del_mensual` cobra ese mes por día de
+servicio, igual que el primero que empieza a la mitad, y la nota del
+cierre lo dice («el implantado se canceló el día 17»). Cancelado el
+último día de su modalidad, el mes ya se trabajó entero y va el
+mensual.
+
+**El cliente sin ficha en Odoo** (`revisor.cliente_sin_ficha_en_odoo`,
+decisión 3 del eventual y la propuesta del implantado): con la llave
+puesta, la revisión del cierre —del servicio y del mes— no deja dar el
+visto bueno hasta que el cliente la tenga.
+
+**Regresarlo** (`cierre.regresar`). La prefactura que ya estaba en Odoo
+se queda allá —Connect no la cancela ni la borra: no puede— y se
+recuerda cuál era (`prefactura_anulada_id`); la bitácora lo dice. El
+nuevo visto bueno no manda la nueva mientras esa siga viva: el cierre
+espera en «No se pudo mandar» («la prefactura anterior sigue viva en
+Odoo», con «Abrir en Odoo»), el facturista la cancela, y la vuelta de
+cada hora manda la nueva con la misma referencia.
+
+**Lo de antes de la llave** (`cierre.prefactura_desde`, el primer
+intento). Lo que tuvo su visto bueno antes de poner la llave pudo
+haberse facturado a mano en Odoo sin anotarse aquí: ni la tarea de cada
+hora ni la aprobación de finanzas lo mandan. Se ve en «No se pudo
+mandar» como «Visto bueno de antes de la conexión», y finanzas decide:
+«Mandar a Odoo» —pregunta antes— o «Ya se facturó en Odoo».
+
+**La tarea de cada hora** (`odoo.mandar_prefacturas`, a los :07,
+después de la lectura de los tarifarios de los :57, que es la que trae
+el producto que faltaba): vuelve a mandar, sin duplicar, lo que tiene
+visto bueno y no llegó a Odoo, hasta 30 por vuelta. Sin la llave no
+hace nada. Su renglón en el reloj del manual.
+
+**En la pantalla.** La tarjeta del cierre —la del eventual y la del mes,
+que son una— tiene como tercer paso «Prefactura en Odoo»: «borrador
+4851 · la timbra el facturista», o «no se pudo mandar» con su porqué; y
+debajo, cuándo salió y cuánto, «Lo que se mandó» —producto de Odoo,
+descripción, cantidad, precio e importe, con su subtotal— y «Abrir en
+Odoo». En Facturación, con la llave, «Por facturar» se parte en «En
+Odoo» —lo que espera al facturista, con su borrador, «Abrir en Odoo» y
+«Ya se facturó en Odoo»— y «No se pudo mandar» —con su porqué, sus
+intentos, «Mandar otra vez» o «Mandar a Odoo»—; arriba, sus cifras; y
+«Ver» separa los eventuales de los implantados en cada pestaña. Sin la
+llave, la pantalla es la de siempre. Regresar un servicio con su
+prefactura en Odoo lo avisa. La pantalla de Odoo dice qué hace la llave.
+
+**El programa que revisa Odoo** (`reconocer_facturacion.py`, solo lee)
+ensaya también la prefactura del mes de los últimos ocho implantados, y
+dice cuántas prefacturas mandó Connect, en qué estado están en Odoo y si
+alguna tiene otro total allá, y lo que tiene visto bueno y no salió, con
+su porqué.
+
+Por dentro: migración `d7a3f5c9e2b1` (en `cierre`:
+`prefactura_odoo_id`, `prefactura_en`, `prefactura_total`,
+`prefactura_detalle`, `prefactura_anulada_id` y `prefactura_desde`).
+`facturacion.que_paso` sabe los porqués nuevos (`sin_llave`,
+`anterior_viva`, `no_cuadra`, `de_antes`, y los de Odoo por su código:
+5xx no contestó, 4xx la rechazó); `bandeja` trae `llave`, `en_odoo`,
+`no_se_pudo` y sus cifras; cada renglón, su prefactura; la ficha del
+cierre, `llave_factura`, `prefactura` y lo de su porqué. En la consola
+`cierre.js`, `facturacion.js` y `estilo.css`; `idioma.js` con 63 textos
+nuevos y 3 cambiados en tres idiomas. Manual: «La prefactura en Odoo» en
+lo que viene de Odoo, y las piezas, el dinero, las pantallas, «Odoo no
+llega» y «El cierre no sale» al día. Pruebas: `tests/test_prefactura_odoo.py`
+(16), y la del implantado de `tests/test_odoo_facturacion.py`, que ya va
+por su camino. De paso, dos pruebas del bono (`test_bono_desempeno.py`)
+fallaban los primeros días de cada mes: asentaban a mano la llegada de
+un día a media mes, una hora que todavía no llegaba; ya llevan su reloj.
+
+**Lo que sigue.** Subir las secciones 116 y 117 juntas: el bloque de
+siempre, copiar la llave a `ODOO_FACTURACION_API_KEY` (por ahora la
+misma que `ODOO_API_KEY`), migrar y reiniciar; correr el programa que
+revisa Odoo y mandar lo que diga; y avisarle al facturista que las
+prefacturas —de los eventuales y del mes de los implantados— le llegan a
+Facturas con el filtro «Prefacturas de Connect». Entrega 3 (sección
+118): la lectura de vuelta cada hora —facturado con folio, UUID y
+fecha; con diferencia, a explicar; cancelada, de regreso al consultor—,
+la comisión del timbre y se quita la aprobación de finanzas del
+eventual y del mes. Después, la prueba de punta a punta con el primer
+servicio y el primer mes reales.
+
 ## 14. Lo que falta
 
 ### Abierto
@@ -9101,8 +9267,10 @@ Después, la prueba de punta a punta con el primer servicio real.
   sección 92 los casos también llegan como reportes de quien ve la
   falla, con su contexto: esos son los que va a leer.
 - **Puestos y Odoo: el paso 4** (secciones 73 a 75). La factura en
-  borrador hacia Odoo, probada primero en una copia de Odoo: hace falta
-  la copia y una llave que pueda escribir en ella.
+  borrador hacia Odoo: hecha en las secciones 116 y 117 —la prefactura
+  del eventual y del mes del implantado— y su lectura de vuelta en la
+  118. Ya no se prueba en una copia de Odoo: Salvador decidió (sección
+  116, decisión 4) probarla con el primer servicio real.
 - **El servidor: lo que queda del proveedor** (secciones 68, 70 y 71).
   El dominio ya es de Centauro: `mycentauro.lat`, comprado en Akky a su
   nombre, con el DNS en Google Cloud DNS; la consola vive en
@@ -9128,7 +9296,9 @@ busca, está en las secciones 15 y 16.*
   después de un regreso lleva `sustituye_a` con el folio de la anulada:
   Centauro la da por anulada, pero en Odoo alguien tiene que cancelarla
   —quien reciba las facturas, o finanzas a mano—. Hoy no muerde: sin
-  conexión no sale ninguna factura.
+  conexión no sale ninguna factura. Con la prefactura (sección 117) ya
+  no aplica: la de antes se queda en Odoo y la nueva no sale hasta que
+  el facturista la cancele.
 - **El GPS: lo que le toca a Centauro Satelital** (sección 60). Las 14
   unidades de Brasil que no traen placa en Pegasus —48126, 48127,
   48129, 55122, 57564 a 57566 y 57597 a 57603— no se ligan hasta que

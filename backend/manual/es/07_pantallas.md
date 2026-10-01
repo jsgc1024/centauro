@@ -56,7 +56,7 @@ El código de cuatro dígitos que se le dicta por teléfono al personal de campo
 La bandeja de finanzas: los depósitos que confirmar, las compras, las rentas, las devoluciones y los descuentos.
 
 ### Facturación {#facturacion}
-Lo que ya tiene el visto bueno del consultor: aprobarlo y facturarlo, regresarlo a operación con su motivo, o volver a mandar su factura. Mientras la factura no está conectada con Odoo, aquí se anota la que se hizo allá, con «Ya se facturó en Odoo». Aquí viven también los tarifarios y la tabla de productos de Odoo que finanzas confirma.
+Lo que ya tiene el visto bueno del consultor —el servicio eventual o el mes del implantado—: aprobarlo, regresarlo a operación con su motivo y seguir su factura. Con la llave de la factura, «En Odoo» tiene las prefacturas que esperan al facturista y «No se pudo mandar» las que no salieron, con su porqué, «Mandar otra vez» y el reintento de cada hora; «Ver» separa los eventuales de los implantados. Sin la llave, la factura se hace en Odoo y aquí se anota, con «Ya se facturó en Odoo». Aquí viven también los tarifarios y la tabla de productos de Odoo que finanzas confirma.
 
 ### Nóminas {#nomina}
 El corte del personal de cada lunes y la comisión de los consultores de cada mes: lo que entra, lo que todavía no y por qué.

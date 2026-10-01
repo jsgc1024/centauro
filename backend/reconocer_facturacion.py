@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Lo que hay que mirar en Odoo antes de mandarle la prefactura del
-eventual (seccion 116). De SOLO LECTURA.
+eventual (seccion 116) y la del mes del implantado (seccion 117). De SOLO
+LECTURA.
 
 Responde desde el propio Odoo, con la llave de la factura, lo que el
 proyecto «La factura del eventual en Odoo» dejo por ver:
@@ -19,6 +20,10 @@ proyecto «La factura del eventual en Odoo» dejo por ver:
      el folio del servicio.
   7. La prefactura de los ultimos eventuales con visto bueno, en ensayo:
      lo que se mandaria y lo que le falta. No se manda.
+  8. La del mes de los ultimos implantados, igual: un renglon por puesto y
+     por unidad, con su producto. No se manda.
+  9. Las prefacturas que Connect ya mando, y como estan en Odoo; y lo que
+     tiene visto bueno y no salio, con su porque.
 
 Lo que NO hace, y esta amarrado en el codigo:
   * No escribe en Odoo: usa `odoo_facturacion.Revision`, que solo lee y
@@ -331,33 +336,59 @@ def filtro_y_folios(odoo) -> None:
          f"{len(de_connect)}")
 
 
+CON_VISTO_BUENO = (m.EstatusCierre.ENVIADO_FINANZAS, m.EstatusCierre.APROBADO,
+                   m.EstatusCierre.FACTURADO)
+
+
 def ensayo(db) -> None:
     titulo(f"7. La prefactura de los ultimos {ULTIMOS} eventuales con visto "
            "bueno (ensayo: no se manda)")
     cierres = (db.query(m.Cierre)
                .filter(m.Cierre.contrato_id.is_(None),
-                       m.Cierre.estatus.in_((m.EstatusCierre.ENVIADO_FINANZAS,
-                                             m.EstatusCierre.APROBADO,
-                                             m.EstatusCierre.FACTURADO)))
+                       m.Cierre.estatus.in_(CON_VISTO_BUENO))
                .order_by(m.Cierre.enviado_en.desc().nullslast())
                .limit(ULTIMOS).all())
     if not cierres:
         nota("Todavia no hay eventuales con visto bueno")
         return
+    _ensayar(db, cierres)
+
+
+def ensayo_de_meses(db) -> None:
+    titulo(f"8. La del mes de los ultimos {ULTIMOS} implantados (ensayo: no "
+           "se manda)")
+    # Los meses con visto bueno y, si todavia no hay, los que lo esperan:
+    # su prefactura ya se puede armar.
+    cierres = (db.query(m.Cierre)
+               .filter(m.Cierre.contrato_id.isnot(None),
+                       m.Cierre.estatus != m.EstatusCierre.ABIERTO)
+               .order_by(m.Cierre.abierto_en.desc().nullslast())
+               .limit(ULTIMOS).all())
+    if not cierres:
+        nota("Todavia no hay meses de implantados en su cierre")
+        return
+    _ensayar(db, cierres)
+
+
+def _ensayar(db, cierres) -> None:
     muestra = None
     for c in cierres:
         try:
             pre = odoo_facturacion.prefactura(db, c)
         except Exception as error:                      # noqa: BLE001
             mal(f"{c.servicio.folio}: no se pudo armar: {error}")
+            db.rollback()
             continue
-        visto = Decimal(str(c.total_ejecutado or 0))
-        cuadra = pre["total"] == visto
+        # Antes del visto bueno no hay cifra con que compararla.
+        visto = (Decimal(str(c.total_ejecutado))
+                 if c.enviado_en and c.total_ejecutado is not None else None)
+        cuadra = visto is None or pre["total"] == visto
         (bien if not pre["faltan"] and cuadra else mal)(
             f"{pre['referencia']} · {pre['cliente']['nombre']} · "
             f"{len(pre['renglones'])} renglones · {pre['total']:,.2f}"
             + (f" {pre['moneda']}" if pre["moneda"] else "")
             + ("" if cuadra else f" · el visto bueno dijo {visto:,.2f}")
+            + (" · sin visto bueno todavia" if visto is None else "")
             + (f" · factura {c.factura_odoo}" if c.factura_odoo else ""))
         for f in pre["faltan"]:
             nota(f"falta: {f['texto']}")
@@ -375,9 +406,57 @@ def ensayo(db) -> None:
             nota(f"… y {len(muestra['renglones']) - 10} renglones mas")
 
 
+def lo_mandado(odoo, db) -> None:
+    titulo("9. Las prefacturas que Connect ya mando")
+    from app import facturacion
+
+    mandadas = (db.query(m.Cierre)
+                .filter(m.Cierre.prefactura_odoo_id.isnot(None))
+                .order_by(m.Cierre.prefactura_en.desc()).all())
+    if not mandadas:
+        nota("Todavia ninguna: salen con el visto bueno, ya con la llave")
+    else:
+        ids = [c.prefactura_odoo_id for c in mandadas]
+        en_odoo = {f["id"]: f for f in odoo.leer(
+            "account.move", [["id", "in", ids]],
+            ["name", "state", "amount_untaxed", "invoice_origin"])}
+        por_estado = {}
+        for c in mandadas:
+            f = en_odoo.get(c.prefactura_odoo_id)
+            estado = f.get("state") if f else "no esta en Odoo"
+            por_estado[estado] = por_estado.get(estado, 0) + 1
+        bien(f"Mandadas: {len(mandadas)} ("
+             + ", ".join(f"{k}: {v}" for k, v in sorted(por_estado.items()))
+             + ")")
+        for c in mandadas[:ULTIMOS]:
+            f = en_odoo.get(c.prefactura_odoo_id) or {}
+            otra = (f.get("amount_untaxed") is not None and Decimal(
+                str(f["amount_untaxed"])) != Decimal(str(c.prefactura_total or 0)))
+            (mal if not f or otra else nota)(
+                f"#{c.prefactura_odoo_id} · {c.servicio.folio}"
+                + (f" {c.contrato.mes:02d}/{c.contrato.anio}" if c.contrato_id else "")
+                + f" · {f.get('state', 'no esta en Odoo')}"
+                + (f" · {f.get('name')}" if f.get("name") and f.get("name") != "/" else "")
+                + (f" · en Odoo {Decimal(str(f['amount_untaxed'])):,.2f}, Connect "
+                   f"mando {Decimal(str(c.prefactura_total)):,.2f}" if otra else ""))
+    pendientes = [c for c in facturacion.sin_factura(db) if not c.prefactura_odoo_id]
+    if pendientes:
+        mal(f"Con visto bueno y sin prefactura: {len(pendientes)}")
+        for c in pendientes[:ULTIMOS]:
+            porque = ("visto bueno de antes de la llave: no sale sola"
+                      if facturacion.de_antes(c, True)
+                      else (c.factura_error or "todavia no se intenta"))
+            nota(f"{c.servicio.folio}"
+                 + (f" {c.contrato.mes:02d}/{c.contrato.anio}" if c.contrato_id else "")
+                 + f" · {porque[:160]}")
+    else:
+        bien("Todo lo que tiene visto bueno ya tiene su prefactura o su factura")
+
+
 def main() -> int:
-    print("Reconocimiento de la factura del eventual en Odoo (seccion 116). "
-          "Solo lee: no escribe en Odoo ni en Connect.")
+    print("Reconocimiento de la factura en Odoo, del eventual y del mes del "
+          "implantado (secciones 116 y 117). Solo lee: no escribe en Odoo "
+          "ni en Connect.")
     if not settings.odoo_base:
         mal("Falta ODOO_BASE en el .env")
         return 1
@@ -391,7 +470,8 @@ def main() -> int:
     try:
         for paso in (lambda: la_factura(odoo), lambda: diario_y_monedas(odoo),
                      lambda: productos(odoo, db), lambda: clientes(odoo, db),
-                     lambda: filtro_y_folios(odoo), lambda: ensayo(db)):
+                     lambda: filtro_y_folios(odoo), lambda: ensayo(db),
+                     lambda: ensayo_de_meses(db), lambda: lo_mandado(odoo, db)):
             try:
                 paso()
             except Exception as error:                  # noqa: BLE001

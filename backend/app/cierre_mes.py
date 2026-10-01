@@ -291,6 +291,19 @@ def al_cancelar(db: Session, servicio: m.Servicio) -> list[m.Cierre]:
     return abiertos
 
 
+def dia_de_la_cancelacion(db: Session,
+                          contrato: m.ContratoImplantado) -> date | None:
+    """El dia en que se cancelo el implantado, si fue en este mes: el de
+    su cierre abierto por la cancelacion (`al_cancelar`), en hora del
+    pais. Con el, el mes que termina a la mitad se cobra por dia de
+    servicio (seccion 117, decision 4 de Salvador)."""
+    fila = cierre_de(db, contrato)
+    if (fila is None or fila.motivo_apertura != "cancelacion"
+            or fila.abierto_en is None):
+        return None
+    return fila.abierto_en.date()
+
+
 def con_visto_bueno(db: Session,
                     contrato: m.ContratoImplantado | None) -> bool:
     """Si el mes ya tiene visto bueno: su factura salio o esta por salir."""
@@ -345,7 +358,7 @@ def estado(db: Session, contrato: m.ContratoImplantado,
     base = {"contrato_id": contrato.id, "periodo": periodo(contrato),
             "momento": ahora.isoformat()}
     if fila is None:
-        return {**base, **motor.VACIO}
+        return {**base, **motor.vacio()}
     return {**base, **motor.ficha_del_cierre(db, fila, ahora)}
 
 
@@ -403,9 +416,12 @@ def comparar(db: Session, contrato: m.ContratoImplantado) -> dict:
                     == m.EsquemaCotizacionImplantado.MES_COMPLETO)
     # Las modalidades de la propuesta (seccion 115): el precio fijo cubre
     # los dias de la modalidad; el primer mes a medias va por dia, y el
-    # dia fuera de la modalidad se cobra aparte.
+    # dia fuera de la modalidad se cobra aparte. El mes en que se cancela
+    # a la mitad, tambien por dia (seccion 117, decision 4): su cierre
+    # se abrio con la cancelacion, y ese es su ultimo dia.
     cobro = motor_implantado.cobro_del_mensual(
-        db, contrato, [date.fromisoformat(d["fecha"]) for d in corte["dias"]])
+        db, contrato, [date.fromisoformat(d["fecha"]) for d in corte["dias"]],
+        hasta=dia_de_la_cancelacion(db, contrato))
     desviaciones, notas = [], []
     dias_contratados = contrato.dias_base
 
@@ -438,8 +454,13 @@ def comparar(db: Session, contrato: m.ContratoImplantado) -> dict:
                         "monto": CERO})
             trabajado = sum(desglose.values(), CERO)
             if cobro["parcial"]:
-                notas.append(f"El mes empezo el dia {cobro['desde_dia']}: se "
-                             f"cobran {cobro['dentro']} dia(s) de servicio a "
+                cuando = " y ".join(
+                    ([f"El mes empezo el dia {cobro['desde_dia']}"]
+                     if cobro.get("empieza") else [])
+                    + ([f"el implantado se cancelo el dia {cobro['hasta_dia']}"]
+                       if cobro.get("hasta_dia") else []))
+                notas.append(f"{cuando[:1].upper()}{cuando[1:]}: se cobran "
+                             f"{cobro['dentro']} dia(s) de servicio a "
                              f"{cobro['precio_dia']}, el mensual entre "
                              f"{cobro['base']}")
     else:
@@ -549,6 +570,10 @@ def comparar(db: Session, contrato: m.ContratoImplantado) -> dict:
         # cuantos dias, si el mes va a medias y a cuanto el dia.
         "mensual": ({"dias": cobro["base"], "parcial": cobro["parcial"],
                      "desde_dia": cobro["desde_dia"],
+                     # Por que va a medias: empezo a la mitad, se
+                     # cancelo a la mitad (seccion 117), o las dos.
+                     "empieza": cobro.get("empieza", cobro["parcial"]),
+                     "hasta_dia": cobro.get("hasta_dia"),
                      "dias_de_servicio": cobro["dentro"],
                      "precio_dia": cobro["precio_dia"]} if cobro else None),
         "trabajado": {"dias_base": base, "dias_adicionales": adicionales,
@@ -624,6 +649,12 @@ def revisar(db: Session, contrato: m.ContratoImplantado,
     else:
         observaciones.extend(implantado_precios.observaciones(
             contrato, implantado_precios.de_la_lista(db, contrato)))
+    # El cliente sin ficha en Odoo no deja dar el visto bueno del mes
+    # (seccion 117, decision 3): con el sale la prefactura del mes.
+    from app.revisor import cliente_sin_ficha_en_odoo
+    sin_ficha = cliente_sin_ficha_en_odoo(servicio)
+    if sin_ficha:
+        observaciones.append(sin_ficha)
     # El mes en otra moneda sin tipo de cambio (seccion 82): sin el no
     # hay cifra de gastos ni utilidad del mes. Frena, como en el eventual.
     sin_cambio = comparativo["gastos"].get("sin_tipo_de_cambio")
@@ -810,7 +841,7 @@ def enviar_a_finanzas(db: Session, cierre: m.Cierre, usuario: m.Usuario,
 
     # La factura del mes, despues de guardar: un Odoo caido no deshace el
     # visto bueno, el mes se queda por facturar con el error a la vista.
-    factura = facturacion.enviar(db, cierre)
+    factura = facturacion.enviar(db, cierre, usuario)
     db.commit()
 
     return {"resultado": "enviado a finanzas", "cierre_id": cierre.id,
@@ -894,8 +925,9 @@ def aprobar(db: Session, cierre: m.Cierre, usuario: m.Usuario) -> dict:
                     "motivo": c.motivo}
 
     # Solo reintenta si el envio del visto bueno fallo; si ya salio, el
-    # mes pasa a facturado.
-    factura = facturacion.enviar(db, cierre)
+    # mes pasa a facturado. La prefactura del mes que nunca se intento
+    # (seccion 117) no sale aqui: la manda finanzas si toca.
+    factura = facturacion.enviar(db, cierre, usuario, primera_vez=False)
     db.commit()
 
     return {"resultado": "aprobado", "cierre_id": cierre.id,
@@ -924,11 +956,16 @@ def armar_factura(db: Session, cierre: m.Cierre) -> dict:
     mensual = comparativo.get("mensual")
     if mensual and mensual["parcial"]:
         # El primer mes que empieza a medio mes, por dia de servicio
-        # (seccion 115): el mensual entre los dias de la modalidad.
+        # (seccion 115): el mensual entre los dias de la modalidad. Y el
+        # que se cancela a la mitad (seccion 117).
+        desde = (f" desde el dia {mensual['desde_dia']}"
+                 if mensual.get("empieza") else "")
+        hasta = (f" hasta el dia {mensual['hasta_dia']}"
+                 if mensual.get("hasta_dia") else "")
         conceptos.append({
             "tipo": "mes_parcial",
-            "descripcion": (f"Servicio implantado {de_que}, dias de servicio "
-                            f"desde el dia {mensual['desde_dia']}"),
+            "descripcion": (f"Servicio implantado {de_que}, dias de servicio"
+                            f"{desde}{hasta}"),
             "cantidad": mensual["dias_de_servicio"],
             "precio": str(mensual["precio_dia"]),
             "importe": str(trabajado["desglose"]["mes_completo"])})

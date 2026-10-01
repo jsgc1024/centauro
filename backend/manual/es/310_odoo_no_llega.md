@@ -24,4 +24,4 @@ En [Odoo](#/odoo), el **Ensayo** de esa lectura: lee Odoo en ese momento, dice q
 - Si quedó pendiente: corregir en Odoo lo que dice el ensayo.
 - Si la llave venció: Salvador pone una nueva en el servidor.
 
-> **La causa de fondo:** Centauro nunca escribe en Odoo y nunca adivina. Lo que no llega, o no le ha tocado, o Odoo lo tiene incompleto.
+> **La causa de fondo:** Centauro solo lee de Odoo —lo único que escribe es la prefactura en borrador— y nunca adivina. Lo que no llega, o no le ha tocado, o Odoo lo tiene incompleto.

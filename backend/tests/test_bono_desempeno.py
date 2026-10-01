@@ -435,9 +435,13 @@ def test_nadie_ve_el_bono_de_otro(cliente, sesion, datos):
 # pruebas cuidan las dos orillas.
 
 def _a_mano(cliente, sesion, jornada_dict, persona, cuando):
+    # El reloj, una hora despues de la marca: la central no asienta una
+    # hora que todavia no llega, y los dias de estas pruebas caen a media
+    # mes. Sin esto fallaban los primeros once dias de cada mes.
     return cliente.post(
         f"/operacion/jornadas/{jornada_dict['id']}/marca-a-mano",
         headers=sesion("central"),
+        params={"ahora": (cuando + timedelta(hours=1)).isoformat()},
         json={"tipo": "llegada_origen", "persona_id": persona,
               "momento": cuando.isoformat(),
               "justificacion": "se quedó sin batería; el cliente confirmó"})
