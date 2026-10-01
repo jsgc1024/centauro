@@ -16,3 +16,6 @@ httpx==0.28.1
 pywebpush==2.0.3
 # Entrar con huella o cara (30 sep): las llaves de acceso del telefono.
 webauthn==3.0.1
+# El PDF de la cotizacion que se le manda al cliente (seccion 114): HTML a
+# PDF en el servidor, con su letra adentro (app/fuentes).
+weasyprint==66.0

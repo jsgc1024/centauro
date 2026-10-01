@@ -9,6 +9,16 @@ from app import models as m
 from app import tipo_cambio
 
 
+# La serie de las cotizaciones que se arman en Cotizaciones (seccion 114,
+# decision 1 de Salvador: numeracion nueva de Connect). Cuatro digitos:
+# se hacen mas cotizaciones que servicios.
+SERIE = "EP/COT"
+
+
+def folio_texto(numero: int | None) -> str | None:
+    return f"{SERIE}-{numero:04d}" if numero else None
+
+
 def _tarifario_de(db: Session, servicio: m.Servicio) -> m.Tarifario:
     cliente = db.get(m.Cliente, servicio.cliente_id)
     if not cliente or not cliente.tarifario_id:
@@ -181,6 +191,16 @@ def _armar(db: Session, servicio: m.Servicio, tarifario: m.Tarifario,
         servicio_id=servicio_id, version=version, tarifario_id=tarifario.id,
         moneda=tarifario.moneda, viaticos_incluidos=viaticos_incluidos,
         creada_por_id=creada_por_id, motivo_recotizacion=motivo)
+    # La recotizacion de una que nacio en Cotizaciones (seccion 114)
+    # sigue con su folio: es la version siguiente de la misma.
+    anterior = (db.query(m.Cotizacion)
+                .filter(m.Cotizacion.servicio_id == servicio_id,
+                        m.Cotizacion.folio.isnot(None))
+                .order_by(m.Cotizacion.version.desc()).first())
+    if anterior is not None and version > 0:
+        cotizacion.folio = anterior.folio
+        cotizacion.cliente_id = anterior.cliente_id
+        cotizacion.pais_id = anterior.pais_id
     db.add(cotizacion)
     db.flush()
 
@@ -190,6 +210,43 @@ def _armar(db: Session, servicio: m.Servicio, tarifario: m.Tarifario,
         for j in equipo.jornadas:
             modalidad_por_dia[(equipo.alias, j.fecha)] = j.modalidad_id
 
+    total = Decimal("0")
+    for renglon in renglones_con_precio(db, tarifario.id, modalidad_por_dia,
+                                        lineas):
+        db.add(m.LineaCotizacion(cotizacion_id=cotizacion.id, **renglon))
+        total += renglon["subtotal"]
+    cotizacion.total = total
+    db.flush()
+    return cotizacion
+
+
+def _producto(db: Session, tarifa, cache: dict) -> str | None:
+    """El nombre del producto de Odoo del que salio el precio."""
+    producto_id = getattr(tarifa, "producto_odoo_id", None)
+    if not producto_id:
+        return None
+    if producto_id not in cache:
+        producto = db.get(m.ProductoOdoo, producto_id)
+        cache[producto_id] = producto.nombre if producto else None
+    return cache[producto_id]
+
+
+def renglones_con_precio(db: Session, tarifario_id: int,
+                         modalidad_por_dia: dict,
+                         lineas: list[dict]) -> list[dict]:
+    """Los renglones con el precio de la lista, sin guardar nada.
+
+    Cada linea: {fecha, equipo_clave, tipo, perfil_id | categoria_id,
+    cantidad} --el paquete trae los dos--; los gastos de monto fijo traen
+    su `precio_unitario`. La modalidad de cada dia sale de
+    `modalidad_por_dia` {(equipo, fecha): modalidad_id}: la de las
+    jornadas del servicio o, en Cotizaciones (seccion 114), la de los
+    dias que capturo el consultor.
+
+    El rol y la unidad del mismo dia y el mismo equipo que la lista del
+    cliente tiene en paquete se cotizan como paquete (seccion 79): asi se
+    cobran al cerrar, y lo cotizado y lo ejecutado se comparan igual.
+    """
     # Primero, que se va en paquete cada dia de cada equipo.
     grupos = {}
     for linea in lineas:
@@ -212,7 +269,7 @@ def _armar(db: Session, servicio: m.Servicio, tarifario: m.Tarifario,
         disponibles_r, disponibles_u = dict(grupo["roles"]), dict(grupo["unidades"])
         grupo["paquetes"] = emparejar(
             disponibles_r, disponibles_u,
-            paquetes_del_tarifario(db, tarifario.id, grupo["modalidad_id"]))
+            paquetes_del_tarifario(db, tarifario_id, grupo["modalidad_id"]))
         # Cuanto de cada rol y de cada unidad ya va dentro de un paquete.
         grupo["en_paquete_r"] = {k: grupo["roles"][k] - v
                                  for k, v in disponibles_r.items()}
@@ -220,17 +277,17 @@ def _armar(db: Session, servicio: m.Servicio, tarifario: m.Tarifario,
                                  for k, v in disponibles_u.items()}
         grupo["escritos"] = False
 
-    total = Decimal("0")
+    salida = []
+    productos = {}
 
     def renglon(fecha, clave, modalidad_id, tipo, perfil_id, categoria_id,
-                cantidad, unitario, descripcion):
-        subtotal = unitario * cantidad
-        db.add(m.LineaCotizacion(
-            cotizacion_id=cotizacion.id, fecha=fecha, equipo_clave=clave,
-            modalidad_id=modalidad_id, tipo=tipo, perfil_id=perfil_id,
-            categoria_id=categoria_id, cantidad=cantidad,
-            precio_unitario=unitario, subtotal=subtotal, descripcion=descripcion))
-        return subtotal
+                cantidad, unitario, descripcion, tarifa=None):
+        salida.append({
+            "fecha": fecha, "equipo_clave": clave, "modalidad_id": modalidad_id,
+            "tipo": tipo, "perfil_id": perfil_id, "categoria_id": categoria_id,
+            "cantidad": cantidad, "precio_unitario": unitario,
+            "subtotal": unitario * cantidad, "descripcion": descripcion,
+            "producto": _producto(db, tarifa, productos) if tarifa else None})
 
     for linea in lineas:
         clave = linea.get("equipo_clave") or "Alfa"
@@ -244,10 +301,10 @@ def _armar(db: Session, servicio: m.Servicio, tarifario: m.Tarifario,
         if not grupo["escritos"]:
             grupo["escritos"] = True
             for paquete, cuantos in grupo["paquetes"]:
-                total += renglon(fecha, clave, modalidad_id, m.TipoLinea.PAQUETE,
-                                 paquete.perfil_id, paquete.categoria_id, cuantos,
-                                 Decimal(str(paquete.precio)),
-                                 nombre_del_paquete(paquete))
+                renglon(fecha, clave, modalidad_id, m.TipoLinea.PAQUETE,
+                        paquete.perfil_id, paquete.categoria_id, cuantos,
+                        Decimal(str(paquete.precio)),
+                        nombre_del_paquete(paquete), paquete)
 
         # Lo que ya se fue en un paquete no se cobra suelto.
         usado = 0
@@ -264,20 +321,21 @@ def _armar(db: Session, servicio: m.Servicio, tarifario: m.Tarifario,
             continue
 
         if tipo == m.TipoLinea.PAQUETE:
-            tarifa = precio_paquete(db, tarifario.id, linea.get("perfil_id"),
+            tarifa = precio_paquete(db, tarifario_id, linea.get("perfil_id"),
                                     linea.get("categoria_id"), modalidad_id)
-            total += renglon(fecha, clave, modalidad_id, tipo, tarifa.perfil_id,
-                             tarifa.categoria_id, cantidad,
-                             Decimal(str(tarifa.precio)), nombre_del_paquete(tarifa))
+            renglon(fecha, clave, modalidad_id, tipo, tarifa.perfil_id,
+                    tarifa.categoria_id, cantidad, Decimal(str(tarifa.precio)),
+                    nombre_del_paquete(tarifa), tarifa)
             continue
 
+        tarifa = None
         if tipo == m.TipoLinea.RECURSO:
-            tarifa = precio_recurso(db, tarifario.id, linea["perfil_id"], modalidad_id)
+            tarifa = precio_recurso(db, tarifario_id, linea["perfil_id"], modalidad_id)
             unitario = Decimal(str(tarifa.precio))
             perfil_id, categoria_id = linea["perfil_id"], None
             descripcion = db.get(m.PerfilPersonal, perfil_id).nombre
         elif tipo == m.TipoLinea.VEHICULO:
-            tarifa = precio_vehiculo(db, tarifario.id, linea["categoria_id"], modalidad_id)
+            tarifa = precio_vehiculo(db, tarifario_id, linea["categoria_id"], modalidad_id)
             unitario = Decimal(str(tarifa.precio))
             perfil_id, categoria_id = None, linea["categoria_id"]
             descripcion = db.get(m.CategoriaVehiculo, categoria_id).nombre
@@ -286,12 +344,9 @@ def _armar(db: Session, servicio: m.Servicio, tarifario: m.Tarifario,
             perfil_id = categoria_id = None
             descripcion = linea.get("descripcion", "Viaticos")
 
-        total += renglon(fecha, clave, modalidad_id, tipo, perfil_id,
-                         categoria_id, cantidad, unitario, descripcion)
-
-    cotizacion.total = total
-    db.flush()
-    return cotizacion
+        renglon(fecha, clave, modalidad_id, tipo, perfil_id, categoria_id,
+                cantidad, unitario, descripcion, tarifa)
+    return salida
 
 
 def autorizar(db: Session, cotizacion_id: int, autorizada_por: str) -> m.Cotizacion:
@@ -586,6 +641,10 @@ def resumen(db: Session, cotizacion: m.Cotizacion) -> dict:
         "autorizada_en": (cotizacion.autorizada_en.isoformat()
                           if cotizacion.autorizada_en else None),
         "folio_odoo": cotizacion.folio_odoo,
+        # La que nacio en Cotizaciones (seccion 114): su folio y si
+        # guarda el PDF que se le mando al cliente.
+        "folio": folio_texto(cotizacion.folio),
+        "tiene_pdf": any(a.clase == "pdf" for a in cotizacion.archivos),
         "motivo": cotizacion.motivo_recotizacion,
         "registrada_por": (cotizacion.creada_por.nombre
                            if cotizacion.creada_por else None),

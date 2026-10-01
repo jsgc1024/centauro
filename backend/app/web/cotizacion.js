@@ -16,9 +16,11 @@
    la de antes queda sustituida; el servicio nunca se queda sin
    cotizacion vigente. Despues del visto bueno, un cambio lo regresa
    finanzas y ahi se recotiza. */
-import { api } from "./api.js";
+import { api, sesion } from "./api.js";
 import { aviso, conAyuda, dinero, etiqueta, fecha, h, mensaje } from "./util.js";
 import { t } from "./idioma.js";
+import { tiene } from "./menu.js";
+import { bajar } from "./bitacora_admin.js";
 
 const MODALIDAD = { full_day: "mod_full_day", medio_dia: "mod_medio_dia",
                     transfer: "mod_transfer" };
@@ -135,12 +137,14 @@ function vistaAutorizada(caja, d) {
     cabeza(reemplazar(t("cot_autorizada_v"), { v: c.version }), "ok"),
     h("div", { clase: "rejilla cuatro", style: "margin-top:12px" },
       h("div", {}, h("div", { clase: "chico gris" }, t("cot_total")),
-        h("div", { clase: "cifra", style: "font-size:19px" }, dinero(c.total, moneda))),
+        h("div", { clase: "cifra", style: "font-size:19px" }, dinero(c.total, moneda)),
+        /* El PDF de Cotizaciones dice el total con IVA (seccion 114); aqui
+           va el de antes de IVA, que es contra el que compara el cierre. */
+        h("div", { clase: "chico gris" }, t("cot_antes_iva"))),
       h("div", {}, h("div", { clase: "chico gris" }, t("cot_la_autorizo")),
         h("b", {}, c.autorizada_por || "—"),
         h("div", { clase: "chico gris" }, c.autorizada_el ? fecha(c.autorizada_el) : "—")),
-      h("div", {}, h("div", { clase: "chico gris" }, t("cot_folio_odoo")),
-        h("b", {}, c.folio_odoo || "—")),
+      folioDe(c),
       h("div", {}, h("div", { clase: "chico gris" }, t("cot_los_gastos")),
         h("b", {}, textoDeGastos(c, moneda)))),
     h("p", { clase: "chico gris", style: "margin:12px 0 0" },
@@ -169,6 +173,25 @@ function vistaAutorizada(caja, d) {
   }
   partes.push(renglones);
   return partes;
+}
+
+/* La que nacio en Cotizaciones (seccion 114) dice su folio --con enlace a
+   la cotizacion-- y deja bajar el PDF que se le mando al cliente. La que
+   se registro aqui sigue diciendo su folio de Odoo, si lo trae. */
+function folioDe(c) {
+  if (!c.folio) {
+    return h("div", {}, h("div", { clase: "chico gris" }, t("cot_folio_odoo")),
+      h("b", {}, c.folio_odoo || "—"));
+  }
+  const ve = tiene(sesion.usuario, "cotizaciones.ver");
+  const nombre = `${c.folio} V${c.version}`;
+  return h("div", {}, h("div", { clase: "chico gris" }, t("cot_folio_connect")),
+    ve ? h("a", { href: `#/cotizacion/${c.id}`, clase: "enlace" }, nombre) : h("b", {}, nombre),
+    ve && c.tiene_pdf ? h("div", {}, h("button", { clase: "enlace chico", type: "button",
+      onclick: async () => {
+        try { await bajar(`/cotizaciones/eventual/${c.id}/pdf?bajar=true`); }
+        catch (err) { mensaje(err.message, "grave"); }
+      } }, t("cot_pdf_enviado"))) : null);
 }
 
 /* ------------------------------------------------------------ los renglones */

@@ -46,7 +46,9 @@ CATALOGOS = ("paises", "plazas", "perfiles", "categorias-vehiculo",
              "criterio_estrella", "arranque",
              # La capacitacion del bono dicha a mano al calcular un mes
              # (seccion 101): decide dinero y queda con quien lo dijo.
-             "evaluacion_mensual")
+             "evaluacion_mensual",
+             # Los datos y textos de la cotizacion de cada pais (seccion 114).
+             "cotizacion")
 
 GRUPOS = {
     "accesos": ("usuario",),
@@ -75,6 +77,7 @@ DE_CADA_CATALOGO = {
     # La lista de Recursos Humanos del freelance (seccion 111).
     "requisitos-freelance": ("requisitos-freelance",),
     "profesionalismo": ("profesionalismo",),
+    "cotizacion": ("cotizacion",),
 }
 
 POR_PAGINA = 100
@@ -105,6 +108,7 @@ TEXTOS = {
             "hoteles": "Hoteles", "profesionalismo": "Pesos del profesionalismo",
             "criterio_estrella": "Criterios del bono", "arranque": "El arranque",
             "evaluacion_mensual": "Bono del mes",
+            "cotizacion": "Cotización: datos y textos",
         },
         "accion": {
             "catalogo creado": "Agregó «{nombre}»",
@@ -138,6 +142,7 @@ TEXTOS = {
             "enlace entregado": "Copió el enlace de {persona}",
             "codigo de campo entregado": "Dictó el código de campo a {persona}",
             "paquetes con viaticos": "«{detalle}»: paquetes con viáticos {antes} → {despues}",
+            "textos de la cotizacion": "«{detalle}»: cambió {despues}",
             "producto de odoo confirmado": "Confirmó el producto «{detalle}»",
             "producto de odoo preferido": "«{detalle}»: preferido {despues}",
         },
@@ -152,6 +157,7 @@ TEXTOS = {
             "nivel_atencion": "nivel de atención", "lat": "latitud",
             "lon": "longitud", "direccion": "dirección", "telefono": "teléfono",
             "plaza_id": "ciudad", "pais_id": "país", "persona_id": "persona",
+            "razon_social": "razón social", "rfc": "RFC", "tasa_iva": "tasa de IVA",
             "modalidad_id": "modalidad", "categoria_id": "categoría",
             "perfil_id": "perfil", "tarifario_id": "tarifario",
             "tiene_recurso_local": "personal propio",
@@ -206,6 +212,7 @@ TEXTOS = {
             "hoteles": "Hotels", "profesionalismo": "Professionalism weights",
             "criterio_estrella": "Bonus criteria", "arranque": "The go-live",
             "evaluacion_mensual": "Monthly bonus",
+            "cotizacion": "Quotation: data and texts",
         },
         "accion": {
             "catalogo creado": "Added “{nombre}”",
@@ -239,6 +246,7 @@ TEXTOS = {
             "enlace entregado": "Copied {persona}'s link",
             "codigo de campo entregado": "Read out the field code to {persona}",
             "paquetes con viaticos": "“{detalle}”: packages with allowances {antes} → {despues}",
+            "textos de la cotizacion": "“{detalle}”: changed {despues}",
             "producto de odoo confirmado": "Confirmed the product “{detalle}”",
             "producto de odoo preferido": "“{detalle}”: preferred {despues}",
         },
@@ -253,6 +261,7 @@ TEXTOS = {
             "nivel_atencion": "level of care", "lat": "latitude",
             "lon": "longitude", "direccion": "address", "telefono": "phone",
             "plaza_id": "city", "pais_id": "country", "persona_id": "person",
+            "razon_social": "legal name", "rfc": "tax ID", "tasa_iva": "VAT rate",
             "modalidad_id": "service type", "categoria_id": "category",
             "perfil_id": "profile", "tarifario_id": "price list",
             "tiene_recurso_local": "own staff",
@@ -307,6 +316,7 @@ TEXTOS = {
             "hoteles": "Hotéis", "profesionalismo": "Pesos do profissionalismo",
             "criterio_estrella": "Critérios do bônus", "arranque": "O arranque",
             "evaluacion_mensual": "Bônus do mês",
+            "cotizacion": "Cotação: dados e textos",
         },
         "accion": {
             "catalogo creado": "Adicionou “{nombre}”",
@@ -340,6 +350,7 @@ TEXTOS = {
             "enlace entregado": "Copiou o link de {persona}",
             "codigo de campo entregado": "Ditou o código de campo a {persona}",
             "paquetes con viaticos": "“{detalle}”: pacotes com diárias {antes} → {despues}",
+            "textos de la cotizacion": "“{detalle}”: mudou {despues}",
             "producto de odoo confirmado": "Confirmou o produto “{detalle}”",
             "producto de odoo preferido": "“{detalle}”: preferido {despues}",
         },
@@ -354,6 +365,7 @@ TEXTOS = {
             "nivel_atencion": "nível de atendimento", "lat": "latitude",
             "lon": "longitude", "direccion": "endereço", "telefono": "telefone",
             "plaza_id": "cidade", "pais_id": "país", "persona_id": "pessoa",
+            "razon_social": "razão social", "rfc": "CNPJ/RFC", "tasa_iva": "alíquota",
             "modalidad_id": "modalidade", "categoria_id": "categoria",
             "perfil_id": "perfil", "tarifario_id": "tabela de preço",
             "tiene_recurso_local": "pessoal próprio",
@@ -643,6 +655,39 @@ def _tabulador(texto: str, idioma: str) -> str:
     return "; ".join(partes)
 
 
+# Los textos de la cotizacion (seccion 114), como se dicen en la bitacora.
+TEXTOS_DE_COTIZACION = {
+    "es": {"incluye_dentro": "incluye, con gastos dentro",
+           "incluye_fijo": "incluye, con monto fijo",
+           "incluye_comprobar": "incluye, con gastos por comprobar",
+           "pago": "condiciones de pago", "aceptacion": "aceptación",
+           "cancelacion": "cancelación", "cierre": "cierre"},
+    "en": {"incluye_dentro": "includes, expenses included",
+           "incluye_fijo": "includes, fixed amount",
+           "incluye_comprobar": "includes, expenses as incurred",
+           "pago": "payment terms", "aceptacion": "approval",
+           "cancelacion": "cancellation", "cierre": "closing"},
+    "pt": {"incluye_dentro": "inclui, despesas incluídas",
+           "incluye_fijo": "inclui, valor fixo",
+           "incluye_comprobar": "inclui, despesas comprovadas",
+           "pago": "condições de pagamento", "aceptacion": "aprovação",
+           "cancelacion": "cancelamento", "cierre": "encerramento"},
+}
+
+
+def _textos_de_cotizacion(despues: str, idioma: str) -> str:
+    """«aceptacion:es, pago:es» -> «aceptación (es), condiciones de pago
+    (es)»."""
+    nombres = TEXTOS_DE_COTIZACION.get(idioma, TEXTOS_DE_COTIZACION["es"])
+    salida = []
+    for pedazo in (despues or "").split(","):
+        clave, _, lengua = pedazo.strip().partition(":")
+        if clave:
+            salida.append(f"{nombres.get(clave, clave)} ({lengua})"
+                          if lengua else nombres.get(clave, clave))
+    return ", ".join(salida)
+
+
 def que_cambio(r: m.RegistroAdmin, idioma: str, nombres: _Nombres) -> str:
     """El renglon contado en una frase."""
     t = _t(idioma)
@@ -696,6 +741,8 @@ def que_cambio(r: m.RegistroAdmin, idioma: str, nombres: _Nombres) -> str:
         antes = t["si"] if antes == "true" else t["no"] if antes == "false" else antes
         despues = (t["si"] if despues == "true"
                    else t["no"] if despues == "false" else despues)
+    if r.accion == "textos de la cotizacion":
+        despues = _textos_de_cotizacion(despues, idioma)
     if r.accion == "capacitacion del bono a mano" and not antes:
         antes = t["ninguno"]        # el mes todavia no se habia calculado
 

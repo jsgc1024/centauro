@@ -127,6 +127,13 @@ celery.conf.update(
             "task": "freelance.mudar_archivos",
             "schedule": crontab(minute=23),
         },
+        # Las cotizaciones que se le mandaron al cliente y pasaron su
+        # «valida hasta» sin respuesta (seccion 114): quedan vencidas y la
+        # lista deja de contarlas como abiertas. Pasada la medianoche.
+        "cotizaciones-vencidas": {
+            "task": "cotizaciones.vencer",
+            "schedule": crontab(hour=0, minute=20),
+        },
         # La encuesta que nadie contesto. Una vez al dia, temprano: le
         # recuerda a quien lleva cinco dias sin contestar y vence lo que
         # paso de quince. Sin esto la encuesta se mandaba una vez y ahi
@@ -218,12 +225,14 @@ celery.conf.update(
 
 # Las diarias que no pueden perderse: a que hora de Mexico tocan y, si
 # es de un solo dia del mes, cual. El calendario de arriba las dispara;
-# `reponer_diarias` repone la que no termino desde esa hora. Las seis
+# `reponer_diarias` repone la que no termino desde esa hora. Las siete
 # son idempotentes: la que ya hizo lo suyo no lo hace dos veces (el
 # certificado avisado no se avisa otra vez, el mes abierto no se abre,
 # la encuesta recordada no se recuerda, el bono autorizado no se toca, el
-# documento del freelance avisado no se vuelve a avisar).
+# documento del freelance avisado no se vuelve a avisar, la cotizacion
+# vencida ya no esta mandada).
 DIARIAS = {
+    "cotizaciones.vencer": (0, 20, None),
     "archivo.archivar": (1, 30, None),
     "bonos.calcular_el_mes": (5, 0, 3),
     "implantados.abrir_mes_siguiente": (6, 30, None),
@@ -459,6 +468,20 @@ def freelance_por_vencer():
     db = SessionLocal()
     try:
         return freelance.revisar_vencimientos(db)
+    finally:
+        db.close()
+
+
+@celery.task(name="cotizaciones.vencer")
+def cotizaciones_vencidas():
+    """Las cotizaciones mandadas que pasaron su «valida hasta» (seccion
+    114)."""
+    from app import cotizacion_cliente
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        return cotizacion_cliente.vencer(db)
     finally:
         db.close()
 

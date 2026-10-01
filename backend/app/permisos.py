@@ -81,6 +81,21 @@ ACTIVIDADES: dict[str, dict] = {
         "descripcion": "Corregir o dar de baja a quien solicita servicios",
         "roles": {R.CONSULTOR, R.DIRECTOR_OPERACIONES},
     },
+    # Cotizaciones (seccion 114): la cotizacion del eventual que se arma
+    # en Connect, su PDF y el servicio que nace cuando el cliente la
+    # autoriza. La arma quien da de alta servicios; sistema y calidad la
+    # consulta, como consulta la operacion.
+    "cotizaciones.ver": {
+        "descripcion": "Ver las cotizaciones que se le mandan al cliente y "
+                       "su PDF",
+        "roles": {R.CONSULTOR, R.DIRECTOR_OPERACIONES, R.SISTEMA_CALIDAD},
+    },
+    "cotizaciones.armar": {
+        "descripcion": "Armar la cotizacion de un eventual, mandarla, "
+                       "hacer su version siguiente y registrar que el "
+                       "cliente la autorizo: con eso nace el servicio",
+        "roles": {R.CONSULTOR, R.DIRECTOR_OPERACIONES},
+    },
     "servicios.ver": {
         "descripcion": "Ver los servicios y su avance",
         "roles": {R.CONSULTOR, R.CENTRAL, R.DIRECTOR_OPERACIONES,
@@ -529,8 +544,9 @@ ACTIVIDADES: dict[str, dict] = {
     # sep). Sistema y calidad lo ve, no lo cambia.
     "catalogos.dinero": {
         "descripcion": "Fijar lo que en los catalogos decide dinero: el "
-                       "tabulador de viaticos, las horas de cada modalidad "
-                       "y los costos de cada freelance",
+                       "tabulador de viaticos, las horas de cada modalidad, "
+                       "los costos de cada freelance y los datos y "
+                       "condiciones de la cotizacion",
         "roles": {R.ADMIN, R.DIRECTOR_OPERACIONES},
     },
     "bitacora.ver": {
@@ -599,10 +615,13 @@ ACTIVIDADES: dict[str, dict] = {
 #
 # Direccion de operaciones entro en la seccion 105: la abre quien trae
 # `direccion.ver`.
-PANTALLAS = ("panorama", "servicios", "implantados", "equipo", "unidades",
-             "bonos", "encuestas", "calidad", "central", "codigo",
-             "finanzas", "facturacion", "nomina", "accesos", "odoo",
-             "catalogos", "manual", "direccion")
+#
+# Cotizaciones entro en la seccion 114: la abre quien trae
+# `cotizaciones.ver`.
+PANTALLAS = ("panorama", "cotizaciones", "servicios", "implantados",
+             "equipo", "unidades", "bonos", "encuestas", "calidad",
+             "central", "codigo", "finanzas", "facturacion", "nomina",
+             "accesos", "odoo", "catalogos", "manual", "direccion")
 
 
 def roles_de(actividad: str) -> set:

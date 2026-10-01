@@ -48,6 +48,9 @@ TABLAS_DE_OPERACION = [
     "pago_comision", "corte_comision", "resultado_criterio",
     "evaluacion_mensual", "incidencia", "reemplazo", "contrato_implantado",
     "desviacion", "cierre", "linea_cotizacion", "cotizacion",
+    # Cotizaciones (seccion 114): sus dias, su PDF y la firma de cada
+    # consultor. Los datos y textos por pais son catalogo y no se tocan.
+    "dia_cotizacion", "archivo_cotizacion", "firma_consultor",
     "registro_accion", "registro_admin", "notificacion", "alerta", "hito",
     # El telefono suscrito a los avisos es movimiento, no catalogo: lo
     # da de alta el propio agente desde su app. Faltaba aqui, asi que

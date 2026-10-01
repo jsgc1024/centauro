@@ -2,6 +2,9 @@
 
 O que há de novo em cada atualização, escrito para quem usa o sistema. A mais nova fica em cima.
 
+## 114 · 2026-10-01 · As cotações se montam no Connect
+Em Operações EP há uma tela nova: **Cotações**. A cotação do eventual se monta ali antes de o serviço existir, com a sua referência do Connect —EP/COT-0001— e a sua versão. Os preços saem sozinhos da lista do cliente no Odoo —a empresa que ainda não está no Odoo é cotada com a lista geral do seu país— e o PDF leva cada dia com a sua modalidade, subtotal, impostos e total, a hora extra de cada função, as condições e a assinatura do consultor. «Baixar o PDF e marcá-la enviada» o salva exatamente como sai para mandá-lo pelo e-mail; se o cliente pede uma mudança, faz-se a versão seguinte. Quando o cliente aprova, o consultor registra —quem, que dia e o e-mail anexado— e o serviço nasce sozinho em EP eventual com a cotação dentro. A razão social e o RFC da Centauro, a alíquota de impostos e as condições de pagamento se escrevem em Catálogos → Cotação ao cliente; cada consultor envia a sua assinatura em Cotações → Sua assinatura. Ver [a cotação ao cliente](#/manual/leer/cotizaciones).
+
 ## 113 · 2026-09-30 · A hora extra de cada papel, e a unidade ao lado na folha do implantado
 Em Faturamento → Tabelas de preços, a tabela de produtos permite dizer de qual papel é cada hora extra —«Hora extra · Agente de seguridad»— e o Connect sugere pelo nome do produto: cada papel cobra a sua e não a do motorista. Na folha do implantado, a unidade fica à direita de quem a dirige, no seu próprio cartão, como na folha do eventual.
 

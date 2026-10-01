@@ -46,6 +46,7 @@ const ESCRIBE = {
   "tabulador-viaticos": "catalogos.dinero", modalidades: "catalogos.dinero",
   "requisitos-freelance": "catalogos.editar",
   profesionalismo: "profesionalismo.pesos",
+  cotizacion: "catalogos.dinero",
 };
 /* Los costos de cada freelance salieron de aqui (seccion 111): viven en
    su ficha, en Personal de seguridad. Entro la lista de lo que Recursos
@@ -53,7 +54,10 @@ const ESCRIBE = {
 const DE_SISTEMA = ["dias-festivos", "hospitales", "hoteles", "plazas",
                     "parametros-combustible", "categorias-vehiculo", "paises",
                     "requisitos-freelance"];
-const DE_DINERO = ["tabulador-viaticos", "modalidades", "profesionalismo"];
+/* La cotizacion al cliente (seccion 114): lo que su PDF dice de Centauro
+   --razon social, RFC, IVA-- y sus condiciones. Decide dinero: la fija
+   direccion de operaciones. */
+const DE_DINERO = ["tabulador-viaticos", "modalidades", "profesionalismo", "cotizacion"];
 const TITULO = {
   "dias-festivos": "ctl_festivos", hospitales: "ctl_hospitales",
   hoteles: "ctl_hoteles", plazas: "ctl_ciudades",
@@ -61,6 +65,7 @@ const TITULO = {
   "categorias-vehiculo": "ctl_categorias", paises: "ctl_paises",
   "tabulador-viaticos": "ctl_tabulador", modalidades: "ctl_modalidades",
   "requisitos-freelance": "ctl_requisitos", profesionalismo: "ctl_pesos",
+  cotizacion: "ctl_cotizacion",
 };
 /* Lo que ya tiene su pantalla: se dice donde vive. */
 const CON_PANTALLA = [
@@ -171,9 +176,11 @@ async function traer() {
     api.get("/catalogos/categorias-vehiculo/colores").catch(() => ({})),
   ]);
   const pesos = {};
+  const cotizacion = {};
   await Promise.all(paises.map(async (p) => {
-    pesos[p.id] = await api.get(`/profesionalismo/pesos?pais_id=${p.id}`)
-      .catch(() => null);
+    [pesos[p.id], cotizacion[p.id]] = await Promise.all([
+      api.get(`/profesionalismo/pesos?pais_id=${p.id}`).catch(() => null),
+      api.get(`/cotizaciones/textos?pais_id=${p.id}`).catch(() => null)]);
   }));
   /* Lo quitado viene en las listas (seccion 101) y se aparta: las cuentas
      y los selectores siguen con lo vivo, y cada tabla lo pinta en gris
@@ -189,7 +196,7 @@ async function traer() {
            combustible: vivos("combustible", combustible),
            hospitales: vivos("hospitales", hospitales),
            hoteles: vivos("hoteles", hoteles), modalidades, tabulador,
-           requisitos: requisitos_, colores, pesos, apagados };
+           requisitos: requisitos_, colores, pesos, cotizacion, apagados };
 }
 
 const apagadosDe = (d, clave, filtro) => (d.apagados[clave] || []).filter(filtro);
@@ -252,6 +259,11 @@ const RESUMEN = {
       .replace("{p}", new Set(vivos.map(x => x.pais_id)).size);
   },
   profesionalismo: () => t("ctl_res_pesos"),
+  cotizacion: (d) => d.paises.map((p) => {
+    const c = d.cotizacion[p.id];
+    return c && c.tasa_iva !== null ? `${p.nombre} ${t("ctl_iva_de")
+      .replace("{t}", numero(Math.round(c.tasa_iva * 10000) / 100))}` : null;
+  }).filter(Boolean).join(" · ") || t("ctl_res_vacio"),
 };
 
 const FALTA = {
@@ -294,6 +306,15 @@ const FALTA = {
   },
   profesionalismo: (d) => (Object.values(d.pesos).some(p => p && !p.configurado)
     ? t("ctl_de_ejemplo") : null),
+  /* Lo que el PDF no podria decir en la lengua del pais: los datos de
+     Centauro o alguna condicion. Mexico nace sin RFC ni condiciones de
+     pago: los escribe direccion de operaciones. */
+  /* Todos los que les falta, no el primero: Brasil todavia no opera y
+     esconderia que a Mexico le falta su RFC. */
+  cotizacion: (d) => {
+    const sin = d.paises.filter(p => faltaCotizacion(d, p).length);
+    return sin.length ? t("ctl_falta").replace("{que}", sin.map(p => p.nombre).join(", ")) : null;
+  },
 };
 
 const PINTA = {
@@ -301,6 +322,7 @@ const PINTA = {
   "parametros-combustible": combustible, "categorias-vehiculo": categorias,
   paises, "tabulador-viaticos": tabulador, modalidades,
   "requisitos-freelance": requisitos, profesionalismo: pesos,
+  cotizacion: cotizacionCatalogo,
 };
 
 async function pestanaCatalogos(zona) {
@@ -1298,6 +1320,122 @@ function pesos(caja, d, recargar) {
   caja.append(h("div", { clase: "tarjeta" },
     conAyuda("h3", t("ctl_pesos"), "ay_ctl_pesos"),
     h("p", { clase: "gris chico ctl-pie" }, t("ctl_pesos_pie")),
+    ...[quienLoLleva(clave)].filter(Boolean), zona, historial(clave)));
+  pintar();
+}
+
+/* ================================================= la cotizacion al cliente */
+
+/* Lo que su PDF toma de aqui (seccion 114): la razon social y el RFC de
+   Centauro al pie, la tasa de IVA y las condiciones, en cada idioma. El
+   RFC y las condiciones de pago los pidio Salvador al revisar la
+   cotizacion de ejemplo; Mexico nace con lo demas. */
+const TEXTOS_COTIZACION = [
+  ["pago", "ctl_ct_pago"], ["aceptacion", "ctl_ct_aceptacion"],
+  ["cancelacion", "ctl_ct_cancelacion"], ["cierre", "ctl_ct_cierre"],
+  ["incluye_dentro", "ctl_ct_incluye_dentro"], ["incluye_fijo", "ctl_ct_incluye_fijo"],
+  ["incluye_comprobar", "ctl_ct_incluye_comprobar"]];
+
+function faltaCotizacion(d, p) {
+  const c = d.cotizacion[p.id];
+  if (!c) return [];
+  const idiomaPais = p.idioma || "es";
+  return [
+    ...(!c.razon_social ? ["razon_social"] : []), ...(!c.rfc ? ["rfc"] : []),
+    ...(c.tasa_iva === null ? ["tasa_iva"] : []),
+    ...TEXTOS_COTIZACION.map(([k]) => k).filter(k => !((c.textos[k] || {})[idiomaPais] || "").trim()),
+  ];
+}
+
+function cotizacionCatalogo(caja, d, recargar) {
+  const clave = "cotizacion";
+  let paisId = paisInicial(d);
+  let idiomaVisto = null;
+  const zona = h("div");
+
+  function pintar() {
+    const c = d.cotizacion[paisId];
+    const pais = paisDe(d, paisId) || {};
+    if (!c) {
+      zona.replaceChildren(...[
+        botonesDePais(d, paisId, (id) => { paisId = id; idiomaVisto = null; pintar(); }),
+        h("p", { clase: "chico gris" }, t("ctl_cot_no_se_lee"))].filter(Boolean));
+      return;
+    }
+    const editable = puede(clave);
+    /* Lo escrito se guarda aqui mientras se cambia de idioma: se manda
+       todo junto al guardar. */
+    const textos = {};
+    for (const [k] of TEXTOS_COTIZACION) textos[k] = { ...(c.textos[k] || {}) };
+    idiomaVisto = idiomaVisto || pais.idioma || "es";
+
+    const razon = entrada("razon_social", { value: c.razon_social || "", maxlength: "200",
+      "data-crudo": "", autocomplete: "off" });
+    const rfc = entrada("rfc", { value: c.rfc || "", maxlength: "30", "data-mayusculas": "",
+      autocomplete: "off" });
+    const tasa = entrada("tasa_iva", { type: "number", step: "any", min: "0", max: "99",
+      value: c.tasa_iva === null ? "" : numero(Math.round(c.tasa_iva * 10000) / 100) });
+    for (const control of [razon, rfc, tasa]) control.disabled = !editable;
+
+    const pestanasIdioma = h("div", { clase: "acciones", style: "margin:0 0 10px" });
+    const cajaTextos = h("div");
+    function pintarTextos() {
+      pestanasIdioma.replaceChildren(...IDIOMAS_APP.map(([i, texto]) => h("button", {
+        type: "button", clase: i === idiomaVisto ? "pestana activa" : "pestana",
+        onclick: () => { idiomaVisto = i; pintarTextos(); },
+      }, t(texto))));
+      cajaTextos.replaceChildren(...TEXTOS_COTIZACION.map(([k, texto]) => {
+        const area = h("textarea", { rows: k === "cierre" ? "2" : "3", maxlength: "2000",
+          oninput: () => { textos[k][idiomaVisto] = area.value; } });
+        area.value = textos[k][idiomaVisto] || "";
+        area.disabled = !editable;
+        const vacio = !area.value.trim();
+        return campo(h("span", {}, t(texto),
+          vacio ? [" ", etiqueta(t("ctl_cot_vacio"), "alerta")] : ""), area);
+      }));
+    }
+    pintarTextos();
+
+    const guardar = boton(t("ctl_guardar"), async () => {
+      const porcentaje = tasa.value === "" ? null : Number(tasa.value);
+      if (porcentaje !== null && (Number.isNaN(porcentaje) || porcentaje < 0 || porcentaje >= 100)) {
+        mensaje(t("ctl_cot_tasa_mal"), "alerta");
+        tasa.focus();
+        return;
+      }
+      guardar.disabled = true;
+      try {
+        await api.put(`/cotizaciones/textos/${paisId}`, {
+          razon_social: razon.value.trim() || null,
+          rfc: rfc.value.trim() || null,
+          tasa_iva: porcentaje === null ? null : Math.round(porcentaje * 100) / 10000,
+          textos,
+        });
+        mensaje(t("ctl_guardado").replace("{que}", t("ctl_cotizacion")));
+        await recargar();
+      } catch (err) {
+        mensaje(err.message, "grave");
+        guardar.disabled = false;
+      }
+    }, "chico");
+
+    zona.replaceChildren(...[
+      h("div", { clase: "acciones", style: "margin:0 0 10px" },
+        botonesDePais(d, paisId, (id) => { paisId = id; idiomaVisto = null; pintar(); })),
+      h("h4", {}, t("ctl_cot_de_centauro")),
+      h("div", { clase: "ctl-campos" },
+        campo(t("ctl_cot_razon"), razon), campo(t("ctl_cot_rfc"), rfc),
+        campo(t("ctl_cot_tasa"), tasa)),
+      h("h4", { clase: "grupo" }, t("ctl_cot_condiciones")),
+      h("p", { clase: "chico gris", style: "margin:0 0 10px" }, t("ctl_cot_huecos")),
+      pestanasIdioma, cajaTextos,
+      editable ? h("div", { clase: "acciones" }, guardar) : null,
+    ].filter(Boolean));
+  }
+
+  caja.append(h("div", { clase: "tarjeta" },
+    conAyuda("h3", t("ctl_cotizacion"), "ay_ctl_cotizacion"),
+    h("p", { clase: "gris chico ctl-pie" }, t("ctl_cotizacion_pie")),
     ...[quienLoLleva(clave)].filter(Boolean), zona, historial(clave)));
   pintar();
 }

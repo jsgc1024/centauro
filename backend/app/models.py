@@ -2761,6 +2761,11 @@ class EstatusCotizacion(str, enum.Enum):
     AUTORIZADA = "autorizada"
     RECHAZADA = "rechazada"
     SUSTITUIDA = "sustituida"        # la reemplazo una recotizacion
+    # La que se le mando al cliente y paso su «valida hasta» sin que la
+    # autorizara (seccion 114). La marca el reloj cada noche; el cliente
+    # todavia la puede autorizar --el consultor lo registra--, pero la
+    # lista deja de contarla como abierta.
+    VENCIDA = "vencida"
 
 
 class TipoLinea(str, enum.Enum):
@@ -2774,11 +2779,23 @@ class TipoLinea(str, enum.Enum):
 
 class Cotizacion(Base):
     """Lo que se le cotizo al cliente. Es la referencia del comparativo de cierre.
-    Una recotizacion crea una version nueva y deja la anterior como sustituida."""
+    Una recotizacion crea una version nueva y deja la anterior como sustituida.
+
+    Desde la seccion 114 tambien vive ANTES del servicio: el consultor la
+    arma en Cotizaciones, sale su PDF, se la manda al cliente y, cuando el
+    cliente la autoriza, el servicio nace con ella adentro. Mientras tanto
+    no tiene servicio (`servicio_id` vacio) y trae lo suyo: el folio de
+    la serie EP/COT, el cliente --o el nombre de la empresa que todavia no
+    esta en Odoo--, quien la pidio, quien la firma, sus dias y el PDF que
+    se mando. La misma fila es la que queda autorizada en el servicio: lo
+    que el cliente vio es lo que compara el cierre, sin copiar precios.
+    """
     __tablename__ = "cotizacion"
+    __table_args__ = (UniqueConstraint("folio", "version"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    servicio_id: Mapped[int] = mapped_column(ForeignKey("servicio.id"))
+    servicio_id: Mapped[int | None] = mapped_column(
+        ForeignKey("servicio.id"), nullable=True)
     version: Mapped[int] = mapped_column(Integer, default=1)
     tarifario_id: Mapped[int] = mapped_column(ForeignKey("tarifario.id"))
     moneda: Mapped[Moneda] = mapped_column(Enum(Moneda))
@@ -2811,9 +2828,80 @@ class Cotizacion(Base):
     folio_odoo: Mapped[str | None] = mapped_column(String(40), nullable=True)
     creada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    servicio: Mapped[Servicio] = relationship()
+    # ---------------------------------------- la de Cotizaciones (seccion 114)
+    #
+    # El numero de la serie EP/COT --decision 1 de Salvador: numeracion
+    # nueva de Connect--. Todas las versiones de una cotizacion llevan el
+    # mismo; la registrada a mano en el servicio (seccion 94) no lo trae.
+    folio: Mapped[int | None] = mapped_column(Integer, nullable=True,
+                                              index=True)
+    # El cliente de Odoo o, mientras no este alla, el nombre de la empresa
+    # (decision 2): se cotiza con la lista general de su pais y para
+    # autorizarla ya tiene que estar en Odoo.
+    cliente_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cliente.id"), nullable=True)
+    prospecto: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    pais_id: Mapped[int | None] = mapped_column(ForeignKey("pais.id"),
+                                                nullable=True)
+    # Quien la pidio, como en el servicio: el contacto del cliente si ya
+    # existe, y siempre su copia.
+    solicitante_id: Mapped[int | None] = mapped_column(
+        ForeignKey("solicitante.id"), nullable=True)
+    solicitante_nombre: Mapped[str | None] = mapped_column(String(160),
+                                                           nullable=True)
+    solicitante_apellidos: Mapped[str | None] = mapped_column(String(160),
+                                                              nullable=True)
+    solicitante_correo: Mapped[str | None] = mapped_column(String(160),
+                                                           nullable=True)
+    solicitante_telefono: Mapped[str | None] = mapped_column(String(40),
+                                                             nullable=True)
+    # Quien la firma: el consultor que la arma o al que esta cubriendo.
+    consultor_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    tipo_servicio: Mapped[str | None] = mapped_column(String(120),
+                                                      nullable=True)
+    # Vacia: la escribe Connect con los datos.
+    introduccion: Mapped[str | None] = mapped_column(Text, nullable=True)
+    valida_hasta: Mapped[date | None] = mapped_column(Date, nullable=True)
+    idioma: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    # El IVA (decision 4): la tasa de su pais en Catalogos, guardada al
+    # mandarla para que lo enviado no cambie. Sin IVA, el cliente que se
+    # factura en el extranjero.
+    con_iva: Mapped[bool] = mapped_column(Boolean, default=True,
+                                          server_default=true())
+    tasa_iva: Mapped[float | None] = mapped_column(Numeric(6, 4),
+                                                   nullable=True)
+    # Lo que cambio en una version nueva va en `motivo_recotizacion`,
+    # como en la recotizacion del servicio. Aqui, cuando se guardo por
+    # ultima vez el borrador, cuando se mando y quien la mando.
+    actualizada_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    enviada_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    enviada_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    rechazada_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    rechazo_motivo: Mapped[str | None] = mapped_column(String(300),
+                                                       nullable=True)
+    # El folio del servicio que nacio de ella. Se queda aunque el
+    # servicio se borre: el cliente la autorizo y eso no se desdice.
+    servicio_folio: Mapped[str | None] = mapped_column(String(24),
+                                                       nullable=True)
+
+    servicio: Mapped["Servicio | None"] = relationship()
     creada_por: Mapped["Persona | None"] = relationship(foreign_keys=[creada_por_id])
+    cliente: Mapped["Cliente | None"] = relationship()
+    pais: Mapped["Pais | None"] = relationship()
+    consultor: Mapped["Persona | None"] = relationship(
+        foreign_keys=[consultor_id])
+    enviada_por: Mapped["Persona | None"] = relationship(
+        foreign_keys=[enviada_por_id])
     lineas: Mapped[list["LineaCotizacion"]] = relationship(
+        back_populates="cotizacion", cascade="all, delete-orphan")
+    dias: Mapped[list["DiaCotizacion"]] = relationship(
+        back_populates="cotizacion", cascade="all, delete-orphan")
+    archivos: Mapped[list["ArchivoCotizacion"]] = relationship(
         back_populates="cotizacion", cascade="all, delete-orphan")
 
 
@@ -2834,11 +2922,135 @@ class LineaCotizacion(Base):
     precio_unitario: Mapped[float] = mapped_column(Numeric(12, 2))
     subtotal: Mapped[float] = mapped_column(Numeric(12, 2))
     descripcion: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # El nombre del producto de Odoo del que salio el precio (seccion
+    # 114): asi lo lee el cliente en el PDF y asi le llega la factura.
+    producto: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     cotizacion: Mapped[Cotizacion] = relationship(back_populates="lineas")
     modalidad: Mapped[Modalidad] = relationship()
     perfil: Mapped[PerfilPersonal | None] = relationship()
     categoria: Mapped[CategoriaVehiculo | None] = relationship()
+
+
+class DiaCotizacion(Base):
+    """Un dia de un equipo en la cotizacion que se arma en Cotizaciones
+    (seccion 114).
+
+    Es lo que el consultor capturo y lo que se vuelve jornada cuando el
+    cliente la autoriza: la modalidad, la hora si ya se sabe, si es
+    foraneo y a donde, y lo que lleva ese dia --roles y unidades, como
+    JSON de texto: [{"tipo": "recurso", "id": 1, "cantidad": 1}]--. Los
+    precios no viven aqui: salen de la lista y quedan en los renglones.
+    La ciudad es la del equipo y se repite en cada dia suyo.
+    """
+    __tablename__ = "dia_cotizacion"
+    __table_args__ = (UniqueConstraint("cotizacion_id", "equipo_clave",
+                                       "fecha"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cotizacion_id: Mapped[int] = mapped_column(
+        ForeignKey("cotizacion.id", ondelete="CASCADE"), index=True)
+    equipo_clave: Mapped[str] = mapped_column(String(20))
+    fecha: Mapped[date] = mapped_column(Date)
+    modalidad_id: Mapped[int] = mapped_column(ForeignKey("modalidad.id"))
+    plaza_id: Mapped[int | None] = mapped_column(ForeignKey("plaza.id"),
+                                                 nullable=True)
+    hora: Mapped[time | None] = mapped_column(Time, nullable=True)
+    es_foraneo: Mapped[bool] = mapped_column(Boolean, default=False,
+                                             server_default=false())
+    destino: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    lleva: Mapped[str] = mapped_column(Text, default="[]",
+                                       server_default="[]")
+
+    cotizacion: Mapped[Cotizacion] = relationship(back_populates="dias")
+    modalidad: Mapped[Modalidad] = relationship()
+    plaza: Mapped["Plaza | None"] = relationship()
+
+
+class ArchivoCotizacion(Base):
+    """El PDF que se le mando al cliente y el comprobante de que la
+    autorizo --su correo o el PDF firmado-- (seccion 114).
+
+    El PDF se guarda tal como salio: si despues cambia la lista o un
+    texto de Catalogos, lo enviado no cambia. Hasta 10 MB, como el
+    expediente del freelance.
+    """
+    __tablename__ = "archivo_cotizacion"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cotizacion_id: Mapped[int] = mapped_column(
+        ForeignKey("cotizacion.id", ondelete="CASCADE"), index=True)
+    # pdf | comprobante
+    clase: Mapped[str] = mapped_column(String(20))
+    nombre: Mapped[str] = mapped_column(String(200))
+    tipo: Mapped[str] = mapped_column(String(80))
+    tamano: Mapped[int] = mapped_column(Integer)
+    # Diferido: la lista de archivos no trae los bytes; se leen al bajarlo.
+    contenido: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
+    subido_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    subido_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+
+    cotizacion: Mapped[Cotizacion] = relationship(back_populates="archivos")
+
+
+class DatosCotizacion(Base):
+    """Lo que dice toda cotizacion de un pais (seccion 114): la razon
+    social y el RFC de Centauro al pie de cada hoja, y la tasa de IVA.
+
+    Lo fija direccion de operaciones en Catalogos (`catalogos.dinero`):
+    la tasa decide lo que el cliente paga.
+    """
+    __tablename__ = "datos_cotizacion"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    pais_id: Mapped[int] = mapped_column(ForeignKey("pais.id"), unique=True)
+    razon_social: Mapped[str | None] = mapped_column(String(200),
+                                                     nullable=True)
+    rfc: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    tasa_iva: Mapped[float | None] = mapped_column(Numeric(6, 4),
+                                                   nullable=True)
+
+    pais: Mapped["Pais"] = relationship()
+
+
+class TextoCotizacion(Base):
+    """Un texto de las condiciones de la cotizacion, por pais y por idioma
+    (seccion 114): lo que incluye el precio en cada modo de gastos, las
+    condiciones de pago y facturacion, la aceptacion, la cancelacion y el
+    cierre. Se escriben una vez en Catalogos y salen iguales en todas.
+
+    `clave`: incluye_dentro | incluye_fijo | incluye_comprobar | pago |
+    aceptacion | cancelacion | cierre.
+    """
+    __tablename__ = "texto_cotizacion"
+    __table_args__ = (UniqueConstraint("pais_id", "clave", "idioma"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    pais_id: Mapped[int] = mapped_column(ForeignKey("pais.id"))
+    clave: Mapped[str] = mapped_column(String(30))
+    idioma: Mapped[str] = mapped_column(String(2))
+    texto: Mapped[str] = mapped_column(Text)
+
+
+class FirmaConsultor(Base):
+    """La firma de un consultor, para sus cotizaciones (seccion 114,
+    decision 5 de Salvador).
+
+    La sube el mismo consultor una vez y solo la cambia el. Sale en el PDF
+    de las cotizaciones que el firma y en ningun otro lado: no hay puerta
+    para bajarla.
+    """
+    __tablename__ = "firma_consultor"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    persona_id: Mapped[int] = mapped_column(ForeignKey("persona.id"),
+                                            unique=True)
+    # Como data URI, igual que las fotos del sistema: PNG o JPG.
+    imagen: Mapped[str] = mapped_column(Text)
+    actualizada_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
 
 
 # ================================================================ CIERRE

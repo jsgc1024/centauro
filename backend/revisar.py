@@ -659,10 +659,11 @@ AYUDA_POR_PANTALLA = {
     "encuestas.js": 1,
     "personal.js": 1,
     "categorias.js": 2,
-    # Catalogos (seccion 86): uno por catalogo --once--, que dice para que
-    # sirve y que pasa si esta mal; la lista de la izquierda no lleva,
-    # porque su renglon ya dice que le falta a cada uno.
-    "catalogos_pantalla.js": 11,
+    # Catalogos (seccion 86): uno por catalogo --doce, con el de la
+    # cotizacion al cliente (seccion 114)--, que dice para que sirve y que
+    # pasa si esta mal; la lista de la izquierda no lleva, porque su
+    # renglon ya dice que le falta a cada uno.
+    "catalogos_pantalla.js": 12,
     # Calidad (seccion 89): uno por bloque --lo que dijo el cliente, la
     # calle, el cierre, la gente y los datos-- y el de las cinco cifras.
     "calidad.js": 6,
@@ -710,6 +711,12 @@ AYUDA_POR_PANTALLA = {
     # Humanos--, sus costos y su expediente. Lo demas de la ficha lo dice
     # su propio pie.
     "freelance.js": 3,
+    # Cotizaciones (seccion 114): uno por bloque del armado --para quien,
+    # equipos y dias, gastos, lo que lee el cliente--, el de la
+    # cotizacion y sus versiones, el de autorizarla y el de la firma. La
+    # lista y la pantalla de que se cotiza no llevan: su subtitulo ya lo
+    # dice.
+    "cotizaciones.js": 8,
 
     # --- las que no, y por que
     "api.js": 0,        # habla con el servidor; no pinta nada
@@ -952,6 +959,10 @@ def revisar_migraciones() -> None:
 MODELOS = os.path.join(RAIZ, "app/models.py")
 # Lo que SQLAlchemy le cuelga a toda instancia sin que aparezca escrito.
 DE_LA_CASA = {"metadata", "registry"}
+# Una relacion de muchos es una lista: `cot.dias.clear()` le habla a la
+# lista, no a un DiaCotizacion (seccion 114).
+DE_LA_LISTA = {"append", "clear", "extend", "remove", "insert", "pop",
+               "sort", "index", "count"}
 
 
 def _destino(anotacion) -> tuple:
@@ -1158,8 +1169,11 @@ class _Revisor(ast.NodeVisitor):
             return
         raiz, pasos = origen
         clase = self.sabidos.get(raiz)
+        lista = False
         for paso in pasos:
             if clase is None or clase not in CAMPOS:
+                return
+            if lista and paso in DE_LA_LISTA:
                 return
             if paso in DE_LA_CASA or (clase, paso) in self.perdonados:
                 return
@@ -1170,6 +1184,7 @@ class _Revisor(ast.NodeVisitor):
                     apuntar(self.archivo, nodo.lineno,
                             f"{clase} no tiene '{paso}'")
                 return
+            lista = paso in LISTAS.get(clase, set())
             clase = TIPOS.get(clase, {}).get(paso)
 
 

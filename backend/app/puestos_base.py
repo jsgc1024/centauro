@@ -61,9 +61,10 @@ PUESTOS: list[dict] = [
         # Direccion de operaciones (seccion 105): su bandeja de
         # autorizaciones y el tablero de hoy. El puesto que ya existia en
         # produccion la tomo con la migracion d7f9a1b3c5e7 (crear_puestos
-        # no pisa lo que ya esta).
-        "pantallas": ["panorama", "servicios", "implantados", "equipo",
-                      "unidades", "bonos", "encuestas", "central",
+        # no pisa lo que ya esta). Cotizaciones (seccion 114): las arma y
+        # ve todas; el puesto que ya existe la toma con e3a5c7b9d1f4.
+        "pantallas": ["panorama", "cotizaciones", "servicios", "implantados",
+                      "equipo", "unidades", "bonos", "encuestas", "central",
                       "finanzas", "facturacion", "nomina", "catalogos",
                       "calidad", "direccion"],
         "actividades": _de(R.DIRECTOR_OPERACIONES),
@@ -75,9 +76,10 @@ PUESTOS: list[dict] = [
         "rol": R.CONSULTOR,
         "orden": 20,
         "descripcion": "Sus servicios, de punta a punta.",
-        "pantallas": ["panorama", "servicios", "implantados", "equipo",
-                      "unidades", "bonos", "encuestas", "central", "codigo",
-                      "nomina"],
+        # Cotizaciones (seccion 114): de la cotizacion al servicio.
+        "pantallas": ["panorama", "cotizaciones", "servicios", "implantados",
+                      "equipo", "unidades", "bonos", "encuestas", "central",
+                      "codigo", "nomina"],
         "actividades": _de(R.CONSULTOR),
         "puestos_odoo": "Consultor de Seguridad, Consultor",
     },
@@ -88,9 +90,9 @@ PUESTOS: list[dict] = [
         "orden": 21,
         "descripcion": "Prepara el servicio; el dinero y el visto bueno los "
                        "da su consultor titular.",
-        "pantallas": ["panorama", "servicios", "implantados", "equipo",
-                      "unidades", "bonos", "encuestas", "central", "codigo",
-                      "nomina"],
+        "pantallas": ["panorama", "cotizaciones", "servicios", "implantados",
+                      "equipo", "unidades", "bonos", "encuestas", "central",
+                      "codigo", "nomina"],
         "actividades": _de(R.CONSULTOR) - NO_JR,
         "puestos_odoo": "Consultor JR, Consultor Jr, Consultor Junior",
     },
@@ -263,9 +265,10 @@ PUESTOS: list[dict] = [
                        "opera.",
         # El manual del sistema (seccion 90): lo que hay que saber para
         # que, si algo se atora, sepa resolverlo y ver la causa de fondo.
-        "pantallas": ["panorama", "servicios", "implantados", "equipo",
-                      "unidades", "bonos", "encuestas", "accesos", "odoo",
-                      "catalogos", "calidad", "manual"],
+        # Cotizaciones (seccion 114): las consulta, como la operacion.
+        "pantallas": ["panorama", "cotizaciones", "servicios", "implantados",
+                      "equipo", "unidades", "bonos", "encuestas", "accesos",
+                      "odoo", "catalogos", "calidad", "manual"],
         "actividades": _de(R.SISTEMA_CALIDAD),
         "puestos_odoo": None,
     },

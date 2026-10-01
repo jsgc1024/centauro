@@ -4,7 +4,7 @@ parte: entender
 orden: 70
 titulo: Cada pantalla, para qué es
 resumen: Las pantallas de la consola, grupo por grupo, y la app de campo. Qué se hace en cada una y lo que conviene saber de ella.
-buscar: pantallas menu operacion direccion eventual implantado personal unidades desempeño clientes calidad monitoreo codigo gastos facturacion nominas accesos odoo catalogos manual app de campo
+buscar: pantallas menu operacion cotizaciones direccion eventual implantado personal unidades desempeño clientes calidad monitoreo codigo gastos facturacion nominas accesos odoo catalogos manual app de campo
 ---
 El menú de cada quien sale de su puesto. Casi todos los bloques traen un **«?»**: para qué sirve, cuándo te enteras si falla y de dónde sale el número. Esa ayuda vive pegada a su pantalla y es la más al día que hay.
 
@@ -14,6 +14,9 @@ Arriba, junto a tu nombre, está **Reportar una falla** en todas las pantallas: 
 
 ### Operación {#panorama}
 Cómo va la operación ahora mismo: lo de hoy, quién va en camino, los países, el dinero afuera, lo que finanzas regresó y la calidad. Es la vista de arriba; el detalle vive en cada servicio.
+
+### Cotizaciones {#cotizaciones}
+La cotización del eventual antes de que exista el servicio: se arma con la lista del cliente, sale en PDF con su folio —EP/COT-0001— y su versión, y cuando el cliente la autoriza nace el servicio con ella adentro. La lista dice cuáles están abiertas, cuánto les falta para vencer y de cuál nació qué servicio. Aquí cada consultor sube su firma. Ver [la cotización al cliente](#/manual/leer/cotizaciones).
 
 ### EP eventual {#servicios}
 Los servicios que se contratan por día: el alta, la cotización, los equipos, quién va y en qué unidad, el task sheet, los viáticos y el cierre. Ver [el camino de un servicio](#/manual/leer/camino).

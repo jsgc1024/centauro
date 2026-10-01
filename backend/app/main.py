@@ -25,6 +25,7 @@ from app.routers import (acceso, archivo, bitacora_admin, bonos, calidad,
                          profesionalismo, servicios, solicitantes,
                          tarifarios, tasksheet, viaticos)
 from app.routers import llaves as llaves_router
+from app.routers import cotizaciones as cotizaciones_router
 from app.seed import (sembrar, sembrar_bonos, sembrar_festivos,
                       sembrar_lugares, sembrar_parametros, sembrar_recursos)
 
@@ -147,6 +148,9 @@ app.include_router(manual.router)
 app.include_router(direccion.router)
 # El freelance: su alta, sus costos y su expediente (seccion 111).
 app.include_router(freelance.router)
+# Cotizaciones: la del eventual que se arma en Connect, su PDF y el
+# servicio que nace al autorizarla (seccion 114).
+app.include_router(cotizaciones_router.router)
 
 
 @app.exception_handler(IntegrityError)

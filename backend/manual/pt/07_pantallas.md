@@ -4,7 +4,7 @@ parte: entender
 orden: 70
 titulo: Cada tela, para que serve
 resumen: As telas do console, grupo por grupo, e o app de campo. O que se faz em cada uma e o que convém saber dela.
-buscar: telas menu operacao direcao eventual implantado pessoal unidades desempenho clientes qualidade monitoramento codigo despesas faturamento folha acessos odoo catalogos manual app de campo
+buscar: telas menu operacao cotacoes direcao eventual implantado pessoal unidades desempenho clientes qualidade monitoramento codigo despesas faturamento folha acessos odoo catalogos manual app de campo
 ---
 O menu de cada um sai do seu cargo. Quase todos os blocos trazem um **«?»**: para que serve, quando você fica sabendo se algo falha e de onde sai o número. Essa ajuda vive colada à sua tela e é a mais atualizada que existe.
 
@@ -14,6 +14,9 @@ Em cima, ao lado do seu nome, fica **Reportar uma falha** em todas as telas: che
 
 ### Operação {#panorama}
 Como vai a operação agora: o de hoje, quem está a caminho, os países, o dinheiro na rua, o que o financeiro devolveu e a qualidade. É a vista de cima; o detalhe vive em cada serviço.
+
+### Cotações {#cotizaciones}
+A cotação do eventual antes de o serviço existir: monta-se com a lista do cliente, sai em PDF com a sua referência —EP/COT-0001— e a sua versão, e quando o cliente aprova nasce o serviço com ela dentro. A lista diz quais estão abertas, quanto falta para vencerem e de qual nasceu que serviço. Aqui cada consultor envia a sua assinatura. Ver [a cotação ao cliente](#/manual/leer/cotizaciones).
 
 ### EP eventual {#servicios}
 Os serviços contratados por dia: o cadastro, a cotação, as equipes, quem vai e em que unidade, a task sheet, as diárias e o fechamento. Ver [o caminho de um serviço](#/manual/leer/camino).

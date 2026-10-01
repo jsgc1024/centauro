@@ -170,6 +170,26 @@ def crear_servicio(datos: s.ServicioIn, db: Session = Depends(get_db),
 
     Si el alta trae el minimo (cliente, quien solicita, el dia con su hora
     y el punto de inicio), el servicio queda programado de una vez."""
+    servicio, pendientes = dar_de_alta(db, datos, usuario)
+    detalle = f"{len(datos.equipos)} equipo(s)"
+    if pendientes:
+        detalle += f" · falta para programar: {'; '.join(pendientes)}"
+    auditoria.registrar(db, usuario, servicio, "alta de servicio", detalle)
+    db.commit()
+    db.refresh(servicio)
+    return servicio
+
+
+def dar_de_alta(db: Session, datos: s.ServicioIn,
+                usuario: m.Usuario) -> tuple[m.Servicio, list[str]]:
+    """El alta, sin confirmar: el servicio con sus equipos y jornadas, y
+    lo que le falta para quedar programado.
+
+    Vive aparte del endpoint porque la usan dos: Nuevo servicio y la
+    cotizacion que el cliente autoriza en Cotizaciones (seccion 114). Dos
+    copias del alta se separarian el dia que cambie una regla, y el
+    servicio que nace de una cotizacion tiene que quedar igual que el que
+    se captura a mano."""
     # Lo lleva un consultor (seccion 87): la lista de la pantalla solo los
     # ofrece a ellos, y aqui se cuida lo mismo.
     if datos.consultor_id and not accesos.lleva_servicios(db, datos.consultor_id):
@@ -290,14 +310,7 @@ def crear_servicio(datos: s.ServicioIn, db: Session = Depends(get_db),
                                           **parada.model_dump()))
 
     db.flush()
-    pendientes = programacion.evaluar(servicio)
-    detalle = f"{len(datos.equipos)} equipo(s)"
-    if pendientes:
-        detalle += f" · falta para programar: {'; '.join(pendientes)}"
-    auditoria.registrar(db, usuario, servicio, "alta de servicio", detalle)
-    db.commit()
-    db.refresh(servicio)
-    return servicio
+    return servicio, programacion.evaluar(servicio)
 
 
 # Lo que ya no esta vivo en la cartera: se pide por partes.
@@ -1867,6 +1880,15 @@ def desarmar_servicio(db: Session, servicio: m.Servicio,
     # que hay que quitarlos a mano y en orden: primero los renglones,
     # luego la cabecera. Faltaban, y borrar un servicio ya cotizado
     # reventaba con una violacion de llave foranea.
+    # Lo que nacio en Cotizaciones (seccion 114) no se borra con el
+    # servicio: el cliente la autorizo y su PDF se queda. Se suelta del
+    # servicio y guarda su folio.
+    for c in db.query(m.Cotizacion).filter(
+            m.Cotizacion.servicio_id == servicio.id,
+            m.Cotizacion.folio.isnot(None)).all():
+        c.servicio_folio = c.servicio_folio or servicio.folio
+        c.servicio_id = None
+    db.flush()
     cotizaciones = [c.id for c in db.query(m.Cotizacion).filter_by(
         servicio_id=servicio.id).all()]
     if cotizaciones:

@@ -424,6 +424,16 @@ TAREAS = {
                "não faz nada.",
                "A linha EXPEDIENTES_DESTINO do .env do servidor."),
     },
+    "cotizaciones-vencidas": {
+        "es": ("Cotizaciones: la que se le mandó al cliente y pasó su «válida "
+               "hasta» sin respuesta queda vencida. El cliente todavía la "
+               "puede autorizar; la lista deja de contarla como abierta.",
+               "Cotizaciones: la pestaña de rechazadas y vencidas."),
+        "pt": ("Cotações: a que foi enviada ao cliente e passou da sua "
+               "«válida até» sem resposta fica vencida. O cliente ainda pode "
+               "aprová-la; a lista deixa de contá-la como aberta.",
+               "Cotações: a aba de recusadas e vencidas."),
+    },
     "encuestas-pasar-lista": {
         "es": ("Encuestas: le recuerda a quien lleva 5 días sin contestar y "
                "vence lo que pasó de 15.",
@@ -654,6 +664,9 @@ AREA_DE_ARCHIVO = {
     "routers/nomina.py": "nomina", "routers/bonos.py": "nomina",
     "bonos.py": "nomina",
     "cotizacion.py": "cotizacion", "tipo_cambio.py": "cotizacion",
+    # Cotizaciones: la que se arma en Connect y su PDF (seccion 114).
+    "cotizacion_cliente.py": "cotizacion",
+    "routers/cotizaciones.py": "cotizacion",
     "routers/tarifarios.py": "cotizacion",
     "routers/servicios.py": "servicios", "routers/tasksheet.py": "servicios",
     "routers/contingencia.py": "servicios",

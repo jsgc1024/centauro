@@ -27,6 +27,8 @@ import { pantallaCodigo } from "./codigo.js";
 import { pantallaEnlace, pantallaOlvide } from "./contrasena.js";
 import { nombreDelRol } from "./categorias.js";
 import { pantallaServicio } from "./servicio.js";
+import { nuevaCotizacion, pantallaCotizacion,
+         pantallaCotizaciones } from "./cotizaciones.js";
 import { aviso, campo, entrada, h, lista, mensaje, vaciar,
          vigilarCapturas } from "./util.js";
 import { IDIOMAS, idioma, idiomaGuardado, ponerIdioma, t } from "./idioma.js";
@@ -475,6 +477,9 @@ async function pantallaContrasena(main) {
    cuidando cada peticion; esto evita la pantalla a medio pintar. */
 const RUTAS = [
   [/^#\/panorama$/, pantallaPanorama, "panorama", PANORAMA],
+  [/^#\/cotizaciones$/, pantallaCotizaciones, "cotizaciones", CONSULTA],
+  [/^#\/cotizacion\/nueva$/, nuevaCotizacion, "cotizaciones", CONSULTA],
+  [/^#\/cotizacion\/(\d+|eventual)$/, pantallaCotizacion, "cotizaciones", CONSULTA],
   [/^#\/servicios$/, cartera, "servicios", CONSULTA],
   [/^#\/servicio\/nuevo$/, nuevoServicio, "servicios", CONSULTA],
   [/^#\/servicio\/(\d+)$/, pantallaServicio, "servicios", CONSULTA],

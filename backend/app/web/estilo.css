@@ -1679,3 +1679,39 @@ table.fre-requisitos td { vertical-align: top; padding: 9px 10px; }
    renglon, pegado al de la persona. */
 tr.con-fre td { border-bottom: none; padding-bottom: 2px; }
 tr.fre-fila td { padding-top: 0; }
+
+/* Cotizaciones (seccion 114). Que se le va a cotizar al cliente: dos
+   tarjetas lado a lado, y la que todavia no existe se ve apagada. */
+.ctz-tipos { display: flex; gap: 16px; align-items: stretch; max-width: 980px; }
+.ctz-tipo { flex: 1; margin: 0; }
+.ctz-tipo.ctz-apagada { opacity: .62; }
+/* Cada equipo con su ciudad en el mismo renglon de su nombre, como el
+   alta del servicio: la ciudad es del equipo, no del dia. */
+.ctz-equipo { margin-top: 18px; }
+.ctz-cabeza { display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin: 0 0 8px; }
+.ctz-cabeza h4 { flex: 1 1 auto; }
+.ctz-ciudad { display: flex; align-items: center; gap: 8px; }
+.ctz-ciudad label { margin: 0; white-space: nowrap; }
+.ctz-ciudad select { width: auto; min-width: 210px; margin: 0; }
+table.ctz-dias { margin-top: 10px; }
+table.ctz-dias select { width: auto; min-width: 140px; }
+input.ctz-fecha { width: 150px; }
+input.ctz-hora { width: 132px; }
+.ctz-foraneo { padding-top: 8px; }
+.ctz-foraneo input { width: auto; margin: 0; }
+input.ctz-destino { margin-top: 6px; width: 150px; }
+.ctz-varios { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;
+  margin: 8px 0 0; }
+.ctz-varios .campo { margin: 0; }
+.ctz-varios input { width: 160px; }
+/* La firma, mas o menos del tamano en que sale en el PDF. */
+img.ctz-firma { display: block; max-width: 260px; max-height: 90px;
+  border: 1px dashed var(--linea); border-radius: 6px; padding: 6px;
+  background: #fff; }
+.ctz-forma { background: var(--suave); border-radius: 8px; padding: 12px 14px;
+  margin-top: 14px; }
+.ctz-adjunto { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+@media (max-width: 720px) {
+  .ctz-tipos { flex-direction: column; }
+}

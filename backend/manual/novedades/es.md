@@ -2,6 +2,9 @@
 
 Lo nuevo de cada actualización, escrito para quien usa el sistema. La más nueva va arriba.
 
+## 114 · 2026-10-01 · Las cotizaciones se arman en Connect
+En Operaciones EP hay una pantalla nueva: **Cotizaciones**. La cotización del eventual se arma ahí antes de que exista el servicio, con su folio de Connect —EP/COT-0001— y su versión. Los precios salen solos de la lista del cliente en Odoo —la empresa que todavía no está en Odoo se cotiza con la lista general de su país— y el PDF lleva cada día con su modalidad, subtotal, IVA y total, la hora extra de cada rol, las condiciones y la firma del consultor. «Descargar el PDF y marcarla enviada» lo guarda tal como sale para mandarlo desde el correo; si el cliente pide un cambio, se hace la versión siguiente. Cuando el cliente la autoriza, el consultor lo registra —quién, qué día y el correo adjunto— y el servicio nace solo en EP eventual con la cotización adentro. La razón social y el RFC de Centauro, la tasa de IVA y las condiciones de pago se escriben en Catálogos → Cotización al cliente; cada consultor sube su firma en Cotizaciones → Tu firma. Ver [la cotización al cliente](#/manual/leer/cotizaciones).
+
 ## 113 · 2026-09-30 · La hora extra de cada rol, y la unidad a un costado en la hoja del implantado
 En Facturación → Tarifarios, la tabla de productos deja decir de qué rol es cada hora extra —«Hora extra · Agente de seguridad»— y Connect lo sugiere por el nombre del producto: cada rol cobra la suya y no la del conductor. En la hoja del implantado, la unidad va a la derecha de quien la maneja, en su propia tarjeta, como en la hoja del eventual.
 

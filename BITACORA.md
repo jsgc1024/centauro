@@ -8564,6 +8564,126 @@ Por dentro: `odoo_tarifarios_reglas.sugerir`, `web/tarifarios.js`
 `.par`). Pruebas: `tests/test_odoo_tarifarios.py` (+2, y la sugerencia de
 la hora extra por rol).
 
+## 114. Las cotizaciones se arman en Connect
+
+Salvador, 30 de septiembre: «La cotización se podría armar en Connect, en
+una pantalla nueva, que pregunte si es una propuesta para implantado o
+cotización para eventual (implantado lo dejamos en pendiente). Entrando a
+eventual se armaría la cotización, se extrae en PDF y el consultor la
+envía al cliente; una vez autorizada, se pasa a servicio eventual y se
+crea un borrador en automático.» Mandó de ejemplo la COT 01036 V5 de
+Henkel y pidió mejorarla si le faltaba algo importante. La propuesta
+(nueve láminas, con la cotización de ejemplo como saldría de Connect) se
+decidió punto por punto el 1 de octubre:
+
+1. **Folio**: C — numeración nueva de Connect, EP/COT-0001, con su
+   versión (V1, V2…).
+2. **Empresa que no está en Odoo**: A — se cotiza con la lista general
+   de su país; para autorizarla ya tiene que estar en Odoo (Connect la
+   liga a su cliente).
+3. **Cómo autoriza el cliente**: A — por correo, como hoy; el consultor
+   registra quién y qué día, con el correo o el PDF firmado adjunto. Sin
+   liga en línea.
+4. **IVA**: A — el PDF lleva subtotal, IVA y total con IVA; la tasa de
+   cada país en Catálogos (México 16 %) y una casilla por cotización
+   para el cliente que no lleva IVA.
+5. **Firma**: A — cada consultor sube su firma una vez; sale solo en sus
+   cotizaciones y solo él la cambia.
+
+Y al revisar el ejemplo: en la tabla, **solo la modalidad** (sin horario;
+la hora se captura opcional y pasa al servicio); al pie, **la razón
+social y el RFC de Centauro**; las **condiciones de pago y facturación**
+como texto de Catálogos; y el **RFC del cliente** debajo de su nombre.
+Lo demás se propuso sin preguntar: los textos de condiciones viven en
+Catálogos y los fija dirección de operaciones; válida hasta el 31 de
+diciembre si no se dice otra cosa; el PDF en la lengua del país del
+cliente, que se puede cambiar; en dólares cuando la lista es en dólares;
+el consultor la manda desde su correo; el servicio nace como cualquier
+alta, con lo que le falte para programarlo a la vista.
+
+**Lo que hay.** Operaciones EP → **Cotizaciones**, antes de EP eventual:
+la lista (abiertas, autorizadas, rechazadas y vencidas, todas; con lo
+que le falta a cada enviada para vencer), «Nueva cotización» que pregunta
+eventual o implantado —el implantado dice «Pendiente»—, el armado y el
+detalle con sus versiones.
+
+- **El armado**: el cliente —o «Empresa que todavía no está en Odoo», con
+  su país—, quien solicita, el consultor que firma, tipo de servicio,
+  válida hasta, idioma del PDF y la casilla sin IVA; los equipos con su
+  ciudad, lo que llevan todos los días y sus días (modalidad, hora,
+  foráneo con a dónde va, el día que va distinto); los gastos —incluidos,
+  monto fijo o por comprobar— y la introducción, que Connect escribe con
+  los datos y se puede cambiar. Los precios se piden al servidor
+  mientras se arma, sin guardar nada, y cada día dice su precio. La
+  ciudad va por equipo, como en el alta del servicio —la maqueta la
+  ponía por día—: el servicio que nace guarda una ciudad por equipo, y
+  el día que sale de ella se marca foráneo con su destino.
+- **Mandarla**: «Descargar el PDF y marcarla enviada» vuelve a cotizar
+  con la lista de hoy, guarda el PDF tal como sale y lo descarga con el
+  nombre de los de Centauro (`20261001_EP-COT-0001_V1_HENKEL_CAPITAL_27-29SEP.pdf`).
+  Lo enviado no cambia; la versión siguiente sustituye a las abiertas al
+  mandarse.
+- **Autorizarla**: quién, qué día y el comprobante (PDF, JPG o PNG). Nace
+  el servicio con el mismo alta de Nuevo servicio y la MISMA fila queda
+  como su cotización autorizada: el cierre compara contra lo que el
+  cliente vio, sin copiar precios. Todas sus versiones quedan ligadas al
+  folio del servicio. Si el servicio se borra, la cotización se suelta y
+  dice de qué folio fue; si se recotiza en el servicio (sección 94),
+  sigue con el mismo folio EP/COT.
+- **Rechazada** con su motivo; **vencida** por el reloj pasada la
+  medianoche (tarea `cotizaciones-vencidas`, 00:20). La vencida se puede
+  autorizar todavía.
+- **El PDF**: WeasyPrint, con la letra Inter adentro (`app/fuentes`, con
+  su licencia OFL) para que salga igual en cualquier computadora; carta,
+  en español, inglés o portugués. Cabecera con logo, cliente con su RFC y
+  «Atención», fecha, folio con versión, válida hasta, moneda y tipo de
+  servicio; la tabla por día con ciudad y foráneo, cantidad, precio
+  unitario, importe y subtotal del día; subtotal, IVA y total; las
+  modalidades con sus horas, la hora extra de cada rol de la lista
+  (sección 113), los gastos, las condiciones, la vigencia y las firmas;
+  al pie la razón social y el RFC de Centauro y «Página X de Y». El
+  borrador dice «BORRADOR · todavía no se manda».
+- **Catálogos → Cotización al cliente** (dirección de operaciones,
+  `catalogos.dinero`): por país, la razón social, el RFC, la tasa de IVA
+  y siete textos en cada idioma —qué incluye según los gastos, pago y
+  facturación, aceptación, cancelación y cierre—, con `{folio}`,
+  `{consultor}` y `{correo_consultor}`. México nace con la razón social,
+  el 16 % y los textos del ejemplo; **el RFC y las condiciones de pago
+  quedan por escribir**, y el armado avisa en amarillo lo que le falta al
+  PDF. Cada cambio queda en la bitácora de administración.
+- **Tu firma**: PNG o JPG, de quien la sube y de nadie más.
+- En el servicio, «La cotización autorizada» dice el folio EP/COT con
+  liga a la cotización y deja bajar el PDF que se envió.
+
+**Quién.** `cotizaciones.ver`: consultor, dirección de operaciones y
+sistema y calidad (y quien lo hereda). `cotizaciones.armar`: consultor y
+dirección de operaciones. La pantalla entra en los puestos de dirección
+de operaciones, consultor de seguridad, consultor JR y administración
+del sistema y calidad.
+
+Por dentro: modelos `Cotizacion` (servicio opcional, folio, cliente o
+empresa, país, contacto, consultor, textos, IVA, fechas de envío y
+rechazo, `servicio_folio`), `DiaCotizacion`, `ArchivoCotizacion`,
+`DatosCotizacion`, `TextoCotizacion`, `FirmaConsultor` y el estatus
+VENCIDA; migración `e3a5c7b9d1f4` (siembra México y los puestos).
+`app/cotizacion_cliente.py` (el motor), `app/cotizacion_pdf.py`,
+`app/routers/cotizaciones.py` (`/cotizaciones/eventual/...`,
+`/cotizaciones/firma`, `/cotizaciones/textos`), `servicios.dar_de_alta`
+(el alta de Nuevo servicio, sin commit, para que la cotización nazca con
+él), `celery_app` (la tarea), `manual.py`, `bitacora_admin.py`,
+`web/cotizaciones.js`, `web/catalogos_pantalla.js`, `web/cotizacion.js`,
+`menu.js`, `app.js`, `idioma.js` (237 textos en tres idiomas),
+`estilo.css`; `revisar.py` ya acepta `.append()` y `.clear()` sobre una
+relación de muchos. El servidor instala WeasyPrint y las librerías de
+Pango (`requirements.txt`, `Dockerfile`). Manual: capítulo «La
+cotización al cliente», su pantalla y el paso 2 del camino. Pruebas:
+`tests/test_cotizaciones_cliente.py` (31).
+
+**Lo que sigue (entrega 2).** La otra puerta: cotizar un servicio que ya
+existe —el que se dio de alta sin cotización— y que al autorizarse se
+quede en ese servicio. Y la propuesta del implantado, cuando Salvador la
+retome.
+
 ## 14. Lo que falta
 
 ### Abierto

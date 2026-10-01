@@ -104,6 +104,13 @@ export const MENU = [
      dia que llegue la siguiente, este menu ya sabe como crecer. */
   { ruta: "/panorama", clave: "panorama", necesita: "panorama.ver", texto: "nav_operacion", grupo: "nav_operaciones_ep",
     cuenta: "rec_operacion", quienes: PANORAMA },
+  /* Las cotizaciones que se le mandan al cliente antes de que exista el
+     servicio (seccion 114). Van antes de EP eventual: es el orden en que
+     pasan las cosas --se cotiza, el cliente autoriza y nace el servicio--.
+     La abren los mismos que la cartera; arma quien lleva servicios. */
+  { ruta: "/cotizaciones", clave: "cotizaciones", necesita: "cotizaciones.ver", texto: "nav_cotizaciones",
+    grupo: "nav_operaciones_ep", tambien: ["/cotizacion/"],
+    cuenta: "rec_cotizaciones", quienes: CONSULTA, nueva: "2026-11-15" },
   /* Eventual e implantado son dos operaciones distintas y se capturan
      distinto; cada una tiene su boton para no tener que escoger el tipo
      dentro de una pantalla que sirve para las dos. */

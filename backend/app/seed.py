@@ -416,6 +416,10 @@ def sembrar_parametros() -> dict:
                 db, m.PesoProfesionalismo,
                 {"pais_id": mx.id, "dimension": dimension}, {"peso": peso})
         _obtener_o_crear(db, m.ParametroProfesionalismo, {"pais_id": mx.id}, {})
+        # La razon social, el IVA y los textos de la cotizacion de Mexico
+        # (seccion 114): los mismos que trajo su migracion.
+        from app import cotizacion_cliente
+        cotizacion_cliente.sembrar_mexico(db)
 
         db.commit()
         return {"parametros_combustible": db.query(m.ParametroCombustible).count(),
