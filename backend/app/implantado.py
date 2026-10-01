@@ -1770,6 +1770,11 @@ def por_que_no_sale(db: Session, unidad: m.Vehiculo, plaza_id: int | None,
         return f"La unidad {unidad.placa} está dada de baja"
     if unidad.rentado:
         return f"La unidad {unidad.placa} es de renta: no es de la flota fija"
+    # La de Brasil llega de Odoo sin Ubicacion (seccion 118): mientras no
+    # la tenga no es de ninguna ciudad, y el implantado es de una.
+    if plaza_id and unidad.plaza_id is None:
+        return (f"La unidad {unidad.placa} todavía no tiene ciudad: se le "
+                "pone en Odoo, en su Ubicación")
     if plaza_id and unidad.plaza_id != plaza_id:
         return (f"La unidad {unidad.placa} es de {_ciudad(db, unidad.plaza_id)}, "
                 f"no de {_ciudad(db, plaza_id)}")

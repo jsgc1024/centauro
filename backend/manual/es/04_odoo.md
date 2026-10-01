@@ -4,7 +4,7 @@ parte: entender
 orden: 40
 titulo: Lo que viene de Odoo
 resumen: Las cinco lecturas —personal de seguridad, flota y taller, oficina, clientes y tarifarios—, qué trae cada una, cuándo corre y qué deja pendiente. Y la prefactura en Odoo, del eventual y del mes del implantado.
-buscar: odoo lectura ensayo aplicar primera lectura pendientes llave etiqueta proteccion ejecutiva plaza ubicacion correo personal correo de trabajo tarifarios productos lista de implantados baja archivado categoria proteccion ejecutiva PE prefijo gps atlas idioma es_MX factura prefactura borrador timbrar facturista variante variantes gastos de operacion viaticos llave de la factura ODOO_FACTURACION_API_KEY hora extra producto mes implantado referencia origen no se pudo mandar en odoo mandar a odoo reintento cancelada a la mitad
+buscar: odoo lectura ensayo aplicar primera lectura pendientes llave etiqueta proteccion ejecutiva brasil compania centauro ass centauro brasil por capturar sin ciudad cuv blindada plaza ubicacion correo personal correo de trabajo tarifarios productos lista de implantados baja archivado categoria proteccion ejecutiva PE prefijo gps atlas idioma es_MX factura prefactura borrador timbrar facturista variante variantes gastos de operacion viaticos llave de la factura ODOO_FACTURACION_API_KEY hora extra producto mes implantado referencia origen no se pudo mandar en odoo mandar a odoo reintento cancelada a la mitad
 ---
 Odoo es la fuente de verdad. Centauro **lo lee** —lo único que escribe en él es la prefactura en borrador, abajo—, y lo que viene de Odoo no se edita en Centauro: se corrige allá y llega solo en la siguiente lectura. Tres reglas valen para las cinco lecturas:
 
@@ -17,7 +17,8 @@ Entra quien tiene en Odoo el puesto «Personal de Seguridad» o «Security Drive
 Si Odoo lo archiva, se le da de baja: su acceso se cierra —salvo que deba viáticos, que primero comprueba—, y la central recibe una alerta por cada día que tenía asignado.
 
 ## La flota y el taller · cada hora a los :27
-Entran las unidades con la etiqueta «PROTECCION EJECUTIVA» o «pe». Trae la placa, la categoría —las siete de Odoo son las de Centauro—, la ciudad de su **Ubicación**, la marca, el modelo, el color y el año.
+Cada país lee su flota, y nunca se mezclan: **México**, las unidades de la compañía **CENTAURO ASS** con la etiqueta «PROTECCION EJECUTIVA» o «pe»; **Brasil**, las de la compañía **Centauro Brasil** con «PROTECCION EJECUTIVA BRASIL». La etiqueta de un país con la compañía de otro no entra en ninguna: queda pendiente, y la unidad que ya estaba no se mueve de país sola. Trae la placa, la categoría —las de Odoo son las de Centauro, con la **CUV Blindada** que usa Brasil—, la ciudad de su **Ubicación**, buscada entre las ciudades de su país, la marca, el modelo, el color y el año.
+En México la unidad sin Ubicación queda pendiente. En Brasil entra igual: su color y su Ubicación se capturan después en Odoo, y mientras tanto la lectura los dice en **Por capturar**, sin detener nada. Sin ciudad, la unidad se ofrece en los eventuales de Brasil como «sin ciudad» y no va a un implantado; su GPS se liga igual. Connect no lee el VIN. Si el ensayo dice **Brasil 0** con sus unidades cargadas en Odoo, al usuario de la conexión le falta la compañía Centauro Brasil en sus compañías permitidas.
 Del taller, las entradas de Flotilla → Servicios de tipo Preventivo, Correctivo o Desgaste natural sacan la unidad de circulación de la fecha de entrada a la de salida; **sin salida se da por adentro**. Si Odoo archiva la unidad, deja de ofrecerse y la central recibe una alerta por cada día que tenía asignado. Si solo le quitan la etiqueta, queda pendiente.
 
 ## La oficina · cada hora a los :37

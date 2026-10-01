@@ -725,6 +725,11 @@ function todos(bloque) {
 /* La ciudad va pegada al nombre, no en columna aparte: en media pantalla
    lo que importa es si hay que traer a esa persona de otro lado. */
 function lineaCiudad(f) {
+  /* La unidad de Brasil que Odoo todavia no ubica (seccion 118): no es
+     de otra ciudad, es que no se sabe de cual. */
+  if (f.sin_ciudad) {
+    return h("div", { clase: "chico", style: "color:#b8860b" }, t("srv_sin_ciudad"));
+  }
   return f.local
     ? h("div", { clase: "chico gris" }, f.ciudad || "—")
     : h("div", { clase: "chico", style: "color:#b8860b" },

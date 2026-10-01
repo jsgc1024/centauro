@@ -10,12 +10,17 @@ Las decisiones de Salvador (23 de septiembre) que viven aqui:
   * Entran las unidades de Proteccion Ejecutiva: las que traen la
     etiqueta «PROTECCION EJECUTIVA» o «pe». Logistica, Direccion y las
     utilitarias no.
+  * Y por pais (1 de octubre, seccion 118): Mexico es la compania
+    CENTAURO ASS con esa etiqueta; Brasil, la compania Centauro Brasil con
+    «PROTECCION EJECUTIVA BRASIL». Nunca se mezclan: la etiqueta de un
+    pais con la compania de otro no entra en ninguna flota.
   * La llave es el numero interno de Odoo; la primera vez se vincula por
     placa con la que ya estaba en Centauro.
-  * Las siete categorias de Odoo son las de Centauro. VAN es la «Van 10
-    pax».
-  * La plaza sale de la Ubicacion de la unidad. El Estado de Mexico va
-    como Ciudad de Mexico.
+  * Las categorias de Odoo son las de Centauro --con la CUV Blindada de
+    Brasil desde la seccion 118--. VAN es la «Van 10 pax».
+  * La plaza sale de la Ubicacion de la unidad, entre las ciudades de su
+    pais. El Estado de Mexico va como Ciudad de Mexico. En Brasil la
+    unidad entra aunque no la tenga: se captura despues.
   * El taller: Preventivo, Correctivo y Desgaste natural sacan la unidad
     de circulacion, de la fecha de entrada a la de salida; sin salida se
     da por adentro. «Resguardo de Unidad» y los de contrato no cuentan.
@@ -27,7 +32,26 @@ import re
 from app.odoo_personal_reglas import (ALIAS_PLAZA, corto, fecha, nombre_de,
                                       normal, texto)
 
-ETIQUETAS = frozenset({"proteccion ejecutiva", "pe"})
+# Que unidades de Odoo son la flota de cada pais (decision de Salvador,
+# 1 de octubre; seccion 118). En Odoo cada pais es una compania y su flota
+# lleva su etiqueta. La unidad es de la flota cuya compania Y cuya etiqueta
+# trae: con una sola de las dos no es de ninguna, y se reporta en vez de
+# adivinar. Asi una unidad de Brasil nunca cae en la flota de Mexico, ni al
+# reves.
+#
+# `ciudad_obligatoria`: en Mexico la unidad sin Ubicacion no entra (23 de
+# septiembre). La flota de Brasil llega a Odoo sin VIN, color ni Ubicacion,
+# que se capturan despues: entra igual, y lo que le falta se dice aparte,
+# como por capturar, sin detener nada. Connect no lee el VIN.
+FLOTAS = (
+    {"pais": "MX", "nombre": "México", "compania": 1,
+     "etiquetas": frozenset({"proteccion ejecutiva", "pe"}),
+     "ciudad_obligatoria": True},
+    {"pais": "BR", "nombre": "Brasil", "compania": 5,
+     "etiquetas": frozenset({"proteccion ejecutiva brasil"}),
+     "ciudad_obligatoria": False},
+)
+ETIQUETAS = frozenset().union(*(f["etiquetas"] for f in FLOTAS))
 # El nombre de la categoria en Odoo, como codigo de Centauro. Lo que no
 # esta aqui se toma tal cual: «MINIVAN BLINDADA» -> minivan_blindada.
 ALIAS_CATEGORIA = {"van": "van_10"}
@@ -90,46 +114,121 @@ def plaza_de(lugar, plazas: dict) -> tuple:
 
 
 def es_de_proteccion(unidad: dict, etiquetas: dict) -> bool:
-    """`etiquetas`: id -> nombre, de fleet.vehicle.tag."""
+    """Si trae la etiqueta de alguna de las flotas. `etiquetas`: id ->
+    nombre, de fleet.vehicle.tag."""
     return any(normal(etiquetas.get(t, "")) in ETIQUETAS
                for t in (unidad.get("tag_ids") or []))
+
+
+def flota_de(unidad: dict, etiquetas: dict) -> tuple:
+    """(flota, problema). La flota cuya compania y cuya etiqueta trae la
+    unidad. Con la etiqueta de una flota y otra compania --o ninguna-- no
+    es de ninguna: (None, por que). Sin etiqueta de Proteccion Ejecutiva
+    no es asunto de Connect: (None, None)."""
+    nombres = {normal(etiquetas.get(t, "")) for t in (unidad.get("tag_ids") or [])}
+    marcadas = [f for f in FLOTAS if f["etiquetas"] & nombres]
+    if not marcadas:
+        return None, None
+    compania = id_de(unidad.get("company_id"))
+    for flota in marcadas:
+        if flota["compania"] == compania:
+            return flota, None
+    flota = marcadas[0]
+    if compania is None:
+        return None, (f"la etiqueta es de «{flota['nombre']}» y en Odoo no "
+                      "tiene compania")
+    nombre = nombre_de(unidad.get("company_id")) or str(compania)
+    return None, (f"la etiqueta es de «{flota['nombre']}» y su compania en "
+                  f"Odoo es «{nombre}»")
+
+
+def por_capturar(flota: dict, plaza, lugar: str, color, vehiculo) -> list:
+    """Lo que a la unidad le falta en Odoo y no detiene nada (seccion 118):
+    solo en la flota que entra sin ciudad. Lo que Centauro ya tiene no se
+    pide: un campo vacio en Odoo no borra el de Centauro."""
+    if flota["ciudad_obligatoria"]:
+        return []
+    vehiculo = vehiculo or {}
+    falta = []
+    if plaza is None:
+        if lugar:
+            falta.append(f"la ubicacion «{lugar}» no es una ciudad de "
+                         f"«{flota['nombre']}» en Centauro")
+        elif not vehiculo.get("plaza_id"):
+            falta.append("sin ubicacion")
+    if not color and not vehiculo.get("color"):
+        falta.append("sin color")
+    return falta
 
 
 # ------------------------------------------------------------ las unidades
 
 def planear(unidades: list, etiquetas: dict, vehiculos: list,
-            categorias: dict, plazas: dict) -> dict:
+            categorias: dict, plazas: dict, paises: dict) -> dict:
     """Que hacer con cada unidad de Odoo, sin hacerlo.
 
     `unidades`: las activas de Odoo. `vehiculos`: foto fija de la flota
     propia de Centauro (sin las rentadas), con id, odoo_id, placa,
-    categoria_id, plaza_id, marca_modelo, color, modelo_anio, activo y
-    sincronizado_en. `categorias`: por codigo, con id y nombre.
-    `plazas`: por nombre normalizado, con id y nombre.
+    categoria_id, plaza_id, pais_id (el de su ciudad, o el de su flota si
+    no tiene), marca_modelo, color, modelo_anio, activo y sincronizado_en.
+    `categorias`: por codigo, con id y nombre. `plazas`: por pais (su id) y
+    nombre normalizado, con id y nombre. `paises`: por codigo, con id.
     """
-    elegidas = [u for u in unidades if es_de_proteccion(u, etiquetas)]
+    elegidas, mezcladas = [], []
+    for u in unidades:
+        flota, problema = flota_de(u, etiquetas)
+        if flota is not None:
+            elegidas.append((u, flota))
+        elif problema:
+            mezcladas.append((u, problema))
     por_odoo = {v["odoo_id"]: v for v in vehiculos if v.get("odoo_id")}
     por_placa = {placa_de(v["placa"]): v for v in vehiculos if v.get("placa")}
     cuenta = collections.Counter(placa_de(u.get("license_plate"))
-                                 for u in elegidas)
+                                 for u, _ in elegidas)
     repetidas = {p for p, n in cuenta.items() if p and n > 1}
 
-    plan = {"leidas": len(elegidas), "altas": [], "vinculos": [],
-            "cambios": [], "pendientes": [], "sin_cambio": 0,
-            "procesadas": [], "revisar_salida": []}
+    plan = {"leidas": len(elegidas),
+            "por_pais": {f["pais"]: 0 for f in FLOTAS},
+            "altas": [], "vinculos": [], "cambios": [], "pendientes": [],
+            "por_capturar": [], "sin_cambio": 0, "procesadas": [],
+            "revisar_salida": []}
     tomadas = set()
 
-    def pendiente(u, vehiculo_id, faltas):
+    def pendiente(u, vehiculo_id, faltas, flota=None):
         plan["pendientes"].append({"odoo_id": u["id"], "vehiculo_id": vehiculo_id,
                                    "placa": texto(u.get("license_plate")),
+                                   "pais": flota["nombre"] if flota else None,
                                    "falta": faltas})
 
-    for u in elegidas:
+    def capturar(u, vehiculo_id, flota, faltas):
+        if faltas:
+            plan["por_capturar"].append({
+                "odoo_id": u["id"], "vehiculo_id": vehiculo_id,
+                "placa": texto(u.get("license_plate")),
+                "pais": flota["nombre"], "falta": faltas})
+
+    # La etiqueta de un pais con la compania de otro: no entra en ninguna
+    # flota ni se toca la que ya estaba. Cuenta como vista, para que no se
+    # tome por una salida de Proteccion Ejecutiva.
+    for u, problema in mezcladas:
+        ya = por_odoo.get(u["id"])
+        pendiente(u, ya["id"] if ya else None, [problema])
+
+    for u, flota in elegidas:
+        plan["por_pais"][flota["pais"]] += 1
+        pais = paises.get(flota["pais"])
+        if pais is None:
+            ya = por_odoo.get(u["id"])
+            pendiente(u, ya["id"] if ya else None,
+                      [f"el pais «{flota['pais']}» no existe en Centauro"], flota)
+            continue
         placa = placa_de(u.get("license_plate"))
         nombre_cat = nombre_de(u.get("category_id"))
         categoria = (categorias.get(codigo_de_categoria(nombre_cat))
                      if nombre_cat else None)
-        plaza, lugar = plaza_de(u.get("location"), plazas)
+        # La ciudad, entre las de su pais: «Guadalajara» en una unidad de
+        # Brasil no la manda a Mexico.
+        plaza, lugar = plaza_de(u.get("location"), plazas.get(pais["id"], {}))
         datos = {"marca_modelo": marca_modelo_de(u.get("model_id"))[:80].rstrip() or None,
                  "color": corto(u.get("color"), 40) or None,
                  "modelo_anio": anio_de(u.get("model_year"))}
@@ -140,7 +239,12 @@ def planear(unidades: list, etiquetas: dict, vehiculos: list,
             if candidato is not None:
                 if candidato.get("odoo_id") and candidato["odoo_id"] != u["id"]:
                     pendiente(u, candidato["id"],
-                              ["su placa ya es de otra unidad en Centauro"])
+                              ["su placa ya es de otra unidad en Centauro"], flota)
+                    continue
+                if candidato.get("pais_id") != pais["id"]:
+                    pendiente(u, candidato["id"],
+                              ["su placa ya es de una unidad de otro pais "
+                               "en Centauro"], flota)
                     continue
                 vehiculo, vinculo = candidato, True
 
@@ -155,25 +259,35 @@ def planear(unidades: list, etiquetas: dict, vehiculos: list,
                 faltas.append("sin categoria")
             elif categoria is None:
                 faltas.append(f"la categoria «{nombre_cat}» no existe en Centauro")
-            if plaza is None:
+            if plaza is None and flota["ciudad_obligatoria"]:
                 faltas.append(f"la plaza «{lugar}» no existe en Centauro"
                               if lugar else "sin plaza")
             if faltas:
-                pendiente(u, None, faltas)
+                pendiente(u, None, faltas, flota)
                 continue
             tomadas.add(placa)
             plan["altas"].append({"odoo_id": u["id"],
                                   "placa": corto(u.get("license_plate"), 20).upper(),
                                   "categoria_id": categoria["id"],
                                   "categoria": categoria["nombre"],
-                                  "plaza_id": plaza["id"], "plaza": plaza["nombre"],
+                                  "pais_id": pais["id"], "pais": flota["nombre"],
+                                  "plaza_id": plaza["id"] if plaza else None,
+                                  "plaza": plaza["nombre"] if plaza else None,
                                   **datos})
+            capturar(u, None, flota,
+                     por_capturar(flota, plaza, lugar, datos["color"], None))
             continue
 
         # ------------------------------------------------ la que ya esta
+        # La de otro pais no se cambia de flota sola: lo dice y no se toca.
+        if vehiculo.get("pais_id") != pais["id"]:
+            pendiente(u, vehiculo["id"],
+                      [f"en Odoo es de la flota de «{flota['nombre']}» y en "
+                       "Centauro es de otro pais"], flota)
+            continue
         if not vehiculo.get("activo"):
             pendiente(u, vehiculo["id"], ["activa en Odoo pero dada de baja en "
-                                          "Centauro: reactivar a mano"])
+                                          "Centauro: reactivar a mano"], flota)
             continue
 
         valores, que, avisos = {}, [], []
@@ -196,7 +310,7 @@ def planear(unidades: list, etiquetas: dict, vehiculos: list,
         if plaza is not None and plaza["id"] != vehiculo.get("plaza_id"):
             valores["plaza_id"] = plaza["id"]
             que.append("plaza")
-        elif plaza is None and lugar:
+        elif plaza is None and lugar and flota["ciudad_obligatoria"]:
             avisos.append(f"la plaza «{lugar}» no existe en Centauro")
         for campo, etiqueta in (("marca_modelo", "marca y modelo"),
                                 ("color", "color"), ("modelo_anio", "año")):
@@ -216,10 +330,12 @@ def planear(unidades: list, etiquetas: dict, vehiculos: list,
         elif not vinculo:
             plan["sin_cambio"] += 1
         if avisos:
-            pendiente(u, vehiculo["id"], avisos)
+            pendiente(u, vehiculo["id"], avisos, flota)
+        capturar(u, vehiculo["id"], flota,
+                 por_capturar(flota, plaza, lugar, datos["color"], vehiculo))
         plan["procesadas"].append(vehiculo["id"])
 
-    ids = {u["id"] for u in elegidas}
+    ids = {u["id"] for u, _ in elegidas} | {u["id"] for u, _ in mezcladas}
     plan["revisar_salida"] = [
         v for v in vehiculos
         if v.get("odoo_id") and v.get("activo") and v.get("sincronizado_en")

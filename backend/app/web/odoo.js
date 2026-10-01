@@ -75,6 +75,10 @@ const FALTAS = {
     "odo_f_reactivar_unidad",
   "ya no es de Proteccion Ejecutiva en Odoo": "odo_f_no_es_pe",
   "revisar en Odoo": "odo_f_revisar",
+  /* La flota por pais (seccion 118). */
+  "su placa ya es de una unidad de otro pais en Centauro": "odo_f_placa_otro_pais",
+  "sin ubicacion": "odo_f_sin_ubicacion",
+  "sin color": "odo_f_sin_color",
   "sin fecha de entrada": "odo_f_taller_sin_entrada",
   "la salida es antes que la entrada": "odo_f_taller_al_reves",
   "terminado sin fecha de salida: se tomo el dia de entrada":
@@ -88,13 +92,23 @@ const CON_NOMBRE = [
   [/^la plaza «(.*)» no existe en Centauro$/, "odo_f_plaza_no_existe"],
   [/^el pais «(.*)» no existe en Centauro$/, "odo_f_pais_no_existe"],
   [/^la categoria «(.*)» no existe en Centauro$/, "odo_f_categoria_no_existe"],
+  /* La flota por pais (seccion 118): la etiqueta de un pais con la
+     compania de otro, y la ubicacion que no es ciudad de su pais. */
+  [/^la etiqueta es de «(.*)» y en Odoo no tiene compania$/,
+   "odo_f_etiqueta_sin_compania"],
+  [/^la etiqueta es de «(.*)» y su compania en Odoo es «(.*)»$/,
+   "odo_f_etiqueta_otra_compania"],
+  [/^en Odoo es de la flota de «(.*)» y en Centauro es de otro pais$/,
+   "odo_f_otro_pais"],
+  [/^la ubicacion «(.*)» no es una ciudad de «(.*)» en Centauro$/,
+   "odo_f_ubicacion_no_existe"],
 ];
 
 function falta(texto) {
   if (FALTAS[texto]) return t(FALTAS[texto]);
   for (const [patron, clave] of CON_NOMBRE) {
     const hallado = String(texto).match(patron);
-    if (hallado) return reemplazar(t(clave), { x: hallado[1] });
+    if (hallado) return reemplazar(t(clave), { x: hallado[1], y: hallado[2] });
   }
   return texto;
 }
@@ -141,8 +155,17 @@ const LECTURAS = {
   },
   flota: {
     ensayo: "/odoo/flota/ensayo", aplicar: "/odoo/flota/sincronizar",
-    leidos: (d) => reemplazar(t("odo_leidos_flota"),
-                              { n: d.leidas, s: d.sin_cambio }),
+    /* Con las de cada pais al lado (seccion 118): Brasil en cero con sus
+       unidades cargadas en Odoo es la conexion sin su compania. */
+    leidos: (d) => reemplazar(t("odo_leidos_flota"), {
+      n: (d.por_pais || []).length
+        ? reemplazar(t("odo_leidas_por_pais"), {
+            n: d.leidas,
+            p: d.por_pais.map(p => reemplazar(t("odo_pais_n"),
+                                              { p: p.pais, n: p.leidas }))
+              .join(" · ") })
+        : d.leidas,
+      s: d.sin_cambio }),
     quien: (x) => x.placa || "—",
     pieAltas: "odo_altas_flota_pie", pieBajas: "odo_bajas_flota_pie",
     confirmar: "odo_confirmar_flota",
@@ -374,6 +397,7 @@ function informe(tipo, d) {
   const pendientes = tipo === "flota"
     ? d.pendientes.concat((d.taller || {}).pendientes || [])
     : d.pendientes;
+  const porCapturar = tipo === "flota" ? (d.por_capturar || []) : [];
 
   const partes = [
     h("p", { clase: "gris chico", style: "margin:14px 0 0" },
@@ -388,6 +412,12 @@ function informe(tipo, d) {
             d.bajas.length ? "var(--grave)" : ""),
       celda(t("odo_pendientes"), pendientes.length, t("odo_pendientes_pie"),
             pendientes.length ? "var(--alerta)" : ""),
+      /* Lo que a la flota de Brasil le falta en Odoo (seccion 118): entra
+         igual, asi que no se pinta como pendiente. */
+      porCapturar.length
+        ? celda(t("odo_por_capturar"), porCapturar.length,
+                t("odo_por_capturar_pie"))
+        : "",
       /* La oficina que no tiene correo de trabajo no puede llegar: es
          la lista que RH corrige en Odoo, y se cuenta aparte. */
       tipo === "oficina"
@@ -411,6 +441,14 @@ function informe(tipo, d) {
       conAyuda("h4", `${t("odo_l_pendientes")} (${pendientes.length})`,
                "ay_odo_pendientes"),
       listaDePendientes(pendientes, cfg)));
+  }
+  if (porCapturar.length) {
+    partes.push(plegable(`${t("odo_l_por_capturar")} (${porCapturar.length})`,
+      h("div", {},
+        h("p", { clase: "gris chico", style: "margin:0 0 6px" },
+          t("odo_por_capturar_que")),
+        listaDePendientes(porCapturar, cfg)),
+      null, {}, false));
   }
   if (d.altas.length) {
     partes.push(plegable(`${t("odo_l_altas")} (${d.altas.length})`,
@@ -750,7 +788,10 @@ function detalleAlta(tipo, x) {
   if (tipo === "clientes") {
     return [x.rfc || t("odo_sin_rfc"), x.pais].filter(Boolean).join(" · ");
   }
-  return [x.categoria, x.plaza].filter(Boolean).join(" · ");
+  /* La flota dice de que pais es cada una (seccion 118), y la que llega
+     sin Ubicacion lo dice en vez de dejar el hueco. */
+  return [x.categoria, x.plaza || (x.pais ? t("odo_sin_ciudad") : ""), x.pais]
+    .filter(Boolean).join(" · ");
 }
 
 function detalleBaja(x) {
@@ -778,7 +819,8 @@ function listaDePendientes(pendientes, cfg) {
   return h("div", {}, ...orden.map(([texto, quienes]) => h("div", { style: "margin:0 0 10px" },
     h("div", { style: "font-weight:600;font-size:13px;margin:0 0 4px" },
       `${texto} (${quienes.length})`),
-    renglones(quienes, (x) => [cfg.quien(x), noOdoo(x.odoo_id)]))));
+    renglones(quienes, (x) => [cfg.quien(x),
+      [noOdoo(x.odoo_id), x.pais].filter(Boolean).join(" · ")]))));
 }
 
 /* Un renglon por persona o unidad: lo que se busca en Odoo --el nombre

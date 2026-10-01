@@ -975,6 +975,17 @@ def recomendaciones_equipo(equipo_id: int, categoria_id: int,
     }
 
 
+# Lo que se dice cuando nadie de la ciudad cubre todos los dias. La unidad
+# no se da de alta como freelance: se trae de otra ciudad o se renta
+# (seccion 118; antes las dos listas decian lo de la gente).
+AVISO_SIN_LOCAL = {
+    "persona_id": ("Sin recurso local disponible todos los dias. Se requiere "
+                   "traslado (genera viaticos extra) o alta de un freelance."),
+    "vehiculo_id": ("Sin unidad de la ciudad disponible todos los dias: se "
+                    "trae de otra ciudad o se sube un auto rentado."),
+}
+
+
 def _juntar(por_dia: list[dict], fechas: list, llave: str) -> dict:
     """Junta la disponibilidad de todos los dias en una sola respuesta.
 
@@ -1022,8 +1033,7 @@ def _juntar(por_dia: list[dict], fechas: list, llave: str) -> dict:
 
     aviso = None
     if not libres and not con_riesgo:
-        aviso = ("Sin recurso local disponible todos los dias. Se requiere "
-                 "traslado (genera viaticos extra) o alta de un freelance.")
+        aviso = AVISO_SIN_LOCAL[llave]
     return {"disponibles": libres, "con_alerta": con_riesgo,
             "no_disponibles": ocupados, "de_otras_ciudades": foraneos,
             "aviso": aviso}

@@ -29,8 +29,11 @@ AREAS = [
      # Las cuentas bancarias (seccion 105): cuantos sin cuenta, y si la
      # conexion no las pudo leer.
      ("pendientes", "celular_no_valido", "bajas", "fotos", "cuentas")),
+    # Lo por capturar de la flota de Brasil (seccion 118) no detiene
+    # nada, pero es lo que su area tiene que completar en Odoo.
     ("flota", "La flota y el taller", "Flota", odoo_flota,
-     ("pendientes", "taller.pendientes", "taller.error", "bajas")),
+     ("pendientes", "por_capturar", "taller.pendientes", "taller.error",
+      "bajas")),
     ("oficina", "El personal de oficina", "Recursos Humanos", odoo_oficina,
      ("pendientes", "sin_correo", "sin_lugar", "sin_sugerencia", "bajas")),
     ("clientes", "Los clientes", "Finanzas", odoo_clientes,

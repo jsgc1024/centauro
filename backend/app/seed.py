@@ -87,6 +87,9 @@ def sembrar() -> dict:
             # Odoo ya lo tenia (seccion 52). Rendimiento y precios de
             # ejemplo, como el resto, hasta cargar los reales.
             ("sedan", "Sedán", False, "15.0"),
+            # La usa la flota de Brasil (seccion 118). Igual: rendimiento
+            # y precios de ejemplo.
+            ("cuv_blindada", "CUV Blindada", True, "9.0"),
         ]:
             obj, _ = _obtener_o_crear(db, m.CategoriaVehiculo, {"codigo": codigo},
                                       {"nombre": nombre, "blindado": blindado,
@@ -171,10 +174,11 @@ def sembrar() -> dict:
             "suv_blindada": {"full_day": "8500", "medio_dia": "5100", "transfer": "3400"},
             "van_10":             {"full_day": "4000", "medio_dia": "2400", "transfer": "1600"},
             "sedan":              {"full_day": "2200", "medio_dia": "1300", "transfer": "900"},
+            "cuv_blindada":       {"full_day": "5500", "medio_dia": "3300", "transfer": "2200"},
         }
         mensual = {"cuv": "55000", "minivan": "66000", "minivan_blindada": "143000",
                    "suv": "110000", "suv_blindada": "187000", "van_10": "88000",
-                   "sedan": "48000"}
+                   "sedan": "48000", "cuv_blindada": "121000"}
         for cat_cod, por_mod in precios_vehiculo.items():
             for mod_cod, precio in por_mod.items():
                 _obtener_o_crear(

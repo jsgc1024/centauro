@@ -183,6 +183,13 @@ def crud_router(
             raise HTTPException(409, LISTA_DE_ODOO)
         if modelo is m.TabuladorViatico:
             _tabulador_que_aplica(datos.model_dump())
+        # Sin ciudad solo entra la unidad de Brasil que llega por Odoo
+        # (seccion 118), con el pais de su flota. La que se da de alta
+        # aqui dice donde vive.
+        if modelo is m.Vehiculo and datos.plaza_id is None:
+            raise HTTPException(400, {
+                "mensaje": "La unidad necesita su ciudad.",
+                "que_hacer": "Escoge la ciudad donde vive la unidad."})
         obj = modelo(**datos.model_dump())
         db.add(obj)
         db.flush()
@@ -232,6 +239,12 @@ def crud_router(
             _tabulador_que_aplica({
                 "tipo_servicio": obj.tipo_servicio, "escenario": obj.escenario,
                 **datos.model_dump(exclude_unset=True)})
+        if (modelo is m.Vehiculo and obj.plaza_id is not None
+                and "plaza_id" in datos.model_fields_set
+                and datos.plaza_id is None):
+            raise HTTPException(400, {
+                "mensaje": "La unidad necesita su ciudad.",
+                "que_hacer": "Escoge la ciudad donde vive la unidad."})
 
         # Se apunta solo lo que de verdad cambio, con su valor viejo al
         # lado. El estado entero no sirve: lo que alguien busca en

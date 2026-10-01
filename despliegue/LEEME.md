@@ -240,7 +240,10 @@ docker compose -f docker-compose.prod.yml run --rm api python sincronizar_person
 ```
 
 Para la flota, el usuario de la conexión también necesita leer
-*Flotilla*. Las fotos de las categorías se cargan una vez desde una
+*Flotilla*, y tener entre sus compañías permitidas las dos de la flota:
+CENTAURO ASS (México) y Centauro Brasil (sección 118). Sin la de Brasil,
+el ensayo de la flota dice «Brasil 0» aunque sus unidades estén cargadas
+en Odoo. Las fotos de las categorías se cargan una vez desde una
 carpeta (`fotos_de_categoria.py`, instrucciones adentro): la base de
 cada categoría y una por color.
 

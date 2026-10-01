@@ -509,7 +509,15 @@ def recomendar_vehiculos_por_dia(
         .all()
     )
     candidatos = [v for v in todas if v.plaza_id == plaza_id]
-    otras_ciudades = [v for v in todas if v.plaza_id != plaza_id]
+    # Las de otra ciudad, solo de este pais (seccion 118): una camioneta
+    # de Sao Paulo no se manda a la Ciudad de Mexico. Aqui entran tambien
+    # las que todavia no tienen ciudad --la flota de Brasil llega de Odoo
+    # sin Ubicacion-- dichas asi.
+    plaza = db.get(m.Plaza, plaza_id)
+    pais_id = plaza.pais_id if plaza else None
+    otras_ciudades = [v for v in todas if v.plaza_id != plaza_id
+                      and (pais_id is None or v.pais_de_la_unidad == pais_id)]
+    todas = candidatos + otras_ciudades
     ids = [v.id for v in todas]
     techo = max(d[1] for d in dias)
     ocupadas = _jornadas_de_vehiculos(db, ids, min(d[0] for d in dias), techo)
@@ -531,6 +539,7 @@ def recomendar_vehiculos_por_dia(
                     "rentado": v.rentado, "arrendadora": v.arrendadora,
                     "ciudad": v.plaza.nombre if v.plaza else None,
                     "local": v.plaza_id == plaza_id,
+                    "sin_ciudad": v.plaza_id is None,
                     "bloqueado": any(h.nivel == "bloqueo" for h in hallazgos),
                     "alertas": [h.como_dict() for h in hallazgos]}
 

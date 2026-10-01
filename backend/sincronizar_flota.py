@@ -44,7 +44,10 @@ def main(argv: list) -> int:
     t = r["taller"]
     print("Aplicado: quedo guardado en Centauro." if aplicar
           else "ENSAYO: no se guardo nada.")
-    print(f"Unidades de Proteccion Ejecutiva en Odoo: {r['leidas']}")
+    paises = " · ".join(f"{p['pais']} {p['leidas']}"
+                        for p in informe.get("por_pais", []))
+    print(f"Unidades de Proteccion Ejecutiva en Odoo: {r['leidas']}"
+          + (f" ({paises})" if paises else ""))
     print(f"Altas: {r['altas']} · vinculadas: {r['vinculadas']} · "
           f"con cambios: {r['cambios']} · sin cambio: {r['sin_cambio']}")
     print(f"Bajas: {r['bajas']}")
@@ -62,6 +65,13 @@ def main(argv: list) -> int:
             print(f"  {cuantos:>3}  {motivo}")
     else:
         print("Pendientes: ninguno")
+    # Lo que a la flota de Brasil le falta en Odoo (seccion 118): entra
+    # igual, y se dice para que se capture alla.
+    if r["por_capturar"]:
+        print("Por capturar en Odoo (no detiene nada):")
+        for motivo, cuantos in sorted(r["por_capturar"].items(),
+                                      key=lambda x: -x[1]):
+            print(f"  {cuantos:>3}  {motivo}")
     print(f"El detalle quedo en {DETALLE.name} (no va a git).")
     return 0
 

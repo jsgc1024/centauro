@@ -368,7 +368,10 @@ class MotivoIn(Base):
 class VehiculoIn(Base):
     placa: str
     categoria_id: int
-    plaza_id: int
+    # La unidad que se da de alta aqui necesita su ciudad (crud.py). La
+    # que llega de Brasil por Odoo puede no traerla todavia (seccion 118),
+    # y editarle lo de Centauro no obliga a inventarle una.
+    plaza_id: int | None = None
     costo_diario: Decimal | None = None
     color: str | None = None
     modelo_anio: int | None = None
@@ -396,6 +399,9 @@ class VehiculoIn(Base):
 class VehiculoOut(VehiculoIn):
     id: int
     activo: bool
+    # De que pais es (seccion 118): el de su ciudad o, mientras Odoo no le
+    # ponga Ubicacion, el de su flota.
+    pais_de_la_unidad: int | None = None
     # Si viene de Odoo: lo de Odoo ya no se edita aqui (seccion 52).
     odoo_id: int | None = None
     rentado: bool = False

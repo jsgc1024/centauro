@@ -320,10 +320,11 @@ def _grupos(db: Session, cliente, ahora: datetime) -> list[m.GrupoGps]:
 
 
 def _placas_de(db: Session, pais_id: int) -> dict[str, int]:
-    """Las unidades propias de ese pais, por placa escrita sin guiones."""
+    """Las unidades propias de ese pais, por placa escrita sin guiones.
+    Tambien las que todavia no tienen ciudad: la flota de Brasil llega de
+    Odoo sin Ubicacion y su GPS se liga igual (seccion 118)."""
     filas = (db.query(m.Vehiculo)
-             .join(m.Plaza, m.Vehiculo.plaza_id == m.Plaza.id)
-             .filter(m.Plaza.pais_id == pais_id,
+             .filter(m.Vehiculo.pais_de_la_unidad == pais_id,
                      m.Vehiculo.rentado.is_(False)).all())
     salida: dict[str, int] = {}
     repetidas = set()
@@ -1301,8 +1302,7 @@ def unidades(db: Session, pais_id: int, ahora: datetime | None = None) -> dict:
     ligadas = {u.vehiculo_id for u in gps if u.vehiculo_id}
     vehiculos = [
         v for v in (db.query(m.Vehiculo)
-                    .join(m.Plaza, m.Vehiculo.plaza_id == m.Plaza.id)
-                    .filter(m.Plaza.pais_id == pais_id,
+                    .filter(m.Vehiculo.pais_de_la_unidad == pais_id,
                             m.Vehiculo.rentado.is_(False))
                     .order_by(m.Vehiculo.placa).all())
         if v.activo or v.id in ligadas]
@@ -1369,6 +1369,8 @@ def unidades(db: Session, pais_id: int, ahora: datetime | None = None) -> dict:
             "vehiculo_id": v.id, "placa": v.placa,
             "categoria": v.categoria.nombre if v.categoria else None,
             "plaza": v.plaza.nombre if v.plaza else None,
+            # La de Brasil que Odoo todavia no ubica (seccion 118).
+            "sin_ciudad": v.plaza_id is None,
             "marca_modelo": v.marca_modelo, "color": v.color,
             "anio": v.modelo_anio,
             "gps": estado_gps(u) if u else "sin_gps",

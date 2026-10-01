@@ -167,7 +167,11 @@ function celdaUnidad(f) {
   return h("td", {},
     h("span", { clase: "placas" }, f.placa),
     h("div", { clase: "chico", style: "margin-top:4px" },
-      h("b", {}, [f.categoria, f.plaza].filter(Boolean).join(" · "))),
+      h("b", {}, [f.categoria, f.plaza].filter(Boolean).join(" · ")),
+      /* La de Brasil llega de Odoo sin Ubicacion (seccion 118): se dice,
+         en vez de dejar el hueco. */
+      f.sin_ciudad
+        ? h("span", { clase: "gris" }, ` · ${t("uni_sin_ciudad")}`) : null),
     h("div", { clase: "chico gris" },
       [f.marca_modelo, f.color, f.anio].filter(Boolean).join(" · ") || "—"),
     /* Odoo la archivo y Pegasus la sigue reportando (seccion 101): antes

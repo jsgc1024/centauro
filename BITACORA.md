@@ -9017,7 +9017,7 @@ bueno, el borrador en Odoo; el paso «Prefactura en Odoo» en el
 servicio; Facturación con «En Odoo» y «No se pudo mandar»; el reintento
 cada hora sin duplicar; y el punto de la revisión del cierre para el
 cliente sin ficha (decisión 3). La aprobación de finanzas sigue
-mientras tanto. Entrega 3 (sección 118): la lectura de vuelta cada hora
+mientras tanto. Entrega 3 (en su propia sección): la lectura de vuelta cada hora
 —facturado con folio, UUID y fecha; con diferencia, a explicar;
 cancelada, de regreso al consultor—, la comisión y la rentabilidad con
 lo facturado, y se quita la aprobación de finanzas de los eventuales.
@@ -9182,12 +9182,101 @@ siempre, copiar la llave a `ODOO_FACTURACION_API_KEY` (por ahora la
 misma que `ODOO_API_KEY`), migrar y reiniciar; correr el programa que
 revisa Odoo y mandar lo que diga; y avisarle al facturista que las
 prefacturas —de los eventuales y del mes de los implantados— le llegan a
-Facturas con el filtro «Prefacturas de Connect». Entrega 3 (sección
-118): la lectura de vuelta cada hora —facturado con folio, UUID y
+Facturas con el filtro «Prefacturas de Connect». Entrega 3 (en su
+propia sección; la 118 fue la flota de Brasil): la lectura de vuelta cada hora —facturado con folio, UUID y
 fecha; con diferencia, a explicar; cancelada, de regreso al consultor—,
 la comisión del timbre y se quita la aprobación de finanzas del
 eventual y del mes. Después, la prueba de punta a punta con el primer
 servicio y el primer mes reales.
+
+## 118. La flota de Brasil desde Odoo
+
+Pedido de Salvador (1 de octubre). En Odoo hay una etiqueta nueva,
+«PROTECCIÓN EJECUTIVA BRASIL» (fleet.vehicle.tag 5): la llevan las 13
+unidades de Brasil, que son de la compañía «Centauro Brasil»
+(res.company 5). La flota de México sigue con «PROTECCIÓN EJECUTIVA»
+(etiqueta 3) en la compañía CENTAURO ASS (res.company 1). Hasta hoy la
+lectura de la flota tomaba toda unidad con la etiqueta de PE sin mirar
+de qué compañía era, y las de Brasil no entraban porque su etiqueta es
+otra. Lo que pidió:
+
+1. **Cada país lee su compañía con su etiqueta, y nunca se mezclan.**
+   México: compañía 1 y «PROTECCIÓN EJECUTIVA» o «pe»; Brasil: compañía 5
+   y «PROTECCIÓN EJECUTIVA BRASIL». La unidad es de la flota cuya
+   compañía Y cuya etiqueta trae. Con la etiqueta de un país y la
+   compañía de otro —o sin compañía— no entra en ninguna: sale en
+   Pendientes con su porqué (trae la etiqueta de México y su compañía en
+   Odoo es Centauro Brasil). La que ya estaba en Connect tampoco se
+   cambia de país sola —en Odoo es de la flota de Brasil y en Centauro es
+   de otro país— ni se da de baja por eso: se cuenta como vista y no se
+   toca. La placa de una unidad de México no se liga a una de Brasil.
+   La ciudad se busca entre las ciudades del país de la unidad:
+   «Guadalajara» en una de Brasil no la manda a México.
+2. **La categoría CUV Blindada** (fleet.vehicle.model.category 21):
+   código `cuv_blindada`, blindada, con rendimiento de ejemplo 9 km/l.
+   Las de Brasil son MINIVAN, MINIVAN BLINDADA, CUV BLINDADA y SUV
+   BLINDADA; las cuatro ya existen. La tabla de productos de los
+   tarifarios la reconoce sola («CUV Blindada» → cuv, blindada).
+3. **Lo que a Brasil le falta no detiene nada.** Sus unidades llegan sin
+   VIN, color ni Ubicación, que se capturan después. Entran igual: sin
+   ciudad, con el país de su flota. Lo que falta sale aparte, en «Por
+   capturar» —sin ubicación, sin color, o la ubicación que no es ciudad
+   de Brasil en Connect—, que no cuenta como pendiente; la siguiente
+   lectura lo toma en cuanto se capture en Odoo, y lo que Connect ya
+   tiene no se vuelve a pedir. Connect no lee el VIN. En México la unidad
+   sin Ubicación sigue pendiente, como se decidió el 23 de septiembre.
+
+Una unidad sin ciudad no es de ninguna ciudad pero sí de un país: su GPS
+se liga con el grupo de Brasil y sale en Unidades («sin ciudad
+todavía»); al asignar un eventual de Brasil se ofrece entre las de otra
+ciudad, dicha «sin ciudad todavía: falta su Ubicación en Odoo»; al
+implantado no va —«todavía no tiene ciudad: se le pone en Odoo, en su
+Ubicación»—. Y de paso las sugerencias de unidades ya no cruzan de país:
+una camioneta de São Paulo no se ofrece en la Ciudad de México ni al
+revés (antes «de otras ciudades» traía las de todos los países). Y la
+lista de unidades ya no dice «alta de un freelance» cuando no hay unidad
+de la ciudad todos los días: dice que se trae de otra ciudad o se sube un
+auto rentado (decía lo de la gente).
+
+La pantalla de Odoo dice cuántas leyó de cada país —«45 (México 32 ·
+Brasil 13)»—; Brasil en cero con sus unidades cargadas en Odoo es que el
+usuario de la conexión no tiene la compañía Centauro Brasil entre sus
+compañías permitidas. Las altas dicen su país y «sin ciudad» si no la
+traen; «Por capturar» lleva su cifra y su lista plegada, agrupada por lo
+que falta. La terminal (`sincronizar_flota.py`) y la lista de lo que
+falta en Odoo (`lo_que_falta_en_odoo.py`) también lo dicen.
+
+Por dentro: migración `846d45af40d2`: `vehiculo.pais_id` (lleno con el
+país de su ciudad para las que ya estaban), `vehiculo.plaza_id` deja de
+ser obligatoria, y la regla `ck_vehiculo_con_pais` (nunca sin ciudad y
+sin país a la vez); la categoría `cuv_blindada`. `Vehiculo.pais_de_la_unidad`
+dice el país —el de su ciudad, o el de su flota mientras no tenga— y
+sirve igual en una consulta. `odoo_flota_reglas`: `FLOTAS` (país,
+compañía, etiquetas y si la ciudad es obligatoria), `flota_de`,
+`por_capturar`, y `planear` con las ciudades por país. `odoo_flota` lee
+`company_id`; el informe trae `por_pais` y `por_capturar`, y cada alta su
+país; `resumen` agrupa lo por capturar. `gps._placas_de` y
+`gps.unidades` toman las unidades por su país aunque no tengan ciudad.
+`disponibilidad`: las de otra ciudad solo del mismo país, con
+`sin_ciudad`; `servicios._juntar` con su aviso para la gente y otro para
+las unidades (`AVISO_SIN_LOCAL`). `implantado.por_que_no_sale` sabe de la unidad sin ciudad.
+La flota de la consola (`VehiculoOut`) trae `pais_de_la_unidad` y su
+ciudad puede venir vacía; la unidad que se da de alta a mano sigue
+necesitando su ciudad. En la consola `odoo.js`, `servicio.js` y
+`unidades.js`; `idioma.js` con 16 textos nuevos y 2 cambiados en tres
+idiomas. Manual: la flota en lo que viene de Odoo y «Una unidad sale
+ocupada o no aparece», en español y portugués. Pruebas: 8 nuevas en
+`tests/test_odoo_flota_lectura.py`, y las unidades de prueba de esa y de
+`tests/test_revision_100.py` ya traen su compañía.
+
+**Lo que sigue.** Subir con el bloque de siempre (lleva migración). Antes
+de aplicar, en Odoo, el usuario de la conexión necesita la compañía
+Centauro Brasil entre sus compañías permitidas. Después, en la consola:
+Odoo → Flota → Ensayo, revisar que diga Brasil 13 y que no haya
+pendientes de compañía, y Aplicar. Brasil captura en Odoo el color y la
+Ubicación de cada unidad (la Ubicación con el nombre de una ciudad de
+Brasil que exista en Connect, como «Sao Paulo»), y la lectura de cada
+hora las completa.
 
 ## 14. Lo que falta
 

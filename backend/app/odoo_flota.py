@@ -6,6 +6,11 @@ Odoo es donde vive la flota; Centauro deja de capturar unidades y las
 lee de ahi, igual que el personal.
 
   * Entran las unidades con la etiqueta «PROTECCION EJECUTIVA» o «pe».
+  * Por pais (seccion 118): Mexico es la compania CENTAURO ASS con esa
+    etiqueta; Brasil, la compania Centauro Brasil con «PROTECCION
+    EJECUTIVA BRASIL». Nunca se mezclan. La unidad de Brasil entra aunque
+    Odoo no tenga todavia su color ni su Ubicacion: se capturan despues, y
+    se dice aparte lo que falta, sin detener nada.
   * La llave es el numero interno de Odoo; la primera vez se vincula por
     placa con la unidad que ya estaba.
   * Placa, categoria, plaza (la Ubicacion), marca y modelo, color y año
@@ -32,7 +37,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app import accesos, odoo_api
 from app import models as m
@@ -43,7 +48,7 @@ registro = logging.getLogger("centauro.odoo")
 
 TIPO = "flota"
 CAMPOS = ["license_plate", "category_id", "location", "model_id", "color",
-          "model_year", "tag_ids", "write_date"]
+          "model_year", "tag_ids", "company_id", "write_date"]
 # Las fechas del taller son campos que la empresa agrego en Odoo Studio.
 ENTRADA = "x_studio_fecha_de_entrada"
 SALIDA = "x_studio_fecha_de_salida"
@@ -60,16 +65,24 @@ def _fotos_fijas(db: Session) -> tuple:
     categorias = {c.codigo: {"id": c.id, "codigo": c.codigo, "nombre": c.nombre}
                   for c in db.query(m.CategoriaVehiculo)
                   .filter(m.CategoriaVehiculo.activo.is_(True)).all()}
-    plazas = {reglas.normal(p.nombre): {"id": p.id, "nombre": p.nombre}
-              for p in db.query(m.Plaza).filter(m.Plaza.activo.is_(True)).all()}
+    paises = {p.codigo: {"id": p.id, "nombre": p.nombre}
+              for p in db.query(m.Pais).all()}
+    # Las ciudades de cada pais por separado (seccion 118): la Ubicacion
+    # de una unidad se busca solo entre las de su pais.
+    plazas: dict = {}
+    for p in db.query(m.Plaza).filter(m.Plaza.activo.is_(True)).all():
+        plazas.setdefault(p.pais_id, {})[reglas.normal(p.nombre)] = {
+            "id": p.id, "nombre": p.nombre}
     vehiculos = [{
         "id": v.id, "odoo_id": v.odoo_id, "placa": v.placa,
         "categoria_id": v.categoria_id, "plaza_id": v.plaza_id,
+        "pais_id": v.pais_de_la_unidad,
         "marca_modelo": v.marca_modelo, "color": v.color,
         "modelo_anio": v.modelo_anio, "activo": v.activo,
         "sincronizado_en": v.odoo_sincronizado_en,
-    } for v in db.query(m.Vehiculo).filter(m.Vehiculo.rentado.is_(False)).all()]
-    return categorias, plazas, vehiculos
+    } for v in (db.query(m.Vehiculo).options(joinedload(m.Vehiculo.plaza))
+                .filter(m.Vehiculo.rentado.is_(False)).all())]
+    return categorias, plazas, paises, vehiculos
 
 
 def _del_taller(db: Session) -> dict:
@@ -157,8 +170,9 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
     etiquetas = {t["id"]: t.get("name")
                  for t in odoo.leer("fleet.vehicle.tag", [], ["name"])}
     unidades = odoo.leer("fleet.vehicle", [], CAMPOS)
-    categorias, plazas, vehiculos = _fotos_fijas(db)
-    plan = reglas.planear(unidades, etiquetas, vehiculos, categorias, plazas)
+    categorias, plazas, paises, vehiculos = _fotos_fijas(db)
+    plan = reglas.planear(unidades, etiquetas, vehiculos, categorias, plazas,
+                          paises)
 
     estados = {}
     if plan["revisar_salida"]:
@@ -198,13 +212,23 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
         return {
             "ensayo": ensayo,
             "leidas": plan["leidas"],
-            "altas": [{k: a[k] for k in ("odoo_id", "placa", "categoria", "plaza")}
+            # Cuantas de cada flota (seccion 118). Brasil en cero, con sus
+            # unidades cargadas en Odoo, es que el usuario de la conexion no
+            # tiene la compania Centauro Brasil.
+            "por_pais": [{"codigo": f["pais"], "pais": f["nombre"],
+                          "leidas": plan["por_pais"][f["pais"]]}
+                         for f in reglas.FLOTAS],
+            "altas": [{k: a[k] for k in ("odoo_id", "placa", "categoria",
+                                         "plaza", "pais")}
                       for a in plan["altas"]],
             "vinculadas": plan["vinculos"],
             "cambios": [{k: c[k] for k in ("vehiculo_id", "odoo_id", "placa", "que")}
                         for c in plan["cambios"]],
             "bajas": bajas,
             "pendientes": plan["pendientes"],
+            # Lo que a la flota de Brasil le falta en Odoo y no detiene
+            # nada: entra igual.
+            "por_capturar": plan["por_capturar"],
             "sin_cambio": plan["sin_cambio"],
             "taller": {"nuevas": len(taller["crear"]),
                        "cambios": len(taller["cambiar"]),
@@ -222,7 +246,8 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
     for alta in plan["altas"]:
         db.add(m.Vehiculo(
             placa=alta["placa"], categoria_id=alta["categoria_id"],
-            plaza_id=alta["plaza_id"], marca_modelo=alta["marca_modelo"],
+            plaza_id=alta["plaza_id"], pais_id=alta["pais_id"],
+            marca_modelo=alta["marca_modelo"],
             color=alta["color"], modelo_anio=alta["modelo_anio"],
             odoo_id=alta["odoo_id"], odoo_sincronizado_en=ahora,
             activo=True, rentado=False))
@@ -287,23 +312,40 @@ def _tocadas(plan: dict) -> int:
                | {v["vehiculo_id"] for v in plan["vinculos"]})
 
 
-def resumen(informe: dict) -> dict:
-    """Solo cuentas: para la terminal y para la tarea de cada hora."""
+def _agrupadas(lista: list) -> dict:
+    """Cuantas por cada cosa que falta, con los nombres propios fuera: la
+    plaza, la categoria o la compania de cada una no caben en una cuenta."""
     faltas = {}
-    for p in informe["pendientes"] + informe["taller"]["pendientes"]:
+    for p in lista:
         for falta in p["falta"]:
             if falta.startswith("la plaza"):
                 falta = "plaza que no existe en Centauro"
             elif falta.startswith("la categoria"):
                 falta = "categoria que no existe en Centauro"
+            elif falta.startswith("la ubicacion"):
+                falta = "ubicacion que no es ciudad de su pais en Centauro"
+            elif falta.startswith("la etiqueta es de"):
+                falta = "etiqueta de un pais y compania de otro"
+            elif falta.startswith("en Odoo es de la flota de"):
+                falta = "de otro pais en Centauro"
             elif falta.startswith("terminado sin fecha"):
                 falta = "taller terminado sin fecha de salida"
             faltas[falta] = faltas.get(falta, 0) + 1
+    return faltas
+
+
+def resumen(informe: dict) -> dict:
+    """Solo cuentas: para la terminal y para la tarea de cada hora."""
     t = informe["taller"]
-    salida = {"leidas": informe["leidas"], "altas": len(informe["altas"]),
+    salida = {"leidas": informe["leidas"],
+              "por_pais": {p["codigo"]: p["leidas"]
+                           for p in informe.get("por_pais", [])},
+              "altas": len(informe["altas"]),
               "vinculadas": len(informe["vinculadas"]),
               "cambios": len(informe["cambios"]), "bajas": len(informe["bajas"]),
-              "sin_cambio": informe["sin_cambio"], "pendientes": faltas,
+              "sin_cambio": informe["sin_cambio"],
+              "pendientes": _agrupadas(informe["pendientes"] + t["pendientes"]),
+              "por_capturar": _agrupadas(informe.get("por_capturar", [])),
               "taller": {k: t[k] for k in ("nuevas", "cambios", "borradas",
                                            "sin_cambio", "de_otras_unidades",
                                            "error")}}

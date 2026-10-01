@@ -3,9 +3,11 @@ import enum
 from datetime import date, datetime, time
 
 from sqlalchemy import (
-    Boolean, Date, DateTime, Enum, ForeignKey, Index, Integer, LargeBinary,
-    Numeric, String, Text, Time, UniqueConstraint, false, func, text, true,
+    Boolean, CheckConstraint, Date, DateTime, Enum, ForeignKey, Index, Integer,
+    LargeBinary, Numeric, String, Text, Time, UniqueConstraint, false, func,
+    select, text, true,
 )
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -927,12 +929,25 @@ class Vehiculo(Base):
               postgresql_where=text("rentado = false")),
         Index("uq_vehiculo_placa_rentada", "servicio_id", "placa",
               unique=True, postgresql_where=text("rentado = true")),
+        # Ninguna unidad sin pais: o tiene su ciudad, o el pais de su
+        # flota mientras Odoo no le pone Ubicacion (seccion 118).
+        CheckConstraint("plaza_id IS NOT NULL OR pais_id IS NOT NULL",
+                        name="ck_vehiculo_con_pais"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     placa: Mapped[str] = mapped_column(String(20))
     categoria_id: Mapped[int] = mapped_column(ForeignKey("categoria_vehiculo.id"))
-    plaza_id: Mapped[int] = mapped_column(ForeignKey("plaza.id"))
+    # La ciudad donde vive la unidad: sale de su Ubicacion en Odoo. La
+    # flota de Brasil llega sin ella --se captura despues (decision de
+    # Salvador, 1 oct)-- y entra igual, con el pais de su flota en
+    # `pais_id`; mientras no tenga ciudad no se le ofrece a un implantado.
+    plaza_id: Mapped[int | None] = mapped_column(ForeignKey("plaza.id"),
+                                                 nullable=True)
+    # De que flota es (seccion 118): Mexico o Brasil, como la compania de
+    # Odoo de donde llego. Cuando tiene ciudad, manda el pais de la ciudad.
+    pais_id: Mapped[int | None] = mapped_column(ForeignKey("pais.id"),
+                                                nullable=True)
     costo_diario: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
     # Para que el ejecutivo identifique la unidad de un vistazo.
@@ -982,7 +997,21 @@ class Vehiculo(Base):
         ForeignKey("persona.id"), nullable=True)
 
     categoria: Mapped[CategoriaVehiculo] = relationship()
-    plaza: Mapped[Plaza] = relationship()
+    plaza: Mapped[Plaza | None] = relationship()
+
+    @hybrid_property
+    def pais_de_la_unidad(self) -> int | None:
+        """El pais de la unidad: el de su ciudad o, mientras no tenga, el
+        de su flota (seccion 118). Sirve igual en una consulta:
+        `filter(Vehiculo.pais_de_la_unidad == pais_id)`."""
+        return self.plaza.pais_id if self.plaza is not None else self.pais_id
+
+    @pais_de_la_unidad.inplace.expression
+    @classmethod
+    def _pais_de_la_unidad(cls):
+        return func.coalesce(
+            select(Plaza.pais_id).where(Plaza.id == cls.plaza_id)
+            .scalar_subquery(), cls.pais_id)
 
     @property
     def foto(self) -> str | None:

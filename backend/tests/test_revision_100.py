@@ -400,6 +400,7 @@ def _unidad(n, **cambios):
          "category_id": [9, "MINIVAN"], "location": "Ciudad de México",
          "model_id": [4, "Toyota/SIENNA XSE"], "color": "Blanco",
          "model_year": "2023", "tag_ids": [1],
+         "company_id": [1, "CENTAURO ASS"],
          "write_date": "2026-01-01 10:00:00", "active": True}
     u.update(cambios)
     return u

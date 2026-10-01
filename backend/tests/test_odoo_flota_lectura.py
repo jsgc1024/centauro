@@ -15,17 +15,30 @@ from app import models as m
 from app import odoo_api, odoo_flota
 
 ODOO0 = 8_000_000
-ETIQUETAS = {1: "pe", 2: "Logística", 3: "PROTECCIÓN EJECUTIVA"}
+ETIQUETAS = {1: "pe", 2: "Logística", 3: "PROTECCIÓN EJECUTIVA",
+             5: "PROTECCIÓN EJECUTIVA BRASIL"}
+# Las companias de Odoo (seccion 118): cada pais la suya.
+MEXICO = [1, "CENTAURO ASS"]
+BRASIL = [5, "Centauro Brasil"]
 
 
 def unidad(n, **cambios):
     u = {"id": ODOO0 + n, "license_plate": f"T{n:02d}ODO",
          "category_id": [9, "MINIVAN"], "location": "Ciudad de México",
          "model_id": [4, "Toyota/SIENNA XSE"], "color": "Blanco",
-         "model_year": "2023", "tag_ids": [1],
+         "model_year": "2023", "tag_ids": [1], "company_id": MEXICO,
          "write_date": "2026-01-01 10:00:00", "active": True}
     u.update(cambios)
     return u
+
+
+def de_brasil(n, **cambios):
+    """Como llegan hoy las de Brasil: su compania y su etiqueta, y sin
+    VIN, color ni Ubicacion."""
+    return unidad(n, **{"license_plate": f"BRA{n}C{n:02d}",
+                        "category_id": [21, "CUV BLINDADA"], "location": False,
+                        "color": False, "tag_ids": [5], "company_id": BRASIL,
+                        "model_id": [6, "Toyota/COROLLA CROSS"], **cambios})
 
 
 def taller(n, dueno, **cambios):
@@ -421,3 +434,216 @@ def test_las_rutas_de_la_flota_son_de_administracion(cliente, sesion,
     r = cliente.post("/odoo/flota/sincronizar", headers=sesion("admin"))
     assert r.status_code == 200 and len(r.json()["altas"]) == 1
     assert db.query(m.SincronizacionOdoo).filter_by(tipo="flota").count() == 1
+
+
+# ================================================== la flota de Brasil (118)
+
+def _brasil(db):
+    pais = db.query(m.Pais).filter_by(codigo="BR").one()
+    plaza = db.query(m.Plaza).filter_by(pais_id=pais.id,
+                                        nombre="Sao Paulo").one()
+    return pais, plaza
+
+
+def test_cada_pais_lee_su_compania_con_su_etiqueta(db, datos):
+    """Mexico: CENTAURO ASS con «PROTECCION EJECUTIVA»; Brasil: Centauro
+    Brasil con «PROTECCION EJECUTIVA BRASIL». Y la CUV blindada ya es una
+    categoria de Connect."""
+    informe = leer(db, OdooFalso(
+        unidad(1, tag_ids=[3]),
+        de_brasil(2, location="São Paulo", color="Prata")))
+    assert sorted(a["odoo_id"] - ODOO0 for a in informe["altas"]) == [1, 2]
+    assert [(p["codigo"], p["leidas"]) for p in informe["por_pais"]] == [
+        ("MX", 1), ("BR", 1)]
+    assert not informe["pendientes"] and not informe["por_capturar"]
+    br, sp = _brasil(db)
+    v = vehiculo(db, 2)
+    assert (v.plaza_id, v.pais_id, v.pais_de_la_unidad) == (sp.id, br.id, br.id)
+    assert v.categoria_id == datos["categorias"]["cuv_blindada"]["id"]
+    assert datos["categorias"]["cuv_blindada"]["blindado"] is True
+    mx = vehiculo(db, 1)
+    assert (mx.plaza_id, mx.pais_id) == (datos["cdmx"]["id"], datos["mx"]["id"])
+
+
+def test_la_etiqueta_de_un_pais_con_la_compania_de_otro_no_entra(db):
+    informe = leer(db, OdooFalso(
+        unidad(1, company_id=BRASIL),
+        de_brasil(2, company_id=MEXICO, location="São Paulo"),
+        unidad(3, company_id=False),
+        # Sin etiqueta de Proteccion Ejecutiva no es asunto de Connect,
+        # sea de la compania que sea.
+        unidad(4, tag_ids=[2], company_id=BRASIL)))
+    assert not informe["altas"] and de_odoo(db) == 0
+    faltas = {p["odoo_id"] - ODOO0: p["falta"] for p in informe["pendientes"]}
+    assert faltas == {
+        1: ["la etiqueta es de «México» y su compania en Odoo es «Centauro Brasil»"],
+        2: ["la etiqueta es de «Brasil» y su compania en Odoo es «CENTAURO ASS»"],
+        3: ["la etiqueta es de «México» y en Odoo no tiene compania"],
+    }
+    assert informe["leidas"] == 0
+    r = odoo_flota.resumen(informe)
+    assert r["pendientes"] == {"etiqueta de un pais y compania de otro": 3}
+
+
+def test_brasil_entra_sin_color_ni_ubicacion_y_se_completa_despues(db, datos):
+    """Las 13 de Brasil llegan sin VIN, color ni Ubicacion: entran igual,
+    sin ciudad, y lo que falta sale como por capturar, no como pendiente.
+    Cuando Odoo lo tiene, la siguiente lectura lo pone."""
+    cat = datos["categorias"]
+    odoo = OdooFalso(
+        de_brasil(1, category_id=[9, "MINIVAN"]),
+        de_brasil(2, category_id=[10, "MINIVAN BLINDADA"]),
+        de_brasil(3),
+        de_brasil(4, category_id=[11, "SUV BLINDADA"]))
+    ensayo = leer(db, odoo, ensayo=True)
+    assert len(ensayo["altas"]) == 4 and not ensayo["pendientes"]
+    assert ensayo["altas"][0]["pais"] == "Brasil"
+    assert ensayo["altas"][0]["plaza"] is None
+    assert {tuple(c["falta"]) for c in ensayo["por_capturar"]} == {
+        ("sin ubicacion", "sin color")}
+    assert odoo_flota.resumen(ensayo)["por_capturar"] == {
+        "sin ubicacion": 4, "sin color": 4}
+
+    informe = leer(db, odoo)
+    assert len(informe["altas"]) == 4 and not informe["pendientes"]
+    br, sp = _brasil(db)
+    v = vehiculo(db, 3)
+    assert (v.plaza_id, v.pais_id, v.color) == (None, br.id, None)
+    assert v.categoria_id == cat["cuv_blindada"]["id"]
+    assert {vehiculo(db, n).categoria_id for n in (1, 2, 4)} == {
+        cat["minivan"]["id"], cat["minivan_blindada"]["id"],
+        cat["suv_blindada"]["id"]}
+    fila = db.query(m.SincronizacionOdoo).filter_by(tipo="flota").one()
+    assert (fila.altas, fila.pendientes) == (4, 0)
+
+    # Se capturan en Odoo: la siguiente lectura las ubica.
+    odoo.unidades[ODOO0 + 3].update(location="São Paulo", color="Blanco")
+    informe = leer(db, odoo)
+    assert [c["que"] for c in informe["cambios"]] == [["plaza", "color"]]
+    assert {c["odoo_id"] - ODOO0 for c in informe["por_capturar"]} == {1, 2, 4}
+    v = vehiculo(db, 3)
+    assert (v.plaza_id, v.pais_id, v.color) == (sp.id, br.id, "Blanco")
+
+    # Un campo vacio en Odoo no borra el de Centauro, y no se vuelve a
+    # pedir lo que Centauro ya tiene.
+    odoo.unidades[ODOO0 + 3].update(location=False, color=False)
+    informe = leer(db, odoo)
+    assert not informe["cambios"]
+    assert ODOO0 + 3 not in {c["odoo_id"] for c in informe["por_capturar"]}
+    assert vehiculo(db, 3).plaza_id == sp.id
+
+
+def test_la_ubicacion_se_busca_entre_las_ciudades_de_su_pais(db, datos):
+    """«Guadalajara» en una unidad de Brasil no la manda a Mexico: entra
+    sin ciudad y se dice. En Mexico, «Sao Paulo» tampoco existe."""
+    informe = leer(db, OdooFalso(
+        de_brasil(1, location="Guadalajara"),
+        unidad(2, location="São Paulo")))
+    assert [a["odoo_id"] - ODOO0 for a in informe["altas"]] == [1]
+    br, _ = _brasil(db)
+    v = vehiculo(db, 1)
+    assert (v.plaza_id, v.pais_id) == (None, br.id)
+    capturar = {c["odoo_id"] - ODOO0: c["falta"] for c in informe["por_capturar"]}
+    assert capturar == {1: [
+        "la ubicacion «Guadalajara» no es una ciudad de «Brasil» en Centauro",
+        "sin color"]}
+    faltas = {p["odoo_id"] - ODOO0: p["falta"] for p in informe["pendientes"]}
+    assert faltas == {2: ["la plaza «São Paulo» no existe en Centauro"]}
+
+
+def test_una_unidad_no_cambia_de_pais_ni_se_da_de_baja_sola(db, datos):
+    odoo = OdooFalso(unidad(1), unidad(2))
+    leer(db, odoo)
+    # La 1 pasa entera a Brasil en Odoo; la 2 cambia de compania y se
+    # queda con la etiqueta de Mexico.
+    odoo.unidades[ODOO0 + 1].update(company_id=BRASIL, tag_ids=[5],
+                                    location="São Paulo")
+    odoo.unidades[ODOO0 + 2].update(company_id=BRASIL)
+    informe = leer(db, odoo)
+    assert not informe["bajas"] and not informe["cambios"]
+    faltas = {p["odoo_id"] - ODOO0: p["falta"] for p in informe["pendientes"]}
+    assert faltas == {
+        1: ["en Odoo es de la flota de «Brasil» y en Centauro es de otro pais"],
+        2: ["la etiqueta es de «México» y su compania en Odoo es «Centauro Brasil»"],
+    }
+    for n in (1, 2):
+        v = vehiculo(db, n)
+        assert v.activo and v.plaza_id == datos["cdmx"]["id"]
+
+
+def test_la_placa_de_una_unidad_de_mexico_no_se_liga_a_una_de_brasil(db, datos):
+    suburban = datos["suburban"]
+    informe = leer(db, OdooFalso(de_brasil(
+        1, license_plate=suburban["placa"], location="São Paulo")))
+    assert not informe["altas"] and not informe["vinculadas"]
+    assert informe["pendientes"][0]["falta"] == [
+        "su placa ya es de una unidad de otro pais en Centauro"]
+    assert informe["pendientes"][0]["vehiculo_id"] == suburban["id"]
+    db.expire_all()
+    assert db.get(m.Vehiculo, suburban["id"]).odoo_id is None
+
+
+def test_la_unidad_sin_ciudad_se_ve_y_no_cruza_de_pais(cliente, sesion, db,
+                                                       datos):
+    """Sin ciudad sigue siendo de Brasil: su GPS se liga, sale en
+    Unidades, se ofrece en los eventuales de Brasil como «sin ciudad» y
+    no en los de Mexico; al implantado no va mientras no tenga ciudad."""
+    from datetime import datetime
+
+    from app import disponibilidad as disp
+    from app import gps
+    from app import implantado as imp
+
+    leer(db, OdooFalso(de_brasil(1)))
+    br, sp = _brasil(db)
+    v = vehiculo(db, 1)
+    assert gps._placas_de(db, br.id) == {"BRA1C01": v.id}
+    assert v.id not in gps._placas_de(db, datos["mx"]["id"]).values()
+    fila = next(f for f in gps.unidades(db, br.id)["unidades"]
+                if f.get("vehiculo_id") == v.id)
+    assert fila["sin_ciudad"] is True and fila["plaza"] is None
+    assert all(f.get("vehiculo_id") != v.id
+               for f in gps.unidades(db, datos["mx"]["id"])["unidades"])
+
+    inicio = datetime.combine(manana(3), datetime.min.time()).replace(hour=8)
+    fin = inicio.replace(hour=20)
+
+    def ofrecidas(plaza_id, categoria_id):
+        r = disp.recomendar_vehiculos(db, plaza_id, categoria_id, inicio, fin,
+                                      True)
+        return {f["vehiculo_id"]: f for grupo in ("disponibles", "con_alerta",
+                                                  "no_disponibles",
+                                                  "de_otras_ciudades")
+                for f in r[grupo]}
+
+    en_brasil = ofrecidas(sp.id, v.categoria_id)
+    assert en_brasil[v.id]["sin_ciudad"] is True
+    assert not ofrecidas(datos["cdmx"]["id"], v.categoria_id)
+    # Y la de Mexico no se ofrece en Sao Paulo.
+    suv = datos["categorias"]["suv_blindada"]["id"]
+    assert ofrecidas(datos["cdmx"]["id"], suv)
+    assert not ofrecidas(sp.id, suv)
+
+    assert "todavía no tiene ciudad" in imp.por_que_no_sale(
+        db, v, sp.id, [], None)
+
+    # La lista de la flota la trae sin tronar, con su pais.
+    lista = cliente.get("/catalogos/vehiculos", headers=sesion("admin")).json()
+    suya = next(x for x in lista if x["id"] == v.id)
+    assert (suya["plaza_id"], suya["pais_de_la_unidad"]) == (None, br.id)
+
+
+def test_la_unidad_que_se_da_de_alta_a_mano_dice_su_ciudad(cliente, sesion,
+                                                          datos):
+    h = sesion("admin")
+    cuerpo = {"placa": "MANO123",
+              "categoria_id": datos["categorias"]["suv"]["id"]}
+    r = cliente.post("/catalogos/vehiculos", headers=h, json=cuerpo)
+    assert r.status_code == 400, r.text
+    r = cliente.post("/catalogos/vehiculos", headers=h,
+                     json={**cuerpo, "plaza_id": datos["gdl"]["id"]})
+    assert r.status_code == 201, r.text
+    assert r.json()["pais_de_la_unidad"] == datos["mx"]["id"]
+    r = cliente.patch(f"/catalogos/vehiculos/{r.json()['id']}", headers=h,
+                      json={**cuerpo, "plaza_id": None})
+    assert r.status_code == 400, r.text
