@@ -64,6 +64,16 @@ MODELO_CUENTA = "res.partner.bank"
 CAMPOS_CUENTA = ["acc_number", "acc_holder_name", "bank_id", "partner_id"]
 SIN_PERMISO_CUENTAS = ("sin permiso para leer cuentas bancarias: la "
                        "lectura siguio sin ellas y no se toco lo guardado")
+# Lo que `fields_get` no dice: si el campo falta porque no existe en esta
+# version de Odoo o porque el usuario no lo puede leer. Lo dice el
+# catalogo de campos de Odoo (ir.model.fields).
+NO_EXISTE_CUENTA = ("el campo de la cuenta bancaria no existe en esta "
+                    "version de Odoo (se busco " + " y ".join(reglas.CAMPOS_DE_CUENTA)
+                    + "): la lectura siguio sin cuentas y no se toco lo guardado")
+SIN_SABER_CUENTAS = ("no se pudo leer el campo de la cuenta bancaria --o no "
+                     "existe en esta version de Odoo, o el usuario de la "
+                     "conexion no tiene permiso--: la lectura siguio sin "
+                     "cuentas y no se toco lo guardado")
 ACABADAS = (m.EstatusJornada.TERMINADA, m.EstatusJornada.CANCELADA)
 
 
@@ -188,18 +198,34 @@ def _contar_fotos(odoo, ids: list) -> tuple:
     return filas, sum(1 for f in filas if reglas.foto_de(f.get(CAMPO_FOTO)))
 
 
-def _puede_leer_cuentas(odoo) -> bool:
-    """Si esta conexion ve el campo de la cuenta bancaria del empleado.
+def _campo_de_cuenta(odoo) -> tuple:
+    """(el campo de la cuenta bancaria que esta conexion ve, o None y
+    por que no).
 
-    `fields_get` deja fuera los campos que el usuario no puede leer y los
-    que esta version no tiene: en los dos casos la lectura sigue sin
-    cuentas (seccion 105). Es la misma pregunta que la flota le hace a
-    Odoo por las fechas del taller.
+    La cuenta principal de la version saas~19.3 o, de respaldo, la de
+    antes. `fields_get` deja fuera los campos que el usuario no puede leer
+    y los que esta version no tiene: en los dos casos la lectura sigue
+    sin cuentas (seccion 105), pero el aviso tiene que decir cual de los
+    dos es --«sin permiso» con un administrador mandaba a buscar donde no
+    era--. Eso lo dice ir.model.fields; si tampoco se puede leer, se dice
+    que no se sabe.
     """
-    return CAMPO_CUENTA in odoo.campos("hr.employee")
+    visibles = odoo.campos("hr.employee")
+    for campo in reglas.CAMPOS_DE_CUENTA:
+        if campo in visibles:
+            return campo, None
+    try:
+        existen = odoo.leer("ir.model.fields",
+                            [["model", "=", "hr.employee"],
+                             ["name", "in", list(reglas.CAMPOS_DE_CUENTA)]],
+                            ["name"])
+    except odoo_api.NoResponde:
+        return None, SIN_SABER_CUENTAS
+    return None, SIN_PERMISO_CUENTAS if existen else NO_EXISTE_CUENTA
 
 
-def _leer_cuentas(odoo, empleados: list, con_cuenta: bool) -> tuple:
+def _leer_cuentas(odoo, empleados: list, con_cuenta: bool,
+                  por_que: str | None = None) -> tuple:
     """(cuentas por su id de Odoo, error).
 
     Una sola lectura por lote de `res.partner.bank`, solo de las cuentas
@@ -210,8 +236,9 @@ def _leer_cuentas(odoo, empleados: list, con_cuenta: bool) -> tuple:
     Odoo se queda sin cuenta aqui.
     """
     if not con_cuenta:
-        registro.warning("odoo: %s", SIN_PERMISO_CUENTAS)
-        return None, SIN_PERMISO_CUENTAS
+        motivo = por_que or SIN_PERMISO_CUENTAS
+        registro.warning("odoo: %s", motivo)
+        return None, motivo
     ids = sorted({reglas.id_de(e.get(CAMPO_CUENTA)) for e in empleados
                   if reglas.es_de_seguridad(e)
                   and reglas.id_de(e.get(CAMPO_CUENTA))})
@@ -279,11 +306,16 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
     ahora = _utc()
     relojes = reloj.Relojes(db)
     # La cuenta bancaria solo se pide si esta conexion la puede leer
-    # (seccion 105): pedirla sin permiso tumbaba la lectura entera.
-    con_cuenta = _puede_leer_cuentas(odoo)
+    # (seccion 105): pedirla sin permiso tumbaba la lectura entera. Se
+    # pide con el nombre que tenga en este Odoo y se ve con el nuevo.
+    campo_cuenta, por_que = _campo_de_cuenta(odoo)
     empleados = odoo.leer("hr.employee", [],
-                          CAMPOS + ([CAMPO_CUENTA] if con_cuenta else []))
-    cuentas, error_cuentas = _leer_cuentas(odoo, empleados, con_cuenta)
+                          CAMPOS + ([campo_cuenta] if campo_cuenta else []))
+    if campo_cuenta and campo_cuenta != CAMPO_CUENTA:
+        for e in empleados:
+            e[CAMPO_CUENTA] = e.pop(campo_cuenta, False)
+    cuentas, error_cuentas = _leer_cuentas(odoo, empleados,
+                                           campo_cuenta is not None, por_que)
     plazas, personas, correos = _fotos_fijas(db)
     plan = reglas.planear(
         empleados, personas, plazas, correos,

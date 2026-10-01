@@ -8684,6 +8684,205 @@ existe —el que se dio de alta sin cotización— y que al autorizarse se
 quede en ese servicio. Y la propuesta del implantado, cuando Salvador la
 retome.
 
+## 115. La propuesta del implantado se arma en Connect
+
+Salvador, 1 de octubre, al terminar la cotización del eventual:
+«empezamos implantado. Te mando el ejemplo de una propuesta. Esta no se
+llama cotización, se llama propuesta». Mandó la de Siemens Energy en
+Querétaro (conductor de seguridad bilingüe $68,600 y Toyota RAV $50,000
+al mes, costo mensual fijo más gastos operativos; 14 horas; hora
+adicional $400; el día extra $3,118). La propuesta en PDF, con las
+pantallas de cómo saldría, se decidió el mismo día:
+
+1. **Folio**: EP/PRO-0001, con su versión, en su propia serie; la
+   pantalla y el PDF dicen «propuesta».
+2. **Precios**: de la lista de implantados del cliente en Odoo. El
+   cliente sin lista (la empresa nueva, como Siemens) o el precio que se
+   pacta distinto lo escribe el consultor con su motivo, y **dirección
+   de operaciones lo autoriza antes de que se pueda mandar**.
+3. **Modalidades**, en palabras de Salvador: «22 días (lunes a viernes)
+   más días adicionales, 26 días (lunes a sábado) más días adicionales o
+   mes completo 30 días al mes con un costo fijo. En estas 3 modalidades
+   podría ser más viáticos o con viáticos incluidos.» El mensual es el
+   precio por día por 22, 26 o 30; el día adicional, el precio por día
+   de las personas; el mensual no cambia con 21 o 23 días hábiles; la
+   unidad va por mes; el 12 × 36 es mes completo; el primer mes que
+   empieza a medio mes se cobra por día trabajado.
+4. **IVA**: el mensual antes de IVA, el IVA y el mensual con IVA, con la
+   casilla del cliente sin IVA.
+5. **Al autorizarla nace el implantado** en EP implantado con la
+   propuesta adentro; le falta el ejecutivo principal, el punto fijo y
+   la plantilla.
+
+**Lo que hay.** En Cotizaciones —ahora «Cotizaciones y propuestas»—,
+«Nueva propuesta» y, en la lista, la columna «Qué es» y el filtro
+«Qué» (las dos, solo cotizaciones o solo propuestas).
+
+- **El armado** (`web/propuesta.js`): para quién (como la cotización,
+  con la ciudad donde opera y el inicio si ya se sabe); lo que lleva al
+  mes, renglón por renglón —un puesto, una unidad o el conductor con su
+  unidad si la lista lo pacta—, con cómo lo lee el cliente, su precio
+  por día y su mensual; la modalidad, los viáticos, la jornada (la del
+  país si no se dice), la hora de presentación (no sale en el PDF), el
+  día adicional y la hora extra (la suma de la de cada rol de la lista,
+  o escrita); la introducción y el alcance, que salen solos y se pueden
+  cambiar. Si la lista pacta en un solo precio un conductor y una unidad
+  escogidos por separado, lo sugiere. Los precios se piden al servidor
+  mientras se arma, sin guardar nada.
+- **El precio especial**: el mensual escrito distinto al de la lista, el
+  de quien no tiene lista y la hora extra escrita. Con él, el botón de
+  mandar es «Pedir el visto bueno del precio especial», con el motivo
+  obligatorio. Le llega a dirección de operaciones por correo y en su
+  ventana («Precios especiales por autorizar», con lo pedido contra lo
+  que diría la lista); lo autoriza o no, con su nota, ahí o en la misma
+  propuesta, y al consultor le llega la respuesta. El visto bueno es de
+  lo que vio quien autorizó: si cambia un precio, se vuelve a pedir
+  (una huella de los días, la moneda, los renglones y la hora extra);
+  la versión siguiente lo hereda mientras sus precios no cambien. Quien
+  tiene `propuestas.precio_especial` (dirección de operaciones) la deja
+  autorizada al guardarla.
+- **El PDF** (`app/propuesta_pdf.py`, como el de la cotización): lo que
+  lleva al mes con su mensual e importe, subtotal, IVA y total mensual
+  con IVA; lo que se cobra aparte cuando aplique (día adicional, hora
+  extra, viáticos según lo comprobado); los días y el horario, escritos
+  solos con lo de arriba; lo que incluye y lo que no, los viáticos, las
+  responsabilidades del cliente y de Centauro con la confidencialidad,
+  el alcance, la aceptación, la vigencia y las firmas. Archivo
+  `20261001_SIEMENSENERGY_EP-PRO-0001_V1_QUERETARO.pdf`.
+- **Catálogos → Propuesta al cliente** (dirección de operaciones): por
+  país y por idioma, lo que incluye (con unidad y con los viáticos
+  incluidos), lo que no incluye, los viáticos, las responsabilidades, la
+  aceptación y el alcance de cada puesto. México nace con los textos del
+  ejemplo de Siemens y el alcance del conductor de seguridad; la razón
+  social, el RFC y la tasa de IVA son los de la cotización.
+- **Autorizarla**: como la cotización (quién, qué día, el comprobante; la
+  empresa nueva escoge su cliente de Odoo). Nace el implantado con la
+  misma alta de Nuevo implantado: el cliente, la ciudad, quien
+  solicita, los días de la modalidad, la hora, el día de inicio y un
+  acuerdo que dice qué se pactó; la propuesta se queda ligada al
+  servicio. En el implantado, «La propuesta autorizada» con el mensual,
+  quién la autorizó, el folio y el PDF que se envió.
+- **El primer mes** se abre con los términos de la propuesta —precio
+  fijo por mes, el día adicional, la hora extra, la jornada si no es la
+  del país y los viáticos como se pactaron— y la tarjeta de términos
+  dice de qué propuesta salen en lugar de compararlos con la lista (con
+  la lista de siempre del cliente nuevo daba un «este mes serían» que
+  nadie pactó). Los meses que siguen copian al de antes.
+
+**El cobro del mes con las modalidades.** `ContratoImplantado.dias_del_mensual`
+(22, 26 o 30) marca el mes que va con ellas; vacío, el precio fijo de
+antes —todo incluido— sigue igual, así que **ningún implantado que ya
+existe cambia**. Con él (`implantado.cobro_del_mensual`): el mensual se
+cobra entero se trabajen 21 o 23 días de la modalidad; el día trabajado
+fuera de ella —el sábado o el domingo de lunes a viernes, el domingo de
+lunes a sábado— va aparte al precio del día adicional; el 12 × 36 y el
+mes completo no tienen días fuera. **El primer mes a medio mes** va por
+día de servicio, el mensual entre los días de la modalidad; «a medio
+mes» es que empezó después de algún día de su modalidad
+(`empieza_a_medio_mes`): con el 1 en domingo, el de lunes a viernes que
+empieza el lunes 2 cubre todos sus días y se cobra su mensual —por día
+habría salido más barato que el mes que empieza el 1 con los mismos
+días—. El cierre y la factura del mes lo dicen en sus renglones
+(`mes_completo` o `mes_parcial`, y `dias_adicionales`).
+
+**La regla del paquete en la cotización del eventual** (Salvador, a
+media sección): «Gastos operativos incluidos (dentro del precio):
+conductor + unidad del mismo día se cotizan en paquete Todo incluido,
+como hoy. Gastos operativos con monto fijo o por comprobar: no usar el
+paquete. Conductor y unidad se cotizan a su precio unitario sin gastos
+de la lista del cliente, y los gastos van aparte según el modo elegido.»
+`cotizacion.usa_paquetes(tarifario, gastos)`: con una lista cuyos
+paquetes traen los gastos (`paquetes_con_viaticos`), se empareja solo
+con los gastos dentro del precio; la lista cuyos paquetes no los traen
+se empareja en cualquier modo. Va igual en la vista previa, al generar,
+en el cierre, en la factura y en el desglose, para que lo cotizado y lo
+cobrado se comparen igual. PE · General México, conductor + CUV, día
+completo: con gastos incluidos, el paquete de $8,430; con monto fijo o
+por comprobar, $3,255 + $3,675 = $6,930 y los gastos aparte. Lo que
+cambia hoy: **HASBRO** —su lista trae los viáticos en el paquete—, con
+gastos fijos o por comprobar ya no va en paquete y se le facturan los
+viáticos. En la propuesta: con más viáticos, el paquete de una lista que
+trae los gastos no se ofrece.
+
+**Arreglos de paso.** Abrir el mes del implantado sin hora le ponía las
+08:00 al trato aunque ya tuviera otra (ahora la respeta: la de la
+propuesta llega intacta). La nota de dirección de operaciones al
+freelance urgente se guardaba con mayúscula en cada palabra (el campo no
+decía que es una frase). La fecha en que se pidió el visto bueno salía
+del día en UTC. El calendario del mes decía «Noviembre De 2026», y el
+día de inicio del implantado salía como «2026-11-02». El tipo de
+implantado dice las horas de la jornada pactada («14 horas naturales»).
+
+**Las cuentas bancarias del personal** (Salvador, «urgente, no es
+facturación», del documento de la facturación de eventuales; lo pidió en
+esta misma subida). En la versión saas~19.3 de Odoo el empleado ya no
+trae `bank_account_id`: trae su cuenta principal,
+`primary_bank_account_id` (many2one a res.partner.bank), además de
+`bank_account_ids`. `fields_get` no enseñaba el nombre viejo y la lectura
+de cada hora decía «sin permiso para leer cuentas bancarias» con el
+usuario administrador. Ahora se lee la principal y, de respaldo, la de
+antes (`odoo_personal_reglas.CAMPOS_DE_CUENTA`); si no aparece ninguna,
+`ir.model.fields` dice si el campo no existe en esa versión o si es
+permiso, y si tampoco se puede leer, el aviso dice que no se sabe. En
+los tres casos la lectura sigue sin cuentas y no toca lo guardado. Según
+Salvador, 64 de 65 personas de seguridad tienen cuenta principal en
+Odoo: con la primera lectura después de subir, sus cuentas llegan solas.
+`odoo_personal.py`, `odoo_personal_reglas.py`; pruebas: dos nuevas en
+`tests/test_revision_105_titular_cuenta.py`, y el Odoo de mentiras de
+`tests/test_odoo_personal.py` contesta por ir.model.fields (y los de
+`test_odoo_oficina.py` y `test_revision_100.py`).
+
+**La batería**: 1,862 de 1,864. Las dos que fallan —`test_bono_desempeno`:
+la llegada puesta a mano y el mes entero a mano— fallan igual en main:
+asientan llegadas a mano los días 12 y 14 del mes en curso, y antes de
+esos días la consola las rechaza («Esa hora todavía no llega»). Se
+corrió el 1 de octubre. Quedan por arreglar aparte, para que no
+dependan del día del mes.
+
+**Quién.** Ver y armar, como las cotizaciones (`cotizaciones.ver` y
+`cotizaciones.armar`). `propuestas.precio_especial`: dirección de
+operaciones.
+
+Por dentro: `Cotizacion` sirve a las dos con `clase` («cotizacion» o
+«propuesta»), su folio único por clase y versión y el candado de folio
+por clase; las búsquedas del eventual (cierre, factura, historial,
+la cotización vigente del servicio) filtran `cotizacion.de_cotizacion()`
+para que la propuesta nunca sea la cotización de un eventual. Columnas
+nuevas de la propuesta (ciudad, modalidad, jornada, hora, inicio,
+viáticos incluidos, hora extra, alcance, motivo y estado del precio
+especial con quién y cuándo), `PosicionPropuesta` (tipo, perfil o
+categoría, cantidad, precio al mes y por día, hora extra, especial, el
+precio de la lista, producto y descripción) y
+`ContratoImplantado.dias_del_mensual`; migración `b8e1d4f6a9c3` (siembra
+los textos de México). `app/propuesta.py` (el motor), `app/propuesta_pdf.py`,
+`app/routers/propuestas.py` (`/cotizaciones/propuesta/...`: lista de
+precios, precios, textos, guardar, especial y decidir, enviar, versión,
+rechazar, autorizar, PDF y comprobante), `/cotizaciones/lista` (las
+dos), `direccion_operaciones.py`, `textos_aviso.py`, `seed.py`,
+`bitacora_admin.py`, `implantado.py`, `cierre_mes.py`,
+`routers/implantados.py`, `cotizacion.py`, `cotizacion_cliente.py`,
+`cierre.py`, `facturacion.py`, `historial.py`, `permisos.py`,
+`manual.py`; en la
+consola `propuesta.js`, `cotizaciones.js`, `implantado.js`,
+`direccion.js`, `catalogos_pantalla.js`, `app.js`, `idioma.js` (191
+textos nuevos en tres idiomas) y `estilo.css`. La vencida la deja el
+mismo reloj de las cotizaciones. Manual: capítulo «La propuesta del
+implantado» y lo de la propuesta en la cotización, el implantado y las
+pantallas. Pruebas: `tests/test_propuestas.py` (31) y
+`tests/test_paquetes.py` (14, cuatro de la regla).
+
+**Lo que sigue.** Dos preguntas para Salvador, una a la vez: si el mes
+del implantado con su lista empareja el conductor con su unidad con la
+misma regla del paquete; y cómo se cobra el implantado nacido de una
+propuesta que se cancela a medio mes (hoy, su mensual). La entrega 2 de
+las cotizaciones (cotizar un servicio que ya existe) y la propuesta
+sobre un implantado que ya existe (la renovación). El RFC de Centauro y
+las condiciones de pago siguen por escribir en Catálogos. La casilla del
+12 × 36 en la propuesta —que el implantado nazca ya en 12 × 36 y el PDF
+lo diga— se hace cuando arranque Brasil, con sus textos en portugués
+(Salvador, 1 de octubre); mientras, el consultor lo pone en el acuerdo
+antes de abrir el primer mes.
+
 ## 14. Lo que falta
 
 ### Abierto

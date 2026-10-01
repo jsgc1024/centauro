@@ -48,7 +48,9 @@ CATALOGOS = ("paises", "plazas", "perfiles", "categorias-vehiculo",
              # (seccion 101): decide dinero y queda con quien lo dijo.
              "evaluacion_mensual",
              # Los datos y textos de la cotizacion de cada pais (seccion 114).
-             "cotizacion")
+             "cotizacion",
+             # Y los de la propuesta del implantado (seccion 115).
+             "propuesta")
 
 GRUPOS = {
     "accesos": ("usuario",),
@@ -78,6 +80,7 @@ DE_CADA_CATALOGO = {
     "requisitos-freelance": ("requisitos-freelance",),
     "profesionalismo": ("profesionalismo",),
     "cotizacion": ("cotizacion",),
+    "propuesta": ("propuesta",),
 }
 
 POR_PAGINA = 100
@@ -109,6 +112,7 @@ TEXTOS = {
             "criterio_estrella": "Criterios del bono", "arranque": "El arranque",
             "evaluacion_mensual": "Bono del mes",
             "cotizacion": "Cotización: datos y textos",
+            "propuesta": "Propuesta: textos",
         },
         "accion": {
             "catalogo creado": "Agregó «{nombre}»",
@@ -143,6 +147,7 @@ TEXTOS = {
             "codigo de campo entregado": "Dictó el código de campo a {persona}",
             "paquetes con viaticos": "«{detalle}»: paquetes con viáticos {antes} → {despues}",
             "textos de la cotizacion": "«{detalle}»: cambió {despues}",
+            "textos de la propuesta": "«{detalle}»: cambió {despues}",
             "producto de odoo confirmado": "Confirmó el producto «{detalle}»",
             "producto de odoo preferido": "«{detalle}»: preferido {despues}",
         },
@@ -213,6 +218,7 @@ TEXTOS = {
             "criterio_estrella": "Bonus criteria", "arranque": "The go-live",
             "evaluacion_mensual": "Monthly bonus",
             "cotizacion": "Quotation: data and texts",
+            "propuesta": "Proposal: texts",
         },
         "accion": {
             "catalogo creado": "Added “{nombre}”",
@@ -247,6 +253,7 @@ TEXTOS = {
             "codigo de campo entregado": "Read out the field code to {persona}",
             "paquetes con viaticos": "“{detalle}”: packages with allowances {antes} → {despues}",
             "textos de la cotizacion": "“{detalle}”: changed {despues}",
+            "textos de la propuesta": "“{detalle}”: changed {despues}",
             "producto de odoo confirmado": "Confirmed the product “{detalle}”",
             "producto de odoo preferido": "“{detalle}”: preferred {despues}",
         },
@@ -317,6 +324,7 @@ TEXTOS = {
             "criterio_estrella": "Critérios do bônus", "arranque": "O arranque",
             "evaluacion_mensual": "Bônus do mês",
             "cotizacion": "Cotação: dados e textos",
+            "propuesta": "Proposta: textos",
         },
         "accion": {
             "catalogo creado": "Adicionou “{nombre}”",
@@ -351,6 +359,7 @@ TEXTOS = {
             "codigo de campo entregado": "Ditou o código de campo a {persona}",
             "paquetes con viaticos": "“{detalle}”: pacotes com diárias {antes} → {despues}",
             "textos de la cotizacion": "“{detalle}”: mudou {despues}",
+            "textos de la propuesta": "“{detalle}”: mudou {despues}",
             "producto de odoo confirmado": "Confirmou o produto “{detalle}”",
             "producto de odoo preferido": "“{detalle}”: preferido {despues}",
         },
@@ -675,6 +684,47 @@ TEXTOS_DE_COTIZACION = {
 }
 
 
+# Los de la propuesta del implantado (seccion 115); el alcance de cada rol
+# va con su codigo.
+TEXTOS_DE_PROPUESTA = {
+    "es": {"pro_incluye": "incluye", "pro_incluye_unidad": "incluye la unidad",
+           "pro_incluidos": "viáticos incluidos", "pro_no_incluye": "no incluye",
+           "pro_viaticos": "viáticos", "pro_cliente": "responsabilidades del cliente",
+           "pro_centauro": "responsabilidades de Centauro",
+           "pro_aceptacion": "aceptación", "alcance": "alcance"},
+    "en": {"pro_incluye": "includes", "pro_incluye_unidad": "includes the vehicle",
+           "pro_incluidos": "expenses included", "pro_no_incluye": "does not include",
+           "pro_viaticos": "expenses", "pro_cliente": "client responsibilities",
+           "pro_centauro": "Centauro's responsibilities",
+           "pro_aceptacion": "approval", "alcance": "scope"},
+    "pt": {"pro_incluye": "inclui", "pro_incluye_unidad": "inclui o veículo",
+           "pro_incluidos": "despesas incluídas", "pro_no_incluye": "não inclui",
+           "pro_viaticos": "despesas", "pro_cliente": "responsabilidades do cliente",
+           "pro_centauro": "responsabilidades da Centauro",
+           "pro_aceptacion": "aprovação", "alcance": "escopo"},
+}
+
+
+def _textos_de_propuesta(despues: str, idioma: str) -> str:
+    """«pro_incluye:es, alcance:conductor_seguridad:es» -> «incluye (es),
+    alcance conductor_seguridad (es)»."""
+    nombres = TEXTOS_DE_PROPUESTA.get(idioma, TEXTOS_DE_PROPUESTA["es"])
+    salida = []
+    for pedazo in (despues or "").split(","):
+        pedazo = pedazo.strip()
+        if not pedazo:
+            continue
+        clave, _, lengua = pedazo.rpartition(":")
+        if not clave:
+            clave, lengua = lengua, ""
+        if clave.startswith("alcance:"):
+            nombre = f"{nombres['alcance']} {clave.split(':', 1)[1]}"
+        else:
+            nombre = nombres.get(clave, clave)
+        salida.append(f"{nombre} ({lengua})" if lengua else nombre)
+    return ", ".join(salida)
+
+
 def _textos_de_cotizacion(despues: str, idioma: str) -> str:
     """«aceptacion:es, pago:es» -> «aceptación (es), condiciones de pago
     (es)»."""
@@ -743,6 +793,8 @@ def que_cambio(r: m.RegistroAdmin, idioma: str, nombres: _Nombres) -> str:
                    else t["no"] if despues == "false" else despues)
     if r.accion == "textos de la cotizacion":
         despues = _textos_de_cotizacion(despues, idioma)
+    if r.accion == "textos de la propuesta":
+        despues = _textos_de_propuesta(despues, idioma)
     if r.accion == "capacitacion del bono a mano" and not antes:
         antes = t["ninguno"]        # el mes todavia no se habia calculado
 

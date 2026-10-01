@@ -16,7 +16,7 @@ Arriba, junto a tu nombre, está **Reportar una falla** en todas las pantallas: 
 Cómo va la operación ahora mismo: lo de hoy, quién va en camino, los países, el dinero afuera, lo que finanzas regresó y la calidad. Es la vista de arriba; el detalle vive en cada servicio.
 
 ### Cotizaciones {#cotizaciones}
-La cotización del eventual antes de que exista el servicio: se arma con la lista del cliente, sale en PDF con su folio —EP/COT-0001— y su versión, y cuando el cliente la autoriza nace el servicio con ella adentro. La lista dice cuáles están abiertas, cuánto les falta para vencer y de cuál nació qué servicio. Aquí cada consultor sube su firma. Ver [la cotización al cliente](#/manual/leer/cotizaciones).
+La cotización del eventual y la propuesta del implantado, antes de que exista el servicio: se arman con la lista del cliente, salen en PDF con su folio —EP/COT-0001, EP/PRO-0001— y su versión, y cuando el cliente la autoriza nace el servicio con ella adentro. La lista dice qué es cada una, cuáles están abiertas, cuánto les falta para vencer y de cuál nació qué servicio. Aquí cada consultor sube su firma. Ver [la cotización al cliente](#/manual/leer/cotizaciones) y [la propuesta del implantado](#/manual/leer/propuesta).
 
 ### EP eventual {#servicios}
 Los servicios que se contratan por día: el alta, la cotización, los equipos, quién va y en qué unidad, el task sheet, los viáticos y el cierre. Ver [el camino de un servicio](#/manual/leer/camino).
@@ -40,7 +40,7 @@ Lo que dijo el cliente: las encuestas, la tasa de respuesta y las calificaciones
 El mes en cifras: lo que dijo el cliente, la calle, el cierre, la gente y los datos que faltan en Odoo y en Catálogos, contra el mes de antes, con su reporte en Excel para la junta.
 
 ### Dirección de operaciones {#direccion}
-Lo que espera la firma del director de operaciones —las incidencias por autorizar, el freelance que alguien pide por urgencia, los cobros al cancelar y los plazos vencidos del cierre— y las cuentas de hoy por país: servicios hoy y mañana, en curso, con alerta, cambios por contingencia e incidencias del mes. Cada número se abre para ver cuáles servicios son. La ven el director de operaciones y la dirección general.
+Lo que espera la firma del director de operaciones —las incidencias por autorizar, el freelance que alguien pide por urgencia, los precios especiales de las propuestas, los cobros al cancelar y los plazos vencidos del cierre— y las cuentas de hoy por país: servicios hoy y mañana, en curso, con alerta, cambios por contingencia e incidencias del mes. Cada número se abre para ver cuáles servicios son. La ven el director de operaciones y la dirección general.
 
 ## Operaciones CI
 
@@ -68,7 +68,7 @@ Quién puede entrar, con qué puesto, y cuándo entró por última vez. Aquí se
 Las cinco lecturas de Odoo: aquí se hacen el ensayo y la primera lectura de cada una, y se ve lo que falta corregir allá. Ver [lo que viene de Odoo](#/manual/leer/odoo).
 
 ### Catálogos {#catalogos}
-Lo que el sistema usa para calcular y para armar la hoja del servicio: festivos, hospitales, hoteles, ciudades, combustible, categorías de unidades, perfiles, países, los requisitos del freelance, modalidades y el tabulador de viáticos. Los costos de cada freelance viven en su ficha, en Personal de seguridad. Lo que decide dinero lo fija dirección de operaciones. Lo que se quita no se pierde: sale en gris con «Reactivar». Aquí vive también la bitácora de administración: quién cambió qué.
+Lo que el sistema usa para calcular y para armar la hoja del servicio: festivos, hospitales, hoteles, ciudades, combustible, categorías de unidades, perfiles, países, los requisitos del freelance, modalidades y el tabulador de viáticos; y los textos de la cotización y de la propuesta al cliente. Los costos de cada freelance viven en su ficha, en Personal de seguridad. Lo que decide dinero lo fija dirección de operaciones. Lo que se quita no se pierde: sale en gris con «Reactivar». Aquí vive también la bitácora de administración: quién cambió qué.
 
 ### Manual del sistema {#manual}
 Este manual: cómo funciona cada pieza, qué hacer cuando algo se atora, el estado del sistema en vivo y los casos: las fallas reportadas por revisar y lo que ya se resolvió. Mientras dura el cambio a Connect, también [el arranque](#/manual/arranque): lo que falta para operar todo aquí y apagar OVH, revisándose solo, con de quién es cada cosa y dónde se arregla.

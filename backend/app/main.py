@@ -26,6 +26,7 @@ from app.routers import (acceso, archivo, bitacora_admin, bonos, calidad,
                          tarifarios, tasksheet, viaticos)
 from app.routers import llaves as llaves_router
 from app.routers import cotizaciones as cotizaciones_router
+from app.routers import propuestas as propuestas_router
 from app.seed import (sembrar, sembrar_bonos, sembrar_festivos,
                       sembrar_lugares, sembrar_parametros, sembrar_recursos)
 
@@ -151,6 +152,9 @@ app.include_router(freelance.router)
 # Cotizaciones: la del eventual que se arma en Connect, su PDF y el
 # servicio que nace al autorizarla (seccion 114).
 app.include_router(cotizaciones_router.router)
+# Y la propuesta del implantado, al lado: su precio especial y el
+# implantado que nace al autorizarla (seccion 115).
+app.include_router(propuestas_router.router)
 
 
 @app.exception_handler(IntegrityError)

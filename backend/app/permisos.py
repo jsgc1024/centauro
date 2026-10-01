@@ -84,17 +84,28 @@ ACTIVIDADES: dict[str, dict] = {
     # Cotizaciones (seccion 114): la cotizacion del eventual que se arma
     # en Connect, su PDF y el servicio que nace cuando el cliente la
     # autoriza. La arma quien da de alta servicios; sistema y calidad la
-    # consulta, como consulta la operacion.
+    # consulta, como consulta la operacion. Desde la seccion 115, en la
+    # misma pantalla, la propuesta del implantado: las mismas dos puertas.
     "cotizaciones.ver": {
-        "descripcion": "Ver las cotizaciones que se le mandan al cliente y "
-                       "su PDF",
+        "descripcion": "Ver las cotizaciones y las propuestas que se le "
+                       "mandan al cliente y su PDF",
         "roles": {R.CONSULTOR, R.DIRECTOR_OPERACIONES, R.SISTEMA_CALIDAD},
     },
     "cotizaciones.armar": {
-        "descripcion": "Armar la cotizacion de un eventual, mandarla, "
-                       "hacer su version siguiente y registrar que el "
-                       "cliente la autorizo: con eso nace el servicio",
+        "descripcion": "Armar la cotizacion de un eventual o la propuesta "
+                       "de un implantado, mandarla, hacer su version "
+                       "siguiente y registrar que el cliente la autorizo: "
+                       "con eso nace el servicio",
         "roles": {R.CONSULTOR, R.DIRECTOR_OPERACIONES},
+    },
+    # El precio de la propuesta que no sale de la lista de implantados
+    # del cliente --o el cliente que no tiene-- (seccion 115, decision 2
+    # de Salvador): lo autoriza direccion de operaciones antes de que se
+    # pueda mandar.
+    "propuestas.precio_especial": {
+        "descripcion": "Autorizar el precio especial de una propuesta de "
+                       "implantado antes de que se mande",
+        "roles": {R.DIRECTOR_OPERACIONES},
     },
     "servicios.ver": {
         "descripcion": "Ver los servicios y su avance",

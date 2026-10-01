@@ -29,6 +29,10 @@ class OdooFalso:
         self.lecturas = []
 
     def leer(self, modelo, dominio, campos, archivados=False):
+        if modelo == "ir.model.fields":
+            # El campo de la cuenta existe; lo que falta es el permiso
+            # (ver `campos`).
+            return [{"id": 1, "name": odoo_personal.CAMPO_CUENTA}]
         assert modelo == "hr.employee"
         self.lecturas.append(list(campos))
         filas = [e for e in self.empleados.values()

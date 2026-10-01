@@ -6,8 +6,9 @@ PDF, en `cotizacion_pdf.py`.
 
 Las rutas viven en `/cotizaciones/eventual/...`: las de `/cotizaciones/...`
 a secas son las de la cotizacion registrada en el servicio (seccion 94),
-que siguen igual. El dia que llegue la propuesta del implantado tendra
-las suyas al lado.
+que siguen igual. La propuesta del implantado (seccion 115) tiene las
+suyas al lado, en `routers/propuestas.py`; la lista de la pantalla trae
+las dos (`/cotizaciones/lista`).
 """
 from datetime import date, time
 from decimal import Decimal
@@ -105,6 +106,20 @@ def _de(db: Session, cotizacion_id: int) -> m.Cotizacion:
 def lista(vista: str = "todas", q: str | None = None,
           db: Session = Depends(get_db), usuario: m.Usuario = Depends(VER)):
     return {"filas": motor.lista(db, vista, q), "cuentas": motor.cuentas(db),
+            "puede_armar": _puede_armar(db, usuario)}
+
+
+@router.get("/lista",
+            summary="Las cotizaciones y las propuestas, una por folio")
+def lista_de_las_dos(vista: str = "todas", q: str | None = None,
+                     que: Literal["todas", "cotizaciones",
+                                  "propuestas"] = "todas",
+                     db: Session = Depends(get_db),
+                     usuario: m.Usuario = Depends(VER)):
+    """La pantalla de Cotizaciones (seccion 115): las del eventual y las
+    propuestas del implantado juntas, la mas nueva arriba, o solo unas."""
+    return {"filas": motor.lista(db, vista, q, que),
+            "cuentas": motor.cuentas(db, que),
             "puede_armar": _puede_armar(db, usuario)}
 
 

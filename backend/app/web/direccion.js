@@ -35,6 +35,7 @@ async function pintar(zona) {
   zona.replaceChildren(
     tarjetaIncidencias(d.incidencias_por_autorizar, recargar),
     tarjetaFreelance(d.freelance_por_autorizar || [], recargar),
+    tarjetaEspeciales(d.precios_especiales || [], recargar),
     h("div", { clase: "rejilla dos" },
       tarjetaCobros(d.cobros_por_autorizar),
       tarjetaPlazos(d.plazos_vencidos)),
@@ -131,7 +132,9 @@ function tarjetaFreelance(filas, recargar) {
 }
 
 function renglonFreelance(u, recargar) {
-  const respuesta = h("input", { name: "respuesta_urgencia",
+  /* data-crudo: es una frase, no un nombre. Sin el, «no, que espere
+     al expediente» se guardaba «No, Que Espere Al Expediente». */
+  const respuesta = h("input", { name: "respuesta_urgencia", "data-crudo": "",
                                  placeholder: t("dir_fre_respuesta") });
   const resolver = async (si) => {
     if (!si && respuesta.value.trim().length < 5) {
@@ -168,6 +171,79 @@ function renglonFreelance(u, recargar) {
     h("div", { clase: "chico", style: "margin:0 0 8px;color:var(--grave)" },
       t("dir_fre_le_falta").replace("{x}", u.faltaba || "—")),
     respuesta,
+    h("div", { clase: "acciones", style: "margin-top:8px" }, ...botones));
+}
+
+/* ------------------------- el precio especial de una propuesta (115)
+
+   La propuesta del implantado con un precio que no sale de la lista de
+   implantados del cliente --o el cliente que no tiene-- (decision 2 de
+   Salvador): sin su visto bueno no se manda. Se ve lo que se escribio
+   contra lo que dice la lista, y por que. */
+function tarjetaEspeciales(filas, recargar) {
+  return h("div", { clase: "tarjeta" },
+    h("h3", {}, t("dir_pro_titulo")),
+    h("p", { clase: "chico gris", style: "margin:0 0 12px" }, t("dir_pro_pie")),
+    ...(filas.length
+      ? filas.map(p => renglonEspecial(p, recargar))
+      : [h("div", { clase: "vacio" }, t("dir_pro_vacio"))]));
+}
+
+function renglonEspecial(p, recargar) {
+  const nota = h("input", { name: "nota_especial", "data-crudo": "",
+                            placeholder: t("pro_especial_nota") });
+  const decidir = async (autoriza) => {
+    if (!autoriza && nota.value.trim().length < 5) {
+      return mensaje(t("pro_especial_falta_nota"), "alerta");
+    }
+    for (const b of botones) b.disabled = true;
+    try {
+      await api.post(`/cotizaciones/propuesta/${p.id}/especial/decidir`,
+                     { autoriza, nota: nota.value.trim() || null, huella: p.huella });
+      mensaje(t(autoriza ? "pro_especial_lo_autorizaste" : "pro_especial_no_lo_autorizaste"),
+              autoriza ? "ok" : "alerta");
+      recargar();
+    } catch (err) {
+      mensaje(err.message, "grave");
+      for (const b of botones) b.disabled = false;
+    }
+  };
+  const botones = [
+    h("button", { type: "button", onclick: () => decidir(true) }, t("dir_autorizar")),
+    h("button", { clase: "claro", type: "button", onclick: () => decidir(false) },
+      t("pro_no_autorizar")),
+  ];
+  const renglones = p.especiales.map(x => h("li", {},
+    `${x.cantidad} ${x.nombre}: `, h("b", {}, dinero(x.precio_mes, p.moneda)),
+    " ", t("pro_al_mes"),
+    x.lista_precio_mes !== null
+      ? h("span", { clase: "chico gris" },
+        ` · ${t("dir_pro_lista").replace("{p}", dinero(x.lista_precio_mes, p.moneda))}`)
+      : h("span", { clase: "chico gris" }, ` · ${t("dir_pro_sin_lista")}`)));
+  if (p.hora_extra_especial) {
+    renglones.push(h("li", {}, `${t("pro_hora_extra")}: `,
+      h("b", {}, dinero(p.hora_extra, p.moneda)),
+      p.hora_extra_lista !== null
+        ? h("span", { clase: "chico gris" },
+          ` · ${t("dir_pro_lista").replace("{p}", dinero(p.hora_extra_lista, p.moneda))}`)
+        : h("span", { clase: "chico gris" }, ` · ${t("dir_pro_sin_lista")}`)));
+  }
+  return h("div", { clase: "caso" },
+    h("div", { clase: "cabeza_caso" },
+      h("div", {},
+        h("a", { clase: "enlace", href: p.ruta }, h("b", {}, p.nombre)),
+        h("span", { clase: "chico gris" }, ` · ${p.cliente}`),
+        p.es_prospecto ? [" ", etiqueta(t("ctz_empresa_nueva"), "alerta")] : "",
+        h("div", { clase: "chico gris" },
+          t("dir_pro_pidio").replace("{q}", p.pedido_por || "—")
+            /* El instante entero: cortado a sus diez letras era el dia
+               en UTC, y lo pedido a las once de la noche salia de manana. */
+            .replace("{f}", p.pedido_en ? fecha(p.pedido_en) : "—")
+            .replace("{m}", dinero(p.subtotal, p.moneda)))),
+      etiqueta(t("inc_estado_pendiente"), "alerta")),
+    h("p", { style: "margin:8px 0 4px" }, `«${p.motivo || "—"}»`),
+    h("ul", { style: "margin:0 0 8px" }, ...renglones),
+    nota,
     h("div", { clase: "acciones", style: "margin-top:8px" }, ...botones));
 }
 

@@ -612,7 +612,9 @@ button.bandera.activa {
 /* El mes del implantado. Siete columnas de lunes a domingo: el color
    dice de un vistazo que dia esta cubierto, cual falta y cual no es
    servicio, que es lo que se pregunta viendo un calendario. */
-.calendario-mes { margin: 4px 0 8px; text-transform: capitalize; }
+.calendario-mes { margin: 4px 0 8px; }
+/* Solo la primera: con capitalize salia «Noviembre De 2026». */
+.calendario-mes::first-letter { text-transform: uppercase; }
 .calendario {
   display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px;
   max-width: 420px;
@@ -1712,6 +1714,16 @@ img.ctz-firma { display: block; max-width: 260px; max-height: 90px;
 .ctz-forma { background: var(--suave); border-radius: 8px; padding: 12px 14px;
   margin-top: 14px; }
 .ctz-adjunto { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* La propuesta del implantado (seccion 115). Cada renglon: lo que lleva
+   con, debajo, como lo lee el cliente; el mensual a la derecha, del ancho
+   de una cifra. La tarjeta del precio especial lleva la orilla del aviso:
+   sin su visto bueno no se manda. */
+input.pro-descripcion { margin: 6px 0 0; font-size: .92em; }
+input.pro-mes { width: 132px; margin: 0; text-align: right;
+  font-variant-numeric: tabular-nums; }
+.pro-cifra-chica { padding: 9px 0 0; font-weight: 650;
+  font-variant-numeric: tabular-nums; }
+.tarjeta.pro-especial { border-left: 4px solid var(--alerta); }
 @media (max-width: 720px) {
   .ctz-tipos { flex-direction: column; }
 }

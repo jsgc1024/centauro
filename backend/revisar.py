@@ -659,11 +659,12 @@ AYUDA_POR_PANTALLA = {
     "encuestas.js": 1,
     "personal.js": 1,
     "categorias.js": 2,
-    # Catalogos (seccion 86): uno por catalogo --doce, con el de la
-    # cotizacion al cliente (seccion 114)--, que dice para que sirve y que
-    # pasa si esta mal; la lista de la izquierda no lleva, porque su
-    # renglon ya dice que le falta a cada uno.
-    "catalogos_pantalla.js": 12,
+    # Catalogos (seccion 86): uno por catalogo --trece, con el de la
+    # cotizacion al cliente (seccion 114) y el de la propuesta (seccion
+    # 115)--, que dice para que sirve y que pasa si esta mal; la lista de
+    # la izquierda no lleva, porque su renglon ya dice que le falta a
+    # cada uno.
+    "catalogos_pantalla.js": 13,
     # Calidad (seccion 89): uno por bloque --lo que dijo el cliente, la
     # calle, el cierre, la gente y los datos-- y el de las cinco cifras.
     "calidad.js": 6,
@@ -717,6 +718,12 @@ AYUDA_POR_PANTALLA = {
     # lista y la pantalla de que se cotiza no llevan: su subtitulo ya lo
     # dice.
     "cotizaciones.js": 8,
+    # La propuesta del implantado (seccion 115): uno por bloque del armado
+    # --para quien, lo que lleva al mes, la modalidad, lo que lee el
+    # cliente y el precio especial--, el de la propuesta, sus versiones,
+    # el de autorizarla y el de la propuesta autorizada dentro del
+    # implantado.
+    "propuesta.js": 9,
 
     # --- las que no, y por que
     "api.js": 0,        # habla con el servidor; no pinta nada

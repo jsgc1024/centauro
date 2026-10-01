@@ -10,7 +10,7 @@ El procedimiento diario es identico al eventual. Lo que cambia:
 import calendar
 import logging
 from datetime import date, datetime, time, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session, object_session
@@ -38,6 +38,20 @@ ANTES_DE_PLANEAR = {
     m.EstatusServicio.SOLICITADO,
     m.EstatusServicio.COTIZADO,
     m.EstatusServicio.AUTORIZADO,
+}
+
+
+# Los dias que cubre el precio fijo del mes en las modalidades de la
+# propuesta (seccion 115, decision 3 de Salvador): «22 dias (lunes a
+# viernes) mas dias adicionales, 26 dias (lunes a sabado) mas dias
+# adicionales o mes completo 30 dias al mes con un costo fijo». El
+# mensual de cada puesto es su precio por dia por estos dias y no cambia
+# si el mes trae 21 o 23 habiles. El 12x36 cubre los siete dias: va como
+# el mes completo.
+DIAS_DEL_MENSUAL = {
+    m.DiasServicio.LUNES_VIERNES: 22,
+    m.DiasServicio.LUNES_SABADO: 26,
+    m.DiasServicio.TODOS: 30,
 }
 
 
@@ -199,6 +213,21 @@ def descanso_de_la_jornada(db: Session, jornada: m.Jornada) -> dict | None:
         return None
     return {"jornada": float(jornada_horas), "horas": float(descanso),
             "intervalo": float(intervalo)}
+
+
+def empieza_a_medio_mes(anio: int, mes: int, dias_servicio,
+                        desde_dia: int | None,
+                        turno: str = TURNO_NATURAL) -> bool:
+    """Si el primer mes empezo con el mes ya corrido: despues de algun
+    dia de su modalidad (seccion 115). Con el 1 en domingo, el de lunes a
+    viernes que empieza el lunes 2 cubre todos los dias del mes y se cobra
+    su mensual; por dia, habria salido mas barato que el mes que empieza
+    el 1 con los mismos dias de servicio."""
+    if not desde_dia or desde_dia <= 1:
+        return False
+    tope = 7 if turno == TURNO_12X36 else hasta_donde(dias_servicio)
+    return any(date(anio, mes, d).weekday() < tope
+               for d in range(1, desde_dia))
 
 
 def dias_del_mes(anio: int, mes: int, dias_servicio,
@@ -1275,6 +1304,73 @@ def jornadas_del_mes(contrato: m.ContratoImplantado) -> list:
         key=lambda j: j.fecha)
 
 
+def base_del_mensual(db: Session, contrato: m.ContratoImplantado) -> int | None:
+    """Cuantos dias cubre el precio fijo de este mes, si va con las
+    modalidades de la propuesta (seccion 115): los de sus dias de
+    servicio de hoy --22, 26 o 30; el 12x36, 30--. None: el mes se cobra
+    por dia, o es el precio fijo de antes, con todo incluido."""
+    if (contrato.esquema != m.EsquemaCotizacionImplantado.MES_COMPLETO
+            or not contrato.dias_del_mensual):
+        return None
+    if turno_del_servicio(db, contrato.servicio_id) == TURNO_12X36:
+        return DIAS_DEL_MENSUAL[m.DiasServicio.TODOS]
+    return DIAS_DEL_MENSUAL.get(contrato.dias_servicio,
+                                DIAS_DEL_MENSUAL[m.DiasServicio.LUNES_VIERNES])
+
+
+def cobro_del_mensual(db: Session, contrato: m.ContratoImplantado,
+                      trabajados: list[date]) -> dict | None:
+    """Como se cobra el mes en las modalidades de la propuesta (seccion
+    115), con los dias que se trabajaron:
+
+    * el precio fijo del mes, se trabajen 21 o 23 dias de la modalidad;
+    * el primer mes que empieza a medio mes --despues de algun dia de
+      su modalidad (`empieza_a_medio_mes`)--, por dia de servicio: el
+      mensual entre los dias de la modalidad, por los dias trabajados
+      dentro de ella;
+    * el dia trabajado fuera de la modalidad --el sabado o el domingo de
+      lunes a viernes, el domingo de lunes a sabado--, aparte, al precio
+      del dia adicional. El 12x36 y el mes completo no tienen.
+
+    None si el mes no va asi (`base_del_mensual`). El precio por dia y
+    lo que da por los dias van redondeados al centavo como los lee la
+    factura: precio por cantidad.
+    """
+    base = base_del_mensual(db, contrato)
+    if base is None:
+        return None
+    es_12x36 = turno_del_servicio(db, contrato.servicio_id) == TURNO_12X36
+    tope = 7 if es_12x36 else hasta_donde(contrato.dias_servicio)
+    dentro = sorted(d for d in trabajados if d.weekday() < tope)
+    fuera = sorted(d for d in trabajados if d.weekday() >= tope)
+    centavo = Decimal("0.01")
+    mensual = Decimal(str(contrato.precio_mes_completo or 0))
+    precio_dia = (mensual / base).quantize(centavo, rounding=ROUND_HALF_UP)
+    turno = TURNO_12X36 if es_12x36 else TURNO_NATURAL
+    parcial = empieza_a_medio_mes(contrato.anio, contrato.mes,
+                                  contrato.dias_servicio, contrato.desde_dia,
+                                  turno)
+    contratados = None
+    if parcial:
+        contratados = len(dias_del_mes(
+            contrato.anio, contrato.mes, contrato.dias_servicio,
+            contrato.desde_dia, turno))
+        importe_mes = precio_dia * len(dentro)
+        contratado = precio_dia * contratados
+    else:
+        importe_mes = contratado = mensual
+    adicional = Decimal(str(contrato.precio_dia_adicional or 0))
+    return {
+        "base": base, "parcial": parcial, "desde_dia": contrato.desde_dia,
+        "dentro": len(dentro), "contratados": contratados,
+        "fuera": [d.isoformat() for d in fuera],
+        "precio_dia": precio_dia, "importe_mes": importe_mes,
+        "contratado": contratado,
+        "precio_dia_adicional": adicional,
+        "importe_adicionales": adicional * len(fuera),
+    }
+
+
 def cierre_del_mes(db: Session, contrato_id: int) -> dict:
     """Que dias se trabajaron y quien los trabajo.
 
@@ -1376,7 +1472,19 @@ def resumen_mensual(db: Session, contrato_id: int) -> dict:
     base = [j for j in vivas if not j.es_dia_adicional]
     adicionales = [j for j in vivas if j.es_dia_adicional]
 
-    if contrato.esquema == m.EsquemaCotizacionImplantado.MES_COMPLETO:
+    # Las modalidades de la propuesta (seccion 115): el precio fijo, o
+    # por dia el primer mes a medias, y aparte los dias fuera de ella.
+    cobro = cobro_del_mensual(db, contrato,
+                              [j.fecha for j in vivas if j.personal])
+    if cobro is not None:
+        desglose = {"mes_completo": cobro["importe_mes"]}
+        if cobro["fuera"]:
+            desglose["dias_adicionales"] = cobro["importe_adicionales"]
+        total = sum(desglose.values(), Decimal("0"))
+        fuera = set(cobro["fuera"])
+        adicionales = [j for j in vivas if j.fecha.isoformat() in fuera]
+        base = [j for j in vivas if j.fecha.isoformat() not in fuera]
+    elif contrato.esquema == m.EsquemaCotizacionImplantado.MES_COMPLETO:
         total = Decimal(str(contrato.precio_mes_completo or 0))
         desglose = {"mes_completo": total}
     else:
@@ -1407,6 +1515,9 @@ def resumen_mensual(db: Session, contrato_id: int) -> dict:
         "dias": {"base": len(base), "adicionales": len(adicionales),
                  "habiles_del_mes": len(dias_del_mes(contrato.anio, contrato.mes, False)),
                  "total": len(vivas)},
+        # Cuantos dias cubre el precio fijo (seccion 115); vacio, el mes
+        # va por dia o con el precio fijo de antes.
+        "dias_del_mensual": cobro["base"] if cobro else None,
         "horas_extra": horas_mes,
         "facturacion": {"desglose": desglose, "total": total},
         "reemplazos": reemplazos,
@@ -2546,6 +2657,10 @@ def abrir_siguiente(db: Session, servicio: m.Servicio,
         # 104) pasan con el; vacias, siguen siendo las del pais.
         horas_jornada=anterior.horas_jornada,
         horas_descanso=anterior.horas_descanso,
+        # El precio fijo de las modalidades de la propuesta (seccion
+        # 115) sigue en el mes nuevo, con los dias de servicio del trato.
+        dias_del_mensual=(DIAS_DEL_MENSUAL.get(dias_servicio)
+                          if anterior.dias_del_mensual else None),
         # Los precios copiados van en su moneda (seccion 82); el tipo de
         # cambio no se copia: el mes nuevo toma el que este puesto cuando
         # se abre.

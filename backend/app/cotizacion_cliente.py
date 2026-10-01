@@ -183,8 +183,8 @@ def _limpio(texto: str | None, largo: int | None = None) -> str | None:
 
 
 def nombre_de(c: m.Cotizacion) -> str:
-    """EP/COT-0001 V2."""
-    return f"{folio_texto(c.folio)} V{c.version}"
+    """EP/COT-0001 V2, o EP/PRO-0001 V2 la propuesta del implantado."""
+    return f"{folio_texto(c.folio, c.clase)} V{c.version}"
 
 
 # ------------------------------------------------------------- los equipos
@@ -582,8 +582,9 @@ def precios(db: Session, datos: dict) -> dict:
     prep = preparar(db, {**datos, "prospecto": "—"} if sin_nombre else datos)
     modalidad_por_dia, lineas = _lineas(prep["equipos"], prep["gastos"],
                                         prep["monto"])
-    renglones = (motor.renglones_con_precio(db, prep["tarifario"].id,
-                                            modalidad_por_dia, lineas)
+    renglones = (motor.renglones_con_precio(
+        db, prep["tarifario"].id, modalidad_por_dia, lineas,
+        con_paquetes=motor.usa_paquetes(prep["tarifario"], prep["gastos"]))
                  if lineas else [])
     subtotal = sum((r["subtotal"] for r in renglones), Decimal("0"))
     tasa = tasa_iva(db, prep["pais_id"])
@@ -613,13 +614,15 @@ def precios(db: Session, datos: dict) -> dict:
 
 # ------------------------------------------------------------- guardar
 
-def _siguiente_folio(db: Session) -> int:
-    """El siguiente de la serie EP/COT, con candado: dos consultores que
-    arman al mismo tiempo no se llevan el mismo numero. Vive en la
-    transaccion, como el de asignar."""
+def _siguiente_folio(db: Session, clase: str = motor.COTIZACION) -> int:
+    """El siguiente de la serie EP/COT --o EP/PRO, la de la propuesta del
+    implantado (seccion 115)--, con candado: dos consultores que arman al
+    mismo tiempo no se llevan el mismo numero. Vive en la transaccion,
+    como el de asignar. Cada serie lleva su candado y su cuenta."""
     db.execute(text("SELECT pg_advisory_xact_lock(:llave)"),
-               {"llave": zlib.crc32(b"cotizacion:folio")})
-    ultimo = db.query(func.max(m.Cotizacion.folio)).scalar()
+               {"llave": zlib.crc32(f"{clase}:folio".encode())})
+    ultimo = (db.query(func.max(m.Cotizacion.folio))
+              .filter(m.Cotizacion.clase == clase).scalar())
     return (ultimo or 0) + 1
 
 
@@ -657,10 +660,14 @@ def _poner_precios(db: Session, cot: m.Cotizacion, prep: dict,
     y la pantalla dice que falta."""
     modalidad_por_dia, lineas = _lineas(prep["equipos"], prep["gastos"],
                                         prep["monto"])
+    # El paquete «Todo incluido» solo con los gastos dentro del precio
+    # (seccion 115, `motor.usa_paquetes`).
+    paquetes = motor.usa_paquetes(prep["tarifario"], prep["gastos"])
     error = None
     try:
         renglones = (motor.renglones_con_precio(
-            db, prep["tarifario"].id, modalidad_por_dia, lineas)
+            db, prep["tarifario"].id, modalidad_por_dia, lineas,
+            con_paquetes=paquetes)
             if lineas else [])
     except HTTPException as fallo:
         if estricto:
@@ -670,7 +677,8 @@ def _poner_precios(db: Session, cot: m.Cotizacion, prep: dict,
         error = fallo.detail
         gastos = [x for x in lineas if x["tipo"] == m.TipoLinea.VIATICOS.value]
         renglones = (motor.renglones_con_precio(
-            db, prep["tarifario"].id, modalidad_por_dia, gastos)
+            db, prep["tarifario"].id, modalidad_por_dia, gastos,
+            con_paquetes=paquetes)
             if gastos else [])
     cot.lineas.clear()
     for r in renglones:
@@ -759,19 +767,26 @@ def totales(cot: m.Cotizacion) -> dict:
     return _totales(Decimal(str(cot.total or 0)), cot.con_iva, tasa)
 
 
-def versiones(db: Session, folio: int) -> list[m.Cotizacion]:
-    return (db.query(m.Cotizacion).filter_by(folio=folio)
+def versiones(db: Session, folio: int,
+              clase: str = motor.COTIZACION) -> list[m.Cotizacion]:
+    """Las versiones de un folio, de la mas nueva a la primera. El numero
+    solo no basta: la EP/COT-0001 y la EP/PRO-0001 son dos."""
+    return (db.query(m.Cotizacion).filter_by(folio=folio, clase=clase)
             .order_by(m.Cotizacion.version.desc()).all())
 
 
-def ultima(db: Session, folio: int) -> m.Cotizacion:
-    return versiones(db, folio)[0]
+def ultima(db: Session, folio: int,
+           clase: str = motor.COTIZACION) -> m.Cotizacion:
+    return versiones(db, folio, clase)[0]
 
 
-def de_folio(db: Session, cotizacion_id: int) -> m.Cotizacion:
+def de_folio(db: Session, cotizacion_id: int,
+             clase: str = motor.COTIZACION) -> m.Cotizacion:
     cot = db.get(m.Cotizacion, cotizacion_id)
-    if cot is None or cot.folio is None:
-        raise HTTPException(404, f"No existe la cotización {cotizacion_id}")
+    if cot is None or cot.folio is None or cot.clase != clase:
+        raise HTTPException(404, (f"No existe la propuesta {cotizacion_id}"
+                                  if clase == motor.PROPUESTA else
+                                  f"No existe la cotización {cotizacion_id}"))
     return cot
 
 
@@ -816,7 +831,7 @@ def enviar(db: Session, actor: m.Usuario, cot: m.Cotizacion) -> m.Cotizacion:
 
     if cot.estatus != E.BORRADOR:
         raise HTTPException(409, f"La {nombre_de(cot)} ya se mandó.")
-    if ultima(db, cot.folio).id != cot.id:
+    if ultima(db, cot.folio, cot.clase).id != cot.id:
         raise HTTPException(409, "Ya hay una versión más nueva de esta "
                                  "cotización.")
     faltan = que_le_falta(db, cot)
@@ -841,7 +856,7 @@ def enviar(db: Session, actor: m.Usuario, cot: m.Cotizacion) -> m.Cotizacion:
         clase="pdf", nombre=cotizacion_pdf.nombre_del_archivo(db, cot),
         tipo="application/pdf", tamano=len(contenido), contenido=contenido,
         subido_por_id=actor.persona_id))
-    for vieja in versiones(db, cot.folio):
+    for vieja in versiones(db, cot.folio, cot.clase):
         if vieja.id != cot.id and vieja.estatus in (E.BORRADOR, E.ENVIADA,
                                                     E.VENCIDA):
             vieja.estatus = E.SUSTITUIDA
@@ -860,7 +875,7 @@ def nueva_version(db: Session, actor: m.Usuario,
                   cot: m.Cotizacion) -> m.Cotizacion:
     """La version siguiente, como borrador, copiando la de antes. La de
     antes sigue valiendo hasta que se mande la nueva."""
-    if ultima(db, cot.folio).id != cot.id:
+    if ultima(db, cot.folio, cot.clase).id != cot.id:
         raise HTTPException(409, "Ya hay una versión más nueva de esta "
                                  "cotización: cámbiala a ella.")
     if cot.estatus not in DE_ESTAS_SALE_OTRA:
@@ -944,7 +959,7 @@ def autorizar(db: Session, actor: m.Usuario, cot: m.Cotizacion,
                                      "lo que vio.")
         raise HTTPException(409, f"La {nombre_de(cot)} está "
                                  f"{cot.estatus.value}: ya no se autoriza.")
-    if ultima(db, cot.folio).id != cot.id:
+    if ultima(db, cot.folio, cot.clase).id != cot.id:
         raise HTTPException(409, "Hay una versión más nueva: el cliente "
                                  "autoriza la última.")
 
@@ -1022,7 +1037,7 @@ def autorizar(db: Session, actor: m.Usuario, cot: m.Cotizacion,
     # Toda la historia de la cotizacion queda con su servicio: el bloque
     # del servicio ensena sus versiones, y una recotizacion alla sigue
     # con el mismo folio y la version siguiente.
-    for otra in versiones(db, cot.folio):
+    for otra in versiones(db, cot.folio, cot.clase):
         otra.servicio_folio = servicio.folio
         if otra.id == cot.id:
             continue
@@ -1077,10 +1092,14 @@ def _sin_tildes(texto: str) -> str:
 
 
 def renglon_de_lista(cot: m.Cotizacion) -> dict:
+    if cot.clase == motor.PROPUESTA:
+        from app import propuesta
+        return propuesta.renglon_de_lista(cot)
     fechas = sorted({d.fecha for d in cot.dias})
     t = totales(cot)
     return {
-        "id": cot.id, "folio": folio_texto(cot.folio), "version": cot.version,
+        "id": cot.id, "clase": cot.clase,
+        "folio": folio_texto(cot.folio), "version": cot.version,
         "estatus": cot.estatus.value,
         "cliente": cliente_texto(cot), "es_prospecto": cot.cliente_id is None,
         "solicitante": m._nombre_completo(cot.solicitante_nombre,
@@ -1101,48 +1120,68 @@ def renglon_de_lista(cot: m.Cotizacion) -> dict:
     }
 
 
-def lista(db: Session, vista: str = "todas", q: str | None = None) -> list[dict]:
-    """Una por folio: su ultima version."""
+# Que se lista (seccion 115): las cotizaciones del eventual, las
+# propuestas del implantado, o las dos.
+QUE = {"todas": None, "cotizaciones": motor.COTIZACION,
+       "propuestas": motor.PROPUESTA}
+
+
+def _de_que(consulta, que: str):
+    if que not in QUE:
+        raise HTTPException(400, "Eso no se lista.")
+    if QUE[que] is not None:
+        consulta = consulta.filter(m.Cotizacion.clase == QUE[que])
+    return consulta
+
+
+def lista(db: Session, vista: str = "todas", q: str | None = None,
+          que: str = "cotizaciones") -> list[dict]:
+    """Una por folio: su ultima version. La mas nueva arriba: el orden en
+    que nacio cada folio, que con dos series ya no es su numero."""
     if vista not in VISTAS:
         raise HTTPException(400, "Esa vista no existe.")
-    todas = (db.query(m.Cotizacion)
+    todas = (_de_que(db.query(m.Cotizacion), que)
              .options(selectinload(m.Cotizacion.dias),
+                      selectinload(m.Cotizacion.posiciones),
                       selectinload(m.Cotizacion.cliente),
                       selectinload(m.Cotizacion.servicio),
                       selectinload(m.Cotizacion.consultor))
              .filter(m.Cotizacion.folio.isnot(None))
-             .order_by(m.Cotizacion.folio.desc(),
+             .order_by(m.Cotizacion.clase, m.Cotizacion.folio.desc(),
                        m.Cotizacion.version.desc()).all())
-    ultimas, vistos = [], set()
+    ultimas, primera = [], {}
     for cot in todas:
-        if cot.folio in vistos:
-            continue
-        vistos.add(cot.folio)
-        ultimas.append(cot)
+        llave = (cot.clase, cot.folio)
+        if llave not in primera:
+            ultimas.append(cot)
+            primera[llave] = cot.id
+        primera[llave] = min(primera[llave], cot.id)
+    ultimas.sort(key=lambda c: primera[(c.clase, c.folio)], reverse=True)
     estatus = VISTAS[vista]
     if estatus is not None:
         ultimas = [c for c in ultimas if c.estatus in estatus]
     if q and q.strip():
         buscado = _sin_tildes(q.strip())
         ultimas = [c for c in ultimas if buscado in _sin_tildes(" ".join(filter(None, (
-            folio_texto(c.folio), cliente_texto(c), c.solicitante_nombre,
-            c.solicitante_apellidos, c.servicio_folio))))]
+            folio_texto(c.folio, c.clase), cliente_texto(c),
+            c.solicitante_nombre, c.solicitante_apellidos,
+            c.servicio_folio))))]
     return [renglon_de_lista(c) for c in ultimas]
 
 
-def cuentas(db: Session) -> dict:
+def cuentas(db: Session, que: str = "cotizaciones") -> dict:
     """Cuantas hay en cada vista, para las pestanas."""
     salida = {k: 0 for k in VISTAS}
     vistos = set()
-    for folio, version, estatus in (db.query(m.Cotizacion.folio,
-                                             m.Cotizacion.version,
-                                             m.Cotizacion.estatus)
-                                    .filter(m.Cotizacion.folio.isnot(None))
-                                    .order_by(m.Cotizacion.folio,
-                                              m.Cotizacion.version.desc())):
-        if folio in vistos:
+    for clase, folio, version, estatus in (
+            _de_que(db.query(m.Cotizacion.clase, m.Cotizacion.folio,
+                             m.Cotizacion.version, m.Cotizacion.estatus), que)
+            .filter(m.Cotizacion.folio.isnot(None))
+            .order_by(m.Cotizacion.clase, m.Cotizacion.folio,
+                      m.Cotizacion.version.desc())):
+        if (clase, folio) in vistos:
             continue
-        vistos.add(folio)
+        vistos.add((clase, folio))
         salida["todas"] += 1
         for vista, cuales in VISTAS.items():
             if cuales is not None and estatus in cuales:
@@ -1157,7 +1196,7 @@ def detalle(db: Session, cot: m.Cotizacion, puede_armar: bool) -> dict:
     fechas = sorted({d.fecha for d in cot.dias})
     pdf = archivo(cot, "pdf")
     comprobante = archivo(cot, "comprobante")
-    es_ultima = ultima(db, cot.folio).id == cot.id
+    es_ultima = ultima(db, cot.folio, cot.clase).id == cot.id
     tarifario = db.get(m.Tarifario, cot.tarifario_id)
     perfiles = {l.perfil_id for l in cot.lineas if l.perfil_id}
     return {
@@ -1219,7 +1258,7 @@ def detalle(db: Session, cot: m.Cotizacion, puede_armar: bool) -> dict:
             "total": float(totales(v)["total"]),
             "enviada_en": v.enviada_en.isoformat() if v.enviada_en else None,
             "pdf": archivo(v, "pdf") is not None}
-            for v in versiones(db, cot.folio)],
+            for v in versiones(db, cot.folio, cot.clase)],
     }
 
 

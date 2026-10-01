@@ -29,6 +29,7 @@ import { nombreDelRol } from "./categorias.js";
 import { pantallaServicio } from "./servicio.js";
 import { nuevaCotizacion, pantallaCotizacion,
          pantallaCotizaciones } from "./cotizaciones.js";
+import { pantallaPropuesta } from "./propuesta.js";
 import { aviso, campo, entrada, h, lista, mensaje, vaciar,
          vigilarCapturas } from "./util.js";
 import { IDIOMAS, idioma, idiomaGuardado, ponerIdioma, t } from "./idioma.js";
@@ -480,6 +481,8 @@ const RUTAS = [
   [/^#\/cotizaciones$/, pantallaCotizaciones, "cotizaciones", CONSULTA],
   [/^#\/cotizacion\/nueva$/, nuevaCotizacion, "cotizaciones", CONSULTA],
   [/^#\/cotizacion\/(\d+|eventual)$/, pantallaCotizacion, "cotizaciones", CONSULTA],
+  /* La propuesta del implantado (seccion 115), en la misma pantalla. */
+  [/^#\/propuesta\/(\d+|nueva)$/, pantallaPropuesta, "cotizaciones", CONSULTA],
   [/^#\/servicios$/, cartera, "servicios", CONSULTA],
   [/^#\/servicio\/nuevo$/, nuevoServicio, "servicios", CONSULTA],
   [/^#\/servicio\/(\d+)$/, pantallaServicio, "servicios", CONSULTA],

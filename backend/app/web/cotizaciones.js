@@ -1,10 +1,11 @@
 /* Cotizaciones (seccion 114).
 
    Salvador, 30 de septiembre: la cotizacion se arma en Connect, en una
-   pantalla nueva que pregunta si es una propuesta para implantado --se
-   queda pendiente-- o una cotizacion para eventual. Se saca su PDF, el
-   consultor la manda al cliente y, cuando el cliente la autoriza, pasa a
-   servicio eventual: el servicio se crea solo.
+   pantalla nueva que pregunta si es una propuesta para implantado o una
+   cotizacion para eventual. Se saca su PDF, el consultor la manda al
+   cliente y, cuando el cliente la autoriza, pasa a servicio eventual: el
+   servicio se crea solo. La propuesta del implantado llego en la seccion
+   115 (`propuesta.js`): la lista de esta pantalla trae las dos.
 
    Con sus decisiones del 1 de octubre: folio nuevo (EP/COT-0001) con su
    version; se puede cotizar a una empresa que todavia no esta en Odoo,
@@ -135,11 +136,21 @@ async function abrirPdf(ruta, antes = null) {
   }
 }
 
+/* Lo que usa la propuesta del implantado (seccion 115), que vive en su
+   archivo y se arma con las mismas piezas. */
+export { reemplazar, estatusDe, fechaCorta, irA, abrirPdf, diaDe, finDeAnio,
+         notaDeEstatus, panelFirma, OTRA, NUEVA, IDIOMA_PDF };
+
 /* ============================================================ la lista */
+
+/* Que se ve: las dos, o solo unas (seccion 115). */
+const QUE = [["todas", "ctz_que_todas"], ["cotizaciones", "ctz_que_cotizaciones"],
+             ["propuestas", "ctz_que_propuestas"]];
 
 export async function pantallaCotizaciones(main) {
   let vista = "todas";
   let q = "";
+  let que = "todas";
   let espera = null;
   const zona = h("div");
   const pestanas = h("div", { clase: "pestanas", style: "margin:0 0 12px" });
@@ -149,20 +160,27 @@ export async function pantallaCotizaciones(main) {
     oninput: () => { q = buscar.value; clearTimeout(espera); espera = setTimeout(cargar, 300); },
   });
   const acciones = h("div", { clase: "acciones", style: "margin-bottom:16px" });
+  const selQue = lista("que", QUE.map(([valor, texto]) => ({ valor, texto: t(texto) })),
+    { onchange: () => { que = selQue.value; cargar(); } });
 
   main.append(
     h("h1", {}, t("ctz_titulo")),
     h("p", { clase: "sub" }, t("ctz_sub")),
     acciones, firma,
     h("div", { clase: "tarjeta lisa", style: "margin-bottom:16px" },
-      pestanas, campo(t("ctz_buscar"), buscar)),
+      pestanas,
+      h("div", { clase: "rejilla tres", style: "grid-template-columns:2fr 1fr" },
+        campo(t("ctz_buscar"), buscar), campo(t("ctz_que"), selQue))),
     zona);
 
   async function cargar() {
-    const d = await api.get(`/cotizaciones/eventual?vista=${vista}&q=${encodeURIComponent(q)}`);
+    const d = await api.get(`/cotizaciones/lista?vista=${vista}&que=${que}`
+                            + `&q=${encodeURIComponent(q)}`);
     acciones.replaceChildren(...[
       d.puede_armar ? h("button", { type: "button",
-        onclick: () => { location.hash = "#/cotizacion/nueva"; } }, t("ctz_nueva")) : null,
+        onclick: () => { location.hash = "#/cotizacion/eventual"; } }, t("ctz_nueva")) : null,
+      d.puede_armar ? h("button", { type: "button",
+        onclick: () => { location.hash = "#/propuesta/nueva"; } }, t("pro_nueva")) : null,
       d.puede_armar ? h("button", { type: "button", clase: "claro",
         onclick: () => panelFirma(firma) }, t("ctz_tu_firma")) : null,
     ].filter(Boolean));
@@ -203,7 +221,10 @@ function notaDeEstatus(f) {
 
 function servicioDe(f) {
   if (f.servicio) {
-    return h("a", { href: `#/servicio/${f.servicio.id}`, style: "white-space:nowrap",
+    /* La propuesta hizo nacer un implantado: se abre en su pantalla. */
+    const ruta = f.clase === "propuesta" ? `#/implantado/${f.servicio.id}`
+      : `#/servicio/${f.servicio.id}`;
+    return h("a", { href: ruta, style: "white-space:nowrap",
                     onclick: (e) => e.stopPropagation() }, h("b", {}, f.servicio.folio));
   }
   if (f.servicio_folio) {
@@ -215,21 +236,32 @@ function servicioDe(f) {
 
 function tablaDeLista(filas, q) {
   if (!filas.length) return h("p", { clase: "gris" }, t(q ? "ctz_no_hay_asi" : "ctz_ninguna"));
+  const esPropuesta = (f) => f.clase === "propuesta";
+  /* La propuesta dice desde cuando: su mensual no tiene fecha de fin. */
+  const cuando = (f) => (esPropuesta(f)
+    ? (f.desde ? reemplazar(t("pro_desde"), { f: fechaCorta(f.desde, false) }) : "—")
+    : rangoCorto(f.desde, f.hasta));
   return h("table", { clase: "lista" },
     h("thead", {}, h("tr", {},
-      h("th", {}, t("ctz_col_folio")), h("th", {}, t("ctz_col_cliente")),
-      h("th", {}, t("ctz_col_solicita")), h("th", {}, t("ctz_col_fechas")),
+      h("th", {}, t("ctz_col_folio")), h("th", {}, t("ctz_col_que_es")),
+      h("th", {}, t("ctz_col_cliente")),
+      h("th", {}, t("ctz_col_solicita")), h("th", {}, t("ctz_col_cuando")),
       h("th", { clase: "der" }, t("ctz_col_total")), h("th", {}, t("ctz_col_valida")),
       h("th", {}, t("ctz_col_estatus")), h("th", {}, t("ctz_col_servicio")))),
     h("tbody", {}, ...filas.map(f => h("tr", {
-      clase: "clic", onclick: () => { location.hash = `#/cotizacion/${f.id}`; } },
+      clase: "clic", onclick: () => {
+        location.hash = esPropuesta(f) ? `#/propuesta/${f.id}` : `#/cotizacion/${f.id}`;
+      } },
       h("td", { style: "white-space:nowrap" }, h("b", {}, f.folio), " ",
         h("span", { clase: "gris chico" }, `V${f.version}`)),
+      h("td", {}, esPropuesta(f) ? etiqueta(t("ctz_es_propuesta"), "info")
+        : etiqueta(t("ctz_es_cotizacion"))),
       h("td", {}, f.cliente, f.es_prospecto
         ? h("div", { style: "margin-top:4px" }, etiqueta(t("ctz_empresa_nueva"), "alerta")) : null),
       h("td", {}, f.solicitante || "—"),
-      h("td", { style: "white-space:nowrap" }, rangoCorto(f.desde, f.hasta)),
-      h("td", { clase: "der num" }, dinero(f.total, f.moneda)),
+      h("td", { style: "white-space:nowrap" }, cuando(f)),
+      h("td", { clase: "der num" }, dinero(f.total, f.moneda),
+        esPropuesta(f) ? h("div", { clase: "chico gris" }, t("pro_al_mes")) : null),
       h("td", { style: "white-space:nowrap" }, fechaCorta(f.valida_hasta)),
       h("td", {}, estatusDe(f.estatus), notaDeEstatus(f)),
       h("td", {}, servicioDe(f))))));
@@ -287,8 +319,8 @@ export async function nuevaCotizacion(main) {
         h("button", { type: "button", onclick: () => { location.hash = "#/cotizacion/eventual"; } },
           t("ctz_armar")), true),
       opcion(t("ctz_tipo_implantado"), t("ctz_tipo_implantado_pie"),
-        h("button", { type: "button", disabled: "disabled" }, t("ctz_pendiente")), false,
-        etiqueta(t("ctz_pendiente")))),
+        h("button", { type: "button", onclick: () => { location.hash = "#/propuesta/nueva"; } },
+          t("pro_armar")), true)),
     h("p", { style: "margin-top:16px" },
       h("a", { href: "#/cotizaciones", clase: "enlace" }, t("ctz_volver"))));
 }

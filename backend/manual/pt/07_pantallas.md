@@ -16,7 +16,7 @@ Em cima, ao lado do seu nome, fica **Reportar uma falha** em todas as telas: che
 Como vai a operação agora: o de hoje, quem está a caminho, os países, o dinheiro na rua, o que o financeiro devolveu e a qualidade. É a vista de cima; o detalhe vive em cada serviço.
 
 ### Cotações {#cotizaciones}
-A cotação do eventual antes de o serviço existir: monta-se com a lista do cliente, sai em PDF com a sua referência —EP/COT-0001— e a sua versão, e quando o cliente aprova nasce o serviço com ela dentro. A lista diz quais estão abertas, quanto falta para vencerem e de qual nasceu que serviço. Aqui cada consultor envia a sua assinatura. Ver [a cotação ao cliente](#/manual/leer/cotizaciones).
+A cotação do eventual e a proposta do implantado, antes de o serviço existir: montam-se com a lista do cliente, saem em PDF com a sua referência —EP/COT-0001, EP/PRO-0001— e a sua versão, e quando o cliente aprova nasce o serviço com ela dentro. A lista diz o que é cada uma, quais estão abertas, quanto falta para vencerem e de qual nasceu que serviço. Aqui cada consultor envia a sua assinatura. Ver [a cotação ao cliente](#/manual/leer/cotizaciones) e [a proposta do implantado](#/manual/leer/propuesta).
 
 ### EP eventual {#servicios}
 Os serviços contratados por dia: o cadastro, a cotação, as equipes, quem vai e em que unidade, a task sheet, as diárias e o fechamento. Ver [o caminho de um serviço](#/manual/leer/camino).
@@ -40,7 +40,7 @@ O que o cliente disse: as pesquisas, a taxa de resposta e as notas de 3 ou menos
 O mês em números: o que o cliente disse, a rua, o fechamento, as pessoas e os dados que faltam no Odoo e em Catálogos, contra o mês anterior, com o seu relatório em Excel para a reunião.
 
 ### Direção de operações {#direccion}
-O que espera o visto do diretor de operações —os incidentes por autorizar, o freelancer que alguém pede por urgência, as cobranças ao cancelar e os prazos vencidos do fechamento— e os números de hoje por país: serviços hoje e amanhã, em andamento, com alerta, trocas por contingência e incidentes do mês. Cada número abre para mostrar quais serviços são. Veem o diretor de operações e a direção geral.
+O que espera o visto do diretor de operações —os incidentes por autorizar, o freelancer que alguém pede por urgência, os preços especiais das propostas, as cobranças ao cancelar e os prazos vencidos do fechamento— e os números de hoje por país: serviços hoje e amanhã, em andamento, com alerta, trocas por contingência e incidentes do mês. Cada número abre para mostrar quais serviços são. Veem o diretor de operações e a direção geral.
 
 ## Operações CI
 
@@ -68,7 +68,7 @@ Quem pode entrar, com que cargo, e quando entrou pela última vez. Aqui se monta
 As cinco leituras do Odoo: aqui se fazem o ensaio e a primeira leitura de cada uma, e se vê o que falta corrigir lá. Ver [o que vem do Odoo](#/manual/leer/odoo).
 
 ### Catálogos {#catalogos}
-O que o sistema usa para calcular e para montar a folha do serviço: feriados, hospitais, hotéis, cidades, combustível, categorias de unidades, perfis, países, os requisitos do freelance, modalidades e a tabela de diárias. Os custos de cada freelancer vivem na ficha dele, em Equipe de segurança. O que decide dinheiro é definido pela direção de operações. O que se retira não se perde: aparece em cinza com «Reativar». Aqui vive também o registro da administração: quem mudou o quê.
+O que o sistema usa para calcular e para montar a folha do serviço: feriados, hospitais, hotéis, cidades, combustível, categorias de unidades, perfis, países, os requisitos do freelance, modalidades e a tabela de diárias; e os textos da cotação e da proposta ao cliente. Os custos de cada freelancer vivem na ficha dele, em Equipe de segurança. O que decide dinheiro é definido pela direção de operações. O que se retira não se perde: aparece em cinza com «Reativar». Aqui vive também o registro da administração: quem mudou o quê.
 
 ### Manual do sistema {#manual}
 Este manual: como funciona cada peça, o que fazer quando algo trava, o estado do sistema ao vivo e os casos: as falhas reportadas para revisar e o que já foi resolvido. Enquanto dura a mudança para o Connect, também [o arranque](#/manual/arranque): o que falta para operar tudo aqui e desligar o OVH, revisando-se sozinho, com de quem é cada coisa e onde se resolve.

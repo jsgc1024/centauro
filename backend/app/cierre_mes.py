@@ -393,6 +393,7 @@ def comparar(db: Session, contrato: m.ContratoImplantado) -> dict:
     corte = motor_implantado.cierre_del_mes(db, contrato.id)
     base = corte["cliente"]["base"]
     adicionales = corte["cliente"]["adicionales"]
+    fechas_adicionales = corte["cliente"]["fechas_adicionales"]
     precios = {"dia": _d(contrato.precio_dia_personal),
                "dia_adicional": _d(contrato.precio_dia_adicional),
                "unidad_mes": _d(contrato.precio_mes_vehiculo),
@@ -400,7 +401,13 @@ def comparar(db: Session, contrato: m.ContratoImplantado) -> dict:
                "hora_extra": _d(contrato.precio_hora_extra)}
     mes_completo = (contrato.esquema
                     == m.EsquemaCotizacionImplantado.MES_COMPLETO)
+    # Las modalidades de la propuesta (seccion 115): el precio fijo cubre
+    # los dias de la modalidad; el primer mes a medias va por dia, y el
+    # dia fuera de la modalidad se cobra aparte.
+    cobro = motor_implantado.cobro_del_mensual(
+        db, contrato, [date.fromisoformat(d["fecha"]) for d in corte["dias"]])
     desviaciones, notas = [], []
+    dias_contratados = contrato.dias_base
 
     if mes_completo:
         contratado = trabajado = precios["mes_completo"]
@@ -411,6 +418,30 @@ def comparar(db: Session, contrato: m.ContratoImplantado) -> dict:
                 "descripcion": (f"{periodo(contrato)}: el contrato no tiene "
                                 "el precio del mes completo"),
                 "monto": CERO})
+        if cobro is not None:
+            base, adicionales = cobro["dentro"], len(cobro["fuera"])
+            fechas_adicionales = cobro["fuera"]
+            precios["dia_del_mensual"] = cobro["precio_dia"]
+            dias_contratados = (cobro["contratados"] if cobro["parcial"]
+                                else cobro["base"])
+            contratado = cobro["contratado"]
+            desglose = {"mes_completo": cobro["importe_mes"]}
+            if cobro["fuera"]:
+                desglose["dias_adicionales"] = cobro["importe_adicionales"]
+                if not contrato.precio_dia_adicional:
+                    desviaciones.append({
+                        "tipo": m.TipoDesviacion.COBRO_MENOR.value,
+                        "descripcion": (f"{periodo(contrato)}: {adicionales} "
+                                        "dia(s) fuera de la modalidad sin "
+                                        "precio de dia adicional en el "
+                                        "contrato"),
+                        "monto": CERO})
+            trabajado = sum(desglose.values(), CERO)
+            if cobro["parcial"]:
+                notas.append(f"El mes empezo el dia {cobro['desde_dia']}: se "
+                             f"cobran {cobro['dentro']} dia(s) de servicio a "
+                             f"{cobro['precio_dia']}, el mensual entre "
+                             f"{cobro['base']}")
     else:
         contratado = precios["dia"] * contrato.dias_base + precios["unidad_mes"]
         desglose = {"dias_base": precios["dia"] * base,
@@ -434,7 +465,7 @@ def comparar(db: Session, contrato: m.ContratoImplantado) -> dict:
                          "base: se cobran los trabajados")
     if adicionales:
         notas.append(f"{adicionales} dia(s) adicional(es): "
-                     + ", ".join(corte["cliente"]["fechas_adicionales"]))
+                     + ", ".join(fechas_adicionales))
 
     # Las horas extra del mes (seccion 65): se cobran aparte, por hora o
     # fraccion, con el precio de los terminos, en los dos esquemas. Solo
@@ -458,7 +489,8 @@ def comparar(db: Session, contrato: m.ContratoImplantado) -> dict:
             "tipo": m.TipoDesviacion.DIAS_DE_MENOS.value,
             "descripcion": (f"{fecha}: el dia quedo sin cubrir; no se cobra "
                             "ni se paga"),
-            "monto": CERO if mes_completo else -precios["dia"]})
+            "monto": (-cobro["precio_dia"] if cobro and cobro["parcial"]
+                      else CERO if mes_completo else -precios["dia"])})
 
     viaticos = viaticos_del_mes(db, contrato)
     asignado = sum((_d(v.monto_total) for v in viaticos), CERO)
@@ -511,11 +543,16 @@ def comparar(db: Session, contrato: m.ContratoImplantado) -> dict:
         # El del mes: con el se miden la utilidad y la comision.
         "tipo_cambio": motor.cambio_en_json(tc_mes),
         "precios": precios,
-        "contratado": {"dias_base": contrato.dias_base,
+        "contratado": {"dias_base": dias_contratados,
                        "importe": contratado},
+        # Como se cobra el precio fijo de la propuesta (seccion 115): por
+        # cuantos dias, si el mes va a medias y a cuanto el dia.
+        "mensual": ({"dias": cobro["base"], "parcial": cobro["parcial"],
+                     "desde_dia": cobro["desde_dia"],
+                     "dias_de_servicio": cobro["dentro"],
+                     "precio_dia": cobro["precio_dia"]} if cobro else None),
         "trabajado": {"dias_base": base, "dias_adicionales": adicionales,
-                      "fechas_adicionales":
-                          corte["cliente"]["fechas_adicionales"],
+                      "fechas_adicionales": fechas_adicionales,
                       "horas_extra": horas_mes,
                       "dias_con_extra": len(con_extra),
                       "importe": trabajado, "desglose": desglose},
@@ -576,10 +613,17 @@ def revisar(db: Session, contrato: m.ContratoImplantado,
         observaciones.append({
             "nivel": INFO, "asunto": "Del mes", "mensaje": nota,
             "accion": "Informativo."})
-    # Los precios del mes contra la lista de implantados del cliente
-    # (seccion 80). Se dice y no frena: puede ser un acuerdo especial.
-    observaciones.extend(implantado_precios.observaciones(
-        contrato, implantado_precios.de_la_lista(db, contrato)))
+    # Los precios del mes contra la propuesta que el cliente autorizo, si
+    # el implantado nacio de una (seccion 115); si no, contra la lista de
+    # implantados del cliente (seccion 80). Se dice y no frena: puede ser
+    # un acuerdo especial.
+    from app import propuesta as motor_propuesta
+    de_la_propuesta = motor_propuesta.observaciones_del_mes(db, contrato)
+    if de_la_propuesta is not None:
+        observaciones.extend(de_la_propuesta)
+    else:
+        observaciones.extend(implantado_precios.observaciones(
+            contrato, implantado_precios.de_la_lista(db, contrato)))
     # El mes en otra moneda sin tipo de cambio (seccion 82): sin el no
     # hay cifra de gastos ni utilidad del mes. Frena, como en el eventual.
     sin_cambio = comparativo["gastos"].get("sin_tipo_de_cambio")
@@ -877,13 +921,33 @@ def armar_factura(db: Session, cierre: m.Cierre) -> dict:
     de_que = periodo(contrato)
 
     conceptos = []
-    if contrato.esquema == m.EsquemaCotizacionImplantado.MES_COMPLETO:
+    mensual = comparativo.get("mensual")
+    if mensual and mensual["parcial"]:
+        # El primer mes que empieza a medio mes, por dia de servicio
+        # (seccion 115): el mensual entre los dias de la modalidad.
+        conceptos.append({
+            "tipo": "mes_parcial",
+            "descripcion": (f"Servicio implantado {de_que}, dias de servicio "
+                            f"desde el dia {mensual['desde_dia']}"),
+            "cantidad": mensual["dias_de_servicio"],
+            "precio": str(mensual["precio_dia"]),
+            "importe": str(trabajado["desglose"]["mes_completo"])})
+    elif contrato.esquema == m.EsquemaCotizacionImplantado.MES_COMPLETO:
         conceptos.append({
             "tipo": "mes_completo",
             "descripcion": f"Servicio implantado {de_que}, mes completo",
             "cantidad": 1, "precio": str(precios["mes_completo"]),
             "importe": str(precios["mes_completo"])})
-    else:
+    if mensual and trabajado["dias_adicionales"]:
+        # El dia fuera de la modalidad, aparte (seccion 115).
+        conceptos.append({
+            "tipo": "dias_adicionales",
+            "descripcion": f"Dias adicionales {de_que}",
+            "cantidad": trabajado["dias_adicionales"],
+            "precio": str(precios["dia_adicional"]),
+            "importe": str(trabajado["desglose"]["dias_adicionales"]),
+            "fechas": trabajado["fechas_adicionales"]})
+    if contrato.esquema != m.EsquemaCotizacionImplantado.MES_COMPLETO:
         if trabajado["dias_base"]:
             conceptos.append({
                 "tipo": "dias_base",

@@ -156,6 +156,18 @@ TEXTOS = {
         "fre_vence_hoy": "{quien}: {documento} expires today",
         "fre_vencio": "{quien}: {documento} expired",
         "fre_vence_cuerpo": "A document in the file of the freelance {quien} is about to expire or has expired. With an expired document he cannot be assigned: ask for the new one and upload it in Security staff → Freelance.",
+        # The special price of a dedicated-service proposal (section 115).
+        "prop_folio": "Proposal",
+        "prop_cliente": "Client",
+        "prop_mensual": "Monthly, before VAT",
+        "prop_motivo": "Why it is special",
+        "prop_nota": "Note",
+        "prop_especial_asunto": "{folio}: special price to approve",
+        "prop_especial_cuerpo": "{quien} asks for your approval of the special price in proposal {folio} for {cliente}: {motivo}. Approve it or not from the operations inbox; without it the proposal cannot be sent.",
+        "prop_especial_si_asunto": "{folio}: special price approved",
+        "prop_especial_si_cuerpo": "{quien} approved the special price in proposal {folio} for {cliente}. You can send it now.",
+        "prop_especial_no_asunto": "{folio}: special price not approved",
+        "prop_especial_no_cuerpo": "{quien} did not approve the special price in proposal {folio} for {cliente}: {nota}. Correct it and ask again.",
         "cob_asunto": "{folio}: {quien} worked on your service",
         "cob_cuerpo": ("{quien} worked on your service while covering "
                        "your portfolio. It is logged; this is just so "
@@ -420,6 +432,18 @@ TEXTOS = {
         "fre_vence_hoy": "{quien}: {documento} vence hoy",
         "fre_vencio": "{quien}: {documento} ya venció",
         "fre_vence_cuerpo": "Un documento del expediente del freelance {quien} está por vencer o ya venció. Con un documento vencido no se le asigna: pídele el nuevo y súbelo en Personal de seguridad → Freelance.",
+        # El precio especial de la propuesta del implantado (seccion 115).
+        "prop_folio": "Propuesta",
+        "prop_cliente": "Cliente",
+        "prop_mensual": "Mensual, antes de IVA",
+        "prop_motivo": "Por qué es especial",
+        "prop_nota": "Nota",
+        "prop_especial_asunto": "{folio}: precio especial por autorizar",
+        "prop_especial_cuerpo": "{quien} pide tu visto bueno al precio especial de la propuesta {folio} para {cliente}: {motivo}. Autorízalo o no desde tu bandeja de dirección de operaciones; sin él no se puede mandar.",
+        "prop_especial_si_asunto": "{folio}: precio especial autorizado",
+        "prop_especial_si_cuerpo": "{quien} autorizó el precio especial de la propuesta {folio} para {cliente}. Ya la puedes mandar.",
+        "prop_especial_no_asunto": "{folio}: precio especial no autorizado",
+        "prop_especial_no_cuerpo": "{quien} no autorizó el precio especial de la propuesta {folio} para {cliente}: {nota}. Corrígela y vuelve a pedirlo.",
         "cob_asunto": "{folio}: {quien} movió tu servicio",
         "cob_cuerpo": ("{quien} trabajó en tu servicio mientras cubría "
                        "tu cartera. Quedó registrado en la bitácora; "
@@ -710,6 +734,18 @@ TEXTOS = {
         "fre_vence_hoy": "{quien}: {documento} vence hoje",
         "fre_vencio": "{quien}: {documento} já venceu",
         "fre_vence_cuerpo": "Um documento do prontuário do freelance {quien} está para vencer ou já venceu. Com um documento vencido ele não é escalado: peça o novo e envie em Pessoal de segurança → Freelance.",
+        # O preço especial da proposta do implantado (seção 115).
+        "prop_folio": "Proposta",
+        "prop_cliente": "Cliente",
+        "prop_mensual": "Mensal, sem impostos",
+        "prop_motivo": "Por que é especial",
+        "prop_nota": "Nota",
+        "prop_especial_asunto": "{folio}: preço especial para autorizar",
+        "prop_especial_cuerpo": "{quien} pede a sua aprovação do preço especial da proposta {folio} para {cliente}: {motivo}. Autorize ou não na sua caixa da direção de operações; sem ela a proposta não pode ser enviada.",
+        "prop_especial_si_asunto": "{folio}: preço especial autorizado",
+        "prop_especial_si_cuerpo": "{quien} autorizou o preço especial da proposta {folio} para {cliente}. Você já pode enviá-la.",
+        "prop_especial_no_asunto": "{folio}: preço especial não autorizado",
+        "prop_especial_no_cuerpo": "{quien} não autorizou o preço especial da proposta {folio} para {cliente}: {nota}. Corrija-a e peça de novo.",
         "cob_asunto": "{folio}: {quien} mexeu no seu serviço",
         "cob_cuerpo": ("{quien} trabalhou no seu serviço enquanto "
                        "cobria a sua carteira. Ficou registrado; isto "

@@ -43,7 +43,13 @@ from datetime import date, datetime
 
 PUESTOS = ("personal de seguridad", "security driver")
 # La cuenta bancaria del empleado en Odoo: un many2one a res.partner.bank.
-CAMPO_CUENTA = "bank_account_id"
+# En la version saas~19.3 es la cuenta principal, primary_bank_account_id
+# (junto a la lista bank_account_ids); en las de antes, bank_account_id.
+# Se lee la que exista, en ese orden, y aqui siempre se ve con el nombre
+# nuevo. Con el viejo, la lectura de cada hora decia «sin permiso para
+# leer cuentas bancarias» con el usuario administrador (1 oct).
+CAMPO_CUENTA = "primary_bank_account_id"
+CAMPOS_DE_CUENTA = ("primary_bank_account_id", "bank_account_id")
 SIN_CUENTA = {"clabe": None, "banco": None, "titular_cuenta": None}
 ALIAS_PLAZA = {
     "estado de mexico": "ciudad de mexico",

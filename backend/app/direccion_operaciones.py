@@ -29,7 +29,7 @@ from app import reloj
 
 def bandeja(db: Session, ahora: datetime | None = None) -> dict:
     """Las secciones de la pantalla."""
-    from app import freelance
+    from app import freelance, propuesta
     relojes = reloj.Relojes(db, ahora)
     return {
         "momento": (ahora or datetime.now()).isoformat(),
@@ -38,6 +38,9 @@ def bandeja(db: Session, ahora: datetime | None = None) -> dict:
         # mandar por urgencia (seccion 111, decision 4): lo autoriza
         # direccion de operaciones, para ese servicio, con su motivo.
         "freelance_por_autorizar": freelance.urgencias(db, "pedida"),
+        # El precio especial de una propuesta de implantado (seccion 115,
+        # decision 2): sin su visto bueno no se puede mandar.
+        "precios_especiales": propuesta.por_autorizar(db),
         "plazos_vencidos": plazos_vencidos(db, relojes),
         "cobros_por_autorizar": cobros_por_autorizar(db),
         "hoy": tablero_de_hoy(db, relojes),

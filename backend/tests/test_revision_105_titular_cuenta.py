@@ -398,22 +398,35 @@ class OdooConCuentas(OdooFalso):
     """El Odoo de mentiras con las cuentas bancarias: `cuentas` son las
     filas de res.partner.bank por su id; `con_permiso` decide si la
     conexion ve el campo del empleado, y `bancos_accesibles` si puede
-    leer las cuentas a las que apunta."""
+    leer las cuentas a las que apunta. `campo` es como se llama en este
+    Odoo --la cuenta principal de saas~19.3, o bank_account_id en los de
+    antes--; `existe` dice si lo tiene, y `catalogo_accesible` si la
+    conexion puede leer ir.model.fields para saberlo."""
 
     def __init__(self, *empleados, cuentas=None, con_permiso=True,
-                 bancos_accesibles=True, **extra):
+                 bancos_accesibles=True, campo=odoo_personal.CAMPO_CUENTA,
+                 existe=True, catalogo_accesible=True, **extra):
         super().__init__(*empleados, **extra)
         self.cuentas = dict(cuentas or {})
         self.con_permiso = con_permiso
         self.bancos_accesibles = bancos_accesibles
+        self.campo = campo
+        self.existe = existe
+        self.catalogo_accesible = catalogo_accesible
 
     def campos(self, modelo, atributos=None):
         salida = super().campos(modelo, atributos)
-        if self.con_permiso:
-            salida[odoo_personal.CAMPO_CUENTA] = {"type": "many2one"}
+        if self.con_permiso and self.existe:
+            salida[self.campo] = {"type": "many2one"}
         return salida
 
     def leer(self, modelo, dominio, campos, archivados=False):
+        if modelo == "ir.model.fields":
+            if not self.catalogo_accesible:
+                raise odoo_api.NoResponde(
+                    "Odoo contesto 403: You are not allowed to access "
+                    "'Fields' (ir.model.fields) records.")
+            return [{"id": 1, "name": self.campo}] if self.existe else []
         if modelo != odoo_personal.MODELO_CUENTA:
             return super().leer(modelo, dominio, campos, archivados)
         self.lecturas.append(("bancos", list(campos)))
@@ -430,8 +443,9 @@ CUENTA = {"acc_number": "012180001234567890", "acc_holder_name": False,
           "bank_id": [3, "BBVA"], "partner_id": [77, "Agente Odoo 1"]}
 
 
-def _con_cuenta(n=1, cuenta_id=501, **cambios):
-    return empleado(n, bank_account_id=[cuenta_id, "BBVA 012180001234567890"],
+def _con_cuenta(n=1, cuenta_id=501, campo=odoo_personal.CAMPO_CUENTA,
+                **cambios):
+    return empleado(n, **{campo: [cuenta_id, "BBVA 012180001234567890"]},
                     **cambios)
 
 
@@ -472,14 +486,14 @@ def test_con_permiso_y_sin_cuenta_se_vacia(sin_personal_de_odoo, db):
     leer(db, odoo)
     assert _bancarios(db, 1)[0] == "012180001234567890"
 
-    odoo.cambiar(1, bank_account_id=False)
+    odoo.cambiar(1, primary_bank_account_id=False)
     informe = leer(db, odoo)
     assert [c["que"] for c in informe["cambios"]] == [["cuenta bancaria"]]
     assert informe["cuentas"] == {"con_cuenta": 0, "sin_cuenta": 1, "error": None}
     assert _bancarios(db, 1) == (None, None, None)
 
     # Una cuenta sin numero tampoco sirve para depositar.
-    odoo.cambiar(1, bank_account_id=[502, "sin numero"])
+    odoo.cambiar(1, primary_bank_account_id=[502, "sin numero"])
     odoo.cuentas[502] = {**CUENTA, "acc_number": False}
     leer(db, odoo)
     assert _bancarios(db, 1) == (None, None, None)
@@ -512,10 +526,48 @@ def test_sin_permiso_de_leer_cuentas_no_se_toca_lo_guardado(
 
     # Y una cuenta a la que el empleado apunta y no vino: pendiente, sin
     # tocar lo guardado.
-    odoo.cambiar(1, bank_account_id=[999, "otra"])
+    odoo.cambiar(1, primary_bank_account_id=[999, "otra"])
     informe = leer(db, odoo)
     assert informe["pendientes"][0]["falta"] == ["su cuenta bancaria no se pudo leer de Odoo"]
     assert _bancarios(db, 1)[0] == "012180001234567890"
+
+
+def test_la_cuenta_principal_y_la_de_antes(sin_personal_de_odoo, db):
+    """La version saas~19.3 trae la cuenta principal
+    (primary_bank_account_id); un Odoo de antes, bank_account_id. Las dos
+    se leen igual: con el nombre viejo, la lectura de cada hora decia
+    «sin permiso» con el usuario administrador (1 de octubre)."""
+    assert odoo_personal.CAMPO_CUENTA == "primary_bank_account_id"
+    de_antes = OdooConCuentas(_con_cuenta(1, campo="bank_account_id"),
+                              cuentas={501: CUENTA}, campo="bank_account_id")
+    informe = leer(db, de_antes)
+    assert informe["cuentas"] == {"con_cuenta": 1, "sin_cuenta": 0, "error": None}
+    assert _bancarios(db, 1)[0] == "012180001234567890"
+    # Se pidio con el nombre que tiene ese Odoo, no con el nuevo.
+    listas = [c for c in de_antes.lecturas if isinstance(c, list)]
+    assert any("bank_account_id" in c for c in listas)
+    assert not any(odoo_personal.CAMPO_CUENTA in c for c in listas)
+
+
+def test_el_aviso_dice_si_el_campo_no_existe_o_es_permiso(
+        sin_personal_de_odoo, db):
+    """Sin el campo, la lectura sigue sin cuentas y no toca lo guardado
+    (seccion 105), pero el aviso dice por que: que no existe en esta
+    version, que el usuario no lo puede leer, o que no se pudo saber."""
+    leer(db, OdooConCuentas(_con_cuenta(1), cuentas={501: CUENTA}))
+    casos = [
+        ({"existe": False}, "el campo de la cuenta bancaria no existe"),
+        ({"con_permiso": False}, "sin permiso para leer cuentas"),
+        ({"con_permiso": False, "catalogo_accesible": False},
+         "no se pudo leer el campo de la cuenta bancaria"),
+    ]
+    for opciones, aviso in casos:
+        odoo = OdooConCuentas(_con_cuenta(1), cuentas={501: CUENTA}, **opciones)
+        informe = leer(db, odoo)
+        assert informe["cuentas"]["error"].startswith(aviso), opciones
+        assert not [l for l in odoo.lecturas if l[0] == "bancos"]
+        assert _bancarios(db, 1) == ("012180001234567890", "BBVA", "Agente Odoo 1")
+    assert "primary_bank_account_id" in odoo_personal.NO_EXISTE_CUENTA
 
 
 def _con_deposito_pedido(cliente, sesion, datos, quien, offset):

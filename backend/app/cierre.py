@@ -87,18 +87,31 @@ def _se_ejecuto(j: m.Jornada) -> bool:
     return j.fin_real is not None or j.estatus == m.EstatusJornada.TERMINADA
 
 
-def emparejar_el_dia(db: Session, tarifario_id: int, j: m.Jornada) -> tuple:
+def con_paquetes_del_servicio(db: Session, servicio_id: int) -> bool:
+    """Si el cierre del servicio cobra los paquetes de la lista: la misma
+    regla con que se cotizo (`cot.usa_paquetes`, seccion 115). Sin
+    cotizacion autorizada, como siempre."""
+    vigente = cot.vigente(db, servicio_id)
+    return cot.con_paquetes(db, vigente) if vigente is not None else True
+
+
+def emparejar_el_dia(db: Session, tarifario_id: int, j: m.Jornada,
+                     con_paquetes: bool = True) -> tuple:
     """(pares, personas, unidades) del dia de un equipo (seccion 79).
 
     `pares`: [(paquete, asignacion de la persona, asignacion de la
     unidad)] --el rol que la lista del cliente tiene en paquete con una
     unidad que ese dia fue en el equipo--; `personas` y `unidades`: lo que
     no hizo pareja y se cobra suelto. La asignacion relevada no cuenta: el
-    cliente tuvo un conductor ese dia, no dos (ver `ejecutado`).
+    cliente tuvo un conductor ese dia, no dos (ver `ejecutado`). Sin
+    `con_paquetes` (seccion 115: gastos aparte con una lista cuyos
+    paquetes los traen) no hay pares: todo va suelto.
     """
     personas = [a for a in j.personal if not a.relevado_en]
     unidades = [a for a in j.vehiculos if not a.relevado_en]
     pares = []
+    if not con_paquetes:
+        return pares, personas, unidades
     for paquete in cot.paquetes_del_tarifario(db, tarifario_id, j.modalidad_id):
         while True:
             a = next((x for x in personas if x.rol_id == paquete.perfil_id), None)
@@ -113,13 +126,22 @@ def emparejar_el_dia(db: Session, tarifario_id: int, j: m.Jornada) -> tuple:
 
 
 def viaticos_en_paquete(db: Session, servicio: m.Servicio,
-                        tarifario_id: int) -> set:
+                        tarifario_id: int,
+                        con_paquetes: bool | None = None) -> set:
     """{(jornada, persona)} cuyos viaticos van dentro del paquete: los de
     quien fue en un paquete ese dia, si la lista del cliente dice que sus
     paquetes traen los viaticos (seccion 79; HASBRO). Esos no se le
-    facturan aparte."""
+    facturan aparte.
+
+    Desde la seccion 115 ese paquete solo se cobra con los gastos dentro
+    del precio: con gastos aparte no hay paquete y todos los viaticos se
+    facturan. `con_paquetes` vacio sale de la cotizacion del servicio."""
     tarifario = db.get(m.Tarifario, tarifario_id)
     if not tarifario or not tarifario.paquetes_con_viaticos:
+        return set()
+    if con_paquetes is None:
+        con_paquetes = con_paquetes_del_servicio(db, servicio.id)
+    if not con_paquetes:
         return set()
     dentro = set()
     for equipo in servicio.equipos:
@@ -130,11 +152,16 @@ def viaticos_en_paquete(db: Session, servicio: m.Servicio,
     return dentro
 
 
-def ejecutado(db: Session, servicio: m.Servicio, tarifario_id: int) -> dict:
+def ejecutado(db: Session, servicio: m.Servicio, tarifario_id: int,
+              con_paquetes: bool | None = None) -> dict:
     """Lo que realmente se presto, valuado al tarifario del cliente.
 
     Cada renglon dice su modalidad y su precio, para que el cierre lo
-    pueda decir renglon por renglon (seccion 79)."""
+    pueda decir renglon por renglon (seccion 79). Los paquetes, con la
+    misma regla que la cotizacion (seccion 115): `con_paquetes` vacio sale
+    de la cotizacion autorizada del servicio."""
+    if con_paquetes is None:
+        con_paquetes = con_paquetes_del_servicio(db, servicio.id)
     detalle = []
     total = CERO
     horas_extra_total = 0
@@ -181,7 +208,8 @@ def ejecutado(db: Session, servicio: m.Servicio, tarifario_id: int) -> dict:
             # cliente tiene en paquete con una unidad que ese dia fue en el
             # equipo se cobra con ella, en un solo renglon. Lo que no hace
             # pareja se cobra suelto, como siempre.
-            pares, personas, unidades = emparejar_el_dia(db, tarifario_id, j)
+            pares, personas, unidades = emparejar_el_dia(
+                db, tarifario_id, j, con_paquetes)
             for paquete, a, _ in pares:
                 precio = _d(paquete.precio)
                 linea = {"fecha": j.fecha.isoformat(), "equipo": equipo.alias,
@@ -451,7 +479,8 @@ def viaticos_por_cobrar(db: Session, servicio_id: int,
         return gastos_cotizados(cotizacion)
     servicio = db.get(m.Servicio, servicio_id)
     comprobado = sum((_d(v.monto_comprobado) for v in viaticos_facturables(
-        db, servicio, cotizacion.tarifario_id)), CERO)
+        db, servicio, cotizacion.tarifario_id,
+        cot.con_paquetes(db, cotizacion))), CERO)
     # En pesos; si la cotizacion es en dolares, a dolares (seccion 82).
     monto = _viatico_facturable(
         cotizacion, comprobado,
@@ -476,15 +505,17 @@ def viaticos_por_cobrar_local(db: Session, servicio_id: int, cotizacion,
         return tipo_cambio.a_local(monto, tc["tasa"]) if tc else monto
     servicio = db.get(m.Servicio, servicio_id)
     return sum((_d(v.monto_comprobado) for v in viaticos_facturables(
-        db, servicio, cotizacion.tarifario_id)), CERO)
+        db, servicio, cotizacion.tarifario_id,
+        cot.con_paquetes(db, cotizacion))), CERO)
 
 
 def viaticos_facturables(db: Session, servicio: m.Servicio,
-                         tarifario_id: int) -> list:
+                         tarifario_id: int,
+                         con_paquetes: bool | None = None) -> list:
     """El dinero del servicio que se le puede cobrar al cliente con gastos
     netos: todo, menos lo de quien fue en un paquete que ya los trae
     (seccion 79). Es lo que suma la factura y lo que lleva el desglose."""
-    dentro = viaticos_en_paquete(db, servicio, tarifario_id)
+    dentro = viaticos_en_paquete(db, servicio, tarifario_id, con_paquetes)
     return [v for v in viaticos_del_servicio(db, servicio.id)
             if (v.jornada_id, v.persona_id) not in dentro]
 
@@ -641,7 +672,8 @@ def comparar(db: Session, servicio_id: int) -> dict:
         "importe": _d(l.subtotal),
     } for l in cotizacion.lineas if l.tipo != m.TipoLinea.VIATICOS]
 
-    real = ejecutado(db, servicio, cotizacion.tarifario_id)
+    real = ejecutado(db, servicio, cotizacion.tarifario_id,
+                     cot.con_paquetes(db, cotizacion))
 
     # agrupar por clave
     mapa_cot, mapa_eje = {}, {}
@@ -746,7 +778,8 @@ def comparar(db: Session, servicio_id: int) -> dict:
     # viaticos no se cobra aparte (seccion 79): va dentro del paquete.
     en_paquete = CERO
     if not cotizacion.viaticos_incluidos:
-        dentro = viaticos_en_paquete(db, servicio, cotizacion.tarifario_id)
+        dentro = viaticos_en_paquete(db, servicio, cotizacion.tarifario_id,
+                                     cot.con_paquetes(db, cotizacion))
         en_paquete = sum((_d(v.monto_comprobado) for v in viaticos
                           if (v.jornada_id, v.persona_id) in dentro), CERO)
 
@@ -868,7 +901,8 @@ def rentabilidad(db: Session, servicio_id: int) -> dict:
     if not cotizacion:
         raise HTTPException(409, "El servicio no tiene cotizacion autorizada")
 
-    real = ejecutado(db, servicio, cotizacion.tarifario_id)
+    real = ejecutado(db, servicio, cotizacion.tarifario_id,
+                     cot.con_paquetes(db, cotizacion))
     # Con el cobro completo de una cancelacion (seccion 105) se le factura
     # la cotizacion tal cual: la utilidad y la comision se miden contra
     # eso, no contra lo trabajado. Los costos siguen siendo los de los
@@ -1600,7 +1634,8 @@ def _totales_de_la_cancelacion(db: Session, servicio: m.Servicio) -> tuple:
     if vigente is None:
         return None, None, None
     try:
-        trabajado = ejecutado(db, servicio, vigente.tarifario_id)["total"]
+        trabajado = ejecutado(db, servicio, vigente.tarifario_id,
+                              cot.con_paquetes(db, vigente))["total"]
     except HTTPException:
         trabajado = None
     return _d(vigente.total), trabajado, vigente.moneda.value

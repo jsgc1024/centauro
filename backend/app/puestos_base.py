@@ -62,7 +62,9 @@ PUESTOS: list[dict] = [
         # autorizaciones y el tablero de hoy. El puesto que ya existia en
         # produccion la tomo con la migracion d7f9a1b3c5e7 (crear_puestos
         # no pisa lo que ya esta). Cotizaciones (seccion 114): las arma y
-        # ve todas; el puesto que ya existe la toma con e3a5c7b9d1f4.
+        # ve todas; el puesto que ya existe la toma con e3a5c7b9d1f4. El
+        # precio especial de la propuesta del implantado (seccion 115) lo
+        # autoriza el; el puesto que ya existe lo toma con b8e1d4f6a9c3.
         "pantallas": ["panorama", "cotizaciones", "servicios", "implantados",
                       "equipo", "unidades", "bonos", "encuestas", "central",
                       "finanzas", "facturacion", "nomina", "catalogos",

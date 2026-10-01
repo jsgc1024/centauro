@@ -143,6 +143,7 @@ def _monedas(db: Session, cierres: list) -> dict[int, str | None]:
                 db.query(m.Cotizacion.servicio_id, m.Cotizacion.version,
                          m.Cotizacion.moneda)
                 .filter(m.Cotizacion.servicio_id.in_(trozo),
+                        m.Cotizacion.clase == "cotizacion",
                         m.Cotizacion.estatus
                         == m.EstatusCotizacion.AUTORIZADA)):
             if sid not in vigentes or version > vigentes[sid][0]:

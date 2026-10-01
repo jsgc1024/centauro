@@ -420,6 +420,9 @@ def sembrar_parametros() -> dict:
         # (seccion 114): los mismos que trajo su migracion.
         from app import cotizacion_cliente
         cotizacion_cliente.sembrar_mexico(db)
+        # Y los de la propuesta del implantado (seccion 115).
+        from app import propuesta
+        propuesta.sembrar_mexico(db)
 
         db.commit()
         return {"parametros_combustible": db.query(m.ParametroCombustible).count(),

@@ -14,9 +14,23 @@ from app import tipo_cambio
 # se hacen mas cotizaciones que servicios.
 SERIE = "EP/COT"
 
+# La propuesta del implantado vive en la misma tabla, con su serie
+# (seccion 115, decision 1): EP/PRO-0001. Lo que busca la cotizacion de
+# un servicio --la vigente, sus versiones, la que compara el cierre--
+# busca solo las de clase «cotizacion»: la propuesta queda en su
+# implantado, pero no es la cotizacion de nadie.
+COTIZACION = "cotizacion"
+PROPUESTA = "propuesta"
+SERIES = {COTIZACION: SERIE, PROPUESTA: "EP/PRO"}
 
-def folio_texto(numero: int | None) -> str | None:
-    return f"{SERIE}-{numero:04d}" if numero else None
+
+def folio_texto(numero: int | None, clase: str = COTIZACION) -> str | None:
+    return f"{SERIES[clase]}-{numero:04d}" if numero else None
+
+
+def de_cotizacion(consulta):
+    """Solo las cotizaciones: sin las propuestas del implantado."""
+    return consulta.filter(m.Cotizacion.clase == COTIZACION)
 
 
 def _tarifario_de(db: Session, servicio: m.Servicio) -> m.Tarifario:
@@ -120,6 +134,48 @@ def nombre_del_paquete(tarifa: m.TarifaPaquete) -> str:
     return f"{tarifa.perfil.nombre} + {tarifa.categoria.nombre}"
 
 
+def usa_paquetes(tarifario: m.Tarifario | None, gastos: str) -> bool:
+    """Si el conductor y la unidad del mismo dia van en el paquete de la
+    lista (seccion 115, regla de Salvador del 1 de octubre).
+
+    El paquete de una lista cuyos paquetes traen los gastos --«Todo
+    incluido», como PE · General Mexico-- solo se usa cuando los gastos
+    operativos van dentro del precio. Con monto fijo o por comprobar el
+    paquete ya no cuadra: el cliente pagaria los gastos dos veces. Ahi el
+    conductor y la unidad se cotizan a su precio unitario, sin gastos, y
+    los gastos van aparte segun el modo. La lista cuyos paquetes no traen
+    gastos los empareja en cualquier modo, como siempre.
+
+    Vale igual para la cotizacion --la vista previa, al guardarla y la de
+    Cotizaciones-- que para el cierre y la factura: lo cotizado y lo
+    cobrado se comparan igual.
+    """
+    if tarifario is None or not tarifario.paquetes_con_viaticos:
+        return True
+    return gastos == GASTOS_DENTRO
+
+
+def modo_de_las_lineas(viaticos_incluidos: bool, lineas: list[dict]) -> str:
+    """El modo de gastos de lo que se va a cotizar: netos si no van
+    incluidos; con un renglon de gastos con monto, monto fijo; si no,
+    dentro del precio. Es `modo_de_gastos` antes de que exista la
+    cotizacion."""
+    if not viaticos_incluidos:
+        return GASTOS_COMPROBAR
+    if any(m.TipoLinea(l["tipo"]) == m.TipoLinea.VIATICOS
+           and Decimal(str(l.get("precio_unitario") or 0)) > 0 for l in lineas):
+        return GASTOS_FIJOS
+    return GASTOS_DENTRO
+
+
+def con_paquetes(db: Session, cotizacion: m.Cotizacion) -> bool:
+    """`usa_paquetes` de una cotizacion que ya existe: con su lista y su
+    modo de gastos."""
+    tarifario = (db.get(m.Tarifario, cotizacion.tarifario_id)
+                 if cotizacion.tarifario_id else None)
+    return usa_paquetes(tarifario, modo_de_gastos(cotizacion))
+
+
 def emparejar(roles: dict, unidades: dict, paquetes: list) -> list[tuple]:
     """[(paquete, cuantos)] del dia de un equipo. `roles`: {perfil: cuantos}
     y `unidades`: {categoria: cuantas}; lo que se va en paquetes se les
@@ -174,7 +230,7 @@ def generar(db: Session, servicio_id: int, lineas: list[dict],
 
 
 def _versiones(db: Session, servicio_id: int) -> list[m.Cotizacion]:
-    return (db.query(m.Cotizacion)
+    return (de_cotizacion(db.query(m.Cotizacion))
             .filter_by(servicio_id=servicio_id)
             .order_by(m.Cotizacion.version.desc()).all())
 
@@ -193,7 +249,7 @@ def _armar(db: Session, servicio: m.Servicio, tarifario: m.Tarifario,
         creada_por_id=creada_por_id, motivo_recotizacion=motivo)
     # La recotizacion de una que nacio en Cotizaciones (seccion 114)
     # sigue con su folio: es la version siguiente de la misma.
-    anterior = (db.query(m.Cotizacion)
+    anterior = (de_cotizacion(db.query(m.Cotizacion))
                 .filter(m.Cotizacion.servicio_id == servicio_id,
                         m.Cotizacion.folio.isnot(None))
                 .order_by(m.Cotizacion.version.desc()).first())
@@ -211,8 +267,10 @@ def _armar(db: Session, servicio: m.Servicio, tarifario: m.Tarifario,
             modalidad_por_dia[(equipo.alias, j.fecha)] = j.modalidad_id
 
     total = Decimal("0")
-    for renglon in renglones_con_precio(db, tarifario.id, modalidad_por_dia,
-                                        lineas):
+    for renglon in renglones_con_precio(
+            db, tarifario.id, modalidad_por_dia, lineas,
+            con_paquetes=usa_paquetes(
+                tarifario, modo_de_las_lineas(viaticos_incluidos, lineas))):
         db.add(m.LineaCotizacion(cotizacion_id=cotizacion.id, **renglon))
         total += renglon["subtotal"]
     cotizacion.total = total
@@ -233,7 +291,8 @@ def _producto(db: Session, tarifa, cache: dict) -> str | None:
 
 def renglones_con_precio(db: Session, tarifario_id: int,
                          modalidad_por_dia: dict,
-                         lineas: list[dict]) -> list[dict]:
+                         lineas: list[dict],
+                         con_paquetes: bool = True) -> list[dict]:
     """Los renglones con el precio de la lista, sin guardar nada.
 
     Cada linea: {fecha, equipo_clave, tipo, perfil_id | categoria_id,
@@ -246,6 +305,8 @@ def renglones_con_precio(db: Session, tarifario_id: int,
     El rol y la unidad del mismo dia y el mismo equipo que la lista del
     cliente tiene en paquete se cotizan como paquete (seccion 79): asi se
     cobran al cerrar, y lo cotizado y lo ejecutado se comparan igual.
+    Sin `con_paquetes` --gastos aparte con una lista cuyos paquetes traen
+    los gastos (`usa_paquetes`)--, cada uno va a su precio unitario.
     """
     # Primero, que se va en paquete cada dia de cada equipo.
     grupos = {}
@@ -269,7 +330,8 @@ def renglones_con_precio(db: Session, tarifario_id: int,
         disponibles_r, disponibles_u = dict(grupo["roles"]), dict(grupo["unidades"])
         grupo["paquetes"] = emparejar(
             disponibles_r, disponibles_u,
-            paquetes_del_tarifario(db, tarifario_id, grupo["modalidad_id"]))
+            paquetes_del_tarifario(db, tarifario_id, grupo["modalidad_id"])
+            if con_paquetes else [])
         # Cuanto de cada rol y de cada unidad ya va dentro de un paquete.
         grupo["en_paquete_r"] = {k: grupo["roles"][k] - v
                                  for k, v in disponibles_r.items()}
@@ -321,6 +383,13 @@ def renglones_con_precio(db: Session, tarifario_id: int,
             continue
 
         if tipo == m.TipoLinea.PAQUETE:
+            if not con_paquetes:
+                raise HTTPException(400, {
+                    "mensaje": "Con los gastos aparte no va el paquete de la "
+                               "lista: trae los gastos dentro",
+                    "que_hacer": "Cotiza el rol y la unidad por separado; "
+                                 "los gastos van en su modo.",
+                    "clave": "paquete_con_gastos"})
             tarifa = precio_paquete(db, tarifario_id, linea.get("perfil_id"),
                                     linea.get("categoria_id"), modalidad_id)
             renglon(fecha, clave, modalidad_id, tipo, tarifa.perfil_id,
@@ -351,7 +420,8 @@ def renglones_con_precio(db: Session, tarifario_id: int,
 
 def autorizar(db: Session, cotizacion_id: int, autorizada_por: str) -> m.Cotizacion:
     cotizacion = db.get(m.Cotizacion, cotizacion_id)
-    if not cotizacion:
+    # La propuesta del implantado se autoriza en su pantalla (seccion 115).
+    if not cotizacion or cotizacion.clase != COTIZACION:
         raise HTTPException(404, f"No existe la cotizacion {cotizacion_id}")
     if cotizacion.estatus == m.EstatusCotizacion.SUSTITUIDA:
         raise HTTPException(409, "Esa cotizacion fue sustituida por una version posterior")
@@ -437,8 +507,9 @@ def tipo_de_cambio(db: Session, cotizacion: m.Cotizacion) -> dict | None:
 
 
 def vigente(db: Session, servicio_id: int) -> m.Cotizacion | None:
-    """La cotizacion autorizada mas reciente."""
-    return (db.query(m.Cotizacion)
+    """La cotizacion autorizada mas reciente. La propuesta del implantado
+    no cuenta (seccion 115): el mes se cobra con su contrato."""
+    return (de_cotizacion(db.query(m.Cotizacion))
             .filter_by(servicio_id=servicio_id,
                        estatus=m.EstatusCotizacion.AUTORIZADA)
             .order_by(m.Cotizacion.version.desc())
@@ -463,7 +534,7 @@ def al_eliminar_equipo(db: Session, servicio: m.Servicio, eliminado: str,
     `con_gastos`.
     """
     tocados = 0
-    cotizaciones = (db.query(m.Cotizacion)
+    cotizaciones = (de_cotizacion(db.query(m.Cotizacion))
                     .filter_by(servicio_id=servicio.id).all())
     if not cotizaciones:
         return 0

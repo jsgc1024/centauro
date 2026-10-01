@@ -3,10 +3,15 @@
 
 El dia que el equipo lleva ese rol con esa unidad, y la lista del cliente
 pacta el paquete, se cobra el paquete: un solo renglon, en la cotizacion,
-en el cierre y en la factura. Lo que no hace pareja se cobra suelto. Y si
-la lista dice que sus paquetes traen los viaticos --HASBRO--, los de quien
-fue en el paquete no se facturan aparte.
+en el cierre y en la factura. Lo que no hace pareja se cobra suelto.
+
+Y la regla de Salvador del 1 de octubre (seccion 115): si los paquetes de
+la lista traen los gastos --«Todo incluido», como PE · General Mexico o
+HASBRO--, el paquete solo va con los gastos dentro del precio. Con monto
+fijo o por comprobar, el conductor y la unidad van a su precio unitario y
+los gastos aparte, segun su modo.
 """
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -64,9 +69,10 @@ def paquete(db, datos):
 
 
 def _trabajado(cliente, sesion, datos, offset, dias=2, horas_extra=0,
-               agente=False):
+               agente=False, incluidos=False):
     """Servicio cotizado --conductor y SUV blindada cada dia, y un agente
-    si se pide-- y trabajado con Juan y la Suburban."""
+    si se pide-- y trabajado con Juan y la Suburban. Con gastos netos, o
+    dentro del precio con `incluidos`."""
     h = sesion("consultor")
     servicio = crear_servicio(
         cliente, h, datos,
@@ -84,7 +90,7 @@ def _trabajado(cliente, sesion, datos, offset, dias=2, horas_extra=0,
                            "perfil_id": datos["perfiles"]["agente_seguridad"]["id"]})
     r = cliente.post("/cotizaciones", headers=h,
                      json={"servicio_id": servicio["id"], "lineas": lineas,
-                           "viaticos_incluidos": False})
+                           "viaticos_incluidos": incluidos})
     assert r.status_code == 201, r.text
     cliente.post(f"/cotizaciones/{r.json()['cotizacion_id']}/autorizar",
                  json={"autorizada_por": "Cliente de prueba"}, headers=h)
@@ -249,31 +255,159 @@ def _viaticos(db, servicio, monto):
     db.commit()
 
 
-def test_los_viaticos_van_dentro_del_paquete_si_la_lista_lo_dice(
+def _con_viaticos(cliente, sesion, tarifario_id):
+    """Finanzas marca que los paquetes de la lista traen los gastos."""
+    r = cliente.patch(f"/tarifarios/{tarifario_id}/viaticos",
+                      json={"incluidos": True}, headers=sesion("finanzas"))
+    assert r.status_code == 200, r.text
+
+
+def test_con_gastos_netos_el_paquete_todo_incluido_no_va(
         cliente, sesion, datos, paquete, db):
+    """Antes (seccion 79) se cobraba el paquete y los viaticos de quien iba
+    en el no se facturaban. Desde la seccion 115 ese paquete solo va con
+    los gastos dentro: con gastos netos, conductor y unidad a su precio
+    unitario, y todos los viaticos comprobados a la factura."""
+    _con_viaticos(cliente, sesion, paquete)
     servicio = _trabajado(cliente, sesion, datos, offset=460)
     _viaticos(db, servicio, Decimal("500"))
 
-    # Sin marcar: gastos netos, se facturan los mil.
+    cotizaciones = cliente.get(f"/cotizaciones/servicio/{servicio['id']}",
+                               headers=sesion("consultor")).json()
+    assert sorted(l["tipo"] for l in cotizaciones[-1]["lineas"]) == [
+        "recurso", "recurso", "vehiculo", "vehiculo"]
+    # El cierre cobra igual que como se cotizo: lo cotizado y lo cobrado
+    # se comparan igual.
     cmp = comparativo(cliente, sesion, servicio)
-    assert float(cmp["gastos"]["a_facturar"]) == 1000
-    assert float(cmp["gastos"]["en_paquete"]) == 0
-
-    # HASBRO: sus paquetes traen los viaticos del dia.
-    r = cliente.patch(f"/tarifarios/{paquete}/viaticos", json={"incluidos": True},
-                      headers=sesion("finanzas"))
-    assert r.status_code == 200, r.text
-    cmp = comparativo(cliente, sesion, servicio)
+    assert sorted(r["tipo"] for r in cmp["ejecutado"]["renglones"]) == [
+        "recurso", "vehiculo"]
+    assert not [d for d in cmp["desviaciones"] if d["tipo"] in (
+        "recurso_no_cotizado", "dias_de_menos", "dias_de_mas")]
     assert float(cmp["gastos"]["comprobado"]) == 1000
-    assert float(cmp["gastos"]["en_paquete"]) == 1000
-    assert float(cmp["gastos"]["a_facturar"]) == 0
+    assert float(cmp["gastos"]["en_paquete"]) == 0
+    assert float(cmp["gastos"]["a_facturar"]) == 1000
     db.expire_all()
     cotizacion = cot.vigente(db, servicio["id"])
-    assert motor_cierre.viaticos_por_cobrar(db, servicio["id"], cotizacion) == 0
-    # Y tampoco van en el desglose que se le manda al cliente.
+    assert motor_cierre.viaticos_por_cobrar(db, servicio["id"], cotizacion) == 1000
+    # Y van todos en el desglose que se le manda al cliente.
     facturables = motor_cierre.viaticos_facturables(
         db, db.get(m.Servicio, servicio["id"]), cotizacion.tarifario_id)
-    assert facturables == []
+    assert len(facturables) == 2
+
+
+def test_con_los_gastos_dentro_va_el_paquete_todo_incluido(
+        cliente, sesion, datos, paquete, db):
+    _con_viaticos(cliente, sesion, paquete)
+    servicio = _trabajado(cliente, sesion, datos, offset=465, incluidos=True)
+    cotizaciones = cliente.get(f"/cotizaciones/servicio/{servicio['id']}",
+                               headers=sesion("consultor")).json()
+    assert [l["tipo"] for l in cotizaciones[-1]["lineas"]] == [
+        "paquete", "paquete"]
+    cmp = comparativo(cliente, sesion, servicio)
+    assert [r["tipo"] for r in cmp["ejecutado"]["renglones"]] == ["paquete"]
+    cierre = cliente.post(f"/cierre/servicio/{servicio['id']}/abrir",
+                          headers=sesion("consultor")).json()
+    cuerpo = facturacion.armar(db, db.get(m.Cierre, cierre["cierre_id"]))
+    assert [c["tipo"] for c in cuerpo["conceptos"]] == ["paquete", "paquete"]
+
+
+def test_la_vista_previa_con_monto_fijo_no_usa_el_paquete(
+        cliente, sesion, datos, paquete):
+    _con_viaticos(cliente, sesion, paquete)
+    h = sesion("consultor")
+    servicio = crear_servicio(
+        cliente, h, datos,
+        [jornada(manana(468), datos["modalidades"]["full_day"]["id"])],
+        consultor_id=datos["personal"]["Ana Solis"]["id"])
+    fecha = servicio["equipos"][0]["jornadas"][0]["fecha"]
+    lleva = [{"fecha": fecha, "tipo": "recurso",
+              "perfil_id": datos["perfiles"]["conductor_seguridad"]["id"]},
+             {"fecha": fecha, "tipo": "vehiculo",
+              "categoria_id": datos["categorias"]["suv_blindada"]["id"]}]
+    vistas = {}
+    for gastos, monto in (("dentro", None), ("fijo", "1500"),
+                          ("comprobar", None)):
+        r = cliente.post("/cotizaciones/vista-previa", headers=h, json={
+            "servicio_id": servicio["id"], "lineas": lleva,
+            "gastos": gastos, "monto_gastos": monto})
+        assert r.status_code == 200, r.text
+        vistas[gastos] = [l["tipo"] for l in r.json()["lineas"]]
+    assert vistas == {"dentro": ["paquete"],
+                      "fijo": ["recurso", "vehiculo", "viaticos"],
+                      "comprobar": ["recurso", "vehiculo"]}
+
+
+def test_la_lista_cuyos_paquetes_no_traen_gastos_los_junta_siempre(
+        cliente, sesion, datos, paquete):
+    """Sin la marca de finanzas el paquete no trae gastos: va en cualquier
+    modo, como siempre (los de arriba en netos lo prueban tambien)."""
+    servicio = _trabajado(cliente, sesion, datos, offset=475, dias=1)
+    cotizaciones = cliente.get(f"/cotizaciones/servicio/{servicio['id']}",
+                               headers=sesion("consultor")).json()
+    assert [l["tipo"] for l in cotizaciones[-1]["lineas"]] == ["paquete"]
+
+
+@pytest.fixture
+def todo_incluido(db, datos):
+    """Una lista como PE · General Mexico, con las cifras de Salvador: el
+    conductor a $3,255, la CUV a $3,675 y el paquete conductor + CUV
+    «Todo incluido» a $8,430, dia completo, con los gastos dentro."""
+    completo = datos["modalidades"]["full_day"]["id"]
+    conductor = datos["perfiles"]["conductor_seguridad"]["id"]
+    cuv = datos["categorias"]["cuv"]["id"]
+    tarifario = m.Tarifario(nombre="PE · General México (prueba)",
+                            pais_id=datos["mx"]["id"], moneda=m.Moneda.MXN,
+                            vigencia_desde=date(2026, 1, 1),
+                            paquetes_con_viaticos=True)
+    db.add(tarifario)
+    db.flush()
+    db.add(m.TarifaRecurso(tarifario_id=tarifario.id, perfil_id=conductor,
+                           modalidad_id=completo, precio=Decimal("3255"),
+                           precio_hora_extra=Decimal("270")))
+    db.add(m.TarifaVehiculo(tarifario_id=tarifario.id, categoria_id=cuv,
+                            modalidad_id=completo, precio=Decimal("3675")))
+    db.add(m.TarifaPaquete(tarifario_id=tarifario.id, perfil_id=conductor,
+                           categoria_id=cuv, modalidad_id=completo,
+                           precio=Decimal("8430"), origen="propio"))
+    cliente = db.get(m.Cliente, datos["cliente_id"])
+    antes = cliente.tarifario_id
+    cliente.tarifario_id = tarifario.id
+    db.commit()
+    yield tarifario
+    cliente = db.get(m.Cliente, datos["cliente_id"])
+    cliente.tarifario_id = antes
+    db.query(m.Cotizacion).filter_by(tarifario_id=tarifario.id).update(
+        {"tarifario_id": None})
+    db.commit()
+    db.delete(db.get(m.Tarifario, tarifario.id))
+    db.commit()
+
+
+@pytest.mark.parametrize("gastos,monto,esperado,servicio", [
+    ("dentro", None, [("paquete", 8430.0)], 8430),
+    ("fijo", "1500", [("recurso", 3255.0), ("vehiculo", 3675.0),
+                      ("viaticos", 1500.0)], 6930),
+    ("comprobar", None, [("recurso", 3255.0), ("vehiculo", 3675.0)], 6930),
+])
+def test_pe_general_mexico_conductor_y_cuv(cliente, sesion, datos, todo_incluido,
+                                           gastos, monto, esperado, servicio):
+    """La prueba de Salvador, en Cotizaciones: gastos incluidos, el paquete
+    de $8,430; monto fijo o por comprobar, $3,255 + $3,675 = $6,930 y los
+    gastos aparte."""
+    r = cliente.post("/cotizaciones/eventual/precios", headers=sesion("consultor"),
+                     json={"cliente_id": datos["cliente_id"], "gastos": gastos,
+                           "monto_gastos": monto, "equipos": [{
+                               "plaza_id": datos["cdmx"]["id"],
+                               "lleva": [{"tipo": "recurso", "cantidad": 1,
+                                          "id": datos["perfiles"]["conductor_seguridad"]["id"]},
+                                         {"tipo": "vehiculo", "cantidad": 1,
+                                          "id": datos["categorias"]["cuv"]["id"]}],
+                               "dias": [{"fecha": str(manana(480)),
+                                         "modalidad_id": datos["modalidades"]["full_day"]["id"]}]}]})
+    assert r.status_code == 200, r.text
+    lineas = r.json()["lineas"]
+    assert [(l["tipo"], l["precio"]) for l in lineas] == esperado
+    assert sum(l["importe"] for l in lineas if l["tipo"] != "viaticos") == servicio
 
 
 def test_solo_finanzas_marca_los_viaticos_del_paquete(cliente, sesion, datos, paquete):

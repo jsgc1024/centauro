@@ -2755,6 +2755,22 @@ class RegistroAdmin(Base):
 
 # ================================================================ COTIZACION
 
+class DiasServicio(str, enum.Enum):
+    """Que dias de la semana cubre el implantado.
+
+    El fin de semana que no entra aqui no es servicio: no se cobra, nadie
+    se presenta y en el calendario se ve gris. El que si entra se cobra
+    como dia adicional y hay que decir quien lo cubre, porque el que
+    trabajo de lunes a viernes descansa.
+
+    Vive aqui, antes de la cotizacion, porque la propuesta del implantado
+    (seccion 115) tambien lo dice: es su modalidad.
+    """
+    LUNES_VIERNES = "lunes_viernes"
+    LUNES_SABADO = "lunes_sabado"
+    TODOS = "todos"
+
+
 class EstatusCotizacion(str, enum.Enum):
     BORRADOR = "borrador"
     ENVIADA = "enviada"
@@ -2789,15 +2805,29 @@ class Cotizacion(Base):
     esta en Odoo--, quien la pidio, quien la firma, sus dias y el PDF que
     se mando. La misma fila es la que queda autorizada en el servicio: lo
     que el cliente vio es lo que compara el cierre, sin copiar precios.
+
+    Y desde la seccion 115, la propuesta del implantado (`clase`
+    «propuesta»): la misma vida --folio con version, PDF, mandarla,
+    autorizarla, rechazarla, vencer-- con su propia serie, EP/PRO, y lo
+    que lleva al mes en vez de dias: sus puestos y unidades
+    (`PosicionPropuesta`), la modalidad (`dias_servicio`), la jornada, el
+    inicio y el alcance. Cuando el cliente la autoriza nace el implantado
+    y la propuesta queda en el (`servicio_id`); el mes se cobra con sus
+    terminos. Nunca es la cotizacion autorizada de un eventual: lo que
+    busca la de un servicio busca solo las de clase «cotizacion».
     """
     __tablename__ = "cotizacion"
-    __table_args__ = (UniqueConstraint("folio", "version"),)
+    __table_args__ = (UniqueConstraint("clase", "folio", "version"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     servicio_id: Mapped[int | None] = mapped_column(
         ForeignKey("servicio.id"), nullable=True)
     version: Mapped[int] = mapped_column(Integer, default=1)
-    tarifario_id: Mapped[int] = mapped_column(ForeignKey("tarifario.id"))
+    # La lista con la que se cotizo. La propuesta del implantado puede no
+    # tener --el prospecto, o el cliente sin lista de implantados: todo
+    # su precio es especial (seccion 115)--.
+    tarifario_id: Mapped[int | None] = mapped_column(
+        ForeignKey("tarifario.id"), nullable=True)
     moneda: Mapped[Moneda] = mapped_column(Enum(Moneda))
     # Si la cotizacion es en otra moneda que la del pais --Amazon, en
     # dolares--, el tipo de cambio que estaba puesto cuando se autorizo
@@ -2889,6 +2919,58 @@ class Cotizacion(Base):
     servicio_folio: Mapped[str | None] = mapped_column(String(24),
                                                        nullable=True)
 
+    # ------------------------------ la propuesta del implantado (seccion 115)
+    #
+    # «cotizacion» --la del eventual, la de siempre-- o «propuesta». Cada
+    # una con su serie: EP/COT-0001 y EP/PRO-0001 son numeros distintos.
+    clase: Mapped[str] = mapped_column(String(12), default="cotizacion",
+                                       server_default="cotizacion")
+    # La ciudad donde se presta, y la modalidad (decision 3 de Salvador):
+    # de lunes a viernes, 22 dias al mes; de lunes a sabado, 26; o el mes
+    # completo, 30. El mensual de cada puesto es su precio por dia por
+    # esos dias; el dia fuera de la modalidad se cobra como adicional.
+    plaza_id: Mapped[int | None] = mapped_column(ForeignKey("plaza.id"),
+                                                 nullable=True)
+    dias_servicio: Mapped[DiasServicio | None] = mapped_column(
+        Enum(DiasServicio), nullable=True)
+    # La jornada que se le ofrece al cliente --la del pais si no se
+    # cambia-- y la hora del encuentro si ya se sabe.
+    horas_jornada: Mapped[float | None] = mapped_column(Numeric(4, 2),
+                                                        nullable=True)
+    hora_presentacion: Mapped[str | None] = mapped_column(String(8),
+                                                          nullable=True)
+    inicio: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # La hora extra del equipo cuando se escribe. Vacia, la de la lista:
+    # la suma de la de cada rol, porque el dia que el equipo se queda se
+    # queda cada uno.
+    precio_hora_extra: Mapped[float | None] = mapped_column(Numeric(12, 2),
+                                                            nullable=True)
+    # El alcance del servicio como lo lee el cliente. Vacio, el de
+    # Catalogos de cada rol que lleva; escrito, el de esta propuesta.
+    alcance: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # El precio especial (decision 2): el que no sale de la lista de
+    # implantados del cliente --o el cliente que no tiene-- lo autoriza
+    # direccion de operaciones antes de mandarla. `especial_estatus`:
+    # vacio (no lo ha pedido), pedido, autorizado o rechazado. La huella
+    # es la de los precios que se autorizaron: si se cambian, se vuelve a
+    # pedir.
+    especial_motivo: Mapped[str | None] = mapped_column(String(400),
+                                                        nullable=True)
+    especial_estatus: Mapped[str | None] = mapped_column(String(12),
+                                                         nullable=True)
+    especial_pedido_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    especial_pedido_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    especial_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    especial_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    especial_nota: Mapped[str | None] = mapped_column(String(400),
+                                                      nullable=True)
+    especial_huella: Mapped[str | None] = mapped_column(String(64),
+                                                        nullable=True)
+
     servicio: Mapped["Servicio | None"] = relationship()
     creada_por: Mapped["Persona | None"] = relationship(foreign_keys=[creada_por_id])
     cliente: Mapped["Cliente | None"] = relationship()
@@ -2903,6 +2985,63 @@ class Cotizacion(Base):
         back_populates="cotizacion", cascade="all, delete-orphan")
     archivos: Mapped[list["ArchivoCotizacion"]] = relationship(
         back_populates="cotizacion", cascade="all, delete-orphan")
+    posiciones: Mapped[list["PosicionPropuesta"]] = relationship(
+        back_populates="cotizacion", cascade="all, delete-orphan",
+        order_by="PosicionPropuesta.orden")
+    plaza: Mapped["Plaza | None"] = relationship()
+    especial_pedido_por: Mapped["Persona | None"] = relationship(
+        foreign_keys=[especial_pedido_por_id])
+    especial_por: Mapped["Persona | None"] = relationship(
+        foreign_keys=[especial_por_id])
+
+
+class PosicionPropuesta(Base):
+    """Lo que lleva al mes la propuesta del implantado (seccion 115): un
+    puesto, una unidad, o el conductor con su unidad en un solo precio si
+    la lista del cliente lo pacta.
+
+    `precio_mes` es lo que el cliente lee y paga al mes por cada uno: el
+    de la lista --su precio por dia por los dias de la modalidad-- o el
+    que se escribio, que entonces es especial. `precio_dia` es el mismo
+    precio por dia: el del dia adicional y el del primer mes que empieza
+    a medias. `precio_hora_extra` es la del rol en la lista: con ella se
+    suma la del equipo. Lo que decia la lista del dia se guarda junto,
+    para ver contra que se compara lo especial.
+    """
+    __tablename__ = "posicion_propuesta"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cotizacion_id: Mapped[int] = mapped_column(
+        ForeignKey("cotizacion.id", ondelete="CASCADE"), index=True)
+    orden: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # recurso | vehiculo | paquete
+    tipo: Mapped[str] = mapped_column(String(10))
+    perfil_id: Mapped[int | None] = mapped_column(
+        ForeignKey("perfil_personal.id"), nullable=True)
+    categoria_id: Mapped[int | None] = mapped_column(
+        ForeignKey("categoria_vehiculo.id"), nullable=True)
+    cantidad: Mapped[int] = mapped_column(Integer, default=1,
+                                          server_default="1")
+    precio_dia: Mapped[float | None] = mapped_column(Numeric(12, 2),
+                                                     nullable=True)
+    precio_mes: Mapped[float | None] = mapped_column(Numeric(12, 2),
+                                                     nullable=True)
+    precio_hora_extra: Mapped[float | None] = mapped_column(Numeric(12, 2),
+                                                            nullable=True)
+    # Si el precio del mes no es el de la lista --o la lista no tiene--.
+    especial: Mapped[bool] = mapped_column(Boolean, default=False,
+                                           server_default=false())
+    lista_precio_dia: Mapped[float | None] = mapped_column(Numeric(12, 2),
+                                                           nullable=True)
+    # El producto de Odoo del que salio el precio, y como lo lee el
+    # cliente en el PDF --«Conductor de seguridad bilingüe»--.
+    producto: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    descripcion: Mapped[str | None] = mapped_column(String(200),
+                                                    nullable=True)
+
+    cotizacion: Mapped[Cotizacion] = relationship(back_populates="posiciones")
+    perfil: Mapped["PerfilPersonal | None"] = relationship()
+    categoria: Mapped["CategoriaVehiculo | None"] = relationship()
 
 
 class LineaCotizacion(Base):
@@ -3023,13 +3162,18 @@ class TextoCotizacion(Base):
 
     `clave`: incluye_dentro | incluye_fijo | incluye_comprobar | pago |
     aceptacion | cancelacion | cierre.
+
+    Y los de la propuesta del implantado (seccion 115), que empiezan con
+    `pro_` --lo que incluye y lo que no, los viaticos, las
+    responsabilidades, la aceptacion-- y el alcance de cada rol,
+    `alcance:<codigo del rol>`.
     """
     __tablename__ = "texto_cotizacion"
     __table_args__ = (UniqueConstraint("pais_id", "clave", "idioma"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     pais_id: Mapped[int] = mapped_column(ForeignKey("pais.id"))
-    clave: Mapped[str] = mapped_column(String(30))
+    clave: Mapped[str] = mapped_column(String(60))
     idioma: Mapped[str] = mapped_column(String(2))
     texto: Mapped[str] = mapped_column(Text)
 
@@ -3226,19 +3370,6 @@ class Desviacion(Base):
 
 # ================================================================ IMPLANTADOS
 
-class DiasServicio(str, enum.Enum):
-    """Que dias de la semana cubre el implantado.
-
-    El fin de semana que no entra aqui no es servicio: no se cobra, nadie
-    se presenta y en el calendario se ve gris. El que si entra se cobra
-    como dia adicional y hay que decir quien lo cubre, porque el que
-    trabajo de lunes a viernes descansa.
-    """
-    LUNES_VIERNES = "lunes_viernes"
-    LUNES_SABADO = "lunes_sabado"
-    TODOS = "todos"
-
-
 class EsquemaCotizacionImplantado(str, enum.Enum):
     POR_DIA = "por_dia"              # 22 dias base mas fines de semana aparte
     MES_COMPLETO = "mes_completo"    # un costo total por el mes, con todo incluido
@@ -3277,6 +3408,15 @@ class ContratoImplantado(Base):
     # limpio el dia 1. Vacio quiere decir mes completo.
     desde_dia: Mapped[int | None] = mapped_column(Integer, nullable=True)
     dias_base: Mapped[int] = mapped_column(Integer, default=22)
+    # Los dias que cubre el precio fijo del mes en las modalidades de la
+    # propuesta (seccion 115, decision 3 de Salvador): 22 de lunes a
+    # viernes, 26 de lunes a sabado, 30 el mes completo. Con el, el dia
+    # trabajado fuera de la modalidad se cobra aparte como dia adicional y
+    # el primer mes que empieza a medio mes se cobra por dia de servicio
+    # (el mensual entre estos dias). Vacio, el precio fijo de antes, con
+    # todo incluido. Pasa al mes siguiente; ver `implantado.base_del_mensual`.
+    dias_del_mensual: Mapped[int | None] = mapped_column(Integer,
+                                                         nullable=True)
     hora_presentacion: Mapped[str] = mapped_column(String(8), default="08:00:00")
     modalidad_id: Mapped[int] = mapped_column(ForeignKey("modalidad.id"))
     # Las horas de la jornada y las de descanso de ESTE acuerdo (seccion

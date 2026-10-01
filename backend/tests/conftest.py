@@ -51,6 +51,8 @@ TABLAS_DE_OPERACION = [
     # Cotizaciones (seccion 114): sus dias, su PDF y la firma de cada
     # consultor. Los datos y textos por pais son catalogo y no se tocan.
     "dia_cotizacion", "archivo_cotizacion", "firma_consultor",
+    # La propuesta del implantado (seccion 115): lo que lleva al mes.
+    "posicion_propuesta",
     "registro_accion", "registro_admin", "notificacion", "alerta", "hito",
     # El telefono suscrito a los avisos es movimiento, no catalogo: lo
     # da de alta el propio agente desde su app. Faltaba aqui, asi que

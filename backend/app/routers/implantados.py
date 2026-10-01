@@ -310,6 +310,21 @@ def _horas(db: Session, contrato: m.ContratoImplantado) -> dict:
     }
 
 
+def _de_la_propuesta(db: Session,
+                     contrato: m.ContratoImplantado) -> dict | None:
+    """La propuesta de la que salen los terminos del mes: el que nacio de
+    una (seccion 115) y va con sus modalidades. Sus terminos son los que
+    autorizo el cliente; compararlos con la lista --la de siempre, en el
+    cliente nuevo-- daba un «este mes serian» que nadie pacto."""
+    if not contrato.dias_del_mensual:
+        return None
+    from app import propuesta as motor_propuesta
+    cot = motor_propuesta.autorizada_de(db, contrato.servicio_id)
+    if cot is None:
+        return None
+    return {"id": cot.id, "nombre": motor_propuesta.nombre_de(cot)}
+
+
 def _terminos(db: Session, contrato: m.ContratoImplantado) -> dict:
     pais = db.get(m.Pais, contrato.servicio.pais_id)
     propuesta = implantado_precios.de_la_lista(db, contrato)
@@ -328,6 +343,10 @@ def _terminos(db: Session, contrato: m.ContratoImplantado) -> dict:
                         else "netos"),
         "gastos_mes": contrato.gastos_mes,
         "precio_hora_extra": contrato.precio_hora_extra,
+        # Cuantos dias cubre el precio fijo, en las modalidades de la
+        # propuesta (seccion 115): con el, el dia fuera de la modalidad
+        # se cobra aparte al precio del dia adicional.
+        "dias_del_mensual": motor.base_del_mensual(db, contrato),
         **_horas(db, contrato),
         # La de los precios del mes: la de su lista (seccion 82). Si no es
         # la del pais, con el tipo de cambio que estaba puesto cuando se
@@ -345,6 +364,7 @@ def _terminos(db: Session, contrato: m.ContratoImplantado) -> dict:
         "precios_de_la_lista": contrato.precios_de_la_lista,
         "de_la_lista": propuesta,
         "diferencias": implantado_precios.diferencias(contrato, propuesta),
+        "propuesta": _de_la_propuesta(db, contrato),
     }
 
 
@@ -784,15 +804,22 @@ def _abrir_mes(db: Session, usuario: m.Usuario, servicio: m.Servicio,
                      or m.DiasServicio.LUNES_VIERNES)
     # La hora del encuentro es parte del trato (seccion 105, decision
     # 14): se guarda en el acuerdo, que es de donde la toma cada mes que
-    # se abre despues.
+    # se abre despues. Solo si vino: la consola abre el primer mes sin
+    # mandarla, y la que ya traia el trato --la de la propuesta, o la que
+    # se cambio antes de abrirlo-- se perdia con las 08:00 de omision.
+    if "hora_presentacion" in datos.model_fields_set:
+        hora = datos.hora_presentacion
+    else:
+        hora = ((acuerdo.hora_presentacion if acuerdo else None)
+                or datos.hora_presentacion)
     if acuerdo is not None:
-        acuerdo.hora_presentacion = datos.hora_presentacion
+        acuerdo.hora_presentacion = hora
         if acuerdo.dias_servicio is None:
             acuerdo.dias_servicio = dias_servicio
     contrato = m.ContratoImplantado(
         servicio_id=servicio.id, anio=inicio.year, mes=inicio.month,
         desde_dia=inicio.day, modalidad_id=modalidad.id,
-        hora_presentacion=datos.hora_presentacion, esquema=datos.esquema,
+        hora_presentacion=hora, esquema=datos.esquema,
         dias_servicio=dias_servicio,
         incluye_fines_de_semana=dias_servicio != m.DiasServicio.LUNES_VIERNES,
         precio_mes_vehiculo=datos.precio_mes_vehiculo,
@@ -818,9 +845,27 @@ def _abrir_mes(db: Session, usuario: m.Usuario, servicio: m.Servicio,
         [(p.persona_id, p.vehiculo_id, p.rol_id, p.empieza)
          for p in datos.personal],
         datos.unidades)
+    # El implantado que nacio de una propuesta (seccion 115) abre su
+    # primer mes con lo que el cliente autorizo: precio fijo por mes, el
+    # dia adicional, la hora extra y los viaticos como se pactaron. Lo que
+    # mande la pantalla de precios no cuenta: el trato ya esta firmado.
+    from app import propuesta as motor_propuesta
+    primero = (db.query(m.ContratoImplantado)
+               .filter(m.ContratoImplantado.servicio_id == servicio.id,
+                       m.ContratoImplantado.id != contrato.id).count() == 0)
+    pactado = (motor_propuesta.terminos_del_primer_mes(db, servicio)
+               if primero else None)
+    if pactado is not None:
+        for campo, valor in pactado.items():
+            setattr(contrato, campo, valor)
+        db.flush()
+        auditoria.registrar(
+            db, usuario, servicio, "terminos de la propuesta",
+            motor_propuesta.nombre_de(
+                motor_propuesta.autorizada_de(db, servicio.id)))
     # Los precios del mes salen de la lista de implantados del cliente
     # (seccion 80). Si vinieron escritos, mandan esos: son un acuerdo.
-    if (datos.esquema == m.EsquemaCotizacionImplantado.POR_DIA
+    elif (datos.esquema == m.EsquemaCotizacionImplantado.POR_DIA
             and all(getattr(datos, c) is None
                     for c in implantado_precios.CAMPOS)):
         implantado_precios.al_abrir(db, contrato)
@@ -1129,6 +1174,10 @@ def ver_acuerdo(servicio_id: int, db: Session = Depends(get_db),
         # mes que manda hoy, que es la que el trato ensena.
         "horas": _horas(db, contrato) if contrato else None,
     }
+    # La propuesta autorizada de la que nacio, si nacio de una (seccion
+    # 115): lo que se le vendio al cliente, con su PDF.
+    from app import propuesta as motor_propuesta
+    delMes["propuesta"] = motor_propuesta.del_implantado(db, servicio)
     if not acuerdo:
         return {"servicio_id": servicio.id, **delMes}
     return {c.name: getattr(acuerdo, c.name)

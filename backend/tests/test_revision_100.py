@@ -467,6 +467,10 @@ class OdooPersonalFalso:
         self.empleados = {e["id"]: e for e in empleados}
 
     def leer(self, modelo, dominio, campos, archivados=False):
+        if modelo == "ir.model.fields":
+            # El campo de la cuenta existe; falta el permiso (ver `campos`).
+            from app import odoo_personal
+            return [{"id": 1, "name": odoo_personal.CAMPO_CUENTA}]
         filas = [e for e in self.empleados.values()
                  if archivados or e.get("active", True)]
         for campo, operador, valor in dominio:

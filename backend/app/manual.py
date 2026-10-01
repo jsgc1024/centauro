@@ -667,6 +667,8 @@ AREA_DE_ARCHIVO = {
     # Cotizaciones: la que se arma en Connect y su PDF (seccion 114).
     "cotizacion_cliente.py": "cotizacion",
     "routers/cotizaciones.py": "cotizacion",
+    # Y la propuesta del implantado, en la misma pantalla (seccion 115).
+    "propuesta.py": "cotizacion", "routers/propuestas.py": "cotizacion",
     "routers/tarifarios.py": "cotizacion",
     "routers/servicios.py": "servicios", "routers/tasksheet.py": "servicios",
     "routers/contingencia.py": "servicios",

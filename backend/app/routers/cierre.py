@@ -159,7 +159,10 @@ def autorizar(cotizacion_id: int, datos: AutorizarIn, db: Session = Depends(get_
             summary="Cotizaciones de un servicio")
 def ver_cotizaciones(servicio_id: int, db: Session = Depends(get_db),
                      _=Depends(LECTURA)):
-    cotizaciones = (db.query(m.Cotizacion).filter_by(servicio_id=servicio_id)
+    # Las del servicio: la propuesta del implantado no es una de ellas
+    # (seccion 115).
+    cotizaciones = (cotmotor.de_cotizacion(db.query(m.Cotizacion))
+                    .filter_by(servicio_id=servicio_id)
                     .order_by(m.Cotizacion.version).all())
     return [{
         "id": c.id, "version": c.version, "estatus": c.estatus.value,
@@ -359,7 +362,8 @@ def desglose_del_servicio(servicio_id: int, idioma: str | None = None,
             cambio = {"moneda": vigente.moneda.value, "tasa": tc["tasa"]}
     # Lo que va dentro de un paquete no se le cobra aparte, y no va en su
     # desglose (seccion 79).
-    viaticos = (motor.viaticos_facturables(db, servicio, vigente.tarifario_id)
+    viaticos = (motor.viaticos_facturables(db, servicio, vigente.tarifario_id,
+                                           cotmotor.con_paquetes(db, vigente))
                 if vigente else motor.viaticos_del_servicio(db, servicio_id))
     return HTMLResponse(desglose.render(
         servicio, plaza.nombre if plaza else None, viaticos,

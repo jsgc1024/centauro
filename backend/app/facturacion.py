@@ -107,7 +107,8 @@ def armar(db: Session, cierre: m.Cierre) -> dict:
         nota = "Servicio cancelado: se cobra completo por decision de operaciones"
     else:
         # Al tarifario del cliente, que es el precio que se le vendio.
-        ejecutado = motor_cierre.ejecutado(db, servicio, cotizacion.tarifario_id)
+        ejecutado = motor_cierre.ejecutado(db, servicio, cotizacion.tarifario_id,
+                                           cot.con_paquetes(db, cotizacion))
         conceptos = [{
             "fecha": linea["fecha"],
             "equipo": linea["equipo"],

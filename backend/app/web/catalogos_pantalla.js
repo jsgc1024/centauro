@@ -47,6 +47,7 @@ const ESCRIBE = {
   "requisitos-freelance": "catalogos.editar",
   profesionalismo: "profesionalismo.pesos",
   cotizacion: "catalogos.dinero",
+  propuesta: "catalogos.dinero",
 };
 /* Los costos de cada freelance salieron de aqui (seccion 111): viven en
    su ficha, en Personal de seguridad. Entro la lista de lo que Recursos
@@ -57,7 +58,8 @@ const DE_SISTEMA = ["dias-festivos", "hospitales", "hoteles", "plazas",
 /* La cotizacion al cliente (seccion 114): lo que su PDF dice de Centauro
    --razon social, RFC, IVA-- y sus condiciones. Decide dinero: la fija
    direccion de operaciones. */
-const DE_DINERO = ["tabulador-viaticos", "modalidades", "profesionalismo", "cotizacion"];
+const DE_DINERO = ["tabulador-viaticos", "modalidades", "profesionalismo", "cotizacion",
+                   "propuesta"];
 const TITULO = {
   "dias-festivos": "ctl_festivos", hospitales: "ctl_hospitales",
   hoteles: "ctl_hoteles", plazas: "ctl_ciudades",
@@ -66,6 +68,7 @@ const TITULO = {
   "tabulador-viaticos": "ctl_tabulador", modalidades: "ctl_modalidades",
   "requisitos-freelance": "ctl_requisitos", profesionalismo: "ctl_pesos",
   cotizacion: "ctl_cotizacion",
+  propuesta: "ctl_propuesta",
 };
 /* Lo que ya tiene su pantalla: se dice donde vive. */
 const CON_PANTALLA = [
@@ -177,10 +180,12 @@ async function traer() {
   ]);
   const pesos = {};
   const cotizacion = {};
+  const propuesta = {};
   await Promise.all(paises.map(async (p) => {
-    [pesos[p.id], cotizacion[p.id]] = await Promise.all([
+    [pesos[p.id], cotizacion[p.id], propuesta[p.id]] = await Promise.all([
       api.get(`/profesionalismo/pesos?pais_id=${p.id}`).catch(() => null),
-      api.get(`/cotizaciones/textos?pais_id=${p.id}`).catch(() => null)]);
+      api.get(`/cotizaciones/textos?pais_id=${p.id}`).catch(() => null),
+      api.get(`/cotizaciones/propuesta/textos?pais_id=${p.id}`).catch(() => null)]);
   }));
   /* Lo quitado viene en las listas (seccion 101) y se aparta: las cuentas
      y los selectores siguen con lo vivo, y cada tabla lo pinta en gris
@@ -196,7 +201,7 @@ async function traer() {
            combustible: vivos("combustible", combustible),
            hospitales: vivos("hospitales", hospitales),
            hoteles: vivos("hoteles", hoteles), modalidades, tabulador,
-           requisitos: requisitos_, colores, pesos, cotizacion, apagados };
+           requisitos: requisitos_, colores, pesos, cotizacion, propuesta, apagados };
 }
 
 const apagadosDe = (d, clave, filtro) => (d.apagados[clave] || []).filter(filtro);
@@ -264,6 +269,10 @@ const RESUMEN = {
     return c && c.tasa_iva !== null ? `${p.nombre} ${t("ctl_iva_de")
       .replace("{t}", numero(Math.round(c.tasa_iva * 10000) / 100))}` : null;
   }).filter(Boolean).join(" · ") || t("ctl_res_vacio"),
+  propuesta: (d) => {
+    const con = d.paises.filter(p => d.propuesta[p.id] && !faltaPropuesta(d, p).length);
+    return con.length ? con.map(p => p.nombre).join(" · ") : t("ctl_res_vacio");
+  },
 };
 
 const FALTA = {
@@ -315,6 +324,14 @@ const FALTA = {
     const sin = d.paises.filter(p => faltaCotizacion(d, p).length);
     return sin.length ? t("ctl_falta").replace("{que}", sin.map(p => p.nombre).join(", ")) : null;
   },
+  /* La propuesta solo se arma donde ya hay alguno: Mexico nace con los
+     de la propuesta de ejemplo de Salvador. */
+  propuesta: (d) => {
+    const sin = d.paises.filter(p => d.propuesta[p.id] && faltaPropuesta(d, p).length
+      && TEXTOS_PROPUESTA.some(([k]) => Object.values(d.propuesta[p.id].textos[k] || {})
+        .some(x => (x || "").trim())));
+    return sin.length ? t("ctl_falta").replace("{que}", sin.map(p => p.nombre).join(", ")) : null;
+  },
 };
 
 const PINTA = {
@@ -323,6 +340,7 @@ const PINTA = {
   paises, "tabulador-viaticos": tabulador, modalidades,
   "requisitos-freelance": requisitos, profesionalismo: pesos,
   cotizacion: cotizacionCatalogo,
+  propuesta: propuestaCatalogo,
 };
 
 async function pestanaCatalogos(zona) {
@@ -1438,4 +1456,111 @@ function cotizacionCatalogo(caja, d, recargar) {
     h("p", { clase: "gris chico ctl-pie" }, t("ctl_cotizacion_pie")),
     ...[quienLoLleva(clave)].filter(Boolean), zona, historial(clave)));
   pintar();
+}
+
+/* ================================================= la propuesta al cliente */
+
+/* Lo que el PDF de la propuesta del implantado toma de aqui (seccion
+   115), en cada idioma: lo que incluye y lo que no, los viaticos, las
+   responsabilidades, la aceptacion, y el alcance de cada rol --la
+   propuesta toma el de los roles que lleva--. La razon social, el RFC y
+   la tasa de IVA son los de la cotizacion. Mexico nace con los textos de
+   la propuesta de ejemplo de Salvador. */
+const TEXTOS_PROPUESTA = [
+  ["pro_incluye", "ctl_pt_incluye"], ["pro_incluye_unidad", "ctl_pt_incluye_unidad"],
+  ["pro_incluidos", "ctl_pt_incluidos"], ["pro_no_incluye", "ctl_pt_no_incluye"],
+  ["pro_viaticos", "ctl_pt_viaticos"], ["pro_cliente", "ctl_pt_cliente"],
+  ["pro_centauro", "ctl_pt_centauro"], ["pro_aceptacion", "ctl_pt_aceptacion"]];
+
+function faltaPropuesta(d, p) {
+  const c = d.propuesta[p.id];
+  if (!c) return [];
+  const idiomaPais = p.idioma || "es";
+  return TEXTOS_PROPUESTA.map(([k]) => k)
+    .filter(k => !((c.textos[k] || {})[idiomaPais] || "").trim());
+}
+
+function propuestaCatalogo(caja, d, recargar) {
+  const clave = "propuesta";
+  let paisId = paisInicial(d);
+  let idiomaVisto = null;
+  const zona = h("div");
+
+  function pintar() {
+    const c = d.propuesta[paisId];
+    const pais = paisDe(d, paisId) || {};
+    if (!c) {
+      zona.replaceChildren(
+        botonesDePais(d, paisId, (id) => { paisId = id; idiomaVisto = null; pintar(); }),
+        h("p", { clase: "chico gris" }, t("ctl_cot_no_se_lee")));
+      return;
+    }
+    const editable = puede(clave);
+    /* Lo escrito se guarda aqui mientras se cambia de idioma: se manda
+       todo junto al guardar. */
+    const textos = {};
+    for (const [k] of TEXTOS_PROPUESTA) textos[k] = { ...(c.textos[k] || {}) };
+    const alcances = {};
+    for (const a of c.alcances) alcances[a.codigo] = { ...a.textos };
+    idiomaVisto = idiomaVisto || pais.idioma || "es";
+
+    const pestanasIdioma = h("div", { clase: "acciones", style: "margin:0 0 10px" });
+    const cajaTextos = h("div");
+    const area = (valor, filas, guardar, largo = "2000") => {
+      const control = h("textarea", { rows: filas, maxlength: largo,
+        oninput: () => guardar(control.value) });
+      control.value = valor || "";
+      control.disabled = !editable;
+      return control;
+    };
+    function pintarTextos() {
+      pestanasIdioma.replaceChildren(...IDIOMAS_APP.map(([i, texto]) => h("button", {
+        type: "button", clase: i === idiomaVisto ? "pestana activa" : "pestana",
+        onclick: () => { idiomaVisto = i; pintarTextos(); },
+      }, t(texto))));
+      const vacio = (v) => (!(v || "").trim() ? [" ", etiqueta(t("ctl_cot_vacio"), "alerta")] : "");
+      cajaTextos.replaceChildren(
+        ...TEXTOS_PROPUESTA.map(([k, texto]) => campo(
+          h("span", {}, t(texto), vacio(textos[k][idiomaVisto])),
+          area(textos[k][idiomaVisto], k === "pro_aceptacion" || k === "pro_centauro" ? "3" : "3",
+               (v) => { textos[k][idiomaVisto] = v; }))),
+        h("h4", { clase: "grupo" }, t("ctl_pt_alcances")),
+        h("p", { clase: "chico gris", style: "margin:0 0 10px" }, t("ctl_pt_alcances_pie")),
+        ...c.alcances.map(a => campo(
+          h("span", {}, reemplazarClave(t("ctl_pt_alcance_de"), a.nombre)),
+          area(alcances[a.codigo][idiomaVisto], "4",
+               (v) => { alcances[a.codigo][idiomaVisto] = v; }, "6000"))));
+    }
+    pintarTextos();
+
+    const guardar = boton(t("ctl_guardar"), async () => {
+      guardar.disabled = true;
+      try {
+        await api.put(`/cotizaciones/propuesta/textos/${paisId}`, { textos, alcances });
+        mensaje(t("ctl_guardado").replace("{que}", t("ctl_propuesta")));
+        await recargar();
+      } catch (err) {
+        mensaje(err.message, "grave");
+        guardar.disabled = false;
+      }
+    }, "chico");
+
+    zona.replaceChildren(...[
+      h("div", { clase: "acciones", style: "margin:0 0 10px" },
+        botonesDePais(d, paisId, (id) => { paisId = id; idiomaVisto = null; pintar(); })),
+      h("p", { clase: "chico gris", style: "margin:0 0 10px" }, t("ctl_pt_huecos")),
+      pestanasIdioma, cajaTextos,
+      editable ? h("div", { clase: "acciones" }, guardar) : null,
+    ].filter(Boolean));
+  }
+
+  caja.append(h("div", { clase: "tarjeta" },
+    conAyuda("h3", t("ctl_propuesta"), "ay_ctl_propuesta"),
+    h("p", { clase: "gris chico ctl-pie" }, t("ctl_propuesta_pie")),
+    ...[quienLoLleva(clave)].filter(Boolean), zona, historial(clave)));
+  pintar();
+}
+
+function reemplazarClave(texto, nombre) {
+  return texto.replace("{r}", nombre);
 }

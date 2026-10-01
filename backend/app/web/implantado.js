@@ -10,7 +10,7 @@
 import { api, sesion } from "./api.js";
 import { catalogos, faltaConsultor, listaDeConsultores } from "./catalogos.js";
 import { aviso, pieObligatorios, buscador, campo, coincide, conAyuda, dinero, entrada,
-         estatus, etiqueta, fechaLocal, h, hoyLocal, lista, listaBuscable,
+         estatus, etiqueta, fecha, fechaLocal, h, hoyLocal, lista, listaBuscable,
          mensaje, tasa, telefono, vaciar } from "./util.js";
 import { buscadorDeLugar } from "./mapa.js";
 import { bloqueRevisionUnidad } from "./servicio.js";
@@ -19,6 +19,7 @@ import { diferenciaConLaLista, queda, tarjetaCierre } from "./cierre.js";
 import { soloConsulta, tiene } from "./menu.js";
 import { botonIncidencia } from "./incidencias.js";
 import { bloqueTitular } from "./titular.js";
+import { bloquePropuesta } from "./propuesta.js";
 
 /* El dinero del mes --cuanto a cada quien y pedirselo a finanzas-- lo
    decide el consultor titular o direccion de operaciones (seccion 73).
@@ -1512,8 +1513,14 @@ export async function nuevoImplantado(main) {
    cosas: muestra lo que ya hay y, si el mes no se ha abierto, lo abre
    desde aqui sin volver a capturar nada. */
 
-function nombreDelTurno(codigo) {
+/* El natural dice sus horas: doce, salvo que el trato --o la propuesta
+   de la que nacio, seccion 115-- pacte otra jornada. «12 horas
+   naturales» junto a una propuesta de 14 se contradecian. */
+function nombreDelTurno(codigo, horas = null) {
   if (codigo === "12x36") return t("imp_turno_12x36");
+  if (horas && Number(horas) !== 12) {
+    return t("imp_turno_natural_n").replace("{n}", String(Number(horas)));
+  }
   return t("imp_turno_natural");
 }
 
@@ -1603,7 +1610,10 @@ export async function pantallaImplantado(main, servicioId) {
     /* El titular y el boton para cambiarlo (decision 13, seccion 105),
        el mismo renglon que en el eventual. A lo ancho, para que el panel
        que abre el boton no quede apretado en una celda. */
-    bloqueTitular(servicio, cat))].filter(Boolean));
+    bloqueTitular(servicio, cat)),
+    /* La propuesta de la que nacio (seccion 115): lo que se le vendio
+       al cliente, con su PDF. */
+    bloquePropuesta(acuerdo.propuesta)].filter(Boolean));
 
   /* --------------------------------------------------------- acuerdo */
 
@@ -1645,7 +1655,9 @@ export async function pantallaImplantado(main, servicioId) {
       arranque(servicioId, acuerdo),
       h("div", { clase: "rejilla dos" },
         renglon(t("imp_dias_semana"), acuerdo.dias_semana),
-        renglon(t("imp_turno"), nombreDelTurno(acuerdo.turno))),
+        renglon(t("imp_turno"), nombreDelTurno(acuerdo.turno,
+          (acuerdo.horas && acuerdo.horas.horas_jornada)
+          || (acuerdo.propuesta && acuerdo.propuesta.horas_jornada)))),
       h("div", { clase: "rejilla dos" },
         renglon(t("ejecutivo_principal"), ficha.ejecutivo)),
       h("div", { clase: "rejilla dos" },
@@ -1829,12 +1841,14 @@ export async function pantallaImplantado(main, servicioId) {
    El acuerdo se guarda completo, no solo la fecha: el servidor
    reescribe la ficha entera y lo que no se mande se borra. */
 function arranque(servicioId, acuerdo) {
+  /* El dia con su nombre, como el resto de la ficha: «2026-11-02» se
+     leia como sale de la base. */
   if (acuerdo.fecha_inicio) {
     return h("div", { clase: "rejilla dos" },
-      renglon(t("imp_fecha_inicio"), acuerdo.fecha_inicio));
+      renglon(t("imp_fecha_inicio"), fecha(acuerdo.fecha_inicio)));
   }
 
-  const fecha = h("input", { type: "date" });
+  const campoFecha = h("input", { type: "date" });
   const dias = lista("dias_servicio", DIAS_DE_SERVICIO());
   if (acuerdo.dias_servicio) dias.value = acuerdo.dias_servicio;
 
@@ -1842,12 +1856,12 @@ function arranque(servicioId, acuerdo) {
     onclick: () => guardar() }, t("agregar"));
 
   async function guardar() {
-    if (!fecha.value) return mensaje(t("imp_falta_fecha"), "alerta");
+    if (!campoFecha.value) return mensaje(t("imp_falta_fecha"), "alerta");
     boton.disabled = true;
     try {
       await api.put(`/implantados/${servicioId}/acuerdo`, {
         ...sinLlavesDeBase(acuerdo),
-        fecha_inicio: fecha.value,
+        fecha_inicio: campoFecha.value,
         dias_servicio: dias.value,
       });
       mensaje(t("imp_arranque_guardado"));
@@ -1861,7 +1875,7 @@ function arranque(servicioId, acuerdo) {
   return h("div", {},
     h("div", { clase: "bloqueo" }, h("b", {}, t("imp_sin_arranque"))),
     h("div", { clase: "rejilla tres" },
-      campo(t("imp_fecha_inicio"), fecha),
+      campo(t("imp_fecha_inicio"), campoFecha),
       campo(t("imp_dias_semana"), dias),
       h("div", { clase: "campo" }, h("label", {}, "\u00a0"), boton)));
 }
@@ -2385,11 +2399,18 @@ function tarjetaTerminos(contratoId, periodo, alGuardar) {
       h("p", { clase: "gris chico", style: "margin:0 0 10px" },
         h("b", {}, textoDeHoras(x)), ` ${t("imp_horas_pie")}`));
     const rejilla = h("div", { clase: "rejilla cuatro" });
+    /* El precio fijo de las modalidades de la propuesta (seccion 115):
+       cubre sus dias, y el dia fuera de ellos se cobra aparte. */
+    const notaMensual = h("p", { clase: "gris chico", style: "margin:0 0 8px" });
     const acomodar = () => {
       const esDia = porDia.querySelector("input").checked;
       const esAlzado = alzado.querySelector("input").checked;
-      rejilla.replaceChildren(...(esDia ? deDia : [deMes]),
+      const conDias = !esDia && x.dias_del_mensual;
+      rejilla.replaceChildren(...(esDia ? deDia : conDias ? [deMes, deDia[1]] : [deMes]),
                               esAlzado ? deGastos : h("div"), deHoraExtra);
+      notaMensual.hidden = !conDias;
+      notaMensual.textContent = conDias
+        ? t("imp_mensual_dias").replace("{n}", x.dias_del_mensual) : "";
     };
     for (const r of [porDia, mesCompleto, alzado, netos]) {
       r.querySelector("input").addEventListener("change", acomodar);
@@ -2451,9 +2472,15 @@ function tarjetaTerminos(contratoId, periodo, alGuardar) {
         h("div", {}, h("label", {}, t("cie_gastos_del_servicio")),
           h("div", { clase: "bloque-radio" }, alzado, netos))),
       rejilla,
+      notaMensual,
       deHoras,
       otra ? cambioDelMes(x) : h("div"),
-      bloqueDeLaLista(x) || h("div"),
+      /* El que nacio de una propuesta (seccion 115): sus terminos son
+         los que autorizo el cliente, no se comparan con la lista. */
+      x.propuesta
+        ? h("p", { clase: "gris chico", style: "margin:14px 0 0" },
+          reemplazar(t("pro_imp_terminos"), { p: x.propuesta.nombre }))
+        : bloqueDeLaLista(x) || h("div"),
       h("p", { clase: "gris chico", style: "margin:10px 0 12px" },
         t("cie_terminos_pie")),
       x.editable
@@ -2878,8 +2905,13 @@ function armarPrimerMes(main, servicioId, acuerdo, servicio, cat) {
     }
   }
 
+  /* El que nacio de una propuesta (seccion 115) abre su primer mes con lo
+     que el cliente autorizo: aqui solo se dice quien va y en que unidad. */
+  const dePropuesta = acuerdo.propuesta
+    ? aviso(t("pro_imp_primer_mes").replace("{p}", acuerdo.propuesta.nombre), "ok") : null;
   main.append(h("div", { clase: "tarjeta" },
     conAyuda("h4", t("imp_asignacion"), "ay_imp_plantilla"),
+    dePropuesta,
     h("p", { clase: "gris chico", style: "margin:0 0 12px" },
       t("imp_plantilla_sub")),
     roster.nodo,
