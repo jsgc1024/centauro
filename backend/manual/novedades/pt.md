@@ -2,6 +2,9 @@
 
 O que há de novo em cada atualização, escrito para quem usa o sistema. A mais nova fica em cima.
 
+## 125 · 2026-10-02 · O cliente, por país
+Na nova cotação, na nova proposta e na tabela do cliente (Faturamento → Tabelas de preços) há uma **aba por país** em cima de «Cliente» —México, Brasil—, com quantos clientes cada um tem. A lista traz só os clientes desse país, então a «Amazon» do México já não se confunde com a Amazon Brasil, e a empresa que ainda não está no Odoo é do país da aba: já não se pergunta à parte. Começa no último país que você escolheu nesse computador; uma cotação ou proposta que já existe abre no país do seu cliente. Na tabela, cada aba traz primeiro as gerais desse país. Ver [a cotação ao cliente](#/manual/leer/cotizaciones).
+
 ## 124 · 2026-10-02 · As gerais se abrem sem cliente, e os sugeridos vão por aba
 Em Faturamento → Tabelas de preços, «A tabela do cliente» oferece em cima as listas gerais de cada país —«Brasil · General», «Brasil · General USD», «PE · General México»—, mesmo sem cliente: veem-se os seus preços e o financeiro marca ali se os seus pacotes trazem as despesas do dia. Antes uma geral só se abria a partir de um cliente que a tivesse, e a de dólares do Brasil não tem nenhum. E em «O que é cada produto do Odoo», «Confirmar os sugeridos» e a contagem de cima são da aba que se vê: o do Brasil já não confirma os do México. Ver [o que vem do Odoo](#/manual/leer/odoo).
 

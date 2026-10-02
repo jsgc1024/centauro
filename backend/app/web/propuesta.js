@@ -22,7 +22,8 @@
    como en la cotizacion. Connect no manda correos: el consultor baja el
    PDF y lo manda desde su correo. */
 import { api, sesion } from "./api.js";
-import { catalogos, listaDeConsultores } from "./catalogos.js";
+import { catalogos, clientesDelPais, listaDeConsultores, paisDeArranque, pestanasDeClientes,
+         recordarPais } from "./catalogos.js";
 import { aviso, campo, conAyuda, dinero, entrada, etiqueta, h, hoyLocal, lista,
          listaBuscable, mensaje } from "./util.js";
 import { t } from "./idioma.js";
@@ -131,18 +132,39 @@ async function armar(main, cat, d) {
   const paisDe = (id) => cat.paises.find(p => String(p.id) === String(id));
   const clienteDe = (id) => cat.clientes.find(c => String(c.id) === String(id));
 
-  const selCliente = lista("cliente_id", [
-    { valor: "", texto: t("ctz_escoge_cliente") },
-    { valor: NUEVA, texto: t("ctz_empresa_no_odoo") },
-    ...cat.clientes.filter(c => c.activo !== false).map(c => ({ valor: c.id, texto: c.nombre }))],
-  { onchange: async () => {
-    if (selCliente.value === e.cliente_id) return;
-    e.cliente_id = selCliente.value;
-    e.solicitante_id = "";
+  /* El cliente, por pais (seccion 125), como en la cotizacion: una
+     pestana por pais arriba de «Cliente»; la empresa que todavia no esta
+     en Odoo es del pais de la pestana. La que ya existe abre en el suyo. */
+  if (!e.pais_id) e.pais_id = paisDeArranque(cat);
+  const pestanas = h("div");
+  const cajaCliente = h("div");
+  function pintarCliente() {
+    pestanas.replaceChildren(pestanasDeClientes(cat, e.pais_id, cambiarPais) || "");
+    const sel = lista("cliente_id", [
+      { valor: "", texto: t("ctz_escoge_cliente") },
+      { valor: NUEVA, texto: t("ctz_empresa_no_odoo") },
+      ...clientesDelPais(cat, e.pais_id).map(c => ({ valor: c.id, texto: c.nombre }))],
+    { onchange: async () => {
+      if (sel.value === e.cliente_id) return;
+      e.cliente_id = sel.value;
+      e.solicitante_id = "";
+      await alCambiarCliente();
+    } });
+    sel.value = e.cliente_id;
+    cajaCliente.replaceChildren(listaBuscable(sel, t("buscar_cliente")));
+  }
+  async function cambiarPais(paisId) {
+    e.pais_id = Number(paisId);
+    recordarPais(paisId);
+    const c = e.cliente_id && e.cliente_id !== NUEVA ? clienteDe(e.cliente_id) : null;
+    if (c && String(c.pais_id) !== String(paisId)) {
+      e.cliente_id = "";
+      e.solicitante_id = "";
+    }
+    pintarCliente();
     await alCambiarCliente();
-  } });
-  selCliente.value = e.cliente_id;
-  const buscable = listaBuscable(selCliente, t("buscar_cliente"));
+  }
+  pintarCliente();
   const prospecto = entrada("prospecto", { value: e.prospecto, maxlength: "160",
     "data-crudo": "", placeholder: t("ctz_empresa_nombre"),
     oninput: () => {
@@ -150,11 +172,8 @@ async function armar(main, cat, d) {
       if (info) lineaLista.replaceChildren(...pintarLista(true));
       recalcular();
     } });
-  const selPais = lista("pais_id", cat.paises.map(p => ({ valor: p.id, texto: p.nombre })),
-    { onchange: async () => { e.pais_id = Number(selPais.value); await alCambiarCliente(); } });
   const cajaProspecto = h("div", { clase: "rejilla dos" },
-    campo(t("ctz_empresa"), prospecto, { obligatorio: true }),
-    campo(t("ctz_pais"), selPais, { obligatorio: true }));
+    campo(t("ctz_empresa"), prospecto, { obligatorio: true }));
   const lineaLista = h("p", { clase: "chico gris", style: "margin:2px 0 10px" });
 
   const selQuien = h("select", { onchange: () => {
@@ -231,7 +250,6 @@ async function armar(main, cat, d) {
     if (nueva && !e.pais_id) {
       e.pais_id = (cat.paises.find(p => p.codigo === "MX") || cat.paises[0] || {}).id;
     }
-    selPais.value = e.pais_id ? String(e.pais_id) : "";
     if (!e.idioma || !d) {
       const p = paisDe(e.pais_id);
       e.idioma = (p && p.idioma) || "es";
@@ -275,8 +293,9 @@ async function armar(main, cat, d) {
 
   const paraQuien = h("div", { clase: "tarjeta" },
     conAyuda("h3", t("ctz_para_quien"), "ay_pro_para_quien", { style: "margin:0" }),
+    pestanas,
     h("div", { clase: "rejilla tres", style: "margin-top:12px" },
-      campo(t("ctz_cliente"), buscable, { obligatorio: true }),
+      campo(t("ctz_cliente"), cajaCliente, { obligatorio: true }),
       campoQuien,
       campo(t("ctz_quien_firma"), consultor, { obligatorio: true })),
     cajaProspecto, quienOtra, lineaLista,
@@ -849,7 +868,6 @@ async function armar(main, cat, d) {
   }
 
   cajaProspecto.hidden = e.cliente_id !== NUEVA;
-  selPais.value = e.pais_id ? String(e.pais_id) : "";
   pintarPlazas();
   pintarQuien();
   pintarModalidad();

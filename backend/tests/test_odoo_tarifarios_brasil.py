@@ -651,7 +651,7 @@ def test_confirmar_los_sugeridos_de_una_pestana(db, brasil, mexico, cliente, ses
     assert 'ids: pestanas.visibles.filter(p => estadoDe(p) === "sugerido")' in js
 
 
-def test_una_general_se_abre_sin_cliente(db, filtros, de_brasil, cliente, sesion,
+def test_una_general_se_abre_sin_cliente(db, filtros, de_brasil, brasil, cliente, sesion,
                                          monkeypatch):
     """«Brasil · General USD» no tiene cliente: se abre por si misma, con
     el dolar a real, y ahi se marca si sus paquetes traen los viaticos
@@ -675,6 +675,8 @@ def test_una_general_se_abre_sin_cliente(db, filtros, de_brasil, cliente, sesion
     # En la consola, las generales van arriba de los clientes.
     generales = [x for x in cliente.get("/tarifarios", headers=h).json() if x["general"]]
     assert {x["nombre"] for x in generales} >= {"Brasil · General", "Brasil · General USD"}
+    # Cada una dice su pais: la consola la pone en su pestana (seccion 125).
+    assert {x["pais_id"] for x in generales if x["nombre"].startswith("Brasil ·")} == {brasil.id}
 
 
 def test_el_dolar_a_real_lo_pone_finanzas(cliente, sesion, db):

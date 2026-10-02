@@ -399,6 +399,8 @@ def listar(db: Session = Depends(get_db), _=Depends(VER)):
             m.Tarifario.general.desc(), m.Tarifario.nombre):
         salida.append({"id": t.id, "nombre": t.nombre, "moneda": t.moneda.value,
                        "de_odoo": t.odoo_id is not None, "general": t.general,
+                       # Para ponerla en la pestana de su pais (seccion 125).
+                       "pais_id": t.pais_id,
                        "clientes": len([c for c in t.clientes if c.activo])})
     return salida
 

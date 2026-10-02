@@ -4,9 +4,9 @@ parte: entender
 orden: 27
 titulo: A proposta do implantado
 resumen: A proposta que se manda ao cliente antes de o implantado existir: o que leva por mês, as suas três modalidades, o preço especial que a direção de operações aprova, o PDF e o implantado que nasce dela.
-buscar: proposta implantado ep/pro referencia versao mensal por mes modalidade segunda a sexta segunda a sabado mes inteiro 22 26 30 dias dia adicional hora extra jornada diarias incluidas mais diarias preco especial aval direcao de operacoes lista de implantados empresa nova pdf aprovar implantado nasce escopo catalogos primeiro mes meio do mes por mes mensal da lista amazon brasil dolares taxa de cambio dolar para real
+buscar: proposta implantado ep/pro referencia versao mensal por mes modalidade segunda a sexta segunda a sabado mes inteiro 22 26 30 dias dia adicional hora extra jornada diarias incluidas mais diarias preco especial aval direcao de operacoes lista de implantados empresa nova pdf aprovar implantado nasce escopo catalogos primeiro mes meio do mes por mes mensal da lista amazon brasil dolares taxa de cambio dolar para real aba pais filtro cliente por pais
 ---
-A proposta do implantado se monta em **Operações EP → Cotações**, junto com a cotação do eventual, com **«Nova proposta»**. Sai em PDF, o consultor a manda ao cliente pelo seu e-mail e, quando o cliente aprova, **nasce o implantado** em EP implantado com a proposta dentro. Não se chama cotação: na tela e no PDF diz «proposta».
+A proposta do implantado se monta em **Operações EP → Cotações**, junto com a cotação do eventual, com **«Nova proposta»**. Sai em PDF, o consultor a manda ao cliente pelo seu e-mail e, quando o cliente aprova, **nasce o implantado** em EP implantado com a proposta dentro. Não se chama cotação: na tela e no PDF diz «proposta». Como na cotação, em cima de «Cliente» há uma **aba por país**: a lista traz só os clientes desse país, e a empresa que ainda não está no Odoo é desse país.
 
 ## A referência e as versões {#folio}
 Cada proposta leva a sua referência —**EP/PRO-0001**— e a sua versão, com numeração própria: EP/COT-0001 e EP/PRO-0001 são números diferentes. Se o cliente pede uma mudança, faz-se a versão seguinte com o que mudou; ao enviá-la, a anterior fica substituída e só a última pode ser aprovada.

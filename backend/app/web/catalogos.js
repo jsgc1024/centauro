@@ -1,7 +1,7 @@
 /* Los catalogos se leen una sola vez por sesion: no cambian mientras
    alguien arma un servicio, y pedirlos en cada pantalla se siente lento. */
 import { api, sesion } from "./api.js";
-import { lista } from "./util.js";
+import { h, lista } from "./util.js";
 import { t } from "./idioma.js";
 
 let guardados = null;
@@ -62,4 +62,59 @@ export function faltaConsultor(cat, select) {
 export function nombreDe(coleccion, id) {
   const fila = (coleccion || []).find(x => String(x.id) === String(id));
   return fila ? (fila.nombre || fila.codigo) : "—";
+}
+
+
+/* ------------------------------------------------------------ el cliente, por pais */
+
+/* Seccion 125 (Salvador, 2 de octubre): una pestana por pais arriba de
+   «Cliente» --en la cotizacion, la propuesta y el tarifario del cliente--
+   para no buscar a Amazon Brasil entre los de Mexico. Arranca en el
+   ultimo pais que se escogio en esta computadora; la primera vez, en el
+   que mas clientes tiene. Lo recordado es solo una comodidad: si no se
+   puede leer, se arranca en el de siempre. */
+const LLAVE_PAIS = "centauro_pais_de_clientes";
+
+export function clientesDelPais(cat, paisId) {
+  return cat.clientes.filter(c => c.activo !== false && String(c.pais_id) === String(paisId));
+}
+
+/* Los paises, el de mas clientes primero. */
+export function paisesDeClientes(cat) {
+  const cuantos = (p) => clientesDelPais(cat, p.id).length;
+  return cat.paises.filter(p => p.activo !== false)
+    .sort((a, b) => cuantos(b) - cuantos(a) || a.nombre.localeCompare(b.nombre));
+}
+
+export function paisDeArranque(cat) {
+  const paises = paisesDeClientes(cat);
+  let guardado = null;
+  try {
+    guardado = localStorage.getItem(LLAVE_PAIS);
+  } catch {
+    guardado = null;
+  }
+  const suyo = paises.find(p => String(p.id) === String(guardado));
+  return (suyo || paises[0] || {}).id ?? null;
+}
+
+export function recordarPais(paisId) {
+  try {
+    localStorage.setItem(LLAVE_PAIS, String(paisId));
+  } catch {
+    /* Sin donde guardarlo, la siguiente vez arranca en el de siempre. */
+  }
+}
+
+/* Las pestanas, con cuantos clientes tiene cada pais. Con un solo pais
+   no hay nada que escoger y no se ponen. */
+export function pestanasDeClientes(cat, paisId, alCambiar) {
+  const paises = paisesDeClientes(cat);
+  if (paises.length < 2) return null;
+  return h("div", { clase: "pestanas", style: "margin:12px 0 0" },
+    ...paises.map(p => h("button", {
+      type: "button",
+      clase: String(p.id) === String(paisId) ? "pestana chico activa" : "pestana chico",
+      onclick: () => { if (String(p.id) !== String(paisId)) alCambiar(p.id); },
+    }, `${p.nombre} (${clientesDelPais(cat, p.id).length})`)));
 }

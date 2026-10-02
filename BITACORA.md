@@ -9652,6 +9652,38 @@ no confirma los de México, y la general en dólares se abre sin cliente,
 con el dólar a real, y ahí se marca su casilla; quien cotiza la ve sin
 poder marcarla.
 
+## 125. El cliente, por país
+
+Salvador, 2 de octubre: «¿podríamos colocar un filtro de cliente por
+país?». Se le enseñó la maqueta sobre las pantallas de verdad
+(`Claude outputs/Propuesta_el_cliente_por_pais.pdf`) y la aprobó así,
+con pestañas:
+
+- **Una pestaña por país arriba de «Cliente»** —México, Brasil, con
+  cuántos clientes tiene cada uno; el de más clientes primero— en la
+  nueva cotización, la nueva propuesta y «El tarifario del cliente» de
+  Facturación → Tarifarios. Con un solo país no se ponen.
+- **La lista trae solo a los clientes de ese país.** En el tarifario,
+  primero las generales de ese país (la lista de tarifarios ahora dice
+  el `pais_id` de cada una) y después sus clientes.
+- **La empresa que todavía no está en Odoo es del país de la pestaña**:
+  el campo «País» aparte se quitó (y su texto, `ctz_pais`). Cambiar de
+  pestaña suelta al cliente de otro país; la empresa nueva se queda,
+  ahora del otro país, y trae su general.
+- **Arranca en el último país que se escogió en esa computadora**
+  (`localStorage`, `centauro_pais_de_clientes`; si el navegador no deja
+  guardarlo, en el país con más clientes). La cotización o propuesta
+  que ya existe abre en el país de su cliente.
+
+Por dentro: `catalogos.js` trae `clientesDelPais`, `paisesDeClientes`,
+`paisDeArranque`, `recordarPais` y `pestanasDeClientes`, y las tres
+pantallas los usan; el selector del cliente se vuelve a armar al
+cambiar de pestaña porque la lista buscable guarda sus opciones al
+nacer. Sin migración. Manual: la cotización, la propuesta y lo que
+viene de Odoo, en español y portugués; y el «?» de «Para quién».
+Pruebas: `tests/test_cliente_por_pais.py` y el país de cada general en
+`test_odoo_tarifarios_brasil.py`.
+
 ## 14. Lo que falta
 
 ### Abierto

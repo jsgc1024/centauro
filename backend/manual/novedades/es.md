@@ -2,6 +2,9 @@
 
 Lo nuevo de cada actualización, escrito para quien usa el sistema. La más nueva va arriba.
 
+## 125 · 2026-10-02 · El cliente, por país
+En la nueva cotización, la nueva propuesta y el tarifario del cliente (Facturación → Tarifarios) hay una **pestaña por país** arriba de «Cliente» —México, Brasil—, con cuántos clientes tiene cada uno. La lista trae solo a los clientes de ese país, así que «Amazon» de México ya no se confunde con Amazon Brasil, y la empresa que todavía no está en Odoo es del país de la pestaña: ya no se pregunta aparte. Arranca en el último país que escogiste en esa computadora; una cotización o propuesta que ya existe abre en el país de su cliente. En el tarifario, cada pestaña trae primero las generales de ese país. Ver [la cotización al cliente](#/manual/leer/cotizaciones).
+
 ## 124 · 2026-10-02 · Las generales se abren sin cliente, y los sugeridos van por pestaña
 En Facturación → Tarifarios, «El tarifario del cliente» ofrece arriba las listas generales de cada país —«Brasil · General», «Brasil · General USD», «PE · General México»—, aunque no tengan cliente: se ven sus precios y finanzas marca ahí si sus paquetes traen los viáticos del día. Antes una general solo se abría desde un cliente que la tuviera, y la de dólares de Brasil no tiene ninguno. Y en «Qué es cada producto de Odoo», «Confirmar los sugeridos» y la cuenta de arriba son de la pestaña que se ve: el de Brasil ya no confirma los de México. Ver [lo que viene de Odoo](#/manual/leer/odoo).
 

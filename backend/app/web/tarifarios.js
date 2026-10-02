@@ -18,6 +18,8 @@
        desde la seccion 123, cuantos reales. Lo pone finanzas a mano y
        aplica para todo hasta que alguien lo cambie. */
 import { api } from "./api.js";
+import { clientesDelPais, paisDeArranque, paisesDeClientes, pestanasDeClientes,
+         recordarPais } from "./catalogos.js";
 import { aviso, conAyuda, dinero, etiqueta, fecha, h, hora, listaBuscable,
          mensaje, plegable, tasa } from "./util.js";
 import { t } from "./idioma.js";
@@ -343,41 +345,62 @@ function unPar(x, editable, pintar) {
 
 /* El tarifario de cualquier cliente y, arriba, las generales de cada
    pais (seccion 124): «Brasil · General USD» no siempre tiene cliente, y
-   sin abrirla no habia donde marcar si sus paquetes traen los viaticos. */
+   sin abrirla no habia donde marcar si sus paquetes traen los viaticos.
+   Con una pestana por pais (seccion 125), como en la cotizacion: cada
+   una trae sus generales y sus clientes. */
 async function tarjetaCliente(caja) {
-  let clientes, listas;
+  let clientes, listas, paises;
   try {
-    [clientes, listas] = await Promise.all([
-      api.get("/catalogos/clientes"), api.get("/tarifarios").catch(() => [])]);
+    [clientes, listas, paises] = await Promise.all([
+      api.get("/catalogos/clientes"), api.get("/tarifarios").catch(() => []),
+      api.get("/catalogos/paises").catch(() => [])]);
   } catch (err) {
     return caja.replaceChildren(aviso(err.message, "grave"));
   }
-  const activos = clientes.filter(c => c.activo)
-    .sort((a, b) => a.nombre.localeCompare(b.nombre));
-  const generales = listas.filter(x => x.general);
+  const cat = { clientes, paises };
+  const varios = paisesDeClientes(cat).length > 1;
+  let paisId = paisDeArranque(cat);
+  const delPais = (x) => !varios || x.pais_id == null || String(x.pais_id) === String(paisId);
+  const pestanas = h("div");
+  const busca = h("div", { style: "max-width:460px" });
   const vista = h("div", { style: "margin-top:14px" });
-  const escoger = h("select", { style: "max-width:460px" },
-    h("option", { value: "" }, t("tar_escoge_cliente")),
-    ...generales.map(x => h("option", { value: `lista:${x.id}` },
-      reemplazar(t("tar_opcion_general"), { l: x.nombre, m: x.moneda }))),
-    ...activos.map(c => h("option", { value: String(c.id) }, c.nombre)));
-  escoger.addEventListener("change", async () => {
-    if (!escoger.value) return vista.replaceChildren();
-    vista.replaceChildren(h("p", { clase: "gris" }, t("tar_cargando")));
-    const lista = escoger.value.startsWith("lista:");
-    try {
-      vista.replaceChildren(vistaTarifario(await api.get(lista
-        ? `/tarifarios/lista/${escoger.value.slice("lista:".length)}`
-        : `/tarifarios/cliente/${escoger.value}`), !lista));
-    } catch (err) {
-      vista.replaceChildren(aviso(err.message, "grave"));
-    }
-  });
+
+  function pintar() {
+    const nodo = pestanasDeClientes(cat, paisId, (id) => {
+      paisId = id;
+      recordarPais(id);
+      vista.replaceChildren();
+      pintar();
+    });
+    if (nodo) nodo.style.margin = "0 0 10px";
+    pestanas.replaceChildren(nodo || "");
+    const activos = (varios ? clientesDelPais(cat, paisId) : clientes.filter(c => c.activo))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre));
+    const escoger = h("select", { style: "max-width:460px" },
+      h("option", { value: "" }, t("tar_escoge_cliente")),
+      ...listas.filter(x => x.general && delPais(x)).map(x => h("option",
+        { value: `lista:${x.id}` },
+        reemplazar(t("tar_opcion_general"), { l: x.nombre, m: x.moneda }))),
+      ...activos.map(c => h("option", { value: String(c.id) }, c.nombre)));
+    escoger.addEventListener("change", async () => {
+      if (!escoger.value) return vista.replaceChildren();
+      vista.replaceChildren(h("p", { clase: "gris" }, t("tar_cargando")));
+      const lista = escoger.value.startsWith("lista:");
+      try {
+        vista.replaceChildren(vistaTarifario(await api.get(lista
+          ? `/tarifarios/lista/${escoger.value.slice("lista:".length)}`
+          : `/tarifarios/cliente/${escoger.value}`), !lista));
+      } catch (err) {
+        vista.replaceChildren(aviso(err.message, "grave"));
+      }
+    });
+    busca.replaceChildren(listaBuscable(escoger, t("buscar_cliente")));
+  }
+  pintar();
   caja.replaceChildren(h("div", { clase: "tarjeta" },
     conAyuda("h3", t("tar_titulo_cliente"), "ay_tar_cliente"),
     h("p", { clase: "gris chico", style: "margin:0 0 10px" }, t("tar_cliente_pie")),
-    h("div", { style: "max-width:460px" }, listaBuscable(escoger, t("buscar_cliente"))),
-    vista));
+    pestanas, busca, vista));
 }
 
 /* ------------------------------------------------------------ los productos */
