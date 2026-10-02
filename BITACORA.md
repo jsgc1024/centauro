@@ -9477,6 +9477,45 @@ de Logistic. Para verlo antes: Odoo → Personal → Ensayo apenas termine
 de subir. Y en cuanto el ensayo de la flota diga «México, la n.º 3» y
 «Brasil, la n.º 5», la etiqueta de México se puede renombrar.
 
+## 122. La alerta del inhibidor se apaga
+
+Salvador, 2 de octubre: «la alerta de inhibido de señal que llega a la
+central (monitoreo) no es necesaria. necesito que sea desactivada».
+Desde la sección 60, cuando el GPS de una unidad en servicio —del camino
+al punto a la marca de fin— traía el inhibidor puesto en Pegasus, la
+central recibía la tarjeta «Inhibidor de señal» en «Atender ahora». El
+renglón de la unidad decía «sin posición desde las 14:05: inhibidor»
+antes que cualquier otra cosa, aunque la unidad siguiera mandando su
+posición.
+
+- **Ya no se levanta la alerta.** Pegasus lo sigue mandando y Connect lo
+  sigue leyendo, pero no lo dice en ningún lado. El inhibidor lo vigila
+  Centauro Satelital, que ya lo hacía las 24 horas.
+- **El renglón de la unidad dice lo que hace**: en movimiento, detenida,
+  apagada o sin señal. Si un inhibidor de verdad la calla, sale sin
+  señal, como cualquier unidad que deja de reportar.
+- **Las que estaban abiertas se cierran solas** en la siguiente vuelta
+  del GPS, con «Se cerró sola: la central ya no recibe la alerta del
+  inhibidor»; así no se quedan en la revisión del cierre. En la bitácora
+  del servicio, las de antes siguen con su resolución.
+- **La corriente cortada sigue igual**: más de dos minutos sin corriente
+  en servicio, tarjeta en la central.
+
+Por dentro: `gps.DE_LA_UNIDAD` ya solo trae `SIN_CORRIENTE`;
+`_alertas_de_la_unidad` no crea la del inhibidor y cierra la que quedó
+abierta; `gps.linea` ya no pone el inhibidor antes que todo. En la
+consola, `central.js` sin la tarjeta del inhibidor e `idioma.js` sin sus
+cuatro textos, en tres idiomas; el resumen de la central dice «una unidad
+sin corriente» donde decía «un inhibidor». El tipo de alerta `INHIBIDOR`
+y lo que Pegasus dice de la unidad se quedan en la base: sin migración.
+Manual: la central, las piezas, las alertas y la tarea del GPS en el
+reloj, en español y portugués. Pruebas: en `tests/test_gps.py`, las del
+inhibidor ahora dicen que no llega a la central y que la unidad dice lo
+que hace, y una nueva cierra la que quedó abierta.
+
+**Lo que sigue.** Sube junto con la sección 121, con el bloque de
+siempre (sin migración).
+
 ## 14. Lo que falta
 
 ### Abierto

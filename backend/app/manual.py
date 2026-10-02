@@ -220,12 +220,12 @@ def ligas(cap: dict) -> list[str]:
 TAREAS = {
     "gps-leer": {
         "es": ("GPS: lee Pegasus. El pánico de la unidad, el camino al punto, "
-               "el inhibidor y la corriente, y el segundo testigo de las "
+               "la corriente y el segundo testigo de las "
                "marcas. Sin nadie en la calle, las posiciones cada 15 minutos.",
                "El usuario de Pegasus en el servidor y la tarjeta del GPS en "
                "el estado del sistema."),
         "pt": ("GPS: lê o Pegasus. O pânico da unidade, o caminho até o ponto, "
-               "o bloqueador de sinal e a corrente, e a segunda testemunha das marcas. "
+               "a corrente e a segunda testemunha das marcas. "
                "Sem ninguém na rua, as posições a cada 15 minutos.",
                "O usuário do Pegasus no servidor e o cartão do GPS no estado "
                "do sistema."),

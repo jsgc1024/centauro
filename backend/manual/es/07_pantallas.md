@@ -45,7 +45,7 @@ Lo que espera la firma del director de operaciones —las incidencias por autori
 ## Operaciones CI
 
 ### Monitoreo {#central}
-La central: lo que hay que atender ahora —un pánico, un inhibidor, un equipo callado—, las unidades que salieron del servicio y siguen por entregar, con quién responde y cuánto les queda, y lo que hay que resolver antes del corte de la víspera. Aquí se registran a mano las marcas que no llegaron, con su justificación, y la entrega sin revisión cuando las fotos ya no se pueden tomar.
+La central: lo que hay que atender ahora —un pánico, una unidad sin corriente, un equipo callado—, las unidades que salieron del servicio y siguen por entregar, con quién responde y cuánto les queda, y lo que hay que resolver antes del corte de la víspera. Aquí se registran a mano las marcas que no llegaron, con su justificación, y la entrega sin revisión cuando las fotos ya no se pueden tomar.
 
 ### Código {#codigo}
 El código de cuatro dígitos que se le dicta por teléfono al personal de campo que no puede entrar a la app. Vale 10 minutos.

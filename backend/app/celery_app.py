@@ -193,8 +193,8 @@ celery.conf.update(
             "schedule": crontab(minute=7),
         },
         # El GPS de las unidades (seccion 60). Cada dos minutos: el
-        # panico del vehiculo, el camino al punto, el inhibidor y la
-        # corriente, y el segundo testigo de las marcas. Sin nadie en la
+        # panico del vehiculo, el camino al punto, la corriente y el
+        # segundo testigo de las marcas (el inhibidor ya no: seccion 122). Sin nadie en la
         # calle, las posiciones solo se leen cada quince. Sin usuario de
         # Pegasus en el .env no hace nada.
         "gps-leer": {

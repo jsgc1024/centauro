@@ -274,9 +274,6 @@ function dichoDeLaUnidad(l) {
     case "sin_senal":
       return [las ? reemplazar(t("gps_sin_senal_desde"), { hora: las })
                   : t("gps_sin_senal"), "alerta"];
-    case "inhibidor":
-      return [reemplazar(t("gps_inhibidor_desde"), { hora: las || "—" }),
-              "grave"];
     case "sin_corriente":
       return [reemplazar(t("gps_sin_corriente_desde"), { hora: las || "—" }),
               "alerta"];
@@ -299,7 +296,7 @@ function dichoDeLaUnidad(l) {
 function lineaDeLaUnidad(l, conPosicion = false) {
   const [texto, tono] = dichoDeLaUnidad(l);
   const extra = conPosicion && l.hace_min != null
-    && !["sin_senal", "inhibidor"].includes(l.estado)
+    && l.estado !== "sin_senal"
     ? ` · ${reemplazar(t("gps_ultima_posicion"), { n: l.hace_min })}` : "";
   return testigo(fuenteUnidad(l.placa), texto + extra, tono);
 }
@@ -320,19 +317,14 @@ function telefonos(gente) {
              style: "margin-right:12px" }, `${p.nombre} · ${p.telefono}`));
 }
 
-/* El inhibidor y la corriente cortada, con lo que hay que saber antes
-   de llamar. Se cierran solos cuando la unidad vuelve a estar bien, o al
-   terminar el servicio: fuera de esa ventana los vigila Centauro
-   Satelital. */
+/* La corriente cortada, con lo que hay que saber antes de llamar. Se
+   cierra sola cuando la unidad vuelve a tener corriente, o al terminar
+   el servicio: fuera de esa ventana la vigila Centauro Satelital. El
+   inhibidor ya no llega a la central (seccion 122). */
 function fichaDeLaUnidad(a) {
-  const inhibidor = a.tipo === "inhibidor";
   const l = a.unidad || {};
   let dice, tono;
-  if (inhibidor && l.estado === "inhibidor") {
-    dice = reemplazar(t("gps_detecto_inhibidor"),
-                      { hora: lasHoras(l.desde, l.desde_dias) || "—" });
-    tono = "grave";
-  } else if (!inhibidor && l.estado === "sin_corriente") {
+  if (l.estado === "sin_corriente") {
     dice = reemplazar(t("gps_perdio_corriente"),
                       { hora: lasHoras(l.desde, l.desde_dias) || "—" });
     tono = "alerta";
@@ -343,8 +335,7 @@ function fichaDeLaUnidad(a) {
   return h("div", { clase: "tarjeta lisa", style: "margin:0 0 10px" },
     h("div", { style: "display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center" },
       h("div", {},
-        etiqueta(t(inhibidor ? "cen_inhibidor" : "cen_sin_corriente"),
-                 inhibidor ? "grave" : "alerta"), " ",
+        etiqueta(t("cen_sin_corriente"), "alerta"), " ",
         h("b", {}, [a.folio, a.cliente].filter(Boolean).join(" · ")),
         aBordo(a.a_bordo)
           ? h("div", { clase: "gris chico" }, aBordo(a.a_bordo)) : null,
@@ -356,7 +347,7 @@ function fichaDeLaUnidad(a) {
         botonBitacora(a.jornada_id, enLaTarjeta))),
     h("div", { style: "margin-top:8px" }, ...telefonos(a.a_bordo),
       h("div", { clase: "gris chico", style: "margin-top:6px" },
-        t(inhibidor ? "cen_inhibidor_pie" : "cen_corriente_pie"))));
+        t("cen_corriente_pie"))));
 }
 
 

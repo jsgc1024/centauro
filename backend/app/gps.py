@@ -11,10 +11,11 @@ tableros: «alertas, si las manejan ellos. adelante con lo demas».
     cuenta igual que la del telefono: lo que tiene que llegar al punto
     es la camioneta. Misma regla de la seccion 38: linea recta y reloj.
   * **Las alertas.** El panico del vehiculo suena siempre, con o sin
-    servicio. El inhibidor y la corriente cortada (mas de 2 minutos),
-    solo del camino al punto a la marca de fin: fuera de esa ventana las
-    vigila Centauro Satelital, que ya lo hace las 24 horas. La unidad no
-    apaga ninguna alerta: agrega lo que sabe.
+    servicio. La corriente cortada (mas de 2 minutos), solo del camino al
+    punto a la marca de fin: fuera de esa ventana la vigila Centauro
+    Satelital, que ya lo hace las 24 horas. La unidad no apaga ninguna
+    alerta: agrega lo que sabe. El inhibidor ya no llega a la central
+    (seccion 122): Salvador, 2 de octubre, «no es necesaria».
   * **El segundo testigo.** Cada marca queda con lo que decia la unidad
     de quien marco. No frena nada: queda para revisar.
   * **La gasolina** contra los kilometros de la unidad, y **el manejo**
@@ -123,7 +124,12 @@ def _barrido_pedido() -> bool:
 VIVAS = (m.EstatusJornada.PLANEADA, m.EstatusJornada.CONFIRMADA,
          m.EstatusJornada.PROXIMA_A_INICIAR, m.EstatusJornada.ARRIBADO,
          m.EstatusJornada.EN_CURSO)
-DE_LA_UNIDAD = (m.TipoAlerta.INHIBIDOR, m.TipoAlerta.SIN_CORRIENTE)
+# Lo que dice la unidad y le llega a la central como alerta: la corriente
+# cortada. El inhibidor ya no (seccion 122, Salvador, 2 de octubre: «la
+# alerta de inhibido de senal que llega a la central no es necesaria»):
+# Pegasus lo sigue mandando, pero no levanta alerta ni se dice en el
+# renglon de la unidad.
+DE_LA_UNIDAD = (m.TipoAlerta.SIN_CORRIENTE,)
 
 
 def _utc() -> datetime:
@@ -248,10 +254,10 @@ def linea(unidad: m.UnidadGps | None, pais: m.Pais | None,
         return {**base, "estado": estado, "desde": _iso(cuando),
                 "desde_dias": dias_atras(cuando, hoy), **extra}
 
-    # El inhibidor antes que el silencio: lo que hace un inhibidor es
-    # justo callar al equipo, y "no reporta" diria menos que "inhibidor".
-    if unidad.inhibidor:
-        return desde("inhibidor", unidad.inhibidor_desde)
+    # El inhibidor ya no se dice (seccion 122): iba antes que todo y la
+    # unidad que seguia mandando su posicion salia «sin posicion». Lo que
+    # se dice es lo que hace; si un inhibidor de verdad la calla, sale sin
+    # senal, como cualquier otra.
     if reglas.callada(unidad.reporte_en, ahora):
         return desde("sin_senal", unidad.reporte_en)
     if unidad.corriente is False:
@@ -629,7 +635,7 @@ def revisar_panicos(db: Session, cliente=None,
     return {"conectado": True, "panicos": nuevos}
 
 
-# ================================================================ inhibidor y corriente
+# ================================================================ la corriente
 
 def _abierta(db: Session, jornada_id: int, vehiculo_id: int,
              tipo: m.TipoAlerta) -> m.Alerta | None:
@@ -640,10 +646,11 @@ def _abierta(db: Session, jornada_id: int, vehiculo_id: int,
 
 def _alertas_de_la_unidad(db: Session, relojes: reloj.Relojes,
                           ventana: list, ahora: datetime) -> int:
-    """Inhibidor y corriente cortada, solo del camino al punto a la
-    marca de fin. Se resuelven solas cuando la unidad vuelve a estar
-    bien, o cuando termina el servicio: fuera de esa ventana las vigila
-    Centauro Satelital."""
+    """La corriente cortada, solo del camino al punto a la marca de fin.
+    Se resuelve sola cuando la unidad vuelve a tener corriente, o cuando
+    termina el servicio: fuera de esa ventana la vigila Centauro
+    Satelital. El inhibidor ya no levanta alerta (seccion 122), y la que
+    seguia abierta de antes se cierra aqui."""
     nuevas = 0
     vigiladas = set()
     for jornada, _fase in ventana:
@@ -655,11 +662,6 @@ def _alertas_de_la_unidad(db: Session, relojes: reloj.Relojes,
             vigiladas.add((jornada.id, a.vehiculo_id))
             placa = a.vehiculo.placa if a.vehiculo else unidad.placa
             casos = []
-            if unidad.inhibidor:
-                casos.append((m.TipoAlerta.INHIBIDOR,
-                              f"La unidad {placa} detecto un inhibidor de "
-                              f"senal a las "
-                              f"{local(unidad.inhibidor_desde or ahora, pais):%H:%M}"))
             if (unidad.corriente is False and unidad.corriente_desde
                     and (ahora - unidad.corriente_desde).total_seconds() / 60
                     > reglas.MINUTOS_SIN_CORRIENTE):
@@ -680,20 +682,22 @@ def _alertas_de_la_unidad(db: Session, relojes: reloj.Relojes,
 
     # Las que ya no dicen nada verdadero.
     en_ventana = {j.id for j, _fase in ventana}
+    # El inhibidor que quedo abierto de antes de la seccion 122 tambien.
     for alerta in (db.query(m.Alerta)
-                   .filter(m.Alerta.tipo.in_(DE_LA_UNIDAD),
+                   .filter(m.Alerta.tipo.in_(DE_LA_UNIDAD
+                                             + (m.TipoAlerta.INHIBIDOR,)),
                            m.Alerta.atendida.is_(False)).all()):
         unidad = unidad_de(db, alerta.vehiculo_id)
         pais = relojes.pais(reloj.pais_de_la_jornada(alerta.jornada))
         hora = f"{local(ahora, pais):%H:%M}"
         resolucion = None
-        if alerta.jornada_id not in en_ventana:
+        if alerta.tipo == m.TipoAlerta.INHIBIDOR:
+            resolucion = ("Se cerro sola: la central ya no recibe la "
+                          "alerta del inhibidor.")
+        elif alerta.jornada_id not in en_ventana:
             resolucion = "Se cerro sola: termino el servicio."
         elif (alerta.jornada_id, alerta.vehiculo_id) not in vigiladas:
             resolucion = "Se cerro sola: la unidad salio del servicio."
-        elif alerta.tipo == m.TipoAlerta.INHIBIDOR and unidad and not unidad.inhibidor:
-            resolucion = (f"Se resolvio sola: la unidad volvio a mandar su "
-                          f"posicion a las {hora}.")
         elif (alerta.tipo == m.TipoAlerta.SIN_CORRIENTE and unidad
               and unidad.corriente is not False):
             resolucion = (f"Se resolvio sola: la unidad recupero la "

@@ -2,6 +2,9 @@
 
 O que há de novo em cada atualização, escrito para quem usa o sistema. A mais nova fica em cima.
 
+## 122 · 2026-10-02 · O alerta do bloqueador de sinal é desligado
+A central já não recebe o alerta «Bloqueador de sinal»: não aparece em «Atender agora» nem é anotado no diário do dia. A linha de cada unidade diz o que ela realmente faz —em movimento, parada, desligada ou sem sinal— em vez de «sem posição: bloqueador de sinal», que aparecia mesmo com a unidade enviando a sua posição; se um bloqueador de verdade a cala, ela aparece sem sinal, como qualquer outra. Os alertas do bloqueador que estavam abertos se fecham sozinhos. A corrente cortada continua igual, e o bloqueador quem vigia é a Centauro Satelital. Ver [os alertas](#/manual/leer/sintoma-alertas).
+
 ## 121 · 2026-10-02 · A equipe do Brasil a partir do Odoo
 A leitura do pessoal de segurança agora separa os países pela **empresa** no Odoo: o **México**, CENTAURO ASS com «Personal de Seguridad» ou «Security Driver»; o **Brasil**, a sua empresa com «Motorista Executivo Bilíngue» ou «Condutor Folguista». Elas nunca se misturam: o cargo de um país com a empresa de outro aparece em Pendentes, e a pessoa que já estava não muda de país sozinha. A cidade é procurada entre as do seu país —«São Paulo - Barueri» é São Paulo— e o celular vai com +55. À equipe do Brasil podem faltar no Odoo o CPF, a CNH ou a conta bancária: **entra do mesmo jeito**, e o que falta aparece à parte, em «A cadastrar», para o RH cadastrar lá; a conta que falta no Odoo não apaga a que o Connect já tem. O escritório agora só lê as empresas do Connect: a equipe de outra empresa que o Odoo deixa ver —Centauro Logistic— é desligada sozinha se não tem acesso. E cada etiqueta da frota é reconhecida pelo seu número no Odoo, então pode ser renomeada sem que a frota saia do Connect; o ensaio da frota diz com que nome cada uma está hoje. Ver [o que vem do Odoo](#/manual/leer/odoo).
 

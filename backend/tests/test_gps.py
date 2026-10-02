@@ -435,8 +435,12 @@ def test_el_panico_sin_servicio_tambien_suena(db, pegasus, datos):
 
 # ================================================================ inhibidor y corriente
 
-def test_el_inhibidor_suena_en_servicio_y_se_resuelve_solo(
+def test_el_inhibidor_ya_no_llega_a_la_central(
         cliente, sesion, datos, db, pegasus):
+    """Seccion 122: Salvador, 2 de octubre, «la alerta de inhibido de
+    senal que llega a la central no es necesaria». En servicio, con el
+    inhibidor puesto en Pegasus, no se levanta alerta, la central no ve
+    nada que atender y el renglon de la unidad dice lo que hace."""
     servicio, j = _en_curso(cliente, sesion, datos)
     ahora = datetime.now(timezone.utc)
     placa = _placa_suburban(datos)
@@ -444,38 +448,54 @@ def test_el_inhibidor_suena_en_servicio_y_se_resuelve_solo(
         101, placa, ahora, lat=19.43, lon=-99.16, jam=True,
         jam_desde=ahora - timedelta(minutes=3))]
     gps.leer(db, pegasus, ahora)
-    alertas = db.query(m.Alerta).filter_by(tipo=m.TipoAlerta.INHIBIDOR).all()
-    assert len(alertas) == 1 and alertas[0].jornada_id == j["id"]
+    gps.leer(db, pegasus, ahora + timedelta(minutes=2))
+    assert db.query(m.Alerta).filter_by(tipo=m.TipoAlerta.INHIBIDOR).count() == 0
 
     tablero = cliente.get("/central/tablero", headers=sesion("central")).json()
-    assert tablero["roto"]["hay"]
-    suya = tablero["roto"]["unidad"][0]
-    assert suya["tipo"] == "inhibidor" and suya["placa"] == placa
-    assert suya["unidad"]["estado"] == "inhibidor"
+    assert tablero["roto"]["unidad"] == []
+    dice = gps.linea(db.query(m.UnidadGps).one(), None,
+                     ahora + timedelta(minutes=2))
+    assert dice["estado"] in ("detenida", "en_movimiento")
 
-    # Otra vuelta con el inhibidor puesto: no se repite.
-    gps.leer(db, pegasus, ahora + timedelta(minutes=2))
-    assert db.query(m.Alerta).filter_by(tipo=m.TipoAlerta.INHIBIDOR).count() == 1
 
-    # Se quita: se resuelve sola.
+def test_la_alerta_del_inhibidor_que_quedo_abierta_se_cierra_sola(
+        cliente, sesion, datos, db, pegasus):
+    """La que se levanto antes de la seccion 122 no se queda colgada en
+    la central ni en la revision del cierre: la siguiente vuelta la
+    cierra, con su porque."""
+    servicio, j = _en_curso(cliente, sesion, datos)
+    ahora = datetime.now(timezone.utc)
+    placa = _placa_suburban(datos)
     pegasus.unidades_[GRUPO_MX] = [unidad(
-        101, placa, ahora + timedelta(minutes=4), lat=19.43, lon=-99.16)]
-    gps.leer(db, pegasus, ahora + timedelta(minutes=4))
+        101, placa, ahora, lat=19.43, lon=-99.16, jam=True)]
+    gps.leer(db, pegasus, ahora)
+    vehiculo = db.query(m.UnidadGps).one().vehiculo_id
+    db.add(m.Alerta(jornada_id=j["id"], tipo=m.TipoAlerta.INHIBIDOR,
+                    vehiculo_id=vehiculo,
+                    mensaje=f"La unidad {placa} detecto un inhibidor de senal."))
+    db.commit()
+
+    gps.leer(db, pegasus, ahora + timedelta(minutes=2))
     db.expire_all()
     alerta = db.query(m.Alerta).filter_by(tipo=m.TipoAlerta.INHIBIDOR).one()
-    assert alerta.atendida and "Se resolvio sola" in alerta.resolucion
+    assert alerta.atendida
+    assert alerta.resolucion == ("Se cerro sola: la central ya no recibe la "
+                                 "alerta del inhibidor.")
+    tablero = cliente.get("/central/tablero", headers=sesion("central")).json()
+    assert tablero["roto"]["unidad"] == []
 
 
-def test_con_inhibidor_la_unidad_se_calla_y_se_dice_por_que(db, pegasus):
-    """Un inhibidor calla al equipo. A los diez minutos la unidad ya "no
-    reporta", pero lo que se dice sigue siendo el inhibidor."""
+def test_con_inhibidor_la_unidad_dice_lo_que_hace(db, pegasus):
+    """Un inhibidor de verdad calla al equipo: a los veinticinco minutos
+    sin posicion, la unidad sale sin senal, como cualquier otra. Antes
+    decia «inhibidor» aunque siguiera mandando su posicion."""
     ahora = datetime.now(timezone.utc)
     pegasus.unidades_[GRUPO_MX] = [unidad(
         101, "ABC1234", ahora - timedelta(minutes=25), jam=True,
         jam_desde=ahora - timedelta(minutes=25))]
     gps.leer(db, pegasus, ahora)
     dice = gps.linea(db.query(m.UnidadGps).one(), None, ahora)
-    assert dice["estado"] == "inhibidor"
+    assert dice["estado"] == "sin_senal"
     # Hoy, o ayer si la prueba corre justo despues de medianoche.
     assert dice["desde_dias"] in (0, 1)
 

@@ -28,7 +28,7 @@ Vinte tarefas que rodam sozinhas: ler o GPS a cada dois minutos, enviar os e-mai
 A fonte de verdade do pessoal de segurança, do escritório, da frota e da oficina, dos clientes e das tabelas de preços. O Centauro **o lê**, e a única coisa que escreve nele é a pré-fatura em rascunho que sai com o aval: o que vem do Odoo se corrige no Odoo e chega sozinho na leitura seguinte. Ver [o que vem do Odoo](#/manual/leer/odoo).
 
 ### O GPS
-O Pegasus, da Centauro Satelital. Com serviços na rua, a cada dois minutos as unidades são lidas: o pânico, o caminho até o ponto, o bloqueador de sinal, a corrente e a segunda testemunha das marcações. Sem ninguém na rua, a cada quinze, só para saber qual reporta. Cada unidade do Pegasus se liga sozinha à do Centauro **pela placa**, e a placa sai da frota do Odoo: sem a frota lida, nenhuma se liga.
+O Pegasus, da Centauro Satelital. Com serviços na rua, a cada dois minutos as unidades são lidas: o pânico, o caminho até o ponto, a corrente e a segunda testemunha das marcações. Sem ninguém na rua, a cada quinze, só para saber qual reporta. Cada unidade do Pegasus se liga sozinha à do Centauro **pela placa**, e a placa sai da frota do Odoo: sem a frota lida, nenhuma se liga.
 
 ### O e-mail
 Sai de **connect@mycentauro.lat** pelo Amazon SES, e as respostas chegam em cecc.notification@centauro.lat. Leva os convites e as recuperações de senha, os avisos aos clientes e as pesquisas. É escrito na hora e sai a cada cinco minutos; o aviso operacional que passa de 24 horas sem sair já não sai, e o convite, a recuperação e a pesquisa vivem o que vive o seu link. Enquanto o e-mail estiver desligado, nada sai e tudo espera.

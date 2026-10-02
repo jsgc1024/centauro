@@ -13,7 +13,7 @@ A central tem alertas abertos, ou a revisão do fechamento diz que há alertas s
 - **Silêncio**: o serviço em curso está há duas horas sem reportar. Fecha-se sozinho quando a equipe volta a reportar, com quem e a que hora; se ninguém reporta, a central o atende.
 - **Marcação longe do ponto**: alguém tentou marcar fora da cerca. Fica salva e quem a valida é o seu supervisor.
 - **Marcação fora do horário**: chegou mais de 15 minutos depois da hora marcada, ou chegou ao servidor muito depois do que diz. Quem a revisa é a central.
-- **Pânico**: pelo app, ou pelo GPS da unidade. Também o bloqueador de sinal e a corrente cortada que o GPS lê.
+- **Pânico**: pelo app, ou pelo GPS da unidade. Também a corrente cortada que o GPS lê. O bloqueador de sinal já não chega à central: quem o vigia é a Centauro Satelital.
 
 ### Como se resolve
 A central atende cada alerta e o fecha com a sua resolução. A marcação fora do horário, ela valida ou ajusta antes do fechamento: senão, o consultor a vê como pendente ao revisar o seu serviço.

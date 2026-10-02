@@ -13,7 +13,7 @@ La central tiene alertas abiertas, o la revisión del cierre dice que hay alerta
 - **Silencio**: el servicio en curso lleva dos horas sin reportar. Se cierra sola cuando el equipo vuelve a reportar, con quién y a qué hora; si nadie reporta, la atiende la central.
 - **Marca lejos del punto**: alguien intentó marcar fuera de la geocerca. Se guarda y la valida su supervisor.
 - **Marca fuera de horario**: llegó más de 15 minutos después de la hora citada, o llegó al servidor mucho después de lo que dice. La revisa la central.
-- **Pánico**: desde la app, o desde el GPS de la unidad. También el inhibidor y la corriente cortada que lee el GPS.
+- **Pánico**: desde la app, o desde el GPS de la unidad. También la corriente cortada que lee el GPS. El inhibidor ya no llega a la central: lo vigila Centauro Satelital.
 
 ### Cómo se arregla
 La central atiende cada alerta y la cierra con su resolución. La marca fuera de horario, la valida o la ajusta antes del cierre: si no, el consultor la ve como pendiente al revisar su servicio.

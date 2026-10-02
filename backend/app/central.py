@@ -797,7 +797,7 @@ def _ficha_de_panico(db: Session, a, ahora: datetime | None = None) -> dict:
 
 def _alerta_de_la_unidad(db: Session, alerta: m.Alerta,
                          ahora: datetime) -> dict:
-    """El inhibidor o la corriente cortada, con el servicio, quien va a
+    """La corriente cortada, con el servicio, quien va a
     bordo y si el principal va con ellos."""
     jornada = alerta.jornada
     servicio = jornada.equipo.servicio
@@ -842,8 +842,9 @@ def roto(db: Session, ahora: datetime, manana_: dict, pulso_: dict) -> dict:
     extras = [f for f in pulso_["eventuales"] + pulso_["implantados"]
               if f["por_entrar_en_extra"]]
 
-    # El inhibidor y la corriente cortada: solo existen del camino al
-    # punto a la marca de fin, y se cierran solos (seccion 60).
+    # La corriente cortada: solo existe del camino al punto a la marca
+    # de fin, y se cierra sola (seccion 60). El inhibidor ya no llega a la
+    # central (seccion 122).
     de_la_unidad = (db.query(m.Alerta)
                     .filter(m.Alerta.tipo.in_(gps.DE_LA_UNIDAD),
                             m.Alerta.atendida.is_(False))

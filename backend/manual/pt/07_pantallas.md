@@ -45,7 +45,7 @@ O que espera o visto do diretor de operações —os incidentes por autorizar, o
 ## Operações CI
 
 ### Monitoramento {#central}
-A central: o que precisa de atenção agora —um pânico, um bloqueador de sinal, uma equipe calada—, as unidades que saíram do serviço e continuam por entregar, com quem responde e quanto lhes resta, e o que precisa ser resolvido antes do corte da véspera. Aqui se registram à mão as marcações que não chegaram, com a sua justificativa, e a entrega sem revisão quando as fotos já não podem ser tiradas.
+A central: o que precisa de atenção agora —um pânico, uma unidade sem corrente, uma equipe calada—, as unidades que saíram do serviço e continuam por entregar, com quem responde e quanto lhes resta, e o que precisa ser resolvido antes do corte da véspera. Aqui se registram à mão as marcações que não chegaram, com a sua justificativa, e a entrega sem revisão quando as fotos já não podem ser tiradas.
 
 ### Código {#codigo}
 O código de quatro dígitos que se dita por telefone ao pessoal de campo que não consegue entrar no app. Vale 10 minutos.

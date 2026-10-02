@@ -2,6 +2,9 @@
 
 Lo nuevo de cada actualización, escrito para quien usa el sistema. La más nueva va arriba.
 
+## 122 · 2026-10-02 · La alerta del inhibidor se apaga
+La central ya no recibe la alerta «Inhibidor de señal»: no sale en «Atender ahora» ni se anota en la bitácora del servicio. El renglón de cada unidad dice lo que de verdad hace —en movimiento, detenida, apagada o sin señal— en vez de «sin posición: inhibidor», que salía aunque la unidad siguiera mandando su posición; si un inhibidor de verdad la calla, sale sin señal, como cualquier otra. Las alertas del inhibidor que estaban abiertas se cierran solas. La corriente cortada sigue igual, y el inhibidor lo vigila Centauro Satelital. Ver [las alertas](#/manual/leer/sintoma-alertas).
+
 ## 121 · 2026-10-02 · La gente de Brasil desde Odoo
 La lectura del personal de seguridad ya separa los países por su **compañía** en Odoo: **México**, CENTAURO ASS con «Personal de Seguridad» o «Security Driver»; **Brasil**, su compañía con «Motorista Executivo Bilíngue» o «Condutor Folguista». Nunca se mezclan: el puesto de un país con la compañía de otro sale en Pendientes, y la persona que ya estaba no cambia de país sola. Su ciudad se busca entre las de su país —«São Paulo - Barueri» es Sao Paulo— y su celular va con +55. A la gente de Brasil le pueden faltar en Odoo el CPF, la CNH o la cuenta bancaria: **entra igual**, y lo que falta sale aparte, en «Por capturar», para que RH lo capture allá; la cuenta que falta en Odoo no borra la que Connect ya tiene. La oficina ya solo lee las compañías de Connect: la gente de otra compañía que Odoo deja ver —Centauro Logistic— se da de baja sola si no tiene acceso. Y cada etiqueta de la flota se reconoce por su número en Odoo, así que se puede renombrar sin que la flota salga de Connect; el ensayo de la flota dice con qué nombre está hoy cada una. Ver [lo que viene de Odoo](#/manual/leer/odoo).
 
