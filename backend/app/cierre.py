@@ -263,9 +263,15 @@ def ejecutado(db: Session, servicio: m.Servicio, tarifario_id: int,
                          "modalidad": codigo, "precio": precio,
                          "producto_odoo_id": tarifa.producto_odoo_id,
                          "rol_id": a.rol_id}
-                horas_de_mas(linea, extras, tarifa.precio_hora_extra,
-                             a.rol.nombre if a.rol else None,
-                             tarifa.producto_hora_extra_id)
+                # La misma regla que la cotizacion (seccion 127, hallazgo
+                # r3-duda6): la hora extra de su renglon y, si no la
+                # trae, la de toda la lista. Las listas de Odoo llenan el
+                # renglon; en las capturadas a mano la cotizacion la
+                # prometia y el cierre la cobraba en cero.
+                precio_extra, producto_extra = hora_extra_del_rol(
+                    db, tarifario_id, a.rol_id, j.modalidad)
+                horas_de_mas(linea, extras, precio_extra,
+                             a.rol.nombre if a.rol else None, producto_extra)
                 detalle.append(linea)
                 total += linea["importe"]
 
@@ -1384,6 +1390,30 @@ def dar_visto_bueno(cierre: m.Cierre, momento: datetime) -> None:
     cierre.estatus = m.EstatusCierre.ENVIADO_FINANZAS
 
 
+def _la_prefactura_sigue_en_borrador(cierre: m.Cierre) -> bool:
+    """Antes de regresar, lo que Odoo dice de la prefactura (seccion 127,
+    hallazgo r3-03). Timbrada: 409. Devuelve si Odoo no contesto, para
+    decirlo en la bitacora. Sin prefactura o sin llave, nada que mirar."""
+    from app import odoo_api, odoo_facturacion
+
+    if not cierre.prefactura_odoo_id or not odoo_facturacion.hay_llave():
+        return False
+    try:
+        de_odoo = odoo_facturacion.estado_en_odoo(cierre.prefactura_odoo_id)
+    except (odoo_api.SinConexion, odoo_api.NoResponde, RuntimeError):
+        return True
+    if de_odoo and de_odoo.get("estado") == "posted":
+        raise HTTPException(409, {
+            "mensaje": (f"La prefactura #{cierre.prefactura_odoo_id} ya está "
+                        f"timbrada en Odoo ({de_odoo.get('nombre') or ''}): "
+                        "no se regresa"),
+            "que_hacer": ("Lo timbrado se corrige con una nota de crédito en "
+                          "Odoo. Si la factura está bien, anótala aquí con "
+                          "«Ya se facturó en Odoo»."),
+            "timbrada": de_odoo.get("nombre")})
+    return False
+
+
 def regresar(db: Session, cierre: m.Cierre, motivo: str, usuario: m.Usuario,
              ahora: datetime | None = None) -> dict:
     """Finanzas regresa el servicio --o el mes-- a operacion.
@@ -1412,6 +1442,13 @@ def regresar(db: Session, cierre: m.Cierre, motivo: str, usuario: m.Usuario,
         raise HTTPException(400, {
             "mensaje": "Escribe por que se regresa",
             "que_hacer": "Es lo que el consultor lee para corregirlo."})
+    # La prefactura que el facturista ya timbro no se regresa (seccion
+    # 127, hallazgo r3-03): regresarla dejaba el cierre esperando que
+    # alguien cancelara un CFDI, con el nuevo visto bueno trabado en «la
+    # anterior sigue viva». Lo timbrado se corrige con nota de credito,
+    # o se anota aqui con «Ya se facturo en Odoo». Si Odoo no contesta,
+    # se regresa igual y se dice.
+    odoo_no_contesto = _la_prefactura_sigue_en_borrador(cierre)
 
     momento = reloj.ahora_del_servicio(db, cierre.servicio, ahora)
     cierre.estatus = m.EstatusCierre.DEVUELTO_A_OPERACION
@@ -1458,6 +1495,9 @@ def regresar(db: Session, cierre: m.Cierre, motivo: str, usuario: m.Usuario,
                             else "")
                          + (f" (la prefactura #{prefactura} quedo en Odoo: "
                             f"la cancela el facturista)" if prefactura
+                            else "")
+                         + (" (Odoo no contesto: no se pudo ver si ya "
+                            "estaba timbrada)" if odoo_no_contesto
                             else ""))[:400])
     hasta = momento + timedelta(hours=HORAS_REGRESO)
     # El correo se guarda con el regreso (seccion 101): el push de abajo

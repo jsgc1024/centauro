@@ -9719,6 +9719,95 @@ Manual: «La cotización al cliente», en español y portugués. Pruebas en
 entre pruebas. La propuesta del implantado queda igual por ahora: un
 implantado que se borra deja su propuesta como antes.
 
+## 127. La revisión 360 de lo nuevo, ola 1: el dinero y lo atorado
+
+Salvador, 2 de octubre: «puedes hacer una revisión 360 de lo nuevo que
+no has revisado. verifica la continuidad, proceso y bugs». Nueve
+revisores, uno por área —la cotización, la propuesta, la prefactura, las
+lecturas de Brasil, los tarifarios, el freelance, la huella y la
+seguridad, operación y central, y el cruce transversal— leyeron las
+secciones 106 a 126 enteras (commits c1fef09..99256c8) contra la
+bitácora y las novedades; 75 hallazgos en bruto, 65 ya juntados y
+verificados contra el código, ninguno grave, en
+`REVISION_2026_10_02.md` (con archivo y línea de cada uno) y en
+`Claude outputs/Revision_de_lo_nuevo.pdf` para Salvador, con 18
+decisiones y su recomendación. Lo que la revisión no encontró: dinero
+mal calculado en el camino normal, dos prefacturas del mismo servicio,
+una lectura que mezcle países, una llamada de la consola a una ruta que
+no existe, una migración que no cuadre con los modelos, una ruta nueva
+sin permiso, un hueco en la huella.
+
+Esta es la primera ola: lo que toca cobro o dejaba algo sin salida, sin
+cambiar ningún proceso. Tres de estos aplican una regla y se le avisaron
+a Salvador para que frene si no es lo que quiere: el precio fijo en cero
+ya no cobra gratis, el mes cancelado se cuenta por el último día
+trabajado, y la revisión del mes del implantado reclama la unidad sin
+entregar (esa va en la ola 2).
+
+- **r1-01** La versión que nace al recotizar en el servicio
+  (`cotizacion._armar`) hereda la cabecera de la que nació en
+  Cotizaciones (`CABECERA_QUE_SIGUE`: quien la pidió, consultor, idioma,
+  vigencia, IVA, folio del servicio) y arma sus días con los del servicio
+  (`_dias_del_servicio`): la lista ya no la pinta con «—» ni sin IVA, y
+  «Volver a crear el servicio» funciona también con la V2.
+- **r1-03** `enviar` escribe la lista y la moneda de hoy junto con los
+  precios.
+- **r1-04** `al_eliminar_equipo` quita y renombra también los
+  `DiaCotizacion`.
+- **r1-06** La ruta vieja `POST /cotizaciones/{id}/autorizar` contesta
+  409 con una EP/COT sin servicio.
+- **r2-01** `propuesta.de_hoy_si_se_pide`: la bandeja de dirección y el
+  detalle de un borrador con el precio especial pedido enseñan los
+  precios de hoy —los mismos que compara `decidir_especial`—, así que
+  dirección ve y autoriza lo vigente aunque la lista haya cambiado.
+- **r2-03** `observaciones_del_mes` compara también la modalidad
+  (`_modalidad_distinta`, clave `modalidad_no_propuesta`): el mensual
+  de lunes a viernes repartido en 26 o 30 días se dice en el visto bueno
+  del mes.
+- **r2-04** `cobro_del_mensual`: el mes a medias que trabaja tantos
+  días como la base cobra el mensual, no 22 × el día redondeado.
+- **r3-01** `reintentar` ordena por `factura_intento_en` (nulos
+  primero): la vuelta rueda entre todos los pendientes.
+- **r3-02** `dia_de_la_cancelacion`: el último día trabajado manda
+  sobre el día en que se registró la cancelación.
+- **r3-03** `regresar` lee el estado de la prefactura en Odoo
+  (`estado_en_odoo`): timbrada, 409 «se corrige con nota de crédito o
+  se anota»; Odoo caído, se regresa y la bitácora lo dice.
+- **r3-04** «Volver a revisar en Odoo» en Facturación → En Odoo
+  (`POST /cierre/{id}/revisar-en-odoo`, `revisar_en_odoo`): el borrador
+  cancelado o borrado allá se suelta (`cancelada_en_odoo`) y la vuelta
+  de cada hora manda otro; timbrado, lo dice; en borrador, nada cambia.
+  Y `NO_CUADRA_VB_APROBADO`: lo aprobado que no cuadra ya no manda a un
+  «Regresar» que no existe.
+- **r3-05** `mandar` revisa `facturado_en` / `factura_odoo` después del
+  candado.
+- **r3-06** `reintentar` atrapa `SoftTimeLimitExceeded` aparte y para
+  ordenadamente (`paro_por_tiempo`).
+- **r3-07** La prefactura que manda la vuelta queda en la bitácora del
+  servicio a nombre de quien dio el visto bueno, «salió sola».
+- **r3-08** `facturacion._mandar_sin_reventar`: un error inesperado al
+  mandar se deshace en un punto de guardado y queda como intento fallido
+  (`anotar_fallo`), no como «de antes de la conexión».
+- **r5-01** Un país con prefijo configurado y sin categoría en Odoo no
+  lee sus listas: se quedan intactas (`plan["intactas"]`), no se apagan,
+  y sus productos ni se ponen en gris ni se borran; el modo «sin filtro»
+  solo cuando no hay ninguna categoría configurada.
+- **r5-02** `Listas.precio`: una regla fija en cero no es un precio
+  (pendiente «regla»: «precio fijo en cero»).
+- **r5-04 / r9-04 / r3-duda6** `cotizacion_cliente.hora_extra` usa
+  `cierre.hora_extra_del_rol` (renglón → paquete → lista) y el producto
+  del renglón; sin él, por país y «que mande este». Y `cierre.ejecutado`
+  usa la misma regla para las personas sueltas.
+- **r5-05** Pendiente `lista_archivada` por cliente cuya ficha siga
+  nombrando una lista que Odoo ya no trae, y el sello «Archivada en
+  Odoo» en el tarifario del cliente.
+
+Pruebas en `tests/test_revision_127.py`, una por hallazgo; el Odoo de
+mentiras de la prefactura contesta ahora también por id. Manual: la
+prefactura (`04_odoo.md`) con «Volver a revisar en Odoo». Lo que cambia
+de pantalla: el botón en Facturación → En Odoo y el sello de la lista
+archivada.
+
 ## 14. Lo que falta
 
 ### Abierto

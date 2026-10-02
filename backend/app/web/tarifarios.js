@@ -168,6 +168,9 @@ function cabeza(tar, nombre) {
     sellos.push(etiqueta(`${t(tar.general ? "tar_general_de_pais" : "tar_lista_de_odoo")}: `
                          + `${tar.nombre} · ${tar.moneda}`, "ok"));
     if (tar.resto_de) sellos.push(etiqueta(`${t("tar_lo_demas")}: ${tar.resto_de}`, "negro"));
+    /* La lista que Odoo ya no trae --archivada-- y el cliente conserva
+       (seccion 127): sus precios son los de la ultima lectura. */
+    if (tar.activo === false) sellos.push(etiqueta(t("tar_lista_archivada"), "alerta"));
   } else {
     sellos.push(etiqueta(`${t("tar_de_centauro")}: ${tar.nombre} · ${tar.moneda}`, "info"));
   }

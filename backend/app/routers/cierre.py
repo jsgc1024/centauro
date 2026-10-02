@@ -18,6 +18,7 @@ from app import cierre_mes
 from app import cotizacion as cotmotor
 from app import models as m
 from app import comisiones as motor_comisiones
+from app import odoo_facturacion
 from app import reloj
 from app import revisor
 from app import tipo_cambio
@@ -789,6 +790,26 @@ def anotar_factura(cierre_id: int, datos: FacturaDeOdooIn,
     fila = facturacion.anotar(db, cierre, datos.folio, datos.fecha, usuario)
     db.commit()
     return fila
+
+
+@router.post("/cierre/{cierre_id}/revisar-en-odoo",
+             summary="Volver a mirar en Odoo la prefactura de un cierre")
+def revisar_en_odoo(cierre_id: int, db: Session = Depends(get_db),
+                    usuario: m.Usuario = Depends(FINANZAS)):
+    """«Volver a revisar en Odoo» (seccion 127): si el facturista cancelo
+    o borro el borrador, Connect lo suelta y la vuelta de cada hora manda
+    otro; si ya esta timbrado, lo dice para que finanzas lo anote; si
+    sigue en borrador, no cambia nada."""
+    cierre = db.get(m.Cierre, cierre_id)
+    if not cierre:
+        raise HTTPException(404, f"No existe el cierre {cierre_id}")
+    resultado = odoo_facturacion.revisar_en_odoo(db, cierre)
+    if resultado["resultado"] in ("cancelada", "borrada"):
+        auditoria.registrar(
+            db, usuario, cierre.servicio, "prefactura revisada en odoo",
+            resultado["motivo"][:400])
+    db.commit()
+    return resultado
 
 
 @router.post("/cierre/{cierre_id}/facturar",

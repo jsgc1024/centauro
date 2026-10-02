@@ -75,6 +75,7 @@ const QUE_PASO = {
   anterior_viva: "fac_paso_anterior_viva",
   no_cuadra: "fac_paso_no_cuadra",
   de_antes: "fac_paso_de_antes",
+  cancelada_en_odoo: "fac_paso_cancelada_en_odoo",
 };
 
 const MESES = ["bon_mes_1", "bon_mes_2", "bon_mes_3", "bon_mes_4",
@@ -437,6 +438,30 @@ function enOdoo(filas, moneda, repintar) {
         extra.hidden = false;
         extra.querySelector("input").focus();
       } }, t("fac_ya_en_odoo"));
+    /* «Volver a revisar en Odoo» (seccion 127): Connect no lee de vuelta
+       todavia, asi que el borrador que el facturista cancelo o borro
+       seguia aqui para siempre. Con esto se relee su estado: cancelado o
+       borrado, se suelta y la vuelta de cada hora manda otro; timbrado,
+       se dice para anotarlo; en borrador, nada cambia. */
+    const revisar = !puedeFacturar() ? "" : h("button", { clase: "chico claro", type: "button",
+      onclick: async (e) => {
+        e.target.disabled = true;
+        try {
+          const r = await api.post(`/cierre/${f.cierre_id}/revisar-en-odoo`, {});
+          if (r.resultado === "sigue") {
+            mensaje(reemplazar(t(r.estado === "timbrada" ? "fac_rev_timbrada"
+                                                        : "fac_rev_sigue"),
+                               { n: r.prefactura, f: r.nombre || "" }),
+                    r.estado === "timbrada" ? "alerta" : "ok");
+          } else if (r.resultado === "cancelada" || r.resultado === "borrada") {
+            mensaje(reemplazar(t(`fac_rev_${r.resultado}`), { n: r.prefactura }), "ok");
+            await repintar();
+          } else {
+            mensaje(t("fac_rev_no_contesto"), "alerta");
+          }
+        } catch (err) { mensaje(err.message, "grave"); }
+        e.target.disabled = false;
+      } }, t("fac_revisar_en_odoo"));
     cuerpo.append(
       h("tr", {},
         h("td", {}, servicio(f),
@@ -447,8 +472,9 @@ function enOdoo(filas, moneda, repintar) {
             reemplazar(t("fac_antes_de_iva"), { m: f.moneda || moneda }))),
         h("td", {}, prefacturaDe(f)),
         h("td", { clase: "der", style: "width:1%;white-space:nowrap" },
-          h("div", { clase: "acciones", style: "justify-content:flex-end" },
-            f.prefactura.url ? botonOdoo(f.prefactura.url) : "", anotar))),
+          h("div", { clase: "acciones",
+                     style: "flex-direction:column;align-items:stretch" },
+            f.prefactura.url ? botonOdoo(f.prefactura.url) : "", revisar, anotar))),
       extra);
   }
   return h("div", {},

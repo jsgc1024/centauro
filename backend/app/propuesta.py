@@ -804,6 +804,27 @@ def de_la_guardada(cot: m.Cotizacion) -> dict:
                         _o_nada(cot.precio_hora_extra))
 
 
+def de_hoy_si_se_pide(db: Session, cot: m.Cotizacion) -> dict:
+    """Lo que ve quien decide el precio especial: los precios de hoy
+    (seccion 127, hallazgo r2-01).
+
+    `decidir_especial` compara la huella que vio direccion contra la que
+    sale de recalcular con la lista de hoy. Si la bandeja y la propuesta
+    le ensenaban lo guardado al pedirlo, un cambio de la lista entre
+    pedir y decidir --la lectura de cada hora-- las separaba para
+    siempre: «Los precios cambiaron desde que la abriste» a cada
+    intento, y nadie le avisaba al consultor. Para el borrador con el
+    precio pedido se calcula lo de hoy, que es lo que se autoriza; lo
+    demas sigue leyendo lo guardado (lo que dice el PDF). Si hoy no se
+    puede calcular --la lista ya no esta--, lo guardado."""
+    if cot.estatus != E.BORRADOR or cot.especial_estatus != PEDIDO:
+        return de_la_guardada(cot)
+    try:
+        return calcular(db, preparar(db, datos_de(cot)))
+    except HTTPException:
+        return de_la_guardada(cot)
+
+
 def _mensual_de_la_lista(dia, mes, base: int) -> dict:
     """{lista_precio_mes, lista_por_mes} de un renglon guardado: el mensual
     que la lista trae por mes (seccion 123) o, si no, su precio por dia
@@ -1265,7 +1286,7 @@ def por_autorizar(db: Session) -> list[dict]:
                         m.Cotizacion.estatus == E.BORRADOR,
                         m.Cotizacion.especial_estatus == PEDIDO)
                 .order_by(m.Cotizacion.especial_pedido_en).all()):
-        calc = de_la_guardada(cot)
+        calc = de_hoy_si_se_pide(db, cot)
         salida.append({
             "id": cot.id, "folio": folio_de(cot), "version": cot.version,
             "nombre": nombre_de(cot), "cliente": cc.cliente_texto(cot),
@@ -1597,7 +1618,7 @@ def detalle(db: Session, cot: m.Cotizacion, usuario: m.Usuario) -> dict:
 
     puede_armar = auth.puede_el_usuario(db, usuario, "cotizaciones.armar")
     puede_especial = auth.puede_el_usuario(db, usuario, ESPECIAL)
-    calc = de_la_guardada(cot)
+    calc = de_hoy_si_se_pide(db, cot)
     tasa = (Decimal(str(cot.tasa_iva)) if cot.tasa_iva is not None else None)
     t = cc._totales(calc["subtotal"], cot.con_iva, tasa)
     pdf = cc.archivo(cot, "pdf")
@@ -1882,8 +1903,14 @@ def observaciones_del_mes(db: Session,
                 distintos.append(campo)
         elif _o_nada(del_mes) != _o_nada(de_ella):
             distintos.append(campo)
+    # La modalidad tambien (seccion 127, hallazgo r2-03): el mensual de la
+    # propuesta cubria los dias de SU modalidad; con el trato cambiado a
+    # lunes a sabado --o a 12x36 antes del primer mes-- el mismo mensual
+    # cubre 26 o 30 dias y los sabados dejan de cobrarse aparte, sin que
+    # nada lo dijera.
+    modalidad = _modalidad_distinta(db, contrato, cot)
     cuando = (f"{cot.autorizada_el:%d/%m/%Y}" if cot.autorizada_el else "")
-    if not distintos:
+    if not distintos and modalidad is None:
         return [{"nivel": INFO, "asunto": "Precios de la propuesta",
                  "clave": "precios_propuesta",
                  "datos": {"folio": nombre_de(cot), "el": cuando},
@@ -1894,13 +1921,59 @@ def observaciones_del_mes(db: Session,
     detalle = "; ".join(f"{NOMBRES[c]}: {_texto_de(getattr(contrato, c))} "
                         f"(la propuesta, {_texto_de(pactado[c])})"
                         for c in distintos)
-    return [{"nivel": AVISO, "asunto": "Precios distintos a la propuesta",
-             "clave": "precios_no_propuesta",
-             "datos": {"folio": nombre_de(cot), "campos": distintos},
-             "mensaje": (f"Los términos del mes no son los de la propuesta "
-                         f"{nombre_de(cot)}: {detalle}"),
-             "accion": ("Si el cliente aceptó otro precio, se deja así. Si no, "
-                        "corrígelos en los términos del mes.")}]
+    salida = []
+    if distintos:
+        salida.append({
+            "nivel": AVISO, "asunto": "Precios distintos a la propuesta",
+            "clave": "precios_no_propuesta",
+            "datos": {"folio": nombre_de(cot), "campos": distintos},
+            "mensaje": (f"Los términos del mes no son los de la propuesta "
+                        f"{nombre_de(cot)}: {detalle}"),
+            "accion": ("Si el cliente aceptó otro precio, se deja así. Si no, "
+                       "corrígelos en los términos del mes.")})
+    if modalidad is not None:
+        salida.append({
+            "nivel": AVISO, "asunto": "Modalidad distinta a la propuesta",
+            "clave": "modalidad_no_propuesta",
+            "datos": {"folio": nombre_de(cot), **modalidad},
+            "mensaje": (f"La modalidad del mes ({modalidad['del_mes']}, "
+                        f"{modalidad['base_del_mes']} días) no es la de la "
+                        f"propuesta {nombre_de(cot)} ({modalidad['de_ella']}, "
+                        f"{modalidad['base_de_ella']} días): el mensual de "
+                        f"la propuesta cubría {modalidad['base_de_ella']} "
+                        "días y este mes lo reparte en "
+                        f"{modalidad['base_del_mes']}"),
+            "accion": ("Si el cliente aceptó el cambio con el mismo mensual, "
+                       "se deja así. Si no, corrige los días de servicio en "
+                       "el acuerdo o el mensual en los términos del mes.")})
+    return salida
+
+
+MODALIDAD_TEXTO = {m.DiasServicio.LUNES_VIERNES: "lunes a viernes",
+                   m.DiasServicio.LUNES_SABADO: "lunes a sábado",
+                   m.DiasServicio.TODOS: "mes completo"}
+
+
+def _modalidad_distinta(db: Session, contrato: m.ContratoImplantado,
+                        cot: m.Cotizacion) -> dict | None:
+    """Si el mes reparte el mensual en otra base que la propuesta: la
+    modalidad del contrato (o el 12x36, que cubre los siete dias) contra
+    los dias de servicio de la propuesta. None si es la misma."""
+    base_del_mes = motor_implantado.base_del_mensual(db, contrato)
+    if base_del_mes is None or not cot.dias_servicio:
+        return None
+    base_de_ella = base_de(cot.dias_servicio)
+    if base_del_mes == base_de_ella:
+        return None
+    es_12x36 = (motor_implantado.turno_del_servicio(db, contrato.servicio_id)
+                == motor_implantado.TURNO_12X36)
+    del_mes = ("12 × 36" if es_12x36
+               else MODALIDAD_TEXTO.get(contrato.dias_servicio,
+                                        str(contrato.dias_servicio)))
+    return {"del_mes": del_mes, "base_del_mes": base_del_mes,
+            "de_ella": MODALIDAD_TEXTO.get(D(cot.dias_servicio),
+                                           str(cot.dias_servicio)),
+            "base_de_ella": base_de_ella}
 
 
 def _texto_de(valor) -> str:

@@ -281,20 +281,32 @@ def hora_extra(db: Session, tarifario: m.Tarifario, perfil_ids,
                            codigo=m.CodigoModalidad.FULL_DAY).first())
     if completo is None or not completo.aplica_horas_extra:
         return []
+    from app.cierre import hora_extra_del_rol
+
     salida = []
     for perfil in (db.query(m.PerfilPersonal)
                    .filter(m.PerfilPersonal.id.in_(set(perfil_ids) or {0}))
                    .order_by(m.PerfilPersonal.id).all()):
-        fila = (db.query(m.TarifaRecurso)
-                .filter_by(tarifario_id=tarifario.id, perfil_id=perfil.id,
-                           modalidad_id=completo.id).first())
-        precio = ((fila.precio_hora_extra if fila else None)
-                  or tarifario.precio_hora_extra)
+        # La misma regla que el cierre (seccion 127, hallazgos r5-04 y
+        # r9-04): la de su renglon, la de su paquete si solo va en
+        # paquete, y si no la de la lista; y el producto de Odoo es el
+        # que guarda ese renglon (seccion 116), no el primero que diga
+        # «hora extra» de ese rol: con los de Brasil confirmados, el PDF
+        # en espanol decia «Motorista Executivo Bilingue».
+        precio, producto_id = hora_extra_del_rol(db, tarifario.id, perfil.id,
+                                                 completo)
         if precio:
             producto = None
-            hora = (db.query(m.ProductoOdoo)
-                    .filter_by(clase="hora_extra", perfil_id=perfil.id,
-                               confirmado=True).first())
+            hora = db.get(m.ProductoOdoo, producto_id) if producto_id else None
+            if hora is None:
+                hora = (db.query(m.ProductoOdoo)
+                        .filter_by(clase="hora_extra", perfil_id=perfil.id,
+                                   confirmado=True)
+                        .filter(m.ProductoOdoo.pais_id.in_((pais_id, None))
+                                if pais_id else True)
+                        .order_by(m.ProductoOdoo.preferido.desc(),
+                                  m.ProductoOdoo.vendible.desc(),
+                                  m.ProductoOdoo.id).first())
             if hora is not None:
                 producto = hora.nombre
             salida.append({"perfil_id": perfil.id, "rol": perfil.nombre,
@@ -881,6 +893,11 @@ def enviar(db: Session, actor: m.Usuario, cot: m.Cotizacion) -> m.Cotizacion:
     if not cot.lineas:
         raise HTTPException(400, "La cotización no lleva nada: di qué lleva "
                                  "cada día.")
+    # La lista y la moneda son las de hoy, igual que los precios (seccion
+    # 127, hallazgo r1-03): si entre guardar y mandar al cliente le llego
+    # su lista pactada, el PDF, el cierre y la factura la leen.
+    cot.tarifario_id = prep["tarifario"].id
+    cot.moneda = prep["tarifario"].moneda
     cot.tasa_iva = tasa_iva(db, cot.pais_id)
     cot.estatus = E.ENVIADA
     cot.enviada_en = _ahora()

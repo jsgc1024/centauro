@@ -72,6 +72,9 @@ def que_paso(error: str | None) -> str | None:
         return "anterior_viva"
     if error.startswith(of.NO_CUADRA_VB.split("{")[0]):
         return "no_cuadra"
+    if (error.startswith(of.PREFACTURA_CANCELADA.split("#")[0])
+            and ("se canceló" in error or "ya no existe" in error)):
+        return "cancelada_en_odoo"
     if error.startswith(of.NO_SE_ENTIENDE) or error.startswith("Odoo no contesto"):
         return "sin_respuesta"
     if error.startswith("Odoo rechazo la llave"):
@@ -202,6 +205,36 @@ def descripcion_del_origen(origen: dict) -> str:
             f"de cambio {tipo_cambio.corto(origen['tipo_cambio'])})")
 
 
+def _mandar_sin_reventar(db: Session, cierre: m.Cierre,
+                         primera_vez: bool) -> dict:
+    """`odoo_facturacion.mandar` dentro de un punto de guardado: si algo
+    inesperado revienta a medio camino --no un «Odoo no contesto», que
+    `mandar` ya atrapa--, se deshace solo lo suyo y el cierre queda como
+    un intento fallido mas, con su error a la vista y en el reintento de
+    cada hora (seccion 127, hallazgo r3-08). Antes el error tiraba la
+    peticion entera y, con el visto bueno ya guardado, el cierre
+    aparecia como «visto bueno de antes de la conexion», fuera del
+    reintento y con «Mandar a Odoo» preguntando si ya se facturo a
+    mano. Lo de la base (la conexion que se cae) sigue subiendo: ahi no
+    hay nada que anotar."""
+    from sqlalchemy.exc import SQLAlchemyError
+
+    punto = db.begin_nested()
+    try:
+        resultado = odoo_facturacion.mandar(db, cierre, primera_vez=primera_vez)
+        punto.commit()
+        return resultado
+    except SQLAlchemyError:
+        punto.rollback()
+        raise
+    except Exception as error:                        # noqa: BLE001
+        punto.rollback()
+        registro.exception("la prefactura de %s reventó al mandarla",
+                           cierre.servicio.folio)
+        return odoo_facturacion.anotar_fallo(
+            db, cierre, f"{odoo_facturacion.NO_SE_ENTIENDE} {error}"[:400])
+
+
 def enviar(db: Session, cierre: m.Cierre, usuario: m.Usuario | None = None,
            primera_vez: bool = True) -> dict:
     """Manda la factura y guarda lo que conteste Odoo.
@@ -230,8 +263,7 @@ def enviar(db: Session, cierre: m.Cierre, usuario: m.Usuario | None = None,
                 "motivo": f"el cierre esta en {cierre.estatus.value}"}
 
     if odoo_facturacion.hay_llave():
-        resultado = odoo_facturacion.mandar(db, cierre,
-                                            primera_vez=primera_vez)
+        resultado = _mandar_sin_reventar(db, cierre, primera_vez)
         if usuario is not None and resultado["resultado"] == "en odoo":
             from app import auditoria
             auditoria.registrar(

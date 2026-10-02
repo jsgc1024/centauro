@@ -368,6 +368,16 @@ class Listas:
                                                        "1_product")
         como = texto(regla.get("compute_price")) or "fixed"
         if como == "fixed":
+            # Un cero no es un precio, tampoco en una regla (seccion 127,
+            # hallazgo r5-02): Odoo deja 0.00 en la regla recien creada
+            # y eso cotizaba, proponia --sin pedir el visto bueno del
+            # precio especial-- y facturaba gratis. Queda sin precio y
+            # se dice.
+            if not _dinero(regla.get("fixed_price")):
+                return {"precio": None, "origen": None,
+                        "regla": regla.get("id"),
+                        "problema": "precio fijo en cero: un cero no es un "
+                                    "precio"}
             return {"precio": _dinero(regla.get("fixed_price")).quantize(CENTAVO),
                     "origen": PROPIO, "regla": regla.get("id"),
                     "problema": None}

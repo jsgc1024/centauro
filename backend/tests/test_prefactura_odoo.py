@@ -68,6 +68,14 @@ class OdooFalso:
             return Respuesta([{"id": 33, "name": "MXN", "active": True}]
                              if nombre == "MXN" else [])
         if (modelo, metodo) == ("account.move", "search_read"):
+            # Por id: lo que Connect vuelve a mirar de una prefactura
+            # (seccion 127). Por origen: las del servicio.
+            por_id = next((d[2] for d in json["domain"] if d[0] == "id"), None)
+            if por_id is not None:
+                f = self.facturas.get(por_id)
+                return Respuesta([{"id": f["id"], "state": f["state"],
+                                   "name": f.get("name") or f"INV/{f['id']}"}]
+                                 if f else [])
             origen = next(d[2] for d in json["domain"] if d[0] == "invoice_origin")
             return Respuesta([f for f in self.facturas.values()
                               if f["invoice_origin"] == origen])

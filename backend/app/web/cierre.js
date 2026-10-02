@@ -283,6 +283,7 @@ const QUE_PASO_PRE = {
   falta_dato: "fac_paso_falta_dato",
   anterior_viva: "fac_paso_anterior_viva",
   no_cuadra: "fac_paso_no_cuadra",
+  cancelada_en_odoo: "fac_paso_cancelada_en_odoo",
 };
 
 /* ------------------------------------------------------------ lo cotizado contra lo ejecutado */

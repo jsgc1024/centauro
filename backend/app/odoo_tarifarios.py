@@ -318,7 +318,16 @@ def leer_productos(db: Session, odoo, referenciados=(), ahora=None,
             producto.categoria_id = s["categoria_id"]
             producto.modalidad = s["modalidad"]
             sugeridos += 1 if s["clase"] else 0
-    faltan = [p for odoo_id, p in existentes.items() if odoo_id not in vistos]
+    # Los productos de un pais cuya categoria esta configurada y Odoo no
+    # trae en esta lectura se quedan como estaban (seccion 127, hallazgo
+    # r5-01): si alguien renombra «Proteção Executiva Brasil», los de
+    # Brasil no se ponen en gris ni se borran con lo que finanzas
+    # confirmo; la lectura lo dice en pendientes.
+    paises_sin_categoria = {paises.get(x["pais"]) for x in lecturas()
+                            if x["categoria"] and x["pais"] not in (por_pais or {})
+                            and en_pe is not None}
+    faltan = [p for odoo_id, p in existentes.items() if odoo_id not in vistos
+              and (p.pais_id is None or p.pais_id not in paises_sin_categoria)]
     for producto in faltan:
         producto.vendible = False
     # Lo que ya estaba y no es de Proteccion Ejecutiva --el GPS, la Central
@@ -570,6 +579,10 @@ def _plan(db: Session, datos: dict, hoy) -> dict:
                    for p in db.query(m.ProductoOdoo).filter_by(confirmado=True)
                    if p.odoo_id in productos]
     con_categoria = set(datos.get("categorias_pais") or {})
+    # Los paises con categoria configurada que Odoo no trae (seccion 127).
+    sin_categoria_pais = {x["pais"] for x in lecturas()
+                          if x["categoria"] and x["pais"] not in con_categoria}
+    intactas = set()
     conocidos = {p.odoo_id: p for p in db.query(m.ProductoOdoo).all()}
     paises = {p.codigo.upper(): p.id for p in db.query(m.Pais).all()}
     codigo_de_pais = {v: k for k, v in paises.items()}
@@ -703,9 +716,18 @@ def _plan(db: Session, datos: dict, hoy) -> dict:
                                "pais": nombres_pais.get(pais_id)})
             continue
         codigo = codigo_de_pais.get(pais_id)
+        # El pais cuya categoria no esta en Odoo no lee sus listas
+        # (seccion 127, hallazgo r5-01): se quedan como estaban y se
+        # dice. Antes, sin la de Brasil, sus listas tomaban todos los
+        # confirmados --los de Mexico-- con su «Precio de venta»
+        # convertido a reales. Sin ninguna categoria configurada se lee
+        # todo, como antes de la 112.
+        if con_categoria and codigo in sin_categoria_pais:
+            intactas.add(lista_id)
+            continue
         suyos_productos = [x for x in confirmados
                            if not x["pais"] or x["pais"] == codigo
-                           or codigo not in con_categoria]
+                           or not con_categoria]
         # Lo que la lista nombra y es de otro pais no pone precio en ella
         # (seccion 123): se dice.
         if codigo in con_categoria:
@@ -788,7 +810,15 @@ def _plan(db: Session, datos: dict, hoy) -> dict:
             "nombres_pais": nombres_pais, "nombre_de_lista": nombre_de_lista,
             "otra_moneda": otra_moneda, "leidas": len(listas),
             "pais_de_lista": {pl["odoo_id"]: pl["pais_id"] for pl in plan_listas},
-            "leidas_de": leidas_de}
+            "leidas_de": leidas_de,
+            # Las listas del pais sin categoria: ni se reemplazan ni se
+            # apagan (seccion 127).
+            "intactas": sorted(intactas),
+            "paises_sin_categoria": sorted(sin_categoria_pais)}
+
+
+def no_pe_ids(datos: dict) -> set:
+    return {l["id"] for l in datos.get("fuera") or ()}
 
 
 def _modalidades(db: Session) -> dict:
@@ -943,6 +973,9 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
     # A que tarifario cambia cada cliente. A una lista sin precios que
     # Centauro sepa leer no se le cambia: se queda como estaba y se dice.
     cambios, retenidos = [], []
+    # Las listas que Odoo trajo hoy, leidas o no: la que falta esta
+    # archivada o borrada alla.
+    leidas_ahora = {l["id"] for l in datos["listas"]} | set(no_pe_ids(datos))
     # Las listas que no son de PE no se leen (seccion 112). El cliente que
     # trae una se queda con el tarifario que tenia --aunque sea el de esa
     # misma lista: sus precios ya no se ponen al dia-- y se dice, con el
@@ -986,6 +1019,15 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
             retenidos.append(otro)
             continue
         if lista_id is None or lista_id == actual:
+            # Su ficha sigue nombrando una lista que Odoo ya no trae
+            # --archivada-- (seccion 127, hallazgo r5-05): el cliente se
+            # queda con ella y con sus precios de la ultima lectura, y
+            # eso hay que decirlo; antes no lo decia nadie.
+            if (lista_id is not None and lista_id not in leidas_ahora
+                    and lista_id not in plan.get("intactas", ())):
+                retenidos.append({"tipo": "lista_archivada",
+                                  "cliente": cliente.nombre,
+                                  "lista": nombre_de_la(lista_id)})
             continue
         nombre = nombre_de_la(lista_id)
         if lista_id in plan["otra_moneda"]:
@@ -1099,7 +1141,9 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
         for f in pl["paquete"]:
             db.add(m.TarifaPaquete(tarifario_id=t.id, **f))
     # Las que Odoo ya no trae --archivadas o borradas-- dejan de ofrecerse.
-    leidas = {pl["odoo_id"] for pl in plan["listas"]}
+    # Las del pais cuya categoria no esta en Odoo se quedan como estaban
+    # (seccion 127, hallazgo r5-01).
+    leidas = {pl["odoo_id"] for pl in plan["listas"]} | set(plan.get("intactas") or ())
     for odoo_id, t in existentes.items():
         if odoo_id not in leidas and t.activo:
             t.activo = False

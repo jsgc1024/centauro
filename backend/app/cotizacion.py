@@ -297,6 +297,12 @@ def _armar(db: Session, servicio: m.Servicio, tarifario: m.Tarifario,
         cotizacion.folio = anterior.folio
         cotizacion.cliente_id = anterior.cliente_id
         cotizacion.pais_id = anterior.pais_id
+        # Y su cabecera (seccion 127, hallazgo r1-01): quien la pidio,
+        # el consultor, el idioma, la vigencia y el IVA siguen siendo
+        # los de la cotizacion; sin ellos la lista la pintaba con «—» y
+        # el total sin IVA.
+        for campo in CABECERA_QUE_SIGUE:
+            setattr(cotizacion, campo, getattr(anterior, campo))
     db.add(cotizacion)
     db.flush()
 
@@ -314,8 +320,60 @@ def _armar(db: Session, servicio: m.Servicio, tarifario: m.Tarifario,
         db.add(m.LineaCotizacion(cotizacion_id=cotizacion.id, **renglon))
         total += renglon["subtotal"]
     cotizacion.total = total
+    if cotizacion.folio is not None:
+        _dias_del_servicio(db, cotizacion, servicio, lineas)
     db.flush()
     return cotizacion
+
+
+# Lo que la version que nace al recotizar en el servicio hereda de la
+# que nacio en Cotizaciones (seccion 127): la cabecera que la pantalla
+# de Cotizaciones y «Volver a crear el servicio» leen de la ultima
+# version. El folio, el cliente y el pais ya se copiaban desde la 114.
+CABECERA_QUE_SIGUE = (
+    "prospecto", "solicitante_id", "solicitante_nombre",
+    "solicitante_apellidos", "solicitante_correo", "solicitante_telefono",
+    "consultor_id", "tipo_servicio", "introduccion", "idioma",
+    "valida_hasta", "con_iva", "tasa_iva", "servicio_folio")
+
+
+def _dias_del_servicio(db: Session, cotizacion: m.Cotizacion,
+                       servicio: m.Servicio, lineas: list[dict]) -> None:
+    """Los dias de la cotizacion que sigue con folio, tomados de los dias
+    reales del servicio (seccion 127): la ciudad del equipo, la fecha, la
+    modalidad, la hora si ya esta confirmada, si es foraneo, y lo que
+    lleva ese dia segun los renglones. Con ellos la version que nace al
+    recotizar se puede volver a crear como servicio si este se elimina, y
+    el detalle dice sus fechas, como la V1."""
+    import json
+
+    lleva = {}
+    for linea in lineas:
+        tipo = m.TipoLinea(linea["tipo"])
+        if tipo not in (m.TipoLinea.RECURSO, m.TipoLinea.VEHICULO):
+            continue
+        clave = (linea.get("equipo_clave") or "Alfa", linea["fecha"])
+        ident = (linea.get("perfil_id") if tipo == m.TipoLinea.RECURSO
+                 else linea.get("categoria_id"))
+        if not ident:
+            continue
+        que = ("recurso" if tipo == m.TipoLinea.RECURSO else "vehiculo", ident)
+        por_dia = lleva.setdefault(clave, {})
+        por_dia[que] = por_dia.get(que, 0) + int(linea.get("cantidad", 1) or 0)
+    for equipo, jornada in _dias(servicio):
+        suyo = lleva.get((equipo.alias, jornada.fecha), {})
+        db.add(m.DiaCotizacion(
+            cotizacion_id=cotizacion.id, equipo_clave=equipo.alias,
+            fecha=jornada.fecha, modalidad_id=jornada.modalidad_id,
+            plaza_id=equipo.ciudad_id,
+            hora=(jornada.inicio_programado.time()
+                  if jornada.hora_confirmada and jornada.inicio_programado
+                  else None),
+            es_foraneo=bool(jornada.es_foraneo),
+            lleva=json.dumps([{"tipo": t, "id": i, "cantidad": n}
+                              for (t, i), n in sorted(
+                                  suyo.items(),
+                                  key=lambda x: (x[0][0] != "recurso", x[0][1]))])))
 
 
 def _producto(db: Session, tarifa, cache: dict) -> str | None:
@@ -465,6 +523,11 @@ def autorizar(db: Session, cotizacion_id: int, autorizada_por: str) -> m.Cotizac
         raise HTTPException(404, f"No existe la cotizacion {cotizacion_id}")
     if cotizacion.estatus == m.EstatusCotizacion.SUSTITUIDA:
         raise HTTPException(409, "Esa cotizacion fue sustituida por una version posterior")
+    # La que nacio en Cotizaciones y todavia no tiene servicio se
+    # autoriza alla (seccion 114); aqui no hay servicio del que tomar el
+    # pais (seccion 127, hallazgo r1-06).
+    if cotizacion.servicio_id is None:
+        raise HTTPException(409, "Esa cotización se autoriza en Cotizaciones.")
     _autorizar(db, cotizacion, autorizada_por)
     db.commit()
     db.refresh(cotizacion)
@@ -596,6 +659,23 @@ def al_eliminar_equipo(db: Session, servicio: m.Servicio, eliminado: str,
                 tocados += 1
         cotizacion.total = sum((Decimal(str(l.subtotal))
                                 for l in cotizacion.lineas), Decimal("0"))
+        # Los dias de la que nacio en Cotizaciones (seccion 114) siguen
+        # a sus equipos igual (seccion 127, hallazgo r1-04): si no, la
+        # tabla de equipos y dias seguia diciendo tres equipos con los
+        # renglones de dos, y «Volver a crear el servicio» nacia con el
+        # equipo que se quito. Primero se van los del eliminado y
+        # despues se renombran, para no chocar con el candado de
+        # (cotizacion, equipo, fecha).
+        if cotizacion.dias:
+            for dia in list(cotizacion.dias):
+                if dia.equipo_clave == eliminado:
+                    cotizacion.dias.remove(dia)
+                    tocados += 1
+            db.flush()
+            for dia in cotizacion.dias:
+                if dia.equipo_clave in renombres:
+                    dia.equipo_clave = renombres[dia.equipo_clave]
+                    tocados += 1
     db.flush()
     return tocados
 

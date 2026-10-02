@@ -301,7 +301,19 @@ def dia_de_la_cancelacion(db: Session,
     if (fila is None or fila.motivo_apertura != "cancelacion"
             or fila.abierto_en is None):
         return None
-    return fila.abierto_en.date()
+    # El ultimo dia trabajado manda sobre el dia del registro (seccion
+    # 127, hallazgo r3-02): el cliente termino el viernes 20 y el
+    # consultor capturo la cancelacion el lunes 30 --o el 2 del mes que
+    # sigue--; con el dia del registro el mes salia completo (110,000)
+    # aunque se hubieran trabajado 15 dias de 21. Lo que cuenta es lo
+    # que se trabajo: si despues de ese dia quedaban dias de la
+    # modalidad, el mes va por dia.
+    registrado = fila.abierto_en.date()
+    trabajados = [j.fecha for j in _dias(db, contrato)
+                  if j.estatus == m.EstatusJornada.TERMINADA]
+    if trabajados:
+        return min(registrado, max(trabajados))
+    return registrado
 
 
 def con_visto_bueno(db: Session,

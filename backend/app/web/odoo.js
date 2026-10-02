@@ -647,6 +647,9 @@ const PENDIENTES_DE_TARIFAS = [
                                    pc: x.pais || "—" })]],
   ["lista_sin_precios", "odo_tp_sin_precios",
    (x) => [x.cliente, reemplazar(t("odo_tp_sin_precios_pie"), { l: x.lista || "—" })]],
+  /* La ficha sigue nombrando una lista archivada en Odoo (seccion 127). */
+  ["lista_archivada", "odo_tp_archivada",
+   (x) => [x.cliente, reemplazar(t("odo_tp_archivada_pie"), { l: x.lista || "—" })]],
   ["lista_otra_moneda", "odo_tp_cliente_otra_moneda",
    (x) => [x.cliente, reemplazar(t("odo_tp_cliente_otra_moneda_pie"),
                                  { l: x.lista || "—", m: x.moneda })]],

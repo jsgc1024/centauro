@@ -1373,7 +1373,11 @@ def cobro_del_mensual(db: Session, contrato: m.ContratoImplantado,
                                   turno)
     termina = termina_a_medio_mes(contrato.anio, contrato.mes,
                                   contrato.dias_servicio, hasta, turno)
-    parcial = empieza or termina
+    # El mes a medias que trabajo tantos dias como cubre el mensual se
+    # cobra el mensual (seccion 127, hallazgo r2-04): el que empieza el
+    # dia 2 de un mes de 23 habiles trabaja 22, y 22 por el precio por
+    # dia redondeado daba $118,600.02 --o $99,999.90-- en vez del mensual.
+    parcial = (empieza or termina) and len(dentro) < base
     contratados = None
     if parcial:
         contratados = len([d for d in dias_del_mes(

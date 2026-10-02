@@ -560,6 +560,76 @@ def buscar(odoo, origen: str) -> list:
                      ["name", "state", "ref", "amount_untaxed", "currency_id"])
 
 
+def estado_en_odoo(odoo_id: int, odoo=None) -> dict | None:
+    """Lo que Odoo dice hoy de esa prefactura (seccion 127): su estado
+    --«draft» en borrador, «posted» confirmada o timbrada, «cancel»
+    cancelada-- y su nombre; None si Odoo ya no la tiene (la borraron).
+    Sin llave o sin respuesta, lo de siempre: `SinConexion` /
+    `NoResponde`."""
+    odoo = odoo or conexion()
+    filas = odoo.leer(MODELO, [["id", "=", int(odoo_id)]], ["name", "state"])
+    if not filas:
+        return None
+    fila = filas[0]
+    return {"id": fila["id"], "estado": fila.get("state"),
+            "nombre": fila.get("name")}
+
+
+# Como se le dice a finanzas el estado de Odoo (`facturacion.js`).
+ESTADOS = {"draft": "borrador", "posted": "timbrada", "cancel": "cancelada"}
+
+
+def revisar_en_odoo(db: Session, cierre: m.Cierre,
+                    ahora: datetime | None = None) -> dict:
+    """«Volver a revisar en Odoo» (seccion 127, hallazgo r3-04): relee el
+    estado del borrador de ese cierre. Si el facturista lo cancelo o lo
+    borro, Connect lo suelta --`prefactura_odoo_id` se va a
+    `prefactura_anulada_id` si sigue alla cancelada-- y la vuelta de
+    cada hora manda otro. Si ya esta timbrada, lo dice: finanzas la
+    anota con «Ya se facturo en Odoo». Si sigue en borrador, nada
+    cambia. Antes Connect nunca volvia a mirar: un borrador cancelado en
+    Odoo seguia «En Odoo» aqui para siempre."""
+    from app import reloj
+
+    if not cierre.prefactura_odoo_id:
+        return {"resultado": "sin prefactura"}
+    cierre = motor_cierre.tomar(db, cierre.id)
+    if not cierre.prefactura_odoo_id:
+        return {"resultado": "sin prefactura"}
+    odoo_id = cierre.prefactura_odoo_id
+    try:
+        de_odoo = estado_en_odoo(odoo_id)
+    except odoo_api.SinConexion:
+        return {"resultado": "sin llave", "motivo": SIN_LLAVE}
+    except (odoo_api.NoResponde, RuntimeError) as error:
+        return {"resultado": "no contesto", "motivo": str(error)}
+    estado = (de_odoo or {}).get("estado")
+    if de_odoo is not None and estado not in ("cancel",):
+        return {"resultado": "sigue", "prefactura": odoo_id,
+                "estado": ESTADOS.get(estado, estado),
+                "nombre": de_odoo.get("nombre")}
+    # Cancelada o borrada en Odoo: aqui ya no cuenta. La cancelada se
+    # recuerda para no mandar la nueva hasta que `crear` la vea cancelada
+    # (ya lo esta: no estorba); la borrada no deja nada que recordar.
+    momento = reloj.ahora_del_servicio(db, cierre.servicio, ahora)
+    cierre.prefactura_anulada_id = odoo_id if de_odoo is not None else None
+    cierre.prefactura_odoo_id = None
+    cierre.prefactura_en = None
+    cierre.prefactura_total = None
+    cierre.prefactura_detalle = None
+    if cierre.prefactura_desde is None:
+        cierre.prefactura_desde = momento
+    cierre.factura_intento_en = momento
+    cierre.factura_error = (PREFACTURA_CANCELADA if de_odoo is not None
+                            else PREFACTURA_BORRADA).format(id=odoo_id)
+    db.flush()
+    registro.info("la prefactura %s de %s ya no esta viva en Odoo (%s)",
+                  odoo_id, cierre.servicio.folio,
+                  "cancelada" if de_odoo is not None else "borrada")
+    return {"resultado": "cancelada" if de_odoo is not None else "borrada",
+            "prefactura": odoo_id, "motivo": cierre.factura_error}
+
+
 class AnteriorViva(Exception):
     """La prefactura de antes del regreso sigue viva en Odoo."""
 
@@ -598,6 +668,20 @@ NO_CUADRA_VB = ("La prefactura suma {suma} y el visto bueno fue por {total}: "
                 "algo cambió después del visto bueno --un precio de la lista "
                 "o un día--. Finanzas lo regresa al consultor para que lo "
                 "revise.")
+# Lo mismo cuando finanzas ya lo aprobo (seccion 127, hallazgo r3-04):
+# ahi «Regresar» no existe, y el texto no podia mandar a un boton que no
+# esta.
+NO_CUADRA_VB_APROBADO = (
+    "La prefactura suma {suma} y el visto bueno fue por {total}: algo "
+    "cambió después del visto bueno --un precio de la lista o un día--. "
+    "Como ya está aprobado, se factura a mano en Odoo y se anota aquí con "
+    "«Ya se facturó en Odoo».")
+# El borrador que el facturista cancelo o borro en Odoo (seccion 127,
+# hallazgo r3-04): Connect lo suelta y la vuelta de cada hora manda otro.
+PREFACTURA_CANCELADA = ("La prefactura #{id} se canceló en Odoo: se vuelve a "
+                        "mandar otra.")
+PREFACTURA_BORRADA = ("La prefactura #{id} ya no existe en Odoo: se vuelve a "
+                      "mandar otra.")
 # Lo que tuvo su visto bueno antes de la llave no se manda solo: pudo
 # haberse facturado a mano en Odoo sin anotarlo aqui.
 DE_ANTES = ("Tuvo su visto bueno antes de la conexión de la factura: no se "
@@ -677,6 +761,14 @@ def mandar(db: Session, cierre: m.Cierre, ahora: datetime | None = None,
     if cierre.prefactura_odoo_id:
         return {"resultado": "ya estaba en odoo",
                 "prefactura": cierre.prefactura_odoo_id}
+    # Lo que finanzas anoto como facturado a mano mientras la vuelta de
+    # cada hora armaba su lista no se manda (seccion 127, hallazgo r3-05):
+    # `enviar` lo revisaba antes del candado y `reintentar` ni pasa por
+    # `enviar`; salia un borrador de mas en Odoo para un servicio que ya
+    # tenia su factura.
+    if cierre.facturado_en or cierre.factura_odoo:
+        return {"resultado": "ya estaba facturado",
+                "factura": cierre.factura_odoo}
     if not primera_vez and cierre.prefactura_desde is None:
         return {"resultado": "sin mandar", "motivo": DE_ANTES}
     momento = reloj.ahora_del_servicio(db, cierre.servicio, ahora)
@@ -718,7 +810,9 @@ def mandar(db: Session, cierre: m.Cierre, ahora: datetime | None = None,
     if (cierre.total_ejecutado is not None
             and _d(cierre.total_ejecutado).quantize(CENTAVO)
             != pre["total"].quantize(CENTAVO)):
-        return fallo(NO_CUADRA_VB.format(
+        return fallo((NO_CUADRA_VB_APROBADO
+                      if cierre.estatus == m.EstatusCierre.APROBADO
+                      else NO_CUADRA_VB).format(
             suma=f"{pre['total']:,.2f}",
             total=f"{_d(cierre.total_ejecutado):,.2f}"))
     try:
@@ -753,6 +847,49 @@ def mandar(db: Session, cierre: m.Cierre, ahora: datetime | None = None,
             "moneda": pre["moneda"]}
 
 
+def anotar_fallo(db: Session, cierre: m.Cierre, motivo: str,
+                 ahora: datetime | None = None) -> dict:
+    """Un intento fallido que no paso por `mandar` entero (seccion 127,
+    hallazgo r3-08): cuenta como intento, con su error, y deja el cierre
+    en el reintento de cada hora."""
+    from app import reloj
+
+    db.flush()
+    cierre = db.get(m.Cierre, cierre.id)
+    momento = reloj.ahora_del_servicio(db, cierre.servicio, ahora)
+    if cierre.prefactura_desde is None:
+        cierre.prefactura_desde = momento
+        cierre.factura_intentos = 0
+    cierre.factura_intentos = (cierre.factura_intentos or 0) + 1
+    cierre.factura_intento_en = momento
+    cierre.factura_error = motivo[:400]
+    db.flush()
+    registro.warning("no salio la prefactura de %s: %s", cierre.servicio.folio,
+                     motivo)
+    return {"resultado": "fallo", "motivo": cierre.factura_error}
+
+
+def _anotar_la_vuelta(db: Session, cierre: m.Cierre, resultado: dict) -> None:
+    """La prefactura que manda la vuelta de cada hora tambien queda en la
+    bitacora del servicio (seccion 127, hallazgo r3-07), a nombre de quien
+    dio el visto bueno y diciendo que salio sola: antes solo la que hacia
+    salir una persona dejaba rastro, y quien revisaba por que habia un
+    borrador en Odoo no encontraba cuando salio ni por que camino."""
+    from app import auditoria
+    from app.facturacion import _de_que
+
+    usuario = (db.query(m.Usuario).filter_by(persona_id=cierre.cerrado_por_id)
+               .first() if cierre.cerrado_por_id else None)
+    if usuario is None:
+        return
+    auditoria.registrar(
+        db, usuario, cierre.servicio, "prefactura en odoo",
+        f"{_de_que(cierre)}: borrador #{resultado['prefactura']}, "
+        f"{Decimal(resultado['total']):,.2f} {resultado['moneda']} antes de "
+        "IVA; salio sola, con la vuelta de cada hora"
+        + ("" if resultado["nueva"] else ", ya estaba en Odoo"))
+
+
 def reintentar(db: Session, ahora: datetime | None = None) -> dict:
     """La tarea de cada hora: lo que tiene visto bueno y no llego a Odoo
     --Odoo no contesto, faltaba un dato que ya se corrigio, la anterior ya
@@ -761,6 +898,15 @@ def reintentar(db: Session, ahora: datetime | None = None) -> dict:
     hace nada."""
     if not hay_llave():
         return {"omitido": "falta la llave de la factura"}
+    from celery.exceptions import SoftTimeLimitExceeded
+
+    # Primero lo que lleva mas tiempo sin intentarse (seccion 127,
+    # hallazgo r3-01): asi la vuelta rueda entre todos los pendientes y
+    # cada uno se intenta al menos una vez cada pocas horas, que es lo
+    # que promete la pantalla. Antes iban siempre los 30 de visto bueno
+    # mas viejo, y los que fallan para siempre --la lista capturada a
+    # mano, lo que no cuadra-- dejaban fuera, para siempre, a lo nuevo
+    # que fallo solo porque Odoo no contesto.
     ids = [c.id for c in (db.query(m.Cierre)
                           .filter(m.Cierre.estatus.in_(
                               (m.EstatusCierre.ENVIADO_FINANZAS,
@@ -768,7 +914,7 @@ def reintentar(db: Session, ahora: datetime | None = None) -> dict:
                                   m.Cierre.facturado_en.is_(None),
                                   m.Cierre.prefactura_odoo_id.is_(None),
                                   m.Cierre.prefactura_desde.isnot(None))
-                          .order_by(m.Cierre.enviado_en.nullsfirst(),
+                          .order_by(m.Cierre.factura_intento_en.nullsfirst(),
                                     m.Cierre.id)
                           .limit(POR_VUELTA))]
     salieron, siguen = [], []
@@ -776,7 +922,19 @@ def reintentar(db: Session, ahora: datetime | None = None) -> dict:
         try:
             cierre = db.get(m.Cierre, cierre_id)
             resultado = mandar(db, cierre, ahora)
+            if resultado["resultado"] == "en odoo":
+                _anotar_la_vuelta(db, cierre, resultado)
             db.commit()
+        except SoftTimeLimitExceeded:
+            # El reloj dice que pare (seccion 127, hallazgo r3-06): lo que
+            # falta se queda para la siguiente vuelta, sin que el limite
+            # duro la mate a mitad de una prefactura.
+            db.rollback()
+            registro.warning("la vuelta de prefacturas paro por tiempo en el "
+                             "cierre %s", cierre_id)
+            quedaron = len(ids) - len(salieron) - len(siguen)
+            return {"intentadas": len(ids) - quedaron, "en_odoo": salieron,
+                    "siguen": len(siguen) + quedaron, "paro_por_tiempo": True}
         except Exception:                             # noqa: BLE001
             db.rollback()
             registro.exception("la prefactura del cierre %s reventó", cierre_id)
