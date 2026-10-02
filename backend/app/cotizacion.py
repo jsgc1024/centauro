@@ -522,8 +522,8 @@ def sin_tipo_de_cambio(db: Session, moneda, local) -> dict:
                 "mensaje": (f"Es en {moneda.value} y se cobra en un pais de "
                             f"{local.value}: Centauro no convierte entre esas "
                             "dos monedas"),
-                "que_hacer": ("Hoy solo se convierte de dolares a pesos "
-                              "mexicanos.")}
+                "que_hacer": ("Se convierte de dolares a pesos mexicanos y "
+                              "de dolares a reales.")}
     return {**datos, "motivo": "sin_tipo_de_cambio",
             "mensaje": (f"No hay tipo de cambio de {moneda.value} a "
                         f"{local.value}"),
@@ -891,12 +891,20 @@ def lo_asignado(servicio: m.Servicio) -> dict:
 
 def lo_que_tiene_precio(db: Session, tarifario_id: int) -> tuple[list, list]:
     """(roles, unidades) que la lista del cliente cobra: sueltos o dentro de
-    un paquete que pacta. Lo demas no se puede cotizar."""
+    un paquete que pacta. Lo demas no se puede cotizar. Lo que la lista
+    cobra al mes --con la modalidad del implantado (seccion 123)-- no se
+    cotiza por dia."""
+    del_mes = {mo.id for mo in db.query(m.Modalidad)
+               .filter_by(codigo=m.CodigoModalidad.IMPLANTADO).all()}
     roles = {r.perfil_id for r in db.query(m.TarifaRecurso)
-             .filter_by(tarifario_id=tarifario_id).all()}
+             .filter_by(tarifario_id=tarifario_id).all()
+             if r.modalidad_id not in del_mes}
     unidades = {v.categoria_id for v in db.query(m.TarifaVehiculo)
-                .filter_by(tarifario_id=tarifario_id).all()}
+                .filter_by(tarifario_id=tarifario_id).all()
+                if v.modalidad_id not in del_mes}
     for p in _pactados(db).filter_by(tarifario_id=tarifario_id).all():
+        if p.modalidad_id in del_mes:
+            continue
         roles.add(p.perfil_id)
         unidades.add(p.categoria_id)
     perfiles = (db.query(m.PerfilPersonal)

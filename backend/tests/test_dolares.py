@@ -138,10 +138,14 @@ def test_lo_pone_finanzas_y_se_queda_hasta_que_se_cambia(cliente, sesion, db):
         assert r.status_code in (400, 422), malo
 
 
-def test_solo_convierte_dolares_a_pesos(db):
+def test_solo_convierte_dolares_a_pesos_y_a_reales(db):
+    """Dolares a pesos (seccion 82) y, desde la seccion 123, dolares a
+    reales: la lista de Amazon Brasil. Otra pareja, no."""
     assert tipo_cambio.se_puede("USD", "MXN")
     assert tipo_cambio.se_puede("MXN", "MXN")
-    assert not tipo_cambio.se_puede("USD", "BRL")
+    assert tipo_cambio.se_puede("USD", "BRL")
+    assert not tipo_cambio.se_puede("BRL", "MXN")
+    assert not tipo_cambio.se_puede("USD", "VES")
     assert tipo_cambio.vigente(db, "MXN", "MXN")["tasa"] == 1
     assert tipo_cambio.a_local("1122", "17.40") == D("19522.80")
     assert tipo_cambio.de_local("2204", "17.50") == D("125.94")

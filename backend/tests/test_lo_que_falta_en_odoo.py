@@ -21,7 +21,7 @@ SIN_RFC = {"id": 9_900_001, "name": "Prueba89 Sin RFC SA de CV", "vat": False,
 class OdooDePrueba:
     """Un Odoo con un solo cliente, sin RFC; lo demas, vacio."""
 
-    def leer(self, modelo, dominio, campos, archivados=False):
+    def leer(self, modelo, dominio, campos, archivados=False, **contexto):
         if modelo == "res.partner.category":
             return [{"id": 1, "name": "Protección ejecutiva"}]
         if modelo == "res.partner":

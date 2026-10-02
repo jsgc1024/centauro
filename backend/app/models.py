@@ -463,6 +463,13 @@ class TarifaPaquete(Base):
     origen: Mapped[str | None] = mapped_column(String(20), nullable=True)
     producto_odoo_id: Mapped[int | None] = mapped_column(
         ForeignKey("producto_odoo.id"), nullable=True)
+    # La hora extra del paquete (seccion 123), como la del precio de un
+    # rol: la lista de Amazon Brasil trae el paquete y su hora extra, y no
+    # trae precio suelto del conductor donde guardarla.
+    precio_hora_extra: Mapped[float | None] = mapped_column(Numeric(12, 2),
+                                                            nullable=True)
+    producto_hora_extra_id: Mapped[int | None] = mapped_column(
+        ForeignKey("producto_odoo.id", ondelete="SET NULL"), nullable=True)
 
     tarifario: Mapped[Tarifario] = relationship(back_populates="tarifas_paquete")
     perfil: Mapped[PerfilPersonal] = relationship()
@@ -503,8 +510,15 @@ class ProductoOdoo(Base):
         ForeignKey("perfil_personal.id"), nullable=True)
     categoria_id: Mapped[int | None] = mapped_column(
         ForeignKey("categoria_vehiculo.id"), nullable=True)
-    # full_day | medio_dia | transfer
+    # full_day | medio_dia | transfer | mes. «mes» (seccion 123): el que en
+    # Odoo se cobra por mes --el paquete de Amazon Brasil--; su precio se
+    # guarda con la modalidad `implantado` de su pais.
     modalidad: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # De que pais es, por su categoria en Odoo (seccion 123): Mexico lee
+    # «Proteccion Ejecutiva» y Brasil «Protecao Executiva Brasil». Vacio:
+    # el de los gastos, o uno de antes.
+    pais_id: Mapped[int | None] = mapped_column(ForeignKey("pais.id"),
+                                                nullable=True)
     confirmado: Mapped[bool] = mapped_column(Boolean, default=False,
                                              server_default=text("false"))
     # Cuando dos productos dicen lo mismo --«Agente de Seguridad Bilingue»
@@ -3045,7 +3059,8 @@ class PosicionPropuesta(Base):
     la lista del cliente lo pacta.
 
     `precio_mes` es lo que el cliente lee y paga al mes por cada uno: el
-    de la lista --su precio por dia por los dias de la modalidad-- o el
+    de la lista --su precio por dia por los dias de la modalidad, o el
+    mensual tal cual si la lista lo trae por mes (seccion 123)-- o el
     que se escribio, que entonces es especial. `precio_dia` es el mismo
     precio por dia: el del dia adicional y el del primer mes que empieza
     a medias. `precio_hora_extra` es la del rol en la lista: con ella se
@@ -3076,6 +3091,11 @@ class PosicionPropuesta(Base):
     especial: Mapped[bool] = mapped_column(Boolean, default=False,
                                            server_default=false())
     lista_precio_dia: Mapped[float | None] = mapped_column(Numeric(12, 2),
+                                                           nullable=True)
+    # Lo que la lista cobra al mes, tal cual (seccion 123): el paquete de
+    # Amazon Brasil viene de Odoo por mes, sin precio por dia. Vacio, el
+    # mensual de la lista es su precio por dia por los dias.
+    lista_precio_mes: Mapped[float | None] = mapped_column(Numeric(12, 2),
                                                            nullable=True)
     # El producto de Odoo del que salio el precio, y como lo lee el
     # cliente en el PDF --«Conductor de seguridad bilingüe»--.

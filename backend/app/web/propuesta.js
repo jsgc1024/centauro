@@ -259,12 +259,15 @@ async function armar(main, cat, d) {
   }
 
   /* «Precios de la lista de implantados Volvo Implantado 2026 (MXN).» O
-     por que se escriben: la empresa nueva, o el cliente sin lista. */
+     por que se escriben: la empresa nueva, o el cliente sin lista. Si el
+     nombre ya trae la moneda, «Amazon Implantados (USD)», no se repite. */
   function pintarLista(nueva) {
     if (info.lista) {
       const [antes, despues] = t("pro_precios_de").split("{l}");
+      const yaLaDice = (info.lista.nombre || "").includes(`(${info.lista.moneda})`);
       return [antes, h("b", {}, info.lista.nombre),
-              reemplazar(despues || "", { m: info.lista.moneda })];
+              reemplazar(yaLaDice ? (despues || "").replace(" ({m})", "") : (despues || ""),
+                         { m: info.lista.moneda })];
     }
     return [reemplazar(t(nueva ? "pro_sin_lista_nueva" : "pro_sin_lista_cliente"), {
       e: nueva ? (e.prospecto || t("ctz_empresa")) : ((clienteDe(e.cliente_id) || {}).nombre || "") })];
@@ -375,8 +378,11 @@ async function armar(main, cat, d) {
       c.mes.placeholder = x && x.lista_precio_mes !== null ? dinero(x.lista_precio_mes, moneda)
         .replace(/[^\d.,]/g, "") : t("pro_escribe_precio");
       c.dia.replaceChildren(x && x.precio_dia !== null ? dinero(x.precio_dia, moneda) : "—");
+      /* El mensual que la lista trae por mes, tal cual (seccion 123). */
       c.marca.replaceChildren(!x ? "" : x.especial ? etiqueta(t("pro_especial"), "alerta")
-        : x.precio_mes !== null ? h("span", { clase: "chico gris" }, t("pro_de_la_lista")) : "");
+        : x.precio_mes !== null ? h("span", { clase: "chico gris" },
+                                    t(x.lista_por_mes ? "pro_de_la_lista_mes" : "pro_de_la_lista"))
+        : "");
     });
   }
 
@@ -700,10 +706,14 @@ async function armar(main, cat, d) {
   }
 
   function pintarSugerencias() {
+    /* El paquete que la lista cobra al mes dice su mensual (seccion 123). */
     sugerencias.replaceChildren(...((ultimo && ultimo.sugerencias) || []).map(s =>
       h("div", { clase: "aviso info", style: "margin:10px 0 0" },
-        reemplazar(t("pro_sugerencia"), { p: s.nombre,
-          d: dinero(s.precio_dia, ultimo.moneda) }))));
+        s.precio_mes !== null && s.precio_mes !== undefined
+          ? reemplazar(t("pro_sugerencia_mes"), { p: s.nombre,
+              m: dinero(s.precio_mes, ultimo.moneda) })
+          : reemplazar(t("pro_sugerencia"), { p: s.nombre,
+              d: dinero(s.precio_dia, ultimo.moneda) }))));
   }
 
   function pintarModalidadCifras() {
@@ -718,7 +728,13 @@ async function armar(main, cat, d) {
     } else {
       diaAdicional.textContent = ultimo && ultimo.dia_adicional !== null
         ? dinero(ultimo.dia_adicional, moneda) : "—";
-      diaAdicionalPie.textContent = t("pro_dia_adicional_pie");
+      /* Con un mensual que la lista trae por mes, el dia es ese mensual
+         entre los dias de la modalidad (seccion 123). */
+      const porMes = ultimo && (ultimo.posiciones || []).some(x => x.lista_por_mes && !x.especial
+        && (x.tipo === "recurso" || x.tipo === "paquete"));
+      diaAdicionalPie.textContent = porMes
+        ? reemplazar(t("pro_dia_adicional_pie_mes"), { n: ultimo.base })
+        : t("pro_dia_adicional_pie");
     }
     horaExtra.placeholder = ultimo && ultimo.hora_extra_lista !== null
       ? String(ultimo.hora_extra_lista) : "0.00";

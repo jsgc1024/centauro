@@ -102,8 +102,17 @@ class Odoo:
         raise NoResponde(f"Odoo contesto {r.status_code}: {mensaje}")
 
     def leer(self, modelo: str, dominio: list, campos: list,
-             archivados: bool = False) -> list:
+             archivados: bool = False, idioma: str | None = None,
+             compania: int | None = None) -> list:
+        """`idioma`: los nombres en ese idioma --los de Brasil, en
+        portugues (seccion 123)--. `compania`: lo leido desde esa compania;
+        la lista de precios de la ficha de un cliente es de cada compania,
+        y la de un cliente de Brasil se lee desde la de Brasil."""
         contexto = {"active_test": False} if archivados else {}
+        if idioma:
+            contexto["lang"] = idioma
+        if compania:
+            contexto["allowed_company_ids"] = [compania]
         return self.llamar(modelo, "search_read", domain=dominio,
                            fields=campos, order="id", context=contexto) or []
 

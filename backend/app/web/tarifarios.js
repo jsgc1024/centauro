@@ -14,16 +14,21 @@
      * El tarifario de un cliente, como quedo de su lista de Odoo. Lo ve
        finanzas en su pestana y quien cotiza dentro del servicio. Aqui no
        se edita: se corrige en Odoo.
-     * El tipo de cambio (seccion 82): cuantos pesos vale un dolar. Lo pone
-       finanzas a mano y aplica para todo hasta que alguien lo cambie. */
+     * El tipo de cambio (seccion 82): cuantos pesos vale un dolar y,
+       desde la seccion 123, cuantos reales. Lo pone finanzas a mano y
+       aplica para todo hasta que alguien lo cambie. */
 import { api } from "./api.js";
 import { aviso, conAyuda, dinero, etiqueta, fecha, h, hora, listaBuscable,
          mensaje, plegable, tasa } from "./util.js";
 import { t } from "./idioma.js";
 
 const MODALIDADES = ["full_day", "medio_dia", "transfer"];
+/* Lo que en Odoo se cobra por «Mes» (seccion 123): el paquete de Amazon
+   Brasil. Su columna sale solo si la lista trae algo por mes. */
+const MES = "mes";
+const DEL_PRODUCTO = [...MODALIDADES, MES];
 const NOMBRE_MODALIDAD = { full_day: "mod_full_day", medio_dia: "mod_medio_dia",
-                           transfer: "mod_transfer" };
+                           transfer: "mod_transfer", mes: "mod_mes" };
 /* De donde salio un precio que la lista no pacto. */
 const ORIGEN = { general: "tar_o_general", otra: "tar_o_otra",
                  precio_venta: "tar_o_precio_venta" };
@@ -48,16 +53,18 @@ function cuando(iso) {
    negro; lo que toma de otra lista o del "Precio de venta", en gris y
    dicho. Donde no hay precio lo dice: eso no se puede cotizar. */
 function tabla(titulo, filas, moneda) {
+  const columnas = filas.some(f => f.precios[MES]) ? DEL_PRODUCTO : MODALIDADES;
+  const ancho = `${Math.floor(66 / columnas.length)}%`;
   return h("div", {},
     h("h4", { style: "margin:14px 0 6px" }, titulo),
     h("table", { clase: "lista", style: "table-layout:fixed" },
       h("colgroup", {}, h("col", { style: "width:34%" }),
-        ...MODALIDADES.map(() => h("col", { style: "width:22%" }))),
+        ...columnas.map(() => h("col", { style: `width:${ancho}` }))),
       h("thead", {}, h("tr", {}, h("th"),
-        ...MODALIDADES.map(mo => h("th", { clase: "der" }, t(NOMBRE_MODALIDAD[mo]))))),
+        ...columnas.map(mo => h("th", { clase: "der" }, t(NOMBRE_MODALIDAD[mo]))))),
       h("tbody", {}, ...filas.map(f => h("tr", {},
         h("td", { style: "font-weight:600" }, f.nombre),
-        ...MODALIDADES.map(mo => celda(f.precios[mo], moneda)))))));
+        ...columnas.map(mo => celda(f.precios[mo], moneda)))))));
 }
 
 function celda(p, moneda) {
@@ -80,8 +87,14 @@ function porModalidad(filas) {
    cuestan lo mismo, se dice un solo precio. */
 function horaExtra(tar, perfiles) {
   const moneda = tar.moneda;
-  const conExtra = tar.personal.filter(x => x.precio_hora_extra !== null
-                                            && x.precio_hora_extra !== undefined);
+  const tiene = (x) => x.precio_hora_extra !== null && x.precio_hora_extra !== undefined;
+  const conExtra = tar.personal.filter(tiene);
+  /* El rol que solo va en paquete trae la suya en el paquete (seccion
+     123): la lista de Amazon Brasil no trae al conductor suelto. */
+  for (const x of tar.paquetes || []) {
+    if (tiene(x) && !tar.personal.some(y => y.perfil_id === x.perfil_id)
+        && !conExtra.some(y => y.perfil_id === x.perfil_id)) conExtra.push(x);
+  }
   const distintos = [...new Set(conExtra.map(x => Number(x.precio_hora_extra)))];
   if (!distintos.length) return t("tar_extra_sin");
   if (distintos.length === 1) {
@@ -180,7 +193,7 @@ function nota(tar, d) {
   }
   const propios = [...tar.personal, ...tar.unidades, ...tar.paquetes]
     .filter(x => x.origen === "propio").length;
-  return reemplazar(t("tar_nota_odoo"),
+  return reemplazar(t(propios === 1 ? "tar_nota_odoo_uno" : "tar_nota_odoo"),
                     { n: propios, l: tar.nombre, c: cuando(tar.leido_en) });
 }
 
@@ -246,9 +259,10 @@ export function pestanaTarifarios() {
 
 /* ------------------------------------------------------------ el tipo de cambio */
 
-/* Cuantos pesos vale un dolar (seccion 82). Decision de Salvador, 26 de
-   septiembre: lo pone finanzas a mano y el que se pone aplica para todo
-   hasta que alguien lo cambie. Lo que ya quedo fijo --una cotizacion
+/* Cuantos pesos vale un dolar (seccion 82) y, para Brasil, cuantos
+   reales (seccion 123). Decision de Salvador, 26 de septiembre: lo pone
+   finanzas a mano y el que se pone aplica para todo hasta que alguien lo
+   cambie. Lo que ya quedo fijo --una cotizacion o una propuesta
    autorizada, un visto bueno, un mes abierto-- se queda con el suyo. */
 async function tarjetaTipoDeCambio(caja) {
   let d;
@@ -257,58 +271,74 @@ async function tarjetaTipoDeCambio(caja) {
   } catch (err) {
     return caja.replaceChildren(aviso(err.message, "grave"));
   }
-  const pintar = (x) => {
-    const v = x.vigente;
+  const pintar = (todo) => {
+    const pares = (todo.pares && todo.pares.length) ? todo.pares : [todo];
     const nodos = [conAyuda("h3", t("tar_tc_titulo"), "ay_tar_tipo_cambio")];
-    if (x.puede_editar) {
-      const campo = h("input", { type: "number", min: "0.0001", step: "0.0001",
-                                 clase: "num", style: "width:130px",
-                                 value: v ? tasa(v.tasa) : "" });
-      const guardar = h("button", { type: "button" }, t("tar_tc_guardar"));
-      guardar.addEventListener("click", async () => {
-        const nueva = Number(campo.value);
-        if (!(nueva > 0)) return mensaje(t("tar_tc_falta"), "alerta");
-        /* Un salto grande casi siempre es un dedo que se resbalo: se
-           pregunta antes, porque desde ese momento aplica para todo. */
-        const antes = v ? Number(v.tasa) : null;
-        if (antes && Math.abs(nueva - antes) / antes > 0.1 && !confirm(
-            reemplazar(t("tar_tc_salto"), { a: tasa(v.tasa),
-                                            b: tasa(campo.value) }))) return;
-        guardar.disabled = true;
-        try {
-          pintar(await api.put("/tarifarios/tipo-de-cambio", { tasa: campo.value }));
-          mensaje(t("tar_tc_guardado"));
-        } catch (err) {
-          mensaje(err.message, "grave");
-          guardar.disabled = false;
-        }
-      });
-      nodos.push(h("div", { clase: "acciones",
-                            style: "align-items:center;margin:0 0 8px" },
-        h("span", { style: "font-weight:650" }, `1 ${x.moneda} =`), campo,
-        h("span", { style: "font-weight:650" }, x.moneda_local), guardar));
-    } else if (v) {
-      nodos.push(h("p", { style: "font-size:15px;font-weight:650;margin:0 0 6px" },
-        `1 ${x.moneda} = ${tasa(v.tasa)} ${x.moneda_local}`));
+    for (const x of pares) {
+      if (pares.length > 1) {
+        nodos.push(h("div", { style: "font-weight:650;margin:10px 0 6px" },
+          t(`tar_tc_par_${x.moneda_local}`)));
+      }
+      nodos.push(...unPar(x, todo.puede_editar, pintar));
     }
-    if (v) {
-      nodos.push(h("p", { clase: "gris chico", style: "margin:0 0 6px" },
-        reemplazar(t(v.por ? "tar_tc_puesto" : "tar_tc_puesto_sin"),
-                   { q: v.por || "", c: cuando(v.puesto_en) })));
-    } else {
-      nodos.push(aviso(t("tar_tc_sin_ninguno"), "alerta"));
-    }
-    nodos.push(h("p", { clase: "gris chico", style: "margin:0" }, t("tar_tc_pie")));
-    if (x.anteriores.length) {
-      nodos.push(h("p", { clase: "gris chico", style: "margin:6px 0 0" },
-        reemplazar(t("tar_tc_antes"), { l: x.anteriores.map(a =>
-          reemplazar(t(a.por ? "tar_tc_anterior" : "tar_tc_anterior_sin"),
-                     { t: tasa(a.tasa), f: fecha(a.puesto_en), q: a.por || "" }))
-          .join(" · ") })));
-    }
+    nodos.push(h("p", { clase: "gris chico", style: "margin:10px 0 0" }, t("tar_tc_pie")));
     caja.replaceChildren(h("div", { clase: "tarjeta" }, ...nodos));
   };
   pintar(d);
+}
+
+/* Un tipo de cambio: el dolar a peso o el dolar a real. */
+function unPar(x, editable, pintar) {
+  const v = x.vigente;
+  const brl = x.moneda_local === "BRL";
+  const nodos = [];
+  if (editable) {
+    const campo = h("input", { type: "number", min: "0.0001", step: "0.0001",
+                               clase: "num", style: "width:130px",
+                               value: v ? tasa(v.tasa) : "" });
+    const guardar = h("button", { type: "button" }, t("tar_tc_guardar"));
+    guardar.addEventListener("click", async () => {
+      const nueva = Number(campo.value);
+      if (!(nueva > 0)) return mensaje(t(brl ? "tar_tc_falta_BRL" : "tar_tc_falta"), "alerta");
+      /* Un salto grande casi siempre es un dedo que se resbalo: se
+         pregunta antes, porque desde ese momento aplica para todo. */
+      const antes = v ? Number(v.tasa) : null;
+      if (antes && Math.abs(nueva - antes) / antes > 0.1 && !confirm(
+          reemplazar(t("tar_tc_salto"), { a: tasa(v.tasa),
+                                          b: tasa(campo.value) }))) return;
+      guardar.disabled = true;
+      try {
+        pintar(await api.put("/tarifarios/tipo-de-cambio",
+                             { tasa: campo.value, moneda_local: x.moneda_local }));
+        mensaje(t("tar_tc_guardado"));
+      } catch (err) {
+        mensaje(err.message, "grave");
+        guardar.disabled = false;
+      }
+    });
+    nodos.push(h("div", { clase: "acciones",
+                          style: "align-items:center;margin:0 0 8px" },
+      h("span", { style: "font-weight:650" }, `1 ${x.moneda} =`), campo,
+      h("span", { style: "font-weight:650" }, x.moneda_local), guardar));
+  } else if (v) {
+    nodos.push(h("p", { style: "font-size:15px;font-weight:650;margin:0 0 6px" },
+      `1 ${x.moneda} = ${tasa(v.tasa)} ${x.moneda_local}`));
+  }
+  if (v) {
+    nodos.push(h("p", { clase: "gris chico", style: "margin:0 0 6px" },
+      reemplazar(t(v.por ? "tar_tc_puesto" : "tar_tc_puesto_sin"),
+                 { q: v.por || "", c: cuando(v.puesto_en) })));
+  } else {
+    nodos.push(aviso(t(brl ? "tar_tc_sin_ninguno_BRL" : "tar_tc_sin_ninguno"), "alerta"));
+  }
+  if ((x.anteriores || []).length) {
+    nodos.push(h("p", { clase: "gris chico", style: "margin:0 0 6px" },
+      reemplazar(t("tar_tc_antes"), { l: x.anteriores.map(a =>
+        reemplazar(t(a.por ? "tar_tc_anterior" : "tar_tc_anterior_sin"),
+                   { t: tasa(a.tasa), f: fecha(a.puesto_en), q: a.por || "" }))
+        .join(" · ") })));
+  }
+  return nodos;
 }
 
 async function tarjetaCliente(caja) {
@@ -366,10 +396,11 @@ function valorDe(p) {
 
 /* Lo que pone precio un producto confirmado: dos que dicen lo mismo --el
    gemelo en ingles-- chocan si la lista no pacta ninguno, y manda el que
-   finanzas escoja. */
+   finanzas escoja. Solo dentro de su pais (seccion 123): el conductor de
+   Brasil no choca con el de Mexico, cada lista lee los de su pais. */
 function conceptoDe(p) {
   if (!p.confirmado || !CON_PRECIO.includes(p.clase)) return null;
-  return [p.clase, p.perfil_id ?? "", p.categoria_id ?? "",
+  return [p.pais ?? "", p.clase, p.perfil_id ?? "", p.categoria_id ?? "",
           p.clase === "hora_extra" ? "" : (p.modalidad ?? "")].join(":");
 }
 
@@ -409,7 +440,7 @@ function filaDeProducto(p, d, repintar, gemelos) {
   }
   const modalidad = h("select", { style: "width:auto" },
     h("option", { value: "" }, "—"),
-    ...MODALIDADES.map(mo => h("option", { value: mo }, t(NOMBRE_MODALIDAD[mo]))));
+    ...DEL_PRODUCTO.map(mo => h("option", { value: mo }, t(NOMBRE_MODALIDAD[mo]))));
   modalidad.value = p.modalidad || "";
   const ajustar = () => {
     const lleva = CON_MODALIDAD.includes(que.value.split(":")[0]);
@@ -480,6 +511,38 @@ function filaDeProducto(p, d, repintar, gemelos) {
       p.de_gastos ? etiqueta(t("tar_de_gastos"), "info") : "")));
 }
 
+/* La pestana de pais de la tabla de productos (seccion 123): se queda
+   al repintar, despues de decir que es un producto. */
+let paisDeProductos = null;
+
+/* «Mexico (34)» «Brasil (3)»: cada pais con los de su categoria. Lo que
+   no es de ninguna --el de los gastos, si no esta en ellas-- se ve en el
+   primero. */
+function pestanasDePais(d, filas, alCambiar) {
+  const paises = d.paises || [];
+  if (paises.length < 2) return { visibles: filas, pais: paises[0] || null, nodo: "" };
+  const delPais = (p) => p.pais || paises[0].codigo;
+  if (!paises.some(x => x.codigo === paisDeProductos)) paisDeProductos = paises[0].codigo;
+  const nodo = h("div", { clase: "pestanas", style: "margin:0 0 10px" },
+    ...paises.map(x => h("button", {
+      type: "button", clase: x.codigo === paisDeProductos ? "pestana chico activa" : "pestana chico",
+      onclick: () => { paisDeProductos = x.codigo; alCambiar(); },
+    }, `${x.pais} (${filas.filter(p => delPais(p) === x.codigo).length})`)));
+  return { visibles: filas.filter(p => delPais(p) === paisDeProductos),
+           pais: paises.find(x => x.codigo === paisDeProductos), nodo };
+}
+
+/* De donde salen los de ese pais: su categoria de Odoo y, si no es el
+   espanol de Mexico, el idioma de sus nombres. */
+function deDondeSalen(d, pais) {
+  if (pais) {
+    const idioma = pais.idioma && pais.idioma !== "es_MX"
+      ? " " + reemplazar(t("tar_productos_idioma"), { i: t(`tar_idioma_${pais.idioma}`) }) : "";
+    return " " + reemplazar(t("tar_productos_categoria"), { c: pais.categoria }) + idioma;
+  }
+  return d.categoria ? " " + reemplazar(t("tar_productos_categoria"), { c: d.categoria }) : "";
+}
+
 async function tarjetaProductos(caja) {
   let d;
   try {
@@ -494,7 +557,7 @@ async function tarjetaProductos(caja) {
   const cifra = (n) => String(n ?? 0).padStart(6, "0");
   const loQueEs = (p) => [
     cifra(p.clase ? CLASES.indexOf(p.clase) : 9), cifra(p.perfil_id),
-    cifra(p.categoria_id), cifra(MODALIDADES.indexOf(p.modalidad) + 1)].join(":");
+    cifra(p.categoria_id), cifra(DEL_PRODUCTO.indexOf(p.modalidad) + 1)].join(":");
   const filas = [...d.productos].sort((a, b) =>
     (a.vendible === b.vendible ? 0 : a.vendible ? -1 : 1)
     || ORDEN[estadoDe(a)] - ORDEN[estadoDe(b)]
@@ -552,18 +615,25 @@ async function tarjetaProductos(caja) {
     d.puede_editar ? leer : "",
     h("span", { clase: "gris chico" }, pie.join(" · ")));
 
-  const cuerpo = filas.length
+  /* Cada pais con los suyos (seccion 123): Mexico y Brasil, cada uno de
+     su categoria de Odoo. */
+  const pestanas = pestanasDePais(d, filas, repintar);
+  const cuerpo = pestanas.visibles.length
     ? h("table", { clase: "lista" },
         h("thead", {}, h("tr", {},
           h("th", {}, t("tar_col_producto")), h("th", {}, t("tar_col_unidad")),
           h("th", {}, t("tar_col_que")), h("th", {}, t("tar_col_modalidad")), h("th"))),
-        h("tbody", {}, ...filas.map(p => filaDeProducto(p, d, repintar, gemelosDe(p)))))
-    : h("div", { clase: "vacio" }, t(d.conectado ? "tar_sin_productos" : "tar_sin_conexion"));
+        h("tbody", {}, ...pestanas.visibles.map(p => filaDeProducto(p, d, repintar,
+                                                                     gemelosDe(p)))))
+    : h("div", { clase: "vacio" }, t(!d.conectado ? "tar_sin_conexion"
+                                     : filas.length ? "tar_sin_productos_pais"
+                                     : "tar_sin_productos"));
 
   caja.replaceChildren(h("div", { clase: "tarjeta" },
     conAyuda("h3", t("tar_titulo_productos"), "ay_tar_productos"),
     h("p", { clase: "gris", style: "margin:0 0 10px" }, t("tar_productos_pie"),
-      /* De donde salen (seccion 112): solo la categoria de PE en Odoo. */
-      d.categoria ? " " + reemplazar(t("tar_productos_categoria"), { c: d.categoria }) : ""),
-    acciones, cuerpo));
+      /* De donde salen (seccion 112): solo la categoria de PE en Odoo; la
+         de cada pais desde la seccion 123. */
+      deDondeSalen(d, pestanas.pais)),
+    acciones, pestanas.nodo, cuerpo));
 }

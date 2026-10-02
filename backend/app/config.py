@@ -132,6 +132,12 @@ class Settings(BaseSettings):
     # En que idioma se leen los nombres: en Odoo cada producto guarda su
     # nombre por idioma, y el ingles y el espanol pueden no coincidir.
     odoo_idioma: str = "es_MX"
+    # Lo mismo de Brasil (seccion 123): su categoria, sus listas («Brasil
+    # · Amazon Implantados (USD)») y sus nombres, en portugues. Las de
+    # arriba son las de Mexico. Vacia la categoria: Brasil no se lee.
+    odoo_categoria_productos_br: str = "Proteção Executiva Brasil"
+    odoo_prefijo_listas_br: str = "Brasil ·"
+    odoo_idioma_br: str = "pt_BR"
     # La factura del eventual en Odoo (seccion 116): la llave con que
     # Connect crea la prefactura en borrador --y nada mas: no la confirma,
     # no la timbra, no la borra--. Va aparte de `odoo_api_key`, que solo

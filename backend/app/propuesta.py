@@ -330,6 +330,17 @@ def _modalidad(db: Session, pais_id: int | None) -> m.Modalidad | None:
             .first())
 
 
+def mensual_del_pais(db: Session, pais_id: int | None) -> m.Modalidad | None:
+    """Con que modalidad guarda la lista lo que cobra al mes (seccion 123):
+    la del implantado de su pais. El paquete de Amazon Brasil viene de
+    Odoo por «Mes»."""
+    if not pais_id:
+        return None
+    return (db.query(m.Modalidad)
+            .filter_by(pais_id=pais_id, codigo=m.CodigoModalidad.IMPLANTADO)
+            .first())
+
+
 def _producto(db: Session, tarifa) -> str | None:
     producto_id = getattr(tarifa, "producto_odoo_id", None)
     if not producto_id:
@@ -338,35 +349,72 @@ def _producto(db: Session, tarifa) -> str | None:
     return producto.nombre if producto else None
 
 
+def _tarifa(db: Session, lista: m.Tarifario, modalidad: m.Modalidad, tipo: str,
+            perfil_id: int | None, categoria_id: int | None):
+    """El renglon de la lista para un puesto, una unidad o un paquete en esa
+    modalidad. Del paquete, solo el que la lista pacta."""
+    if tipo == RECURSO:
+        return (db.query(m.TarifaRecurso)
+                .filter_by(tarifario_id=lista.id, perfil_id=perfil_id,
+                           modalidad_id=modalidad.id).first())
+    if tipo == VEHICULO:
+        return (db.query(m.TarifaVehiculo)
+                .filter_by(tarifario_id=lista.id, categoria_id=categoria_id,
+                           modalidad_id=modalidad.id).first())
+    if tipo == PAQUETE:
+        return (motor._pactados(db)
+                .filter_by(tarifario_id=lista.id, perfil_id=perfil_id,
+                           categoria_id=categoria_id,
+                           modalidad_id=modalidad.id).first())
+    return None
+
+
 def _de_la_lista(db: Session, lista: m.Tarifario | None,
                  modalidad: m.Modalidad | None, tipo: str,
                  perfil_id: int | None, categoria_id: int | None) -> dict:
-    """{dia, producto, hora_extra} de la lista para un puesto, una unidad o
-    un paquete. Lo que la lista no tiene va vacio."""
-    salida = {"dia": None, "producto": None, "hora_extra": None}
+    """{dia, mes, producto, hora_extra} de la lista para un puesto, una
+    unidad o un paquete. Lo que la lista no tiene va vacio.
+
+    Lo que la lista cobra al mes (seccion 123) trae `mes` --el mensual,
+    tal cual-- y no `dia`; su hora extra es la del mes. Lo demas, su
+    precio por dia."""
+    salida = {"dia": None, "mes": None, "producto": None, "hora_extra": None}
     if lista is None or modalidad is None:
         return salida
-    tarifa = None
-    if tipo == RECURSO:
-        tarifa = (db.query(m.TarifaRecurso)
-                  .filter_by(tarifario_id=lista.id, perfil_id=perfil_id,
-                             modalidad_id=modalidad.id).first())
-    elif tipo == VEHICULO:
-        tarifa = (db.query(m.TarifaVehiculo)
-                  .filter_by(tarifario_id=lista.id, categoria_id=categoria_id,
-                             modalidad_id=modalidad.id).first())
-    elif tipo == PAQUETE:
-        tarifa = (motor._pactados(db)
-                  .filter_by(tarifario_id=lista.id, perfil_id=perfil_id,
-                             categoria_id=categoria_id,
-                             modalidad_id=modalidad.id).first())
+    mensual = mensual_del_pais(db, modalidad.pais_id)
+    tarifa, con = None, modalidad
+    if mensual is not None:
+        tarifa = _tarifa(db, lista, mensual, tipo, perfil_id, categoria_id)
+        if tarifa is not None:
+            salida["mes"] = _dinero(tarifa.precio)
+            con = mensual
+    if tarifa is None:
+        tarifa = _tarifa(db, lista, modalidad, tipo, perfil_id, categoria_id)
+        if tarifa is not None:
+            salida["dia"] = _dinero(tarifa.precio)
     if tarifa is not None:
-        salida["dia"] = _dinero(tarifa.precio)
         salida["producto"] = _producto(db, tarifa)
     if tipo in DE_PERSONAL and perfil_id:
-        extra = motor_cierre._precio_hora_extra(db, lista.id, perfil_id,
-                                                modalidad)
+        extra = motor_cierre._precio_hora_extra(db, lista.id, perfil_id, con)
         salida["hora_extra"] = _o_nada(extra)
+    return salida
+
+
+def paquetes_de_la_lista(db: Session, lista: m.Tarifario,
+                         modalidad: m.Modalidad) -> list:
+    """Los paquetes que la lista pacta: los del mes (seccion 123) y los
+    del dia, uno por rol y unidad --si la lista trae los dos, el del
+    mes--."""
+    salida, vistos = [], set()
+    mensual = mensual_del_pais(db, modalidad.pais_id)
+    for mod in (mensual, modalidad):
+        if mod is None:
+            continue
+        for t in motor.paquetes_del_tarifario(db, lista.id, mod.id):
+            if (t.perfil_id, t.categoria_id) in vistos:
+                continue
+            vistos.add((t.perfil_id, t.categoria_id))
+            salida.append(t)
     return salida
 
 
@@ -414,12 +462,15 @@ def lista_info(db: Session, cliente_id: int | None,
         raise HTTPException(400, "Di de qué país es la empresa.")
     lista = lista_de_implantados(db, cliente)
     modalidad = _modalidad(db, pais_id)
+    # El precio por dia o, si la lista lo trae por mes (seccion 123), el
+    # mensual.
     roles = []
     for p in (db.query(m.PerfilPersonal).filter_by(activo=True)
               .order_by(m.PerfilPersonal.id).all()):
         precio = _de_la_lista(db, lista, modalidad, RECURSO, p.id, None)
         roles.append({"id": p.id, "codigo": p.codigo, "nombre": p.nombre,
                       "precio_dia": _flotante(precio["dia"]),
+                      "precio_mes": _flotante(precio["mes"]),
                       "hora_extra": _flotante(precio["hora_extra"]),
                       "producto": precio["producto"]})
     unidades = []
@@ -428,16 +479,18 @@ def lista_info(db: Session, cliente_id: int | None,
         precio = _de_la_lista(db, lista, modalidad, VEHICULO, None, c.id)
         unidades.append({"id": c.id, "nombre": c.nombre,
                          "precio_dia": _flotante(precio["dia"]),
+                         "precio_mes": _flotante(precio["mes"]),
                          "producto": precio["producto"]})
     paquetes = []
     if lista is not None and modalidad is not None:
-        for t in motor.paquetes_del_tarifario(db, lista.id, modalidad.id):
+        for t in paquetes_de_la_lista(db, lista, modalidad):
             precio = _de_la_lista(db, lista, modalidad, PAQUETE, t.perfil_id,
                                   t.categoria_id)
             paquetes.append({"perfil_id": t.perfil_id,
                              "categoria_id": t.categoria_id,
                              "nombre": motor.nombre_del_paquete(t),
                              "precio_dia": _flotante(precio["dia"]),
+                             "precio_mes": _flotante(precio["mes"]),
                              "hora_extra": _flotante(precio["hora_extra"]),
                              "producto": precio["producto"]})
     tasa = cc.tasa_iva(db, pais_id)
@@ -632,12 +685,14 @@ def preparar(db: Session, datos: dict) -> dict:
 def calcular(db: Session, prep: dict) -> dict:
     """Los precios de lo que lleva al mes, renglon por renglon.
 
-    El de la lista: su precio por dia por los dias de la modalidad. El
-    escrito: el mensual que se escribio, y su dia es ese mensual entre
-    los dias; si no es el de la lista --o la lista no lo tiene--, es
-    especial. La hora extra del equipo es la que se escribio o la suma de
-    la de cada rol en la lista. El dia adicional, el precio por dia de
-    las personas: la unidad va por mes.
+    El de la lista: su precio por dia por los dias de la modalidad; si la
+    lista lo cobra al mes (seccion 123, el paquete de Amazon Brasil), ese
+    mensual tal cual, y su dia es el mensual entre los dias. El escrito:
+    el mensual que se escribio, y su dia es ese mensual entre los dias;
+    si no es el de la lista --o la lista no lo tiene--, es especial. La
+    hora extra del equipo es la que se escribio o la suma de la de cada
+    rol en la lista. El dia adicional, el precio por dia de las personas:
+    la unidad va por mes.
     """
     base = base_de(prep["dias_servicio"])
     lista = prep["lista"]
@@ -655,8 +710,11 @@ def calcular(db: Session, prep: dict) -> dict:
         de_lista = _de_la_lista(db, lista, modalidad, p["tipo"],
                                 p["perfil_id"], p["categoria_id"])
         nombre = _nombre(p["perfil"], p["categoria"], p["tipo"])
-        lista_mes = ((de_lista["dia"] * base).quantize(CENTAVO)
-                     if de_lista["dia"] is not None else None)
+        if de_lista["mes"] is not None:
+            lista_mes = de_lista["mes"]
+        else:
+            lista_mes = ((de_lista["dia"] * base).quantize(CENTAVO)
+                         if de_lista["dia"] is not None else None)
         escrito = p["precio_mes"]
         if escrito is not None and escrito != lista_mes:
             precio_mes = escrito
@@ -664,7 +722,10 @@ def calcular(db: Session, prep: dict) -> dict:
                                                    rounding=ROUND_HALF_UP)
             especial = True
         elif lista_mes is not None:
-            precio_mes, precio_dia, especial = lista_mes, de_lista["dia"], False
+            precio_mes, especial = lista_mes, False
+            precio_dia = (de_lista["dia"] if de_lista["dia"] is not None
+                          else (lista_mes / base).quantize(
+                              CENTAVO, rounding=ROUND_HALF_UP))
         else:
             precio_mes = precio_dia = None
             especial = False
@@ -675,6 +736,10 @@ def calcular(db: Session, prep: dict) -> dict:
             "precio_dia": precio_dia, "precio_mes": precio_mes,
             "precio_hora_extra": de_lista["hora_extra"],
             "especial": especial, "lista_precio_dia": de_lista["dia"],
+            # El mensual de la lista, tal cual: el que trae por mes o su
+            # precio por dia por los dias (seccion 123).
+            "lista_precio_mes": lista_mes,
+            "lista_por_mes": de_lista["mes"] is not None,
             "producto": de_lista["producto"],
             "descripcion": p["descripcion"], "nombre": nombre,
             "importe": (precio_mes * p["cantidad"]
@@ -719,12 +784,14 @@ def _con_totales(posiciones: list[dict], faltan: list[str], base: int,
 def de_la_guardada(cot: m.Cotizacion) -> dict:
     """Los mismos totales, de lo que se guardo: lo que dice el PDF y lo
     que toma el implantado. Sin volver a leer la lista."""
+    base = base_de(cot.dias_servicio)
     posiciones = [{
         "orden": p.orden, "tipo": p.tipo, "perfil_id": p.perfil_id,
         "categoria_id": p.categoria_id, "cantidad": p.cantidad,
         "precio_dia": _o_nada(p.precio_dia), "precio_mes": _o_nada(p.precio_mes),
         "precio_hora_extra": _o_nada(p.precio_hora_extra),
         "especial": p.especial, "lista_precio_dia": _o_nada(p.lista_precio_dia),
+        **_mensual_de_la_lista(p.lista_precio_dia, p.lista_precio_mes, base),
         "producto": p.producto, "descripcion": p.descripcion,
         "nombre": (_nombre(p.perfil, p.categoria, p.tipo)
                    if (p.perfil or p.categoria) else "—"),
@@ -732,9 +799,20 @@ def de_la_guardada(cot: m.Cotizacion) -> dict:
                     if p.precio_mes is not None else None)}
         for p in sorted(cot.posiciones, key=lambda x: (x.orden, x.id or 0))]
     faltan = [p["nombre"] for p in posiciones if p["precio_mes"] is None]
-    return _con_totales(posiciones, faltan, base_de(cot.dias_servicio),
+    return _con_totales(posiciones, faltan, base,
                         cot.dias_servicio or D.LUNES_VIERNES,
                         _o_nada(cot.precio_hora_extra))
+
+
+def _mensual_de_la_lista(dia, mes, base: int) -> dict:
+    """{lista_precio_mes, lista_por_mes} de un renglon guardado: el mensual
+    que la lista trae por mes (seccion 123) o, si no, su precio por dia
+    por los dias --las propuestas de antes solo guardaban el del dia--."""
+    if mes is not None:
+        return {"lista_precio_mes": _dinero(mes), "lista_por_mes": dia is None}
+    return {"lista_precio_mes": ((_dinero(dia) * base).quantize(CENTAVO)
+                                 if dia is not None else None),
+            "lista_por_mes": False}
 
 
 def sugerencias(db: Session, prep: dict) -> list[dict]:
@@ -752,12 +830,16 @@ def sugerencias(db: Session, prep: dict) -> list[dict]:
     unidades = {p["categoria_id"] for p in prep["posiciones"]
                 if p["tipo"] == VEHICULO and p["precio_mes"] is None}
     salida = []
-    for t in motor.paquetes_del_tarifario(db, lista.id, modalidad.id):
+    for t in paquetes_de_la_lista(db, lista, modalidad):
         if t.perfil_id in roles and t.categoria_id in unidades:
+            # El del mes (seccion 123) dice su mensual; el del dia, su
+            # precio por dia.
+            por_mes = t.modalidad_id != modalidad.id
             salida.append({"perfil_id": t.perfil_id,
                            "categoria_id": t.categoria_id,
                            "nombre": motor.nombre_del_paquete(t),
-                           "precio_dia": float(_dinero(t.precio))})
+                           "precio_dia": None if por_mes else float(_dinero(t.precio)),
+                           "precio_mes": float(_dinero(t.precio)) if por_mes else None})
     return salida
 
 
@@ -807,7 +889,8 @@ def _poner_posiciones(db: Session, cot: m.Cotizacion, calc: dict) -> None:
             categoria_id=p["categoria_id"], cantidad=p["cantidad"],
             precio_dia=p["precio_dia"], precio_mes=p["precio_mes"],
             precio_hora_extra=p["precio_hora_extra"], especial=p["especial"],
-            lista_precio_dia=p["lista_precio_dia"], producto=p["producto"],
+            lista_precio_dia=p["lista_precio_dia"],
+            lista_precio_mes=p["lista_precio_mes"], producto=p["producto"],
             descripcion=p["descripcion"]))
     cot.total = calc["subtotal"]
 
@@ -942,14 +1025,15 @@ def _en_json(calc: dict) -> dict:
         "posiciones": [{
             **{k: v for k, v in p.items()
                if k not in ("precio_dia", "precio_mes", "precio_hora_extra",
-                            "lista_precio_dia", "importe")},
+                            "lista_precio_dia", "lista_precio_mes", "importe")},
             "precio_dia": _flotante(p["precio_dia"]),
             "precio_mes": _flotante(p["precio_mes"]),
             "precio_hora_extra": _flotante(p["precio_hora_extra"]),
             "lista_precio_dia": _flotante(p["lista_precio_dia"]),
-            "lista_precio_mes": (float((p["lista_precio_dia"] * calc["base"])
-                                       .quantize(CENTAVO))
-                                 if p["lista_precio_dia"] is not None else None),
+            # El mensual de la lista, tal cual (seccion 123): el que trae
+            # por mes no se vuelve a armar con el precio por dia.
+            "lista_precio_mes": _flotante(p["lista_precio_mes"]),
+            "lista_por_mes": bool(p.get("lista_por_mes")),
             "importe": _flotante(p["importe"])} for p in calc["posiciones"]],
         "faltan_precios": calc["faltan"],
         "dia_adicional": _flotante(calc["dia_adicional"]),
@@ -1203,10 +1287,7 @@ def por_autorizar(db: Session) -> list[dict]:
                 "nombre": p["descripcion"] or p["nombre"],
                 "cantidad": p["cantidad"],
                 "precio_mes": _flotante(p["precio_mes"]),
-                "lista_precio_mes": (float((p["lista_precio_dia"] * calc["base"])
-                                           .quantize(CENTAVO))
-                                     if p["lista_precio_dia"] is not None
-                                     else None)}
+                "lista_precio_mes": _flotante(p["lista_precio_mes"])}
                 for p in calc["posiciones"] if p["especial"]],
             "huella": huella_de(cot, calc),
             "ruta": f"#/propuesta/{cot.id}",
@@ -1248,7 +1329,8 @@ def nueva_version(db: Session, actor: m.Usuario,
             categoria_id=p.categoria_id, cantidad=p.cantidad,
             precio_dia=p.precio_dia, precio_mes=p.precio_mes,
             precio_hora_extra=p.precio_hora_extra, especial=p.especial,
-            lista_precio_dia=p.lista_precio_dia, producto=p.producto,
+            lista_precio_dia=p.lista_precio_dia,
+            lista_precio_mes=p.lista_precio_mes, producto=p.producto,
             descripcion=p.descripcion))
     nueva.actualizada_en = _ahora()
     db.add(nueva)

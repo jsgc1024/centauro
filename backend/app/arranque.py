@@ -67,6 +67,7 @@ TEXTOS = {
         "modalidades": "Las horas de cada modalidad",
         "pago_dia": "Lo que se paga por día", "bono": "El bono del mes",
         "tipo_cambio": "El tipo de cambio",
+        "tipo_cambio_br": "El dólar a real (Brasil)",
         "puestos": "Los puestos", "acceso_oficina": "La oficina, con acceso",
         "acceso_campo": "El personal de campo, con acceso",
         "avisos_encendidos": "Avisos encendidos en el teléfono",
@@ -113,6 +114,10 @@ TEXTOS = {
         "tc_ok_sin": "${t} por dólar, puesto el {f}.",
         "tc_no": "No hay tipo de cambio: sin él no se autoriza ni se factura "
                  "en dólares.",
+        "tc_br_ok": "R${t} por dólar, puesto el {f} por {p}.",
+        "tc_br_ok_sin": "R${t} por dólar, puesto el {f}.",
+        "tc_br_no": "No hay dólar a real: sin él no se autoriza la propuesta ni "
+                    "la cotización en dólares de Brasil.",
         "puestos_ok": "Puestos creados: {n}.",
         "puestos_no": "Ninguno todavía: cada quien entra con lo de su rol.",
         "acceso": "{a} de {n} · {e} ya entraron.",
@@ -146,6 +151,7 @@ TEXTOS = {
         "modalidades": "As horas de cada modalidade",
         "pago_dia": "O que se paga por dia", "bono": "O bônus do mês",
         "tipo_cambio": "A taxa de câmbio",
+        "tipo_cambio_br": "O dólar para real (Brasil)",
         "puestos": "Os cargos", "acceso_oficina": "O escritório, com acesso",
         "acceso_campo": "O pessoal de campo, com acesso",
         "avisos_encendidos": "Avisos ligados no telefone",
@@ -189,6 +195,10 @@ TEXTOS = {
         "tc_ok_sin": "${t} por dólar, colocado em {f}.",
         "tc_no": "Não há taxa de câmbio: sem ela não se autoriza nem se "
                  "fatura em dólares.",
+        "tc_br_ok": "R${t} por dólar, colocado em {f} por {p}.",
+        "tc_br_ok_sin": "R${t} por dólar, colocado em {f}.",
+        "tc_br_no": "Não há dólar para real: sem ele não se autoriza a proposta "
+                    "nem a cotação em dólares do Brasil.",
         "puestos_ok": "Cargos criados: {n}.",
         "puestos_no": "Nenhum ainda: cada um entra com o do seu papel.",
         "acceso": "{a} de {n} · {e} já entraram.",
@@ -428,17 +438,23 @@ def _dinero(db: Session, T: dict, idioma: str) -> list:
                                   else "ejemplo"]
         renglones.append(_renglon(clave, tono, T[clave], como, quien, ir, lugar))
 
-    tc = tipo_cambio.vigente(db, "USD", "MXN")
-    if tc:
-        dia = _dia(tc["puesto_en"], idioma) if tc["puesto_en"] else "—"
-        como = (T["tc_ok"].format(t=tipo_cambio.corto(tc["tasa"]), f=dia, p=tc["por"])
-                if tc["por"] else
-                T["tc_ok_sin"].format(t=tipo_cambio.corto(tc["tasa"]), f=dia))
-        tono = LISTO
-    else:
-        tono, como = FALTA, T["tc_no"]
-    renglones.append(_renglon("tipo_cambio", tono, T["tipo_cambio"], como,
-                              T["q_finanzas"], "#/facturacion", T["d_tarifarios"]))
+    # El dolar a peso (seccion 82) y, para Brasil, el dolar a real
+    # (seccion 123): cada uno lo pone finanzas en Tarifarios.
+    for clave, local, prefijo in (("tipo_cambio", "MXN", "tc"),
+                                  ("tipo_cambio_br", "BRL", "tc_br")):
+        tc = tipo_cambio.vigente(db, "USD", local)
+        if tc:
+            dia = _dia(tc["puesto_en"], idioma) if tc["puesto_en"] else "—"
+            como = (T[f"{prefijo}_ok"].format(t=tipo_cambio.corto(tc["tasa"]), f=dia,
+                                              p=tc["por"])
+                    if tc["por"] else
+                    T[f"{prefijo}_ok_sin"].format(t=tipo_cambio.corto(tc["tasa"]),
+                                                  f=dia))
+            tono = LISTO
+        else:
+            tono, como = FALTA, T[f"{prefijo}_no"]
+        renglones.append(_renglon(clave, tono, T[clave], como,
+                                  T["q_finanzas"], "#/facturacion", T["d_tarifarios"]))
     return renglones
 
 

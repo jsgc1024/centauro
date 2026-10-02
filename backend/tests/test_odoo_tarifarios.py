@@ -78,14 +78,29 @@ class OdooFalso:
 
     def __init__(self, tablas, campos_socio=None):
         self.tablas = tablas
+        self.llamadas = []
         self.campos_socio = (CAMPO_IMPLANTADOS if campos_socio is None
                              else campos_socio)
 
-    def leer(self, modelo, dominio, campos, archivados=False):
+    def leer(self, modelo, dominio, campos, archivados=False, idioma=None,
+             compania=None):
+        """`idioma` y `compania` (seccion 123): cada llamada se anota, y si
+        la tabla trae lo de otro idioma o lo de otra compania, sale eso."""
+        self.llamadas.append((modelo, idioma, compania))
         filas = [f for f in self.tablas.get(modelo, [])
                  if archivados or f.get("active", True)]
-        return [{"id": f["id"], **{c: f.get(c, False) for c in campos}}
-                for f in filas if cumple(f, dominio)]
+        salida = []
+        for f in filas:
+            if not cumple(f, dominio):
+                continue
+            fila = {"id": f["id"], **{c: f.get(c, False) for c in campos}}
+            for c in campos:
+                if idioma and c in (f.get("_idioma") or {}).get(idioma, {}):
+                    fila[c] = f["_idioma"][idioma][c]
+                if compania and c in (f.get("_compania") or {}).get(compania, {}):
+                    fila[c] = f["_compania"][compania][c]
+            salida.append(fila)
+        return salida
 
     def campos(self, modelo, atributos=None):
         assert modelo == "res.partner"
@@ -533,8 +548,11 @@ def test_el_ensayo_no_guarda_nada(db, clientes):
 
 def test_los_precios_como_los_calcula_odoo(db, clientes):
     # El tipo de cambio que puso finanzas (seccion 82): Odoo dice 20 pesos
-    # por dolar (0.05), y manda el de Centauro.
+    # por dolar (0.05), y manda el de Centauro. Y el dolar a real (seccion
+    # 123): la general de Brasil pasa a reales lo que toma en pesos, con
+    # los dos de Centauro --nunca con el de Odoo--.
     tipo_cambio.poner(db, "17.50", None)
+    tipo_cambio.poner(db, "5.25", None, m.Moneda.USD, m.Moneda.BRL)
     db.commit()
     odoo = OdooFalso(mundo())
     confirmar_todo(db, odoo)
@@ -626,23 +644,23 @@ def test_sin_tipo_de_cambio_lo_que_viene_en_pesos_no_tiene_precio(db, clientes):
 
 
 def test_la_lista_en_una_moneda_que_no_se_sabe_convertir_no_se_lee(db, clientes):
-    """Dolares en Brasil: Centauro convierte dolares a pesos mexicanos, no
-    a reales (seccion 82). La utilidad y la comision restarian una moneda
-    de otra: la lista se dice y el cliente se queda con la suya."""
-    brasil = db.query(m.Pais).filter_by(codigo="BR").one()
-    amazon = db.get(m.Cliente, clientes[3])
-    amazon.pais_id = brasil.id
-    db.commit()
+    """Reales en Mexico: Centauro convierte dolares a pesos mexicanos y,
+    desde la seccion 123, dolares a reales; de reales a pesos no. La
+    utilidad y la comision restarian una moneda de otra: la lista se dice
+    y el cliente se queda con la suya. (Los dolares de Brasil ya se leen:
+    test_odoo_tarifarios_brasil.)"""
     odoo = OdooFalso(mundo())
+    odoo.lista(2)["currency_id"] = [MONEDA_ID["BRL"], "BRL"]
     confirmar_todo(db, odoo)
     informe = leer(db, odoo)
-    assert {"tipo": "otra_moneda", "lista": "Amazon USD", "moneda": "USD",
-            "pais": brasil.nombre} in informe["pendientes"]
-    assert {"tipo": "lista_otra_moneda", "cliente": f"{PREFIJO} Amazon",
-            "lista": "Amazon USD", "moneda": "USD"} in informe["pendientes"]
+    mexico = db.query(m.Pais).filter_by(codigo="MX").one()
+    assert {"tipo": "otra_moneda", "lista": "HASBRO", "moneda": "BRL",
+            "pais": mexico.nombre} in informe["pendientes"]
+    assert {"tipo": "lista_otra_moneda", "cliente": f"{PREFIJO} HASBRO",
+            "lista": "HASBRO", "moneda": "BRL"} in informe["pendientes"]
     db.expire_all()
-    assert db.query(m.Tarifario).filter_by(odoo_id=LISTA0 + 3).first() is None
-    assert db.get(m.Cliente, clientes[3]).tarifario.nombre == "General Mexico"
+    assert db.query(m.Tarifario).filter_by(odoo_id=LISTA0 + 2).first() is None
+    assert db.get(m.Cliente, clientes[1]).tarifario.nombre == "General Mexico"
 
 
 def test_la_de_cada_hora_espera_a_la_primera_y_trae_lo_nuevo(db, clientes):
@@ -685,8 +703,10 @@ def test_dos_productos_para_lo_mismo_manda_el_preferido(db, cliente, sesion,
     """El gemelo en ingles: si la lista no pacta ninguno de los dos,
     chocan en cada lista que los hereda. Se dice una vez, con esas listas,
     y finanzas escoge cual manda."""
-    # Con tipo de cambio, para que la de dolares tambien tenga al agente.
+    # Con tipo de cambio, para que la de dolares --y la de reales, con el
+    # dolar a real (seccion 123)-- tambien tengan al agente.
     tipo_cambio.poner(db, "17.50", None)
+    tipo_cambio.poner(db, "5.25", None, m.Moneda.USD, m.Moneda.BRL)
     db.commit()
     tablas = mundo()
     tablas["product.template"].append({

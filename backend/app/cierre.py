@@ -64,10 +64,13 @@ def _horas_extra(jornada: m.Jornada) -> int:
 def hora_extra_del_rol(db: Session, tarifario_id: int, rol_id: int | None,
                        modalidad: m.Modalidad | None) -> tuple:
     """(precio, producto de Odoo) de la hora extra de un rol: los de su
-    renglon del tarifario en esa modalidad y, si el tarifario no le pone
+    renglon del tarifario en esa modalidad; si el tarifario no le pone
     precio suelto a ese rol --el conductor que solo va en paquete--, los
-    de la lista, en las modalidades que llevan horas extra (seccion 79).
-    El producto es con el que sale en la factura (seccion 116)."""
+    de su paquete (seccion 123: la lista de Amazon Brasil trae la hora
+    extra del conductor con la Minivan y no trae al conductor suelto) y,
+    si no, los de la lista, en las modalidades que llevan horas extra
+    (seccion 79). El producto es con el que sale en la factura (seccion
+    116)."""
     if modalidad is None:
         return None, None
     fila = (db.query(m.TarifaRecurso)
@@ -75,6 +78,15 @@ def hora_extra_del_rol(db: Session, tarifario_id: int, rol_id: int | None,
                        modalidad_id=modalidad.id).first()) if rol_id else None
     if fila and fila.precio_hora_extra:
         return fila.precio_hora_extra, fila.producto_hora_extra_id
+    if rol_id and fila is None:
+        paquete = (db.query(m.TarifaPaquete)
+                   .filter(m.TarifaPaquete.tarifario_id == tarifario_id,
+                           m.TarifaPaquete.perfil_id == rol_id,
+                           m.TarifaPaquete.modalidad_id == modalidad.id,
+                           m.TarifaPaquete.precio_hora_extra.isnot(None))
+                   .order_by(m.TarifaPaquete.id).first())
+        if paquete is not None:
+            return paquete.precio_hora_extra, paquete.producto_hora_extra_id
     if modalidad.aplica_horas_extra:
         tarifario = db.get(m.Tarifario, tarifario_id)
         if tarifario and tarifario.precio_hora_extra:

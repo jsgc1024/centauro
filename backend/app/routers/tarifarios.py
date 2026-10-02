@@ -12,8 +12,9 @@ Dos cosas viven aqui:
     que precio tiene cada rol, cada unidad y cada paquete, y de donde
     salio cada uno. Lo ven quienes cotizan y quienes facturan; aqui no se
     edita: se corrige en Odoo.
-  * **El tipo de cambio** (seccion 82): cuantos pesos vale un dolar. Lo
-    pone finanzas a mano y aplica para todo hasta que se cambie.
+  * **El tipo de cambio** (seccion 82): cuantos pesos vale un dolar y,
+    desde la seccion 123, cuantos reales. Lo pone finanzas a mano y
+    aplica para todo hasta que se cambie.
 
 La lectura de las listas --ensayo, aplicar y cada hora-- vive en la
 pantalla de Odoo (`/odoo/tarifarios`), como las otras cuatro.
@@ -65,6 +66,17 @@ def _catalogo(db: Session) -> dict:
     }
 
 
+def _en_utc(momento: datetime | None) -> str | None:
+    """Cuando se leyo de Odoo, con su zona. Se guarda en UTC sin zona; sin
+    ella, la consola la tomaba por hora local y en Mexico decia «05:05»
+    de una lectura de las 23:05."""
+    if not momento:
+        return None
+    if momento.tzinfo is None:
+        momento = momento.replace(tzinfo=timezone.utc)
+    return momento.isoformat()
+
+
 @router.get("/productos", summary="Que es en Centauro cada producto de Odoo")
 def productos(db: Session = Depends(get_db),
               usuario: m.Usuario = Depends(VER)):
@@ -73,12 +85,19 @@ def productos(db: Session = Depends(get_db),
     filas = odoo_tarifarios.tabla_de_productos(db)
     leido = max((p.odoo_sincronizado_en for p in db.query(m.ProductoOdoo)
                  if p.odoo_sincronizado_en), default=None)
+    nombres = {p.codigo.upper(): p.nombre for p in db.query(m.Pais).all()}
     return {"productos": filas, **_catalogo(db),
             "puede_editar": auth.puede_el_usuario(db, usuario, "cierre.facturar"),
             "conectado": odoo_api.hay_conexion(),
-            "leidos_en": leido.isoformat() if leido else None,
+            "leidos_en": _en_utc(leido),
             # De donde salen (seccion 112): la categoria de Odoo.
-            "categoria": settings.odoo_categoria_productos}
+            "categoria": settings.odoo_categoria_productos,
+            # La de cada pais, con el idioma de sus nombres (seccion 123):
+            # la tabla se ve por pais.
+            "paises": ([{"codigo": x["pais"], "pais": nombres.get(x["pais"], x["pais"]),
+                         "categoria": x["categoria"], "idioma": x["idioma"]}
+                        for x in odoo_tarifarios.lecturas() if x["categoria"]]
+                       if (settings.odoo_categoria_productos or "").strip() else [])}
 
 
 @router.post("/productos/leer", summary="Traer los productos de Odoo")
@@ -190,7 +209,9 @@ def preferir(producto_id: int, datos: PreferidoIn = PreferidoIn(),
     """«Agente de Seguridad Bilingue» y «Bilingual Security Agent» dicen
     lo mismo. Si la lista no pacta ninguno, sin esto no se sabe cual
     precio tomar y ese concepto se queda sin precio. El que manda es uno:
-    marcar este le quita la marca a los demas que dicen lo mismo."""
+    marcar este le quita la marca a los demas que dicen lo mismo, de su
+    pais --el conductor de Brasil no le quita la marca al de Mexico: cada
+    lista se lee con los productos de su pais (seccion 123)--."""
     producto = db.get(m.ProductoOdoo, producto_id)
     if producto is None:
         raise HTTPException(404, "Ese producto no esta en la tabla")
@@ -205,6 +226,9 @@ def preferir(producto_id: int, datos: PreferidoIn = PreferidoIn(),
         for otro in db.query(m.ProductoOdoo).filter(
                 m.ProductoOdoo.id != producto.id,
                 m.ProductoOdoo.clase == producto.clase,
+                m.ProductoOdoo.pais_id.is_(producto.pais_id)
+                if producto.pais_id is None
+                else m.ProductoOdoo.pais_id == producto.pais_id,
                 m.ProductoOdoo.preferido.is_(True)):
             if reglas.concepto_de({"clase": otro.clase, "perfil_id": otro.perfil_id,
                                    "categoria_id": otro.categoria_id,
@@ -251,7 +275,11 @@ def _tarifario(t: m.Tarifario | None) -> dict | None:
     if t is None:
         return None
     def fila(x, **llave):
-        return {**llave, "modalidad": x.modalidad.codigo.value,
+        # Lo que la lista cobra al mes (seccion 123) se guarda con la
+        # modalidad del implantado: aqui se dice «mes».
+        codigo = x.modalidad.codigo
+        return {**llave, "modalidad": (reglas.MES if codigo == m.CodigoModalidad.IMPLANTADO
+                                       else codigo.value),
                 "precio": x.precio, "origen": x.origen}
     return {
         "id": t.id, "nombre": t.nombre, "moneda": t.moneda.value,
@@ -259,8 +287,7 @@ def _tarifario(t: m.Tarifario | None) -> dict | None:
         "activo": t.activo, "resto_de": t.resto_de,
         "precio_hora_extra": t.precio_hora_extra,
         "paquetes_con_viaticos": t.paquetes_con_viaticos,
-        "leido_en": (t.odoo_sincronizado_en.isoformat()
-                     if t.odoo_sincronizado_en else None),
+        "leido_en": _en_utc(t.odoo_sincronizado_en),
         "personal": [fila(x, perfil=x.perfil.nombre, perfil_id=x.perfil_id,
                           precio_hora_extra=x.precio_hora_extra)
                      for x in sorted(t.tarifas_recurso, key=lambda x: x.perfil_id)],
@@ -271,7 +298,9 @@ def _tarifario(t: m.Tarifario | None) -> dict | None:
         # «Precio de venta» en gris pareceria que Control Risks tiene
         # paquetes (seccion 79).
         "paquetes": [fila(x, perfil=x.perfil.nombre, categoria=x.categoria.nombre,
-                          perfil_id=x.perfil_id, categoria_id=x.categoria_id)
+                          perfil_id=x.perfil_id, categoria_id=x.categoria_id,
+                          # La del rol que solo va en paquete (seccion 123).
+                          precio_hora_extra=x.precio_hora_extra)
                      for x in sorted(t.tarifas_paquete,
                                      key=lambda x: (x.perfil_id, x.categoria.nombre))
                      if cot.es_pactado(x)],
@@ -287,6 +316,7 @@ def del_cliente(cliente_id: int, db: Session = Depends(get_db),
     cliente = db.get(m.Cliente, cliente_id)
     if cliente is None:
         raise HTTPException(404, "No existe ese cliente")
+    local = tipo_cambio.local_del_pais(db, cliente.pais_id)
     return {"cliente": {"id": cliente.id, "nombre": cliente.nombre,
                         "de_odoo": cliente.odoo_id is not None},
             "tarifario": _tarifario(cliente.tarifario),
@@ -295,8 +325,11 @@ def del_cliente(cliente_id: int, db: Session = Depends(get_db),
             # Si quien mira puede decir si los paquetes traen los viaticos.
             "puede_editar": auth.puede_el_usuario(db, usuario, "cierre.facturar"),
             # El que esta puesto, para la lista que no es de la moneda del
-            # pais (seccion 82): de ahi salen sus precios en gris.
-            "tipo_cambio": tipo_cambio.estado(db),
+            # pais (seccion 82): de ahi salen sus precios en gris. El de su
+            # pais: el dolar a real para el de Brasil (seccion 123).
+            "tipo_cambio": (tipo_cambio.estado(db, m.Moneda.USD, local)
+                            if local and (m.Moneda.USD, local) in tipo_cambio.PARES
+                            else tipo_cambio.estado(db)),
             **_catalogo(db)}
 
 
@@ -340,12 +373,22 @@ def listar(db: Session = Depends(get_db), _=Depends(VER)):
 # ================================================================ tipo de cambio
 
 class TipoCambioIn(BaseModel):
-    """Cuantos pesos vale un dolar."""
+    """Cuantos pesos --o, para Brasil, cuantos reales (seccion 123)--
+    vale un dolar."""
     tasa: Decimal = Field(gt=0, le=9999)
+    moneda_local: m.Moneda = m.Moneda.MXN
+
+
+# Como se dice en la bitacora de accesos que tipo de cambio se puso.
+DETALLE = {m.Moneda.MXN: "pesos por dolar", m.Moneda.BRL: "reales por dolar"}
 
 
 def _del_tipo_de_cambio(db: Session, usuario: m.Usuario) -> dict:
+    """El del dolar a peso arriba, como siempre, y los dos pares en
+    `pares` (seccion 123): el dolar a peso mexicano y el dolar a real."""
     return {**tipo_cambio.estado(db),
+            "pares": [tipo_cambio.estado(db, moneda, local)
+                      for moneda, local in tipo_cambio.EN_ORDEN],
             "puede_editar": auth.puede_el_usuario(db, usuario, "cierre.facturar")}
 
 
@@ -353,7 +396,8 @@ def _del_tipo_de_cambio(db: Session, usuario: m.Usuario) -> dict:
 def ver_tipo_de_cambio(db: Session = Depends(get_db),
                        usuario: m.Usuario = Depends(VER)):
     """El que esta puesto, quien lo puso y cuando, y los anteriores
-    (seccion 82)."""
+    (seccion 82); el del dolar a peso y el del dolar a real (seccion
+    123)."""
     return _del_tipo_de_cambio(db, usuario)
 
 
@@ -361,17 +405,19 @@ def ver_tipo_de_cambio(db: Session = Depends(get_db),
 def poner_tipo_de_cambio(datos: TipoCambioIn, db: Session = Depends(get_db),
                          usuario: m.Usuario = Depends(PRODUCTOS)):
     """Finanzas pone cuantos pesos vale un dolar (decision de Salvador, 26
-    de septiembre). Desde ese momento es el que vale para todo lo que se
-    fije --la cotizacion que se autorice, el visto bueno con gastos
+    de septiembre) y, para Brasil, cuantos reales (2 de octubre, seccion
+    123). Desde ese momento es el que vale para todo lo que se fije --la
+    cotizacion o la propuesta que se autorice, el visto bueno con gastos
     netos, el mes del implantado que se abra, los precios en dolares que
     salen de una lista en pesos--; lo que ya se fijo se queda con el
     suyo. Se queda asi hasta que alguien lo cambie."""
-    antes = tipo_cambio.vigente(db, m.Moneda.USD, m.Moneda.MXN)
-    nuevo = tipo_cambio.poner(db, datos.tasa, usuario)
+    local = datos.moneda_local
+    antes = tipo_cambio.vigente(db, m.Moneda.USD, local)
+    nuevo = tipo_cambio.poner(db, datos.tasa, usuario, m.Moneda.USD, local)
     if antes is None or antes["tasa"] != nuevo["tasa"]:
         accesos.anotar(db, usuario, "tipo de cambio", "tipo_cambio", None,
                        antes=tipo_cambio.texto(antes["tasa"]) if antes else None,
                        despues=tipo_cambio.texto(nuevo["tasa"]),
-                       detalle="pesos por dolar")
+                       detalle=DETALLE.get(local, f"{local.value} por dolar"))
     db.commit()
     return _del_tipo_de_cambio(db, usuario)

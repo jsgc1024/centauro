@@ -582,12 +582,15 @@ async function armar(main, cat, d) {
     recalcular();
   }
 
-  /* «Precios de PE · General Mexico (MXN), la lista del cliente en Odoo.» */
+  /* «Precios de PE · General Mexico (MXN), la lista del cliente en Odoo.»
+     Si el nombre ya trae la moneda, «Amazon Implantados (USD)», no se repite. */
   function pintarLista(tarifario, nueva, escogida) {
     const [antes, despues] = t(nueva ? "ctz_precios_general"
       : escogida ? "ctz_precios_escogida" : "ctz_precios_de").split("{l}");
+    const yaLaDice = (tarifario.nombre || "").includes(`(${tarifario.moneda})`);
     return [antes, h("b", {}, tarifario.nombre),
-            reemplazar(despues || "", { m: tarifario.moneda }),
+            reemplazar(yaLaDice ? (despues || "").replace(" ({m})", "") : (despues || ""),
+                       { m: tarifario.moneda }),
             tarifario.paquetes_con_viaticos ? ` ${t("ctz_todo_incluido")}` : ""];
   }
 

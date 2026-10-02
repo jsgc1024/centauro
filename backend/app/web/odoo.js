@@ -639,6 +639,12 @@ const PENDIENTES_DE_TARIFAS = [
    (x) => [x.cliente, reemplazar(t(x.implantados ? "odo_tp_no_pe_implantados_pie"
                                                  : "odo_tp_no_pe_pie"),
                                  { l: x.lista || "—", p: x.prefijo || "" })]],
+  /* Una lista de otro pais nunca se le pone a un cliente (seccion 123). */
+  ["lista_de_otro_pais", "odo_tp_otro_pais",
+   (x) => [x.cliente, reemplazar(t(x.implantados ? "odo_tp_otro_pais_implantados_pie"
+                                                 : "odo_tp_otro_pais_pie"),
+                                 { l: x.lista || "—", pl: x.pais_lista || "—",
+                                   pc: x.pais || "—" })]],
   ["lista_sin_precios", "odo_tp_sin_precios",
    (x) => [x.cliente, reemplazar(t("odo_tp_sin_precios_pie"), { l: x.lista || "—" })]],
   ["lista_otra_moneda", "odo_tp_cliente_otra_moneda",
@@ -652,6 +658,11 @@ const PENDIENTES_DE_TARIFAS = [
   ["producto_fuera", "odo_tp_fuera",
    (x) => [x.producto, reemplazar(t("odo_tp_fuera_pie"), {
      l: (x.listas || []).map(n => `«${n}»`).join(", ") || "—", c: x.categoria || "" })]],
+  /* El producto de un pais en la lista de otro (seccion 123). */
+  ["producto_de_otro_pais", "odo_tp_producto_otro_pais",
+   (x) => [x.producto, reemplazar(t("odo_tp_producto_otro_pais_pie"),
+                                  { l: x.lista || "—", p: x.pais || "—",
+                                    pl: x.pais_lista || "—" })]],
   ["conflicto", "odo_tp_conflicto",
    (x) => [x.productos.map(([n]) => n).join(" / "),
            [x.productos.map(([, p]) => p).join(" / "),
@@ -665,8 +676,23 @@ const PENDIENTES_DE_TARIFAS = [
   ["general_varios_paises", "odo_tp_varios_paises",
    (x) => [x.lista, x.paises.join(", ")]],
   ["sin_pais", "odo_tp_sin_pais", (x) => [x.lista, ""]],
-  ["sin_general", "odo_tp_sin_general", () => [t("odo_tp_sin_general_pie"), ""]],
+  /* La compania de la lista no cuadra con su pais (seccion 123). */
+  ["lista_no_cuadra", "odo_tp_no_cuadra",
+   (x) => [x.lista, reemplazar(t("odo_tp_no_cuadra_pie"),
+                               { p: x.pais || "—", e: x.compania || "—" })]],
+  /* La general de cada pais (seccion 123): uno por pais. */
+  ["sin_general", "odo_tp_sin_general",
+   (x) => (x.pais ? [x.pais, t("odo_tp_sin_general_pais_pie")]
+                  : [t("odo_tp_sin_general_pie"), ""])],
+  ["sin_categoria_pais", "odo_tp_sin_categoria_pais",
+   (x) => [x.pais || "—", reemplazar(t("odo_tp_sin_categoria_pais_pie"),
+                                     { c: x.categoria || "" })]],
   ["modalidad", "odo_tp_modalidad", (x) => [x.lista, x.modalidad]],
+  /* La flota que la general de su pais no cobra (seccion 123): se dice
+     y no se bloquea. */
+  ["flota_sin_precio", "odo_tp_flota_sin_precio",
+   (x) => [`${x.categoria || "—"} · ${x.pais || "—"}`,
+           reemplazar(t("odo_tp_flota_sin_precio_pie"), { n: x.unidades })]],
   ["lista_sin_cliente", "odo_tp_lista_sin_cliente", (x) => [x.lista, preciosDe(x)]],
 ];
 
@@ -678,6 +704,23 @@ function preciosDe(l) {
   if (!l.precios) return t("odo_ta_sin_precios");
   if (!l.propios) return reemplazar(t("odo_ta_sin_propios"), { n: l.precios });
   return reemplazar(t("odo_ta_n_precios"), { n: l.precios, p: l.propios });
+}
+
+/* Que lee cada pais (seccion 123): «Mexico: la categoria «Proteccion
+   Ejecutiva» y las listas «PE ·», de CENTAURO ASS.» Solo cuando lee mas
+   de un pais. */
+function cadaPaisLeeLoSuyo(d) {
+  const lecturas = d.lecturas || [];
+  if (lecturas.length < 2) return null;
+  return h("p", { clase: "gris chico", style: "margin:6px 0 0" },
+    h("b", {}, t("odo_ta_cada_pais")), " ",
+    lecturas.map(x => [
+      reemplazar(t("odo_ta_lee"), { p: x.pais, c: x.categoria, l: x.prefijo }),
+      x.idioma && x.idioma !== "es_MX"
+        ? reemplazar(t("odo_ta_lee_idioma"), { i: t(`tar_idioma_${x.idioma}`) }) : "",
+      x.compania ? reemplazar(t("odo_ta_lee_compania"), { e: x.compania }) : "",
+      x.en_odoo === false ? t("odo_ta_lee_sin_categoria") : "",
+    ].join("")).map(x => (x.endsWith(".") ? x : `${x}.`)).join(" "));
 }
 
 function informeTarifas(d) {
@@ -692,21 +735,35 @@ function informeTarifas(d) {
   const suyas = d.clientes - d.clientes_con_general;
   const pactados = generales.concat(porCliente, d.sin_cliente || [])
     .reduce((n, l) => n + (l.propios || 0), 0);
+  /* Las de cada pais (seccion 123): «10 (México 9 · Brasil 1)». */
+  const porPais = d.por_pais || [];
+  const leidas = porPais.length
+    ? reemplazar(t("odo_leidas_por_pais"), {
+        n: d.leidas,
+        p: porPais.map(x => reemplazar(t("odo_pais_n"), { p: x.pais, n: x.leidas }))
+          .join(" · ") })
+    : d.leidas;
+  /* El pais sin general lo dice en su celda: «Brasil no tiene». */
+  const sinGeneral = d.pendientes.filter(p => p.tipo === "sin_general" && p.pais)
+    .map(p => reemplazar(t("odo_ta_no_tiene"), { p: p.pais }));
   const partes = [
     h("p", { clase: "gris chico", style: "margin:14px 0 0" },
       reemplazar(t(d.ensayo ? "odo_ensayo_de" : "odo_aplicado_de"),
                  { hora: hora(new Date().toISOString()) }),
-      " · ", d.prefijo
+      " · ", porPais.length
+        ? reemplazar(t("odo_leidas_listas_paises"), { n: leidas, f: d.fuera || 0 })
+        : d.prefijo
         ? reemplazar(t("odo_leidas_listas_pe"), { n: d.leidas, f: d.fuera || 0,
                                                   p: d.prefijo })
         : reemplazar(t("odo_leidas_listas"), { n: d.leidas })),
+    cadaPaisLeeLoSuyo(d) || "",
     h("div", { clase: "camino", style: "background:#fff;margin:8px 0 12px" },
       celda(t("odo_ta_generales"), generales.length,
             generales.length
               ? generales.map(g => `${g.pais || "—"}, ${t(EN_MONEDA[g.moneda] || "odo_ta_en_MXN")}`)
-                  .join(" · ")
-              : t("odo_ta_sin_general"),
-            generales.length ? "" : "var(--alerta)"),
+                  .concat(sinGeneral).join(" · ")
+              : (sinGeneral.length ? sinGeneral.join(" · ") : t("odo_ta_sin_general")),
+            generales.length && !sinGeneral.length ? "" : "var(--alerta)"),
       celda(t("odo_ta_por_cliente"), porCliente.length,
             reemplazar(t("odo_ta_por_cliente_pie"), { n: suyas })),
       celda(t("odo_ta_precios"), d.precios,
@@ -743,12 +800,15 @@ function informeTarifas(d) {
     partes.push(plegable(`${t("odo_ta_generales")} (${generales.length})`,
       renglones(generales, (x) => [`${x.nombre} · ${x.pais || "—"}`,
         [x.moneda, preciosDe(x),
-         reemplazar(t("odo_ta_n_clientes"), { n: x.clientes.length })].join(" · ")]),
+         x.clientes.length === 1 ? t("odo_ta_un_cliente")
+           : reemplazar(t("odo_ta_n_clientes"), { n: x.clientes.length })].join(" · ")]),
       null, {}, true));
   }
+  /* Con mas de un pais, cada lista dice el suyo (seccion 123). */
+  const conPais = (d.lecturas || []).length > 1;
   if (porCliente.length) {
     partes.push(plegable(`${t("odo_ta_por_cliente")} (${porCliente.length})`,
-      renglones(porCliente, (x) => [x.nombre, [
+      renglones(porCliente, (x) => [conPais && x.pais ? `${x.nombre} · ${x.pais}` : x.nombre, [
         x.moneda, preciosDe(x),
         x.clientes.join(", "),
         x.implantados.length

@@ -35,7 +35,8 @@ from sqlalchemy.orm import Session
 
 from app import models as m
 from app import odoo_facturacion as of
-from app.odoo_tarifarios_reglas import FULL_DAY, HORA_EXTRA, PAQUETE, ROL, UNIDAD
+from app.odoo_tarifarios_reglas import (FULL_DAY, HORA_EXTRA, MES, PAQUETE, ROL,
+                                        UNIDAD)
 
 CERO = Decimal("0")
 CENTAVO = Decimal("0.01")
@@ -155,39 +156,57 @@ def puestos_del_mes(db: Session, contrato: m.ContratoImplantado,
 
 class Productos:
     """Con que producto de Odoo se cobra cada cosa del mes: el del precio
-    en la lista del cliente --la de implantados, o la de siempre-- en dia
-    completo; si la lista no lo trae, el que dice lo mismo en la tabla de
-    productos (el unico, o el que manda)."""
+    en la lista del cliente --la de implantados, o la de siempre--, el que
+    la lista cobra al mes (seccion 123) o el del dia completo; si la lista
+    no lo trae, el que dice lo mismo en la tabla de productos (el unico, o
+    el que manda)."""
 
     def __init__(self, db: Session, contrato: m.ContratoImplantado, faltan):
         from app import implantado_precios
+        from app import propuesta as motor_propuesta
 
         self.db, self.faltan = db, faltan
         self.lista, _ = implantado_precios.lista_del_implantado(
             db, contrato.servicio)
         modalidad = implantado_precios.modalidad_de_la_lista(db, contrato)
-        self.modalidad_id = modalidad.id if modalidad else None
+        # Lo que la lista cobra al mes va con la modalidad del implantado
+        # (seccion 123): el paquete de Amazon Brasil.
+        mensual = motor_propuesta.mensual_del_pais(db, contrato.servicio.pais_id)
+        self.modalidades = [x.id for x in (mensual, modalidad) if x is not None]
         self.todos = {p.id: p for p in db.query(m.ProductoOdoo)}
+        # Los del pais del servicio, si el producto dice el suyo (seccion
+        # 123): el conductor de Brasil no se le cobra a uno de Mexico.
+        self.pais_id = contrato.servicio.pais_id
 
     def _de_la_lista(self, modelo, **llave) -> m.TarifaRecurso | None:
-        if self.lista is None or self.modalidad_id is None:
+        if self.lista is None:
             return None
-        return (self.db.query(modelo)
-                .filter_by(tarifario_id=self.lista.id,
-                           modalidad_id=self.modalidad_id, **llave).first())
+        for modalidad_id in self.modalidades:
+            fila = (self.db.query(modelo)
+                    .filter_by(tarifario_id=self.lista.id,
+                               modalidad_id=modalidad_id, **llave).first())
+            if fila is not None:
+                return fila
+        return None
 
     def _por_concepto(self, clase: str, perfil_id=None, categoria_id=None,
                       modalidad: str | None = FULL_DAY) -> int | None:
-        candidatos = [p for p in self.todos.values()
-                      if p.confirmado and p.clase == clase
-                      and p.perfil_id == perfil_id
-                      and p.categoria_id == categoria_id
-                      and (modalidad is None or p.modalidad == modalidad)]
-        vivos = [p for p in candidatos if p.vendible] or candidatos
-        if len(vivos) == 1:
-            return vivos[0].id
-        preferidos = [p for p in vivos if p.preferido]
-        return preferidos[0].id if len(preferidos) == 1 else None
+        # Sin uno del dia completo, el que se cobra por mes (seccion 123).
+        for cual in ((modalidad, MES) if modalidad == FULL_DAY else (modalidad,)):
+            candidatos = [p for p in self.todos.values()
+                          if p.confirmado and p.clase == clase
+                          and p.perfil_id == perfil_id
+                          and p.categoria_id == categoria_id
+                          and p.pais_id in (None, self.pais_id)
+                          and (cual is None or p.modalidad == cual)]
+            if not candidatos:
+                continue
+            vivos = [p for p in candidatos if p.vendible] or candidatos
+            if len(vivos) == 1:
+                return vivos[0].id
+            preferidos = [p for p in vivos if p.preferido]
+            return preferidos[0].id if len(preferidos) == 1 else None
+        return None
 
     def del_puesto(self, p: Puesto) -> int | None:
         """El producto (de la tabla) de un puesto o una unidad."""
@@ -207,12 +226,22 @@ class Productos:
                                       categoria_id=p.categoria_id))
 
     def de_hora_extra(self, perfil_id: int | None) -> int | None:
-        """La hora extra de un rol: la de la lista, la de su rol en la
-        tabla, o la de todos."""
+        """La hora extra de un rol: la de la lista --la de su precio o, si
+        solo va en paquete, la de su paquete (seccion 123)--, la de su rol
+        en la tabla, o la de todos."""
         if perfil_id:
             fila = self._de_la_lista(m.TarifaRecurso, perfil_id=perfil_id)
             if fila and fila.producto_hora_extra_id:
                 return fila.producto_hora_extra_id
+            if fila is None and self.lista is not None and self.modalidades:
+                paquete = (self.db.query(m.TarifaPaquete)
+                           .filter(m.TarifaPaquete.tarifario_id == self.lista.id,
+                                   m.TarifaPaquete.perfil_id == perfil_id,
+                                   m.TarifaPaquete.modalidad_id.in_(self.modalidades),
+                                   m.TarifaPaquete.producto_hora_extra_id.isnot(None))
+                           .order_by(m.TarifaPaquete.id).first())
+                if paquete is not None:
+                    return paquete.producto_hora_extra_id
         if self.lista is not None and self.lista.producto_hora_extra_id:
             return self.lista.producto_hora_extra_id
         return (self._por_concepto(HORA_EXTRA, perfil_id=perfil_id,

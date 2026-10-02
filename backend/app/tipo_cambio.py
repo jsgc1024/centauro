@@ -23,9 +23,9 @@ Tres reglas:
   * **Sin tipo de cambio no se inventa uno.** Mientras nadie lo ponga, lo
     que no se puede convertir se dice, y la cotizacion no se autoriza.
 
-Hoy solo se convierte de dolares a pesos mexicanos: es lo que hace falta
-(Amazon). Un servicio en Brasil cotizado en dolares no tiene de donde
-tomarlo, y se dice.
+Se convierte de dolares a pesos mexicanos (Amazon) y, desde la seccion
+123, de dolares a reales (Amazon Brasil): cada uno lo pone finanzas por
+su lado. Otra pareja no tiene de donde tomarse, y se dice.
 """
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
@@ -40,8 +40,11 @@ CENTAVO = Decimal("0.01")
 DIEZMILESIMA = Decimal("0.0001")
 UNO = Decimal("1")
 
-# Lo que se sabe convertir: dolares a pesos mexicanos.
-PARES = {(m.Moneda.USD, m.Moneda.MXN)}
+# Lo que se sabe convertir: dolares a pesos mexicanos y, para Brasil
+# (seccion 123), dolares a reales.
+PARES = {(m.Moneda.USD, m.Moneda.MXN), (m.Moneda.USD, m.Moneda.BRL)}
+# En que orden se muestran en Tarifarios.
+EN_ORDEN = ((m.Moneda.USD, m.Moneda.MXN), (m.Moneda.USD, m.Moneda.BRL))
 # El dia de un tipo de cambio se cuenta en Mexico: es donde se usa.
 ZONA = "America/Mexico_City"
 # Un tipo de cambio fuera de esto es un dedo que se resbalo, no un dolar.
@@ -155,7 +158,8 @@ def poner(db: Session, tasa, usuario: m.Usuario, moneda=m.Moneda.USD,
     if (moneda, local) not in PARES:
         raise HTTPException(400, {
             "mensaje": f"Centauro no convierte de {moneda.value} a {local.value}",
-            "que_hacer": "Hoy solo se convierte de dolares a pesos mexicanos."})
+            "que_hacer": "Se convierte de dolares a pesos mexicanos y de "
+                         "dolares a reales."})
     try:
         tasa = _d(tasa).quantize(DIEZMILESIMA, rounding=ROUND_HALF_UP)
     except (InvalidOperation, ValueError, TypeError):

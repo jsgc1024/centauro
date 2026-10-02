@@ -9516,6 +9516,113 @@ que hace, y una nueva cierra la que quedó abierta.
 **Lo que sigue.** Sube junto con la sección 121, con el bloque de
 siempre (sin migración).
 
+## 123. El tarifario de Brasil desde Odoo
+
+Salvador, 2 de octubre, punto 2 de su pedido: que Connect lea de Odoo la
+lista de Amazon Brasil —el paquete por mes y su hora extra, en dólares—
+y que Brasil nunca tome los precios de México. La propuesta, con sus
+pantallas (`Propuesta_tarifario_de_Brasil_desde_Odoo.pdf`), se aprobó
+con sus tres decisiones: 1) el precio que en Odoo es del mes se queda
+del mes, tal cual —los días que cubre solo dicen el día adicional y el
+primer mes—; 2) el dólar a real lo pone finanzas en Connect, como el
+dólar a peso; 3) Brasil sin lista general se avisa y nunca usa la de
+México. Mientras se programaba, Ari terminó de cargar Brasil en Odoo
+(mensaje del mismo día): «Brasil · General» en reales (lista 37) y
+«Brasil · General USD» (38), las dos con el grupo de países de Brasil;
+30 productos en portugués en «Proteção Executiva Brasil», con la hora
+extra de cada puesto capturada en la lista (el 30 % del día, no el 10 %
+de México); Amazon Brasil con su etiqueta y la lista 35 en su ficha y en
+la de implantados; y el dólar en 6.00 reales en la compañía de Brasil.
+Eso entró en esta misma sección.
+
+- **Cada país lee lo suyo.** México, la categoría «Protección
+  Ejecutiva» y las listas «PE ·», en español de México; Brasil,
+  «Proteção Executiva Brasil» y las listas «Brasil ·», en portugués
+  (`odoo_categoria_productos_br`, `odoo_prefijo_listas_br`,
+  `odoo_idioma_br`). Cada producto es del país de su categoría —si la
+  de Brasil colgara de la de México, manda la más cercana—, y una lista
+  solo pone precio con los productos de su país. La lista es del país
+  de su grupo de países, de su compañía y de su nombre; si no cuadran
+  queda pendiente («Listas cuyo país no cuadra con su compañía»).
+- **La ficha del cliente, desde la compañía de su país.** Desde la de
+  México, Odoo le ponía a un cliente de Brasil una lista de México. Una
+  lista de otro país nunca se le pone: se queda con lo que tenía y se
+  dice. El prefijo que se le dice al cliente cuya lista no es de PE es
+  el de su país.
+- **Los nombres de Brasil.** «Motorista Executivo Bilíngue» es el
+  conductor; «(Meio Período)», el medio día; «(Transfer)»; sin
+  paréntesis, el día completo; «(Tudo incluído…)», el paquete. Las
+  unidades «Nível III» se reconocen por su tipo y su blindaje.
+- **El paquete por mes.** El producto cuya unidad en Odoo es «Mes» se
+  sugiere «Por mes» y se guarda con la modalidad `implantado` de su
+  país; su hora extra va con el paquete (`tarifa_paquete.precio_hora_
+  extra` y `producto_hora_extra_id`), porque la lista de Amazon Brasil
+  no trae al conductor suelto. `cierre.hora_extra_del_rol` la toma del
+  paquete cuando el rol no tiene precio suelto. Un eventual no cotiza
+  por día lo del mes.
+- **La propuesta.** El mensual de la lista que viene por mes sale tal
+  cual —USD 16,855.00—, su día es el mensual entre los días de la
+  modalidad (766.14 con 22) y su hora extra la del paquete (112).
+  `posicion_propuesta.lista_precio_mes` guarda el mensual de la lista
+  sin redondeos. La pantalla dice «de la lista, por mes». Con el mes
+  completo no hay día adicional. Autorizada, el mes nace con eso y la
+  prefactura toma el producto del paquete (109) y el de su hora extra
+  (110).
+- **El dólar a real.** `tipo_cambio` convierte de dólares a pesos y de
+  dólares a reales; la tarjeta de Facturación → Tarifarios tiene los
+  dos y el arranque los dice aparte. La lectura convierte solo con los
+  de Centauro, contra el dólar: el de Odoo nunca —en la compañía de
+  México el real vale 1—; sin el de Centauro, ese precio no sale y se
+  dice. El «Precio de venta» de cada producto va en su moneda: los de
+  Brasil, en reales.
+- **Las dos generales de Brasil.** La de reales y la de dólares; la
+  cotización del eventual escoge entre las dos (sección 120), con el
+  dólar a real.
+- **La flota sin precio.** Las unidades de Odoo que la general de su
+  país no cobra —las seis Corolla Cross, «CUV Blindada»— se dicen en
+  los pendientes de la lectura; se asignan igual.
+- **«Que mande este», por país.** Dos productos que dicen lo mismo solo
+  son gemelos dentro de su país: la hora extra del Motorista no le
+  quita la marca a la del conductor de México, y la prefactura busca el
+  producto entre los del país del servicio. Los precios de cada lista
+  cuentan cada hora extra, la de todos y la de cada puesto.
+- **Lo que se vio en las pantallas.** La hora de la última lectura de
+  los productos y de cada lista se guarda en UTC sin zona y la consola
+  la tomaba por hora local: en México decía «05:05» de una lectura de
+  las 23:05. El router de tarifarios la manda con su zona (`_en_utc`).
+  Además: «1 precio propio» y «1 cliente» en singular; el nombre de la
+  lista que ya trae la moneda, «Amazon Implantados (USD)», no la
+  repite en la propuesta y la cotización; y el pie del tipo de cambio
+  habla de cualquier moneda, no solo de pesos.
+
+En la pantalla de Odoo, la lectura dice cuántas listas leyó de cada país
+y qué lee cada uno, y los pendientes nuevos: listas de otro país, listas
+que no cuadran con su compañía, productos de un país en la lista de
+otro, el país sin general o sin su categoría y la flota sin precio. La
+tabla de productos se ve por país. Por dentro, además de lo dicho:
+`odoo_api.leer` con `idioma` y `compania`; `odoo_tarifarios.lecturas`,
+`categorias_por_pais`, `_flota_sin_precio`, `tasas_de_centauro` contra
+el dólar; `propuesta.mensual_del_pais` y `paquetes_de_la_lista`;
+`odoo_facturacion_mes.Productos` con las dos modalidades; el router de
+tarifarios con los dos pares. Migración `e4b8c2a6d9f1`: `producto_odoo.
+pais_id`, la hora extra del paquete y `lista_precio_mes`. Manual: lo que
+viene de Odoo, la propuesta, la cotización y «un cliente no tiene
+precio», en español y portugués. Pruebas: `tests/test_odoo_tarifarios_
+brasil.py`, con un Odoo de mentiras como el que cargó Ari; en
+`test_odoo_tarifarios.py` la lista en una moneda que no se convierte
+ahora es en reales para México, y las de antes ponen el dólar a real.
+
+Las pantallas de verdad, en la vista previa (`centauro_vista_123`, con
+un Odoo de mentiras de México y Brasil):
+`El_tarifario_de_Brasil_desde_Odoo_pantallas_reales.pdf`.
+
+**Lo que sigue.** Sube con migración. Ya arriba: finanzas pone el dólar
+a real (6.00), lee los productos y confirma los de Brasil en
+Facturación → Tarifarios (pestaña Brasil); el ensayo de los tarifarios
+en la pantalla de Odoo y se aplica; finanzas marca «sus paquetes traen
+los viáticos» en las tres listas de Brasil. Se revisa contra Odoo con
+Salvador y Ari.
+
 ## 14. Lo que falta
 
 ### Abierto
@@ -9586,14 +9693,11 @@ siempre (sin migración).
   en la 97. Las cinco piezas quedaron hechas; lo que sigue lo dice el
   arranque, en vivo.
 - **Brasil en Odoo: el tarifario** (pedido del 2 de octubre, punto 2).
-  La categoría «Proteção Executiva Brasil» (5), las listas que empiezan
-  con «Brasil ·» y sus nombres en portugués. La primera es «Brasil ·
-  Amazon Implantados (USD)» (lista 35, compañía 5), con el paquete
-  mensual de USD 16,855 «Tudo incluído» y la hora extra de USD 112
-  después de 12 horas. Brasil no tiene lista general: se avisa y no se
-  usa la de México. El cliente Amazon Brasil todavía no está en Odoo. Va
-  primero la propuesta con sus pantallas; los puntos 0, 1 y 3 quedaron
-  en la sección 121.
+  Programado en la sección 123. Falta revisarlo contra Odoo ya en
+  producción: el ensayo, los productos de Brasil confirmados, el dólar
+  a real en Connect y la marca de viáticos en las listas «Tudo
+  incluído». Las Corolla Cross («CUV Blindada») esperan su precio en
+  las generales de Brasil.
 - **El primer agente del sistema: los casos resueltos** (sección 90).
   Salvador, 27 de septiembre: «más adelante podemos poner a un agente
   dedicado a ello… será el primer agente que coloquemos en el sistema».

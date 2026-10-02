@@ -42,7 +42,8 @@ AREAS = [
      ("pendientes", "sin_rfc", "pais_por_rfc", "sin_ligar", "sin_tarifario",
       "bajas")),
     ("tarifarios", "Los tarifarios", "Finanzas y comercial", odoo_tarifarios,
-     ("pendientes", "sin_cliente", "campo_implantados")),
+     # De cada pais (seccion 123): cuantas listas se leyeron de cada uno.
+     ("pendientes", "sin_cliente", "campo_implantados", "por_pais")),
 ]
 
 

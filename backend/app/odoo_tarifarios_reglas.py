@@ -43,7 +43,13 @@ CLASES = (ROL, UNIDAD, PAQUETE, HORA_EXTRA, VIATICOS, NO_EP)
 CON_PRECIO = (ROL, UNIDAD, PAQUETE, HORA_EXTRA)
 
 FULL_DAY, MEDIO_DIA, TRANSFER = "full_day", "medio_dia", "transfer"
-MODALIDADES = (FULL_DAY, MEDIO_DIA, TRANSFER)
+# El que en Odoo se cobra por mes (seccion 123): el paquete de Amazon
+# Brasil. Su precio es el del mes, y se guarda con la modalidad
+# `implantado` de su pais: el implantado es lo que se cobra por mes.
+MES = "mes"
+MODALIDADES = (FULL_DAY, MEDIO_DIA, TRANSFER, MES)
+# Las unidades de medida de Odoo que son un mes, en sus idiomas.
+UNIDADES_DE_MES = {"mes", "meses", "month", "months", "mensual", "mensal"}
 
 # De donde salio un precio. El orden es la preferencia cuando dos
 # productos dicen lo mismo: lo que la lista pacto gana a lo que hereda, y
@@ -72,9 +78,10 @@ def _frase(nombre) -> str:
 # Los roles de Centauro, dichos como los escriben en Odoo --en espanol y
 # en ingles, porque Amazon y Crisol facturan en ingles--.
 SINONIMOS_ROL = {
-    "conductor": {"conductor", "driver", "chofer", "motorista"},
+    "conductor": {"conductor", "driver", "chofer", "motorista", "condutor"},
     "agente": {"agente", "agent", "escolta", "bodyguard", "guardia"},
-    "coordinador": {"coordinador", "coordinator", "coordinadora"},
+    "coordinador": {"coordinador", "coordinator", "coordinadora",
+                    "coordenador", "coordenadora"},
     "consultor": {"consultor", "consultant", "consultora"},
 }
 # Lo que hace de un rol OTRO rol, con otro precio: el «Conductor de
@@ -97,7 +104,12 @@ VIATICOS_PALABRAS = {"expense", "expenses", "viatico", "viaticos", "gasto",
                      "gastos", "meals", "meal", "food", "comida", "comidas",
                      "alimentos", "hospedaje", "hotel", "casetas", "caseta",
                      "peaje", "peajes", "toll", "tolls", "combustible",
-                     "gasolina", "fuel"}
+                     "gasolina", "fuel",
+                     # En portugues (seccion 123): «Despesas Operacionais
+                     # (pedagios, estacionamento, combustivel, hospedagem)».
+                     "despesa", "despesas", "pedagio", "pedagios",
+                     "estacionamento", "combustivel", "hospedagem",
+                     "alimentacao", "refeicao", "refeicoes"}
 VIATICOS_FRASES = (" booking fee ", " booking fees ")
 NO_EP_FRASES = (" central de inteligencia ", " monitoreo ", " rastreo ",
                 " gps ")
@@ -120,15 +132,25 @@ def tipo_de_unidad(nombre) -> tuple[str | None, bool]:
     return (hallados[0] if len(hallados) == 1 else None), bool(p & BLINDAJE)
 
 
-def modalidad_de(nombre) -> str:
+def modalidad_de(nombre, unidad=None) -> str:
     """La modalidad dicha en el nombre; sin decir nada, dia completo. Asi
-    cobra Odoo al conductor o a la unidad solos: un precio por dia."""
+    cobra Odoo al conductor o a la unidad solos: un precio por dia. El que
+    en Odoo se cobra por «Mes» es del mes (seccion 123)."""
+    if es_por_mes(unidad):
+        return MES
     f = _frase(nombre)
-    if " transfer " in f or " traslado " in f:
+    if " transfer " in f or " traslado " in f or " translado " in f:
         return TRANSFER
-    if " medio dia " in f or " half day " in f or " medio " in f:
+    if (" medio dia " in f or " half day " in f or " medio " in f
+            or " meio periodo " in f or " meia diaria " in f
+            or " meio dia " in f):
         return MEDIO_DIA
     return FULL_DAY
+
+
+def es_por_mes(unidad) -> bool:
+    """Si la unidad de medida de Odoo es un mes: «Mes», «Meses», «Month»."""
+    return bool(set(palabras(unidad)) & UNIDADES_DE_MES)
 
 
 def perfiles_por_tipo(perfiles: list) -> dict:
@@ -182,7 +204,10 @@ def sugerir(producto: dict, perfiles: dict, categorias: dict) -> dict:
     if any(x in f for x in NO_EP_FRASES):
         return {**nada, "clase": NO_EP}
 
-    modalidad = modalidad_de(nombre)
+    unidad_de_medida = producto.get("uom_id")
+    if isinstance(unidad_de_medida, (list, tuple)):
+        unidad_de_medida = unidad_de_medida[1] if len(unidad_de_medida) > 1 else ""
+    modalidad = modalidad_de(nombre, unidad_de_medida)
     if "+" in nombre:
         persona, _, unidad = nombre.partition("+")
         perfil = perfiles.get(tipo_de_rol(persona))
@@ -245,13 +270,16 @@ class Listas:
 
     `listas`: {id: {nombre, moneda, activa}}. `reglas`: las de todas las
     listas, como las lee Odoo. `productos`: {id de plantilla: {precio
-    (el «Precio de venta», en la moneda de la empresa), categoria}}.
+    (el «Precio de venta»), categoria, moneda}} --la moneda del «Precio de
+    venta» es la del producto: los de Brasil, en reales (seccion 123);
+    sin decirla, la de la empresa--.
     `categorias`: {id: ruta de padres, «1/5/9/»}. `tasas`: {moneda:
-    cuantas unidades de esa moneda vale una de la empresa} --la de la
-    empresa vale 1--. `hoy`: la fecha contra la que se ven las reglas
-    con vigencia. `empresa`: la moneda de la empresa, en la que esta el
-    «Precio de venta». `variantes`: {variante: plantilla}, para las
-    reglas que Odoo guarda por variante.
+    cuantas unidades de esa moneda vale una de referencia} --al convertir
+    solo cuenta el cociente entre dos: la lectura las da contra el dolar
+    (seccion 123)--. `hoy`: la fecha contra la que se ven las reglas
+    con vigencia. `empresa`: la moneda de la empresa, la del «Precio de
+    venta» del producto que no dice la suya. `variantes`: {variante:
+    plantilla}, para las reglas que Odoo guarda por variante.
     """
 
     def __init__(self, listas: dict, reglas: list, productos: dict,
@@ -389,8 +417,15 @@ class Listas:
                              if base == "pricelist" else None)}
 
     def _de_la_venta(self, lista: dict, producto: dict) -> dict:
+        # Sin «Precio de venta» no hay precio (seccion 123): los productos
+        # de Brasil vienen en cero y solo valen en la lista que los pacta.
+        # Un cero no es un precio: cobraria el servicio gratis.
+        if not _dinero(producto.get("precio")):
+            return {"precio": None, "origen": None, "regla": None,
+                    "problema": None}
         precio = self.convertir(_dinero(producto.get("precio")),
-                                self.empresa, lista["moneda"])
+                                producto.get("moneda") or self.empresa,
+                                lista["moneda"])
         if precio is None:
             return {"precio": None, "origen": None, "regla": None,
                     "problema": "sin tipo de cambio"}
@@ -456,8 +491,10 @@ def precios_de_la_lista(listas: Listas, lista_id: int, productos: list,
             continue
         r = listas.precio(lista_id, prod["odoo_id"])
         if r["precio"] is None:
-            problemas.append({"producto": prod["nombre"],
-                              "problema": r["problema"]})
+            # Sin regla y sin «Precio de venta»: esa lista no lo vende.
+            if r["problema"]:
+                problemas.append({"producto": prod["nombre"],
+                                  "problema": r["problema"]})
             continue
         origen = r["origen"]
         if origen == OTRA and r.get("de_lista") in generales:
@@ -493,12 +530,16 @@ def precios_de_la_lista(listas: Listas, lista_id: int, productos: list,
 
 
 def pais_de_la_lista(lista: dict, paises_de_clientes: set, paises: dict,
-                     grupos: dict) -> tuple[int | None, list]:
+                     grupos: dict, compania: str | None = None,
+                     prefijo: str | None = None) -> tuple[int | None, list]:
     """(pais_id, paises de sus grupos). La general dice su pais con el
-    grupo de paises de Odoo; la de un cliente toma el de sus clientes, y
-    si no tiene clientes, el de su moneda.
+    grupo de paises de Odoo; la de un cliente toma el de su compania
+    --la de Amazon Brasil es de la compania de Brasil (seccion 123)--, o
+    el de su nombre («Brasil · ...»), o el de sus clientes, y si no tiene
+    clientes, el de su moneda.
 
     `paises`: {codigo: pais_id}. `grupos`: {grupo_id: {codigos}}.
+    `compania` y `prefijo`: el codigo del pais que dicen.
     """
     codigos = set()
     for g in lista.get("grupos") or []:
@@ -506,6 +547,9 @@ def pais_de_la_lista(lista: dict, paises_de_clientes: set, paises: dict,
     de_grupos = sorted({paises[c] for c in codigos if c in paises})
     if de_grupos:
         return (de_grupos[0] if len(de_grupos) == 1 else None), de_grupos
+    for codigo in (compania, prefijo):
+        if codigo in paises:
+            return paises[codigo], []
     if len(paises_de_clientes) == 1:
         return next(iter(paises_de_clientes)), []
     if len(paises_de_clientes) > 1:
