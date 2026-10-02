@@ -14,7 +14,8 @@ Lo que aqui se cuida:
     Odoo.
   * Rechazada con su motivo; vencida por el reloj.
   * El servicio que se borra suelta su cotizacion; la recotizacion en el
-    servicio sigue con el folio.
+    servicio sigue con el folio. La autorizada cuyo servicio se borro
+    vuelve a crear su servicio o se elimina (seccion 126).
   * La firma de cada quien, los textos de Catalogos y quien puede que.
 """
 import base64
@@ -433,6 +434,85 @@ def test_el_servicio_que_se_borra_suelta_su_cotizacion(cliente, sesion, datos, d
     fila = cliente.get(f"/cotizaciones/eventual/{c['id']}",
                        headers=sesion("consultor")).json()
     assert fila["servicio"] is None and fila["servicio_folio"] == nacido["folio"]
+
+
+def _borrar_su_servicio(cliente, sesion, nacido):
+    r = cliente.request("DELETE", f"/servicios/{nacido['servicio_id']}",
+                        json={"motivo": "prueba prueba"},
+                        headers=sesion("consultor"))
+    assert r.status_code == 200, r.text
+
+
+def test_su_servicio_se_vuelve_a_crear(cliente, sesion, datos, db, cliente_de_odoo):
+    """Seccion 126: la autorizada cuyo servicio se elimino ya no se queda
+    atorada. Su servicio nace otra vez, con lo mismo, folio nuevo y la
+    misma autorizacion."""
+    c = _enviar(cliente, sesion, _crear(cliente, sesion, datos))
+    nacido = _autorizar(cliente, sesion, c).json()
+    url = f"/cotizaciones/eventual/{c['id']}"
+    # Mientras tiene su servicio, ni se vuelve a crear ni se elimina.
+    assert cliente.get(url, headers=sesion("consultor")).json()["se_recrea"] is False
+    assert cliente.post(f"{url}/servicio", headers=sesion("consultor")).status_code == 409
+    _borrar_su_servicio(cliente, sesion, nacido)
+    assert cliente.get(url, headers=sesion("consultor")).json()["se_recrea"] is True
+    # Lo hace quien arma cotizaciones.
+    assert cliente.post(f"{url}/servicio", headers=sesion("finanzas")).status_code == 403
+
+    r = cliente.post(f"{url}/servicio", headers=sesion("consultor"))
+    assert r.status_code == 200, r.text
+    otro = r.json()
+    assert otro["folio"] != nacido["folio"] and otro["estatus"] == "autorizado"
+    db.expire_all()
+    servicio = db.get(m.Servicio, otro["servicio_id"])
+    assert [e.alias for e in servicio.equipos] == ["Alfa", "Beta"]
+    assert [len(e.jornadas) for e in servicio.equipos] == [2, 1]
+    assert servicio.consultor_id == datos["personal"]["Ana Solis"]["id"]
+    cot = db.get(m.Cotizacion, c["id"])
+    assert (cot.servicio_id, cot.servicio_folio) == (servicio.id, servicio.folio)
+    assert cot.estatus == m.EstatusCotizacion.AUTORIZADA
+    assert cot.autorizada_por == "Valeria Rodas"
+    registro = db.query(m.RegistroAccion).filter_by(
+        servicio_id=servicio.id, accion="alta desde la cotizacion").one()
+    assert nacido["folio"] in registro.detalle
+    # En el servicio es su cotizacion vigente; y ya no se vuelve a crear.
+    b = cliente.get(f"/cotizaciones/servicio/{servicio.id}/bloque",
+                    headers=sesion("consultor")).json()
+    assert b["vigente"]["id"] == c["id"]
+    assert cliente.post(f"{url}/servicio", headers=sesion("consultor")).status_code == 409
+
+
+def test_la_cotizacion_cuyo_servicio_se_elimino_se_elimina(cliente, sesion, datos, db, cliente_de_odoo):
+    """Seccion 126: si ya no va, se elimina con todas sus versiones; queda
+    su renglon con el motivo y su folio no se vuelve a usar."""
+    c = _enviar(cliente, sesion, _crear(cliente, sesion, datos))
+    folio = db.get(m.Cotizacion, c["id"]).folio
+    nacido = _autorizar(cliente, sesion, c).json()
+    url = f"/cotizaciones/eventual/{c['id']}/eliminar"
+    r = cliente.post(url, json={"motivo": "Era una prueba"}, headers=sesion("consultor"))
+    assert r.status_code == 409             # con su servicio vivo, no
+    _borrar_su_servicio(cliente, sesion, nacido)
+    assert cliente.post(url, json={}, headers=sesion("consultor")).status_code == 400
+    assert cliente.post(url, json={"motivo": "Era una prueba"},
+                        headers=sesion("finanzas")).status_code == 403
+    r = cliente.post(url, json={"motivo": "Era una prueba"}, headers=sesion("consultor"))
+    assert r.status_code == 200, r.text
+    assert r.json()["eliminada"].startswith("EP/COT-")
+
+    db.expire_all()
+    assert db.get(m.Cotizacion, c["id"]) is None
+    queda = db.query(m.CotizacionEliminada).filter_by(folio=folio).one()
+    assert queda.clase == "cotizacion" and queda.motivo == "Era una prueba"
+    assert nacido["folio"] in queda.resumen and queda.eliminado_por_id is not None
+    # La lista ya no la trae, y su folio no se vuelve a usar.
+    filas = cliente.get("/cotizaciones/eventual", headers=sesion("consultor")).json()["filas"]
+    assert c["id"] not in [f["id"] for f in filas]
+    nueva = _crear(cliente, sesion, datos)
+    assert db.get(m.Cotizacion, nueva["id"]).folio == folio + 1
+    # La consola ofrece las dos cosas donde dice «ya borrado».
+    js = (RAIZ / "app" / "web" / "cotizaciones.js").read_text(encoding="utf-8")
+    assert "/cotizaciones/eventual/${d.id}/servicio" in js
+    assert "/cotizaciones/eventual/${d.id}/eliminar" in js
+    assert "d.se_recrea ?" in js
 
 
 def test_recotizar_en_el_servicio_sigue_con_el_folio(cliente, sesion, datos, db, cliente_de_odoo):

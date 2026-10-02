@@ -2,6 +2,9 @@
 
 Lo nuevo de cada actualización, escrito para quien usa el sistema. La más nueva va arriba.
 
+## 126 · 2026-10-02 · La cotización cuyo servicio se borró ya no se queda atorada
+Si el servicio que nació de una cotización autorizada se elimina, la cotización dice «EP/E-004, ya borrado» y ahora ofrece dos salidas: **«Volver a crear el servicio»**, con los mismos días, equipos y cliente y la misma autorización, con folio nuevo; o **«Eliminar la cotización»**, con su motivo: se van todas sus versiones, queda el registro de quién la eliminó y por qué, y su folio no se vuelve a usar. Antes no dejaba ni hacer otra versión ni recuperar el servicio. Ver [la cotización al cliente](#/manual/leer/cotizaciones).
+
 ## 125 · 2026-10-02 · El cliente, por país
 En la nueva cotización, la nueva propuesta y el tarifario del cliente (Facturación → Tarifarios) hay una **pestaña por país** arriba de «Cliente» —México, Brasil—, con cuántos clientes tiene cada uno. La lista trae solo a los clientes de ese país, así que «Amazon» de México ya no se confunde con Amazon Brasil, y la empresa que todavía no está en Odoo es del país de la pestaña: ya no se pregunta aparte. Arranca en el último país que escogiste en esa computadora; una cotización o propuesta que ya existe abre en el país de su cliente. En el tarifario, cada pestaña trae primero las generales de ese país. Ver [la cotización al cliente](#/manual/leer/cotizaciones).
 

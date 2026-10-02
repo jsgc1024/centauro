@@ -2,6 +2,9 @@
 
 O que há de novo em cada atualização, escrito para quem usa o sistema. A mais nova fica em cima.
 
+## 126 · 2026-10-02 · A cotação cujo serviço foi apagado já não fica travada
+Se o serviço que nasceu de uma cotação aprovada é excluído, a cotação diz «EP/E-004, já apagado» e agora oferece duas saídas: **«Criar o serviço de novo»**, com os mesmos dias, equipes e cliente e a mesma aprovação, com número novo; ou **«Excluir a cotação»**, com o seu motivo: saem todas as versões, fica o registro de quem a excluiu e por quê, e o seu número não volta a ser usado. Antes não deixava nem fazer outra versão nem recuperar o serviço. Ver [a cotação ao cliente](#/manual/leer/cotizaciones).
+
 ## 125 · 2026-10-02 · O cliente, por país
 Na nova cotação, na nova proposta e na tabela do cliente (Faturamento → Tabelas de preços) há uma **aba por país** em cima de «Cliente» —México, Brasil—, com quantos clientes cada um tem. A lista traz só os clientes desse país, então a «Amazon» do México já não se confunde com a Amazon Brasil, e a empresa que ainda não está no Odoo é do país da aba: já não se pergunta à parte. Começa no último país que você escolheu nesse computador; uma cotação ou proposta que já existe abre no país do seu cliente. Na tabela, cada aba traz primeiro as gerais desse país. Ver [a cotação ao cliente](#/manual/leer/cotizaciones).
 

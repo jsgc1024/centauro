@@ -4,7 +4,7 @@ parte: entender
 orden: 25
 titulo: A cotação ao cliente
 resumen: A cotação do eventual que se monta no Connect antes de o serviço existir: a sua referência e as suas versões, o PDF, a aprovação do cliente e o serviço que nasce dela.
-buscar: cotacao cotar referencia ep/cot versao pdf enviar baixar aprovar aprovada recusada vencida substituida rascunho empresa nova prospecto odoo lista geral precos pacote impostos assinatura condicoes catalogos servico nasce introducao fora da cidade moeda pesos dolares usd mxn taxa de cambio lista acordada reais brasil dolar para real aba pais filtro cliente por pais brasil mexico
+buscar: cotacao cotar referencia ep/cot versao pdf enviar baixar aprovar aprovada recusada vencida substituida rascunho empresa nova prospecto odoo lista geral precos pacote impostos assinatura condicoes catalogos servico nasce introducao fora da cidade moeda pesos dolares usd mxn taxa de cambio lista acordada reais brasil dolar para real aba pais filtro cliente por pais brasil mexico ja apagado criar o servico de novo excluir a cotacao excluida
 ---
 A cotação do eventual se monta em **Operações EP → Cotações**, antes de o serviço existir. Sai em PDF, o consultor a manda ao cliente pelo seu e-mail e, quando o cliente aprova, **o serviço nasce sozinho** em EP eventual com esta mesma cotação dentro. A proposta do implantado se monta na mesma tela e tem o seu capítulo: [a proposta do implantado](#/manual/leer/propuesta).
 
@@ -28,6 +28,8 @@ O PDF leva a tabela de cada dia com a sua modalidade, subtotal, impostos e total
 
 ## Aprovada, recusada ou vencida {#autorizar}
 O cliente aprova por e-mail, como hoje. O consultor marca com **«O cliente aprovou»**: quem, que dia e, se tiver, o e-mail ou o PDF assinado. Ao salvar, o Connect cadastra o serviço em EP eventual —o cliente, o solicitante, as equipes com a sua cidade, os seus dias, a sua modalidade e a sua hora— com esta cotação **já aprovada dentro e os mesmos preços**. Falta o de qualquer cadastro: o principal de cada equipe e o ponto de partida. A empresa nova, para ser aprovada, já precisa estar no Odoo: ali se escolhe o seu cliente, porque do Odoo sai a fatura.
+
+Se depois o serviço que nasceu é excluído —com «Excluir», antes de começar—, a cotação diz «EP/E-004, já apagado» e oferece duas saídas: **«Criar o serviço de novo»**, com o mesmo e a mesma aprovação —quem, quando, o comprovante e a taxa de câmbio— e número novo; ou **«Excluir a cotação»**, com o seu motivo: saem todas as versões e os seus PDF, fica o registro de quem a excluiu e por quê, e o seu número não volta a ser usado.
 
 Se o cliente disser que não, «O cliente recusou» com o motivo. Passada a sua «válida até», o relógio a deixa **vencida** depois da meia-noite; uma vencida ainda pode ser aprovada se o cliente aceitar.
 

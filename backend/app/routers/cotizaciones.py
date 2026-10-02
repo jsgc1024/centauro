@@ -83,6 +83,11 @@ class RechazoIn(BaseModel):
     motivo: str = Field(..., max_length=motor.LARGO_MOTIVO)
 
 
+class EliminarIn(BaseModel):
+    """Por que ya no va (seccion 126). Sin el, se pregunta."""
+    motivo: str | None = Field(None, max_length=motor.LARGO_MOTIVO)
+
+
 class TextosIn(BaseModel):
     razon_social: str | None = Field(None, max_length=200)
     rfc: str | None = Field(None, max_length=30)
@@ -223,6 +228,33 @@ async def autorizar(cotizacion_id: int,
     db.commit()
     return {"servicio_id": servicio.id, "folio": servicio.folio,
             "estatus": servicio.estatus.value}
+
+
+# ------------------------------------------------------- su servicio se elimino
+
+@router.post("/eventual/{cotizacion_id}/servicio",
+             summary="Volver a crear el servicio que se elimino")
+def recrear_servicio(cotizacion_id: int, db: Session = Depends(get_db),
+                     usuario: m.Usuario = Depends(ARMAR)):
+    """La autorizada cuyo servicio se elimino (seccion 126): nace otra vez,
+    con lo mismo y la misma autorizacion, con folio nuevo."""
+    servicio = motor.recrear_servicio(db, usuario, _de(db, cotizacion_id))
+    db.commit()
+    return {"servicio_id": servicio.id, "folio": servicio.folio,
+            "estatus": servicio.estatus.value}
+
+
+@router.post("/eventual/{cotizacion_id}/eliminar",
+             summary="Eliminar la cotizacion cuyo servicio se elimino")
+def eliminar(cotizacion_id: int, cuerpo: EliminarIn,
+             db: Session = Depends(get_db),
+             usuario: m.Usuario = Depends(ARMAR)):
+    """La que ya no va (seccion 126): se van todas sus versiones; queda su
+    renglon en las eliminadas, con el motivo, y su folio no se vuelve a
+    usar."""
+    nombre = motor.eliminar(db, usuario, _de(db, cotizacion_id), cuerpo.motivo)
+    db.commit()
+    return {"eliminada": nombre}
 
 
 # ------------------------------------------------------------- archivos

@@ -1177,12 +1177,32 @@ function pintarTarjeta(tarjeta, cat, d) {
         onclick: () => formularioRechazo(formulario, d) }, t("ctz_la_rechazo")) : null,
     ].filter(Boolean));
 
+  /* Su servicio se elimino (seccion 126): si va, se vuelve a crear con lo
+     mismo; si ya no va, se elimina la cotizacion. Antes se quedaba
+     atorada: ni otra version ni su servicio. */
+  const recrear = async (ev) => {
+    if (!confirm(t("ctz_seguro_recrear"))) return;
+    ev.target.disabled = true;
+    try {
+      const r = await api.post(`/cotizaciones/eventual/${d.id}/servicio`);
+      mensaje(reemplazar(t("ctz_servicio_creado"), { f: r.folio }), "ok");
+      irA(`#/servicio/${r.servicio_id}`);
+    } catch (err) { mensaje(err.message, "grave"); ev.target.disabled = false; }
+  };
   const servicio = d.servicio
     ? h("p", { style: "margin:14px 0 0" }, t("ctz_nacio_servicio"), " ",
       h("a", { href: `#/servicio/${d.servicio.id}`, clase: "enlace" }, d.servicio.folio))
     : d.servicio_folio
-      ? h("p", { clase: "gris", style: "margin:14px 0 0" },
-        reemplazar(t("ctz_servicio_borrado"), { f: d.servicio_folio }))
+      ? h("div", { style: "margin:14px 0 0" },
+        h("p", { clase: "gris", style: "margin:0" },
+          reemplazar(t("ctz_servicio_borrado"), { f: d.servicio_folio })),
+        d.se_recrea ? h("p", { clase: "chico", style: "margin:6px 0 0" },
+          t("ctz_borrado_que_hacer")) : null,
+        d.se_recrea ? h("div", { clase: "acciones", style: "margin:8px 0 0" },
+          h("button", { type: "button", onclick: recrear }, t("ctz_recrear_servicio")),
+          h("button", { type: "button", clase: "claro",
+            onclick: () => formularioEliminar(formulario, d) }, t("ctz_eliminar_cotizacion")))
+          : null)
       : null;
   const vigente = !d.es_ultima
     ? h("p", { clase: "chico gris", style: "margin:12px 0 0" }, t("ctz_hay_otra"), " ",
@@ -1343,6 +1363,32 @@ async function formularioAutorizar(tarjeta, cat, d) {
         a: equipos.join(", "), f: rangoCorto(d.desde, d.hasta) })),
     notaCambio,
     h("div", { clase: "acciones", style: "margin:0" }, boton, cancelar)].filter(Boolean));
+}
+
+/* Eliminar la cotizacion cuyo servicio se elimino (seccion 126): con su
+   porque, como el rechazo. */
+function formularioEliminar(caja, d) {
+  caja.replaceChildren();
+  const motivo = h("textarea", { rows: "2", maxlength: "300",
+                                 placeholder: t("ctz_eliminar_ayuda") });
+  const boton = h("button", { type: "button", clase: "peligro" }, t("ctz_eliminarla"));
+  boton.addEventListener("click", async () => {
+    if (!motivo.value.trim()) { mensaje(t("ctz_falta_motivo_eliminar"), "alerta"); return; }
+    if (!confirm(t("ctz_seguro_eliminar"))) return;
+    boton.disabled = true;
+    try {
+      await api.post(`/cotizaciones/eventual/${d.id}/eliminar`, { motivo: motivo.value });
+      mensaje(t("ctz_eliminada"), "ok");
+      irA("#/cotizaciones");
+    } catch (err) { mensaje(err.message, "grave"); boton.disabled = false; }
+  });
+  caja.append(h("div", { clase: "ctz-forma" },
+    h("h4", { style: "margin:0 0 8px" }, t("ctz_eliminar_cotizacion")),
+    h("p", { clase: "chico gris", style: "margin:0 0 8px" }, t("ctz_eliminar_pie")),
+    campo(t("ctz_motivo_eliminar"), motivo, { obligatorio: true }),
+    h("div", { clase: "acciones", style: "margin:8px 0 0" }, boton,
+      h("button", { type: "button", clase: "claro", onclick: () => caja.replaceChildren() },
+        t("cot_cancelar")))));
 }
 
 function formularioRechazo(caja, d) {

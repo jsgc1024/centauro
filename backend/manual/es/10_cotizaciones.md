@@ -4,7 +4,7 @@ parte: entender
 orden: 25
 titulo: La cotización al cliente
 resumen: La cotización del eventual que se arma en Connect antes de que exista el servicio: su folio y sus versiones, el PDF, la autorización del cliente y el servicio que nace de ella.
-buscar: cotizacion cotizar folio ep/cot version pdf enviar mandar descargar autorizar autorizada rechazada vencida sustituida borrador empresa nueva prospecto odoo lista general precios paquete iva firma condiciones catalogos servicio nace introduccion foraneo moneda pesos dolares usd mxn tipo de cambio lista pactada reales brasil dolar a real pestana pais filtro cliente por pais brasil mexico
+buscar: cotizacion cotizar folio ep/cot version pdf enviar mandar descargar autorizar autorizada rechazada vencida sustituida borrador empresa nueva prospecto odoo lista general precios paquete iva firma condiciones catalogos servicio nace introduccion foraneo moneda pesos dolares usd mxn tipo de cambio lista pactada reales brasil dolar a real pestana pais filtro cliente por pais brasil mexico ya borrado volver a crear el servicio eliminar la cotizacion eliminada
 ---
 La cotización del eventual se arma en **Operaciones EP → Cotizaciones**, antes de que exista el servicio. Sale en PDF, el consultor se la manda al cliente desde su correo y, cuando el cliente la autoriza, **el servicio nace solo** en EP eventual con esta misma cotización adentro. La propuesta del implantado se arma en la misma pantalla y tiene su capítulo: [la propuesta del implantado](#/manual/leer/propuesta).
 
@@ -28,6 +28,8 @@ El PDF lleva la tabla de cada día con su modalidad, subtotal, IVA y total —el
 
 ## Autorizada, rechazada o vencida {#autorizar}
 El cliente la autoriza por correo, como hoy. El consultor la marca con **«La autorizó el cliente»**: quién, qué día y, si lo tiene, el correo o el PDF firmado. Al guardar, Connect da de alta el servicio en EP eventual —el cliente, quien solicita, los equipos con su ciudad, sus días, su modalidad y su hora— con esta cotización **ya autorizada adentro y los mismos precios**. Le falta lo de cualquier alta: el principal de cada equipo y el punto de inicio. La empresa nueva, para autorizarse, ya tiene que estar en Odoo: ahí se escoge su cliente, porque de Odoo sale la factura.
+
+Si después se elimina el servicio que nació —con «Eliminar», antes de que arranque—, la cotización dice «EP/E-004, ya borrado» y ofrece dos salidas: **«Volver a crear el servicio»**, con lo mismo y la misma autorización —quién, cuándo, el comprobante y el tipo de cambio— y folio nuevo; o **«Eliminar la cotización»**, con su motivo: se van todas sus versiones y sus PDF, queda el registro de quién la eliminó y por qué, y su folio no se vuelve a usar.
 
 Si el cliente dice que no, «La rechazó» con su motivo. Pasado su «válida hasta», el reloj la deja **vencida** pasada la medianoche; una vencida todavía se puede autorizar si el cliente la acepta.
 

@@ -9684,6 +9684,41 @@ viene de Odoo, en español y portugués; y el «?» de «Para quién».
 Pruebas: `tests/test_cliente_por_pais.py` y el país de cada general en
 `test_odoo_tarifarios_brasil.py`.
 
+## 126. La cotización cuyo servicio se borró ya no se queda atorada
+
+Salvador, 2 de octubre: «tengo una cotización autorizada en eventual y
+me dice que el servicio 4 ya está en borrado, pero no lo veo en
+eventual». La cotización decía «EP/E-004, ya borrado»: él mismo había
+eliminado el servicio el 30 de septiembre («prueba prueba»), y desde ahí
+la cotización se quedaba atorada —autorizada, sin servicio, sin poder
+hacer otra versión porque ya estaba autorizada—. Escogió las dos
+salidas:
+
+- **«Volver a crear el servicio»**: nace otra vez con lo mismo —el
+  cliente, quien la pidió, el consultor, los equipos con su ciudad y sus
+  días— y la misma autorización: quién, cuándo, el comprobante y el
+  tipo de cambio que quedó fijo no se tocan. Lleva folio nuevo y nace
+  autorizado; su bitácora dice que es otra vez y cuál se había
+  eliminado. `cotizacion_cliente.recrear_servicio`, con el alta que se
+  apartó de `autorizar` en `_nacer_servicio`.
+- **«Eliminar la cotización»**, con su motivo: se van todas sus
+  versiones con sus PDF y queda su renglón en `cotizacion_eliminada` —qué
+  era, quién la quitó y por qué—. Su folio no se vuelve a usar:
+  `_siguiente_folio` cuenta también los de las eliminadas, porque el
+  cliente pudo recibir el PDF con ese número.
+
+Las dos, solo con la autorizada cuyo servicio se eliminó
+(`servicio_eliminado`), en su última versión y para quien arma
+cotizaciones (`cotizaciones.armar`); mientras su servicio existe no se
+ofrecen. Rutas: `POST /cotizaciones/eventual/{id}/servicio` y
+`/eliminar`. En la pantalla aparecen donde dice «ya borrado», con una
+línea que explica qué hacer; la eliminación pide el motivo, como el
+rechazo. Migración `b7d3e9a1c5f2`: la tabla `cotizacion_eliminada`.
+Manual: «La cotización al cliente», en español y portugués. Pruebas en
+`tests/test_cotizaciones_cliente.py`; la batería vacía la tabla nueva
+entre pruebas. La propuesta del implantado queda igual por ahora: un
+implantado que se borra deja su propuesta como antes.
+
 ## 14. Lo que falta
 
 ### Abierto

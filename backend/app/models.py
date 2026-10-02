@@ -4287,6 +4287,26 @@ class ServicioEliminado(Base):
         DateTime(timezone=True), server_default=func.now())
 
 
+class CotizacionEliminada(Base):
+    """Lo que queda de una cotizacion eliminada (seccion 126): que era,
+    quien la quito y por que. Se elimina la autorizada cuyo servicio ya se
+    habia eliminado y que ya no va. Su folio no se vuelve a usar: el
+    cliente pudo recibir el PDF con ese numero."""
+    __tablename__ = "cotizacion_eliminada"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    clase: Mapped[str] = mapped_column(String(12), default="cotizacion",
+                                       server_default="cotizacion")
+    folio: Mapped[int] = mapped_column(Integer)
+    cliente: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    resumen: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    motivo: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    eliminado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id", ondelete="SET NULL"), nullable=True)
+    eliminado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
 class Hotel(Base):
     """Donde se hospeda el ejecutivo. Muchas veces es el punto de origen.
 

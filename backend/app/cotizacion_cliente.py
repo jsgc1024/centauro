@@ -654,7 +654,11 @@ def _siguiente_folio(db: Session, clase: str = motor.COTIZACION) -> int:
                {"llave": zlib.crc32(f"{clase}:folio".encode())})
     ultimo = (db.query(func.max(m.Cotizacion.folio))
               .filter(m.Cotizacion.clase == clase).scalar())
-    return (ultimo or 0) + 1
+    # El de una eliminada no se vuelve a usar (seccion 126): el cliente
+    # pudo recibir el PDF con ese numero.
+    eliminado = (db.query(func.max(m.CotizacionEliminada.folio))
+                 .filter(m.CotizacionEliminada.clase == clase).scalar())
+    return max(ultimo or 0, eliminado or 0) + 1
 
 
 def _poner(cot: m.Cotizacion, prep: dict) -> None:
@@ -966,6 +970,45 @@ def rechazar(db: Session, actor: m.Usuario, cot: m.Cotizacion,
 
 # ------------------------------------------------------------- autorizarla
 
+
+def _nacer_servicio(db: Session, cot: m.Cotizacion, cliente: m.Cliente,
+                    actor: m.Usuario) -> m.Servicio:
+    """El servicio de la cotizacion, con el mismo alta que Nuevo servicio:
+    el cliente, quien la pidio, el consultor y los equipos con su ciudad y
+    sus dias con su modalidad, hora y foraneo."""
+    from app import schemas as s
+    from app.routers import servicios as rutas_servicios
+
+    equipos = equipos_de(cot)
+    if not equipos or any(not e["plaza_id"] for e in equipos):
+        raise HTTPException(400, "Cada equipo necesita su ciudad.")
+    suyo = (db.get(m.Solicitante, cot.solicitante_id)
+            if cot.solicitante_id else None)
+    contacto = suyo.id if suyo is not None and suyo.cliente_id == cliente.id \
+        else None
+    consultor_id = (cot.consultor_id if cot.consultor_id
+                    and accesos.lleva_servicios(db, cot.consultor_id)
+                    else None)
+    datos = s.ServicioIn(
+        cliente_id=cliente.id, pais_id=cot.pais_id,
+        plaza_id=equipos[0]["plaza_id"], tipo=m.TipoServicio.EVENTUAL,
+        consultor_id=consultor_id, solicitante_id=contacto,
+        solicitante_nombre=None if contacto else cot.solicitante_nombre,
+        solicitante_apellidos=None if contacto else cot.solicitante_apellidos,
+        solicitante_correo=None if contacto else cot.solicitante_correo,
+        solicitante_telefono=None if contacto else cot.solicitante_telefono,
+        idioma_solicitante=cot.idioma,
+        equipos=[s.EquipoIn(plaza_id=e["plaza_id"], jornadas=[
+            s.JornadaIn(fecha=date.fromisoformat(d["fecha"]),
+                        modalidad_id=d["modalidad_id"],
+                        hora_presentacion=(time.fromisoformat(d["hora"])
+                                           if d["hora"] else None),
+                        es_foraneo=d["es_foraneo"])
+            for d in e["dias"]]) for e in equipos])
+    servicio, _pendientes = rutas_servicios.dar_de_alta(db, datos, actor)
+    return servicio
+
+
 def autorizar(db: Session, actor: m.Usuario, cot: m.Cotizacion,
               autorizada_por: str | None, autorizada_el: date | None,
               cliente_id: int | None = None,
@@ -982,9 +1025,6 @@ def autorizar(db: Session, actor: m.Usuario, cot: m.Cotizacion,
     escoge el cliente que le corresponde (decision 2). Si algo falla --el
     tipo de cambio que falta, por ejemplo-- no queda nada.
     """
-    from app import schemas as s
-    from app.routers import servicios as rutas_servicios
-
     if cot.estatus not in SE_AUTORIZAN:
         if cot.estatus == E.BORRADOR:
             raise HTTPException(409, "Primero se manda: el cliente autoriza "
@@ -1034,33 +1074,7 @@ def autorizar(db: Session, actor: m.Usuario, cot: m.Cotizacion,
             raise HTTPException(409, motor.sin_tipo_de_cambio(db, cot.moneda,
                                                               local))
 
-    equipos = equipos_de(cot)
-    if not equipos or any(not e["plaza_id"] for e in equipos):
-        raise HTTPException(400, "Cada equipo necesita su ciudad.")
-    suyo = (db.get(m.Solicitante, cot.solicitante_id)
-            if cot.solicitante_id else None)
-    contacto = suyo.id if suyo is not None and suyo.cliente_id == cliente.id \
-        else None
-    consultor_id = (cot.consultor_id if cot.consultor_id
-                    and accesos.lleva_servicios(db, cot.consultor_id)
-                    else None)
-    datos = s.ServicioIn(
-        cliente_id=cliente.id, pais_id=cot.pais_id,
-        plaza_id=equipos[0]["plaza_id"], tipo=m.TipoServicio.EVENTUAL,
-        consultor_id=consultor_id, solicitante_id=contacto,
-        solicitante_nombre=None if contacto else cot.solicitante_nombre,
-        solicitante_apellidos=None if contacto else cot.solicitante_apellidos,
-        solicitante_correo=None if contacto else cot.solicitante_correo,
-        solicitante_telefono=None if contacto else cot.solicitante_telefono,
-        idioma_solicitante=cot.idioma,
-        equipos=[s.EquipoIn(plaza_id=e["plaza_id"], jornadas=[
-            s.JornadaIn(fecha=date.fromisoformat(d["fecha"]),
-                        modalidad_id=d["modalidad_id"],
-                        hora_presentacion=(time.fromisoformat(d["hora"])
-                                           if d["hora"] else None),
-                        es_foraneo=d["es_foraneo"])
-            for d in e["dias"]]) for e in equipos])
-    servicio, _pendientes = rutas_servicios.dar_de_alta(db, datos, actor)
+    servicio = _nacer_servicio(db, cot, cliente, actor)
 
     cot.cliente_id = cliente.id
     cot.servicio_id = servicio.id
@@ -1088,6 +1102,77 @@ def autorizar(db: Session, actor: m.Usuario, cot: m.Cotizacion,
                         f"{nombre_de(cot)} · autorizada por {quien} el "
                         f"{autorizada_el:%d/%m/%Y}")
     return servicio
+
+
+# ------------------------------------------------------------- su servicio se elimino
+
+def servicio_eliminado(cot: m.Cotizacion) -> bool:
+    """La autorizada cuyo servicio se elimino despues (seccion 126): se
+    queda con el folio que tuvo y sin servicio. Antes se quedaba atorada:
+    ni otra version --ya estaba autorizada-- ni su servicio."""
+    return (cot.clase == motor.COTIZACION and cot.estatus == E.AUTORIZADA
+            and cot.servicio_id is None and bool(cot.servicio_folio))
+
+
+def _del_servicio_eliminado(db: Session, cot: m.Cotizacion) -> None:
+    if not servicio_eliminado(cot):
+        raise HTTPException(409, "Solo con la cotización autorizada cuyo "
+                                 "servicio se eliminó.")
+    if ultima(db, cot.folio, cot.clase).id != cot.id:
+        raise HTTPException(409, "Hay una versión más nueva de esta "
+                                 "cotización.")
+
+
+def recrear_servicio(db: Session, actor: m.Usuario,
+                     cot: m.Cotizacion) -> m.Servicio:
+    """Vuelve a nacer su servicio (seccion 126), con lo mismo que la
+    primera vez y la misma autorizacion: quien, cuando, el comprobante y
+    el tipo de cambio que quedo fijo no se tocan. El servicio lleva folio
+    nuevo; el que se elimino queda en su bitacora de eliminados."""
+    _del_servicio_eliminado(db, cot)
+    cliente = cot.cliente
+    if cliente is None or not cliente.activo:
+        raise HTTPException(409, "Su cliente ya no está activo en Connect.")
+    antes = cot.servicio_folio
+    servicio = _nacer_servicio(db, cot, cliente, actor)
+    cot.servicio_id = servicio.id
+    cot.servicio = servicio
+    # Nace autorizado, como al autorizarla.
+    if servicio.estatus in (m.EstatusServicio.BORRADOR,
+                            m.EstatusServicio.SOLICITADO,
+                            m.EstatusServicio.COTIZADO):
+        servicio.estatus = m.EstatusServicio.AUTORIZADO
+    for otra in versiones(db, cot.folio, cot.clase):
+        otra.servicio_folio = servicio.folio
+        otra.servicio_id = servicio.id
+    db.flush()
+    auditoria.registrar(db, actor, servicio, "alta desde la cotizacion",
+                        f"{nombre_de(cot)} · otra vez: su servicio {antes} "
+                        "se había eliminado")
+    return servicio
+
+
+def eliminar(db: Session, actor: m.Usuario, cot: m.Cotizacion,
+             motivo: str | None) -> str:
+    """La que ya no va (seccion 126): se van todas sus versiones, con sus
+    PDF. Queda su renglon --que era, quien la quito y por que-- y su folio
+    no se vuelve a usar."""
+    _del_servicio_eliminado(db, cot)
+    motivo = _limpio(motivo, LARGO_MOTIVO)
+    if not motivo:
+        raise HTTPException(400, "Di por qué se elimina.")
+    nombre = nombre_de(cot)
+    todas = versiones(db, cot.folio, cot.clase)
+    db.add(m.CotizacionEliminada(
+        clase=cot.clase, folio=cot.folio,
+        cliente=cliente_texto(cot)[:200],
+        resumen=(f"{nombre} · {len(todas)} versión(es) · autorizada; su "
+                 f"servicio {cot.servicio_folio} se había eliminado")[:400],
+        motivo=motivo, eliminado_por_id=actor.persona_id))
+    for v in todas:
+        db.delete(v)
+    db.flush()
+    return nombre
 
 
 # ------------------------------------------------------------- el reloj
@@ -1289,6 +1374,9 @@ def detalle(db: Session, cot: m.Cotizacion, puede_armar: bool) -> dict:
         "es_ultima": es_ultima,
         "se_edita": puede_armar and es_ultima and cot.estatus == E.BORRADOR,
         "se_autoriza": puede_armar and es_ultima and cot.estatus in SE_AUTORIZAN,
+        # Su servicio se elimino (seccion 126): se vuelve a crear o se
+        # elimina la cotizacion.
+        "se_recrea": puede_armar and es_ultima and servicio_eliminado(cot),
         "sale_otra": (puede_armar and es_ultima
                       and cot.estatus in DE_ESTAS_SALE_OTRA),
         "faltan": (que_le_falta(db, cot) if cot.estatus == E.BORRADOR else []),

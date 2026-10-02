@@ -53,6 +53,9 @@ TABLAS_DE_OPERACION = [
     "dia_cotizacion", "archivo_cotizacion", "firma_consultor",
     # La propuesta del implantado (seccion 115): lo que lleva al mes.
     "posicion_propuesta",
+    # La cotizacion eliminada (seccion 126): su folio cuenta para el
+    # siguiente, y la prueba de despues esperaria empezar en EP/COT-0001.
+    "cotizacion_eliminada",
     "registro_accion", "registro_admin", "notificacion", "alerta", "hito",
     # El telefono suscrito a los avisos es movimiento, no catalogo: lo
     # da de alta el propio agente desde su app. Faltaba aqui, asi que
