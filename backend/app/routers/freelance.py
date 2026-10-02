@@ -276,11 +276,10 @@ def ver_archivo(archivo_id: int, db: Session = Depends(get_db),
     fila = db.get(m.ArchivoFreelance, archivo_id)
     if not fila:
         raise HTTPException(404, f"No existe el archivo {archivo_id}")
+    from app.archivo import cabecera_de_archivo
     contenido = motor.leer_archivo(fila)
-    nombre = fila.nombre.replace('"', "")
-    return Response(content=contenido, media_type=fila.tipo, headers={
-        "Content-Disposition": f'inline; filename="{nombre}"',
-        "Cache-Control": "no-store"})
+    return Response(content=contenido, media_type=fila.tipo,
+                    headers=cabecera_de_archivo(fila.nombre))
 
 
 # ======================================================== la ficha
@@ -329,6 +328,9 @@ def ver(persona_id: int, db: Session = Depends(get_db),
                       if u["persona_id"] == persona.id],
         "historial": _historial(db, persona.id),
         "puede": puede,
+        # Si ya se le puede dar su acceso: expediente listo o urgencia
+        # autorizada de un servicio vivo (seccion 128).
+        "puede_acceso": motor.puede_tener_acceso(db, persona, fila["expediente"]),
         # Lo bancario: si tiene cuenta, y el numero solo a quien deposita
         # (decision 9).
         "cuenta": "tiene" if persona.clabe else "falta",
@@ -477,8 +479,20 @@ def baja(persona_id: int, datos: s.MotivoIn, db: Session = Depends(get_db),
                        antes="activo", despues="desactivado",
                        detalle=BAJA_DEL_FREELANCE)
     motor._anotar(db, actor, persona, "baja", detalle=datos.motivo[:400])
+    # Los dias a los que sigue asignado no se quedan sin nadie que lo
+    # sepa (seccion 128, hallazgo r6-04): la alerta en cada dia y el
+    # aviso al consultor, como en la baja de Odoo; y la lista de lo que
+    # queda por cubrir en la respuesta, como en el panel de accesos.
+    from app.odoo_personal import alertas_de_baja
+    alertas_de_baja(db, persona,
+                    f"{persona.nombre} (freelance) fue dado de baja y esta "
+                    "asignado a este dia: hay que reemplazarlo.")
+    pendientes = accesos.jornadas_por_cubrir(db, persona.id)
     db.commit()
-    return {"resultado": "baja"}
+    return {"resultado": "baja", "jornadas_por_cubrir": pendientes,
+            "aviso": (f"Sigue asignado a {sum(f['dias'] for f in pendientes)} "
+                      f"dia(s) en {len(pendientes)} servicio(s). Hay que "
+                      "cubrirlos." if pendientes else None)}
 
 
 @router.post("/{persona_id}/reactivar", summary="Volver a dar de alta")

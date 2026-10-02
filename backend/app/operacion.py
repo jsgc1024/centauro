@@ -748,6 +748,20 @@ def registrar_hito(db: Session, jornada_id: int, persona_id: int,
         from app import entregas
         entregas_abiertas = entregas.abrir_al_terminar(
             db, jornada, persona_id, ahora)
+        # El fin es del equipo: cierra el dia de todos. Las unidades de
+        # los demas tambien dejan hoy el servicio (seccion 128, hallazgo
+        # r8-02): con dos conductores y dos unidades, el fin de Luis
+        # abria solo la suya y la de Juan salia sin que nadie la
+        # reclamara; y si el fin lo marcaba el escolta sin unidad, no se
+        # abria ninguna. Como el cierre a mano: para cada quien.
+        for a in jornada.personal:
+            if a.relevado_en is None and a.persona_id != persona_id:
+                entregas.abrir_al_terminar(db, jornada, a.persona_id, ahora)
+        # Lo que la app le ensena a quien marco: las suyas de este
+        # servicio, aunque las haya abierto el fin de un companero.
+        if not entregas_abiertas:
+            entregas_abiertas = entregas.suyas_del_servicio(
+                db, servicio.id, persona_id, ahora)
         # El dia termino. En el eventual el plazo es uno solo para todo
         # el servicio y arranca con el termino general, abajo, al
         # cerrar el ultimo dia (decision de Salvador, 22 sep). En el
@@ -2187,6 +2201,14 @@ def reabrir(db: Session, jornada_id: int, quien_id: int,
             anulada.anulado_en = reloj.ahora_de_la_jornada(db, jornada)
             anulada.anulado_por_id = quien_id
             anulada.motivo_anulacion = justificacion.strip()
+    # La entrega pendiente que abrio ese fin se va con el (seccion 128,
+    # hallazgo r8-05): el dia vuelve a estar abierto y la unidad sigue
+    # en servicio; si se dejaba, la app pedia entregar una camioneta que
+    # seguia rodando, y el fin de verdad --horas despues-- no abria otra
+    # ni movia el reloj. Al terminar otra vez nace una nueva, con su
+    # plazo desde ese fin.
+    from app import entregas
+    entregas.al_reabrir(db, jornada)
     db.commit()
 
     return {"resultado": "dia reabierto", "jornada_id": jornada.id,

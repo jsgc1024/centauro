@@ -234,8 +234,15 @@ def confirmar_recurso(jornada_id: int, db: Session = Depends(get_db),
     asignacion.confirmado = True
     # Sin `confirmado_por`: la confirmo la propia persona. Ese hueco es
     # el dato, y es lo que la distingue de la que registra la central.
+    asignacion.confirmado_por_id = None
     asignacion.confirmado_en = reloj.ahora_de_la_jornada(
         db, asignacion.jornada)
+    # La razon del «por confirmar» --«por reconfirmar: cambio la hora»--
+    # se va con la confirmacion (seccion 128, hallazgo r8-04): la central
+    # veia la palomita y la razon juntas, con la hora vieja. La nota que
+    # escribe la central al confirmar por telefono es otra, y esa si se
+    # queda con su palomita.
+    asignacion.nota_confirmacion = None
     programacion.confirmar_si_todos(asignacion.jornada)
     db.commit()
     return {"resultado": "confirmado", "persona": asignacion.persona.nombre}

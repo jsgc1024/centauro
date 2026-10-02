@@ -179,6 +179,35 @@ def marcar_fin(cliente, headers_personal, jornada_id, cuando):
                   cuando)
 
 
+def entregar_lo_pendiente(cliente, headers_personal, servicio_id, ahora):
+    """Lo que hace el conductor al llegar a la oficina cuando la central
+    cerro a mano el ultimo dia que habia (seccion 128): su app le ensena
+    la unidad por entregar y la entrega con sus fotos.
+
+    `cerrar-a-mano` no contesta las entregas que abrio --lo hace la
+    central, no el conductor--, asi que se le pregunta a la app lo que
+    le quedo a esa persona en ese servicio y se entrega eso, nada mas.
+    La revision del mes del implantado reclama la unidad sin entregar
+    igual que la del eventual; antes el mes no la miraba.
+    """
+    r = cliente.get("/campo/mi-dia", headers=headers_personal,
+                    params={"ahora": ahora.isoformat()})
+    assert r.status_code == 200, r.text
+    entregadas = 0
+    for unidad in r.json()["entregas_pendientes"]:
+        if unidad["servicio_id"] != servicio_id:
+            continue
+        if unidad["sin_recepcion"]:
+            r = revisar_unidad(cliente, headers_personal, servicio_id,
+                               unidad["vehiculo_id"], "recibe", KM_RECEPCION)
+            assert r.status_code == 201, f"no se pudo recibir la unidad: {r.text}"
+        r = revisar_unidad(cliente, headers_personal, servicio_id,
+                           unidad["vehiculo_id"], "entrega", KM_ENTREGA)
+        assert r.status_code == 201, f"no se pudo entregar la unidad: {r.text}"
+        entregadas += 1
+    return entregadas
+
+
 def ejecutar_jornada(cliente, headers_personal, jornada_dict, retraso_minutos=0,
                      horas_extra=0):
     """Marca la secuencia completa: llegada, contacto y fin.

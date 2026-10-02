@@ -3980,7 +3980,7 @@ function entregaSinRevision(pend) {
   return h("div", {}, boton, zona);
 }
 
-async function bloqueRevisiones(servicio) {
+export async function bloqueRevisiones(servicio) {
   const caja = h("div", { clase: "tarjeta" },
     conAyuda("h3", t("srv_revision"), "ay_srv_revision"));
   let datos;

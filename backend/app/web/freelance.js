@@ -438,12 +438,14 @@ function datosYCostos(f, recargar) {
     puede.costos ? h("div", { clase: "acciones" }, guardarCostos)
                  : h("div", { clase: "chico gris" }, t("fre_costos_los_fija"))));
 
-  /* Su acceso a EP Connect: se abre con el expediente listo. */
+  /* Su acceso a EP Connect: se abre con el expediente listo, o con una
+     urgencia autorizada de un servicio vivo; lo dice el servidor
+     (`puede_acceso`, seccion 128), con la misma regla que al darlo. */
   const acc = f.acceso;
   let accion = "";
   if (!acc && puede.editar) {
     accion = h("button", { type: "button",
-      disabled: f.expediente.asignable ? null : "disabled",
+      disabled: (f.puede_acceso ?? f.expediente.asignable) ? null : "disabled",
       onclick: async (e) => {
         e.target.disabled = true;
         try {
@@ -461,7 +463,8 @@ function datosYCostos(f, recargar) {
                  ? (acc.ya_puso_contrasena ? t("fre_acceso_listo")
                                            : t("fre_acceso_sin_contrasena"))
                  : t("fre_acceso_cerrado"))
-            : t("fre_acceso_pie")))));
+            : (f.puede_acceso && !f.expediente.asignable
+                 ? t("fre_acceso_urgencia") : t("fre_acceso_pie"))))));
 
   /* La baja: deja de ofrecerse y se le cierra el acceso; el expediente
      se queda (decision 7). */
@@ -476,9 +479,19 @@ function datosYCostos(f, recargar) {
                 return mensaje(t("fre_baja_falta_motivo"), "alerta");
               }
               try {
-                await api.post(`/freelance/${f.persona_id}/baja`,
-                               { motivo: motivo.value.trim() });
-                mensaje(t("fre_baja_hecha"));
+                const r = await api.post(`/freelance/${f.persona_id}/baja`,
+                                         { motivo: motivo.value.trim() });
+                /* La baja no lo saca de los dias a los que ya estaba
+                   asignado (seccion 128): se dice cuantos quedan por
+                   cubrir, como en el panel de accesos. */
+                const deja = r.jornadas_por_cubrir || [];
+                if (deja.length) {
+                  mensaje(t("acc_deja_dias")
+                    .replace("{n}", deja.reduce((a, x) => a + x.dias, 0))
+                    .replace("{s}", deja.length), "alerta");
+                } else {
+                  mensaje(t("fre_baja_hecha"));
+                }
                 recargar();
               } catch (err) { mensaje(err.message, "grave"); }
             } }, t("fre_dar_de_baja")))

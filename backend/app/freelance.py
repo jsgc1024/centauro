@@ -1262,6 +1262,28 @@ def urgencias(db: Session, estado: str | None = "pedida") -> list[dict]:
 
 # =============================================================== el acceso
 
+def urgencia_viva(db: Session, persona_id: int) -> m.AutorizacionFreelance | None:
+    """Una urgencia autorizada para un servicio que sigue vivo: con ella
+    se le da su acceso a la app aunque el expediente no este listo."""
+    return (db.query(m.AutorizacionFreelance)
+            .join(m.Servicio,
+                  m.Servicio.id == m.AutorizacionFreelance.servicio_id)
+            .filter(m.AutorizacionFreelance.persona_id == persona_id,
+                    m.AutorizacionFreelance.estado == "autorizada",
+                    m.Servicio.estatus.notin_(YA_NO_SE_ARMA))
+            .first())
+
+
+def puede_tener_acceso(db: Session, persona: m.Persona,
+                       info: dict) -> bool:
+    """Lo que la ficha le dice a la consola para el boton «Dar acceso»
+    (seccion 128, hallazgo r6-02): la misma regla que `dar_acceso`. La
+    consola decidia solo con el expediente y dejaba el boton en gris al
+    urgente que el servidor si aceptaba."""
+    return bool(persona.activo and (info["asignable"]
+                                    or urgencia_viva(db, persona.id) is not None))
+
+
 def dar_acceso(db: Session, actor: m.Usuario, persona: m.Persona,
                ficha: m.Freelance) -> m.Usuario:
     """Su acceso a EP Connect, con su correo, como el del personal de
@@ -1275,13 +1297,7 @@ def dar_acceso(db: Session, actor: m.Usuario, persona: m.Persona,
     if db.query(m.Usuario).filter_by(persona_id=persona.id).first():
         raise HTTPException(409, f"{persona.nombre} ya tiene acceso a la app.")
     info = expediente(db, persona, ficha)
-    urgencia = (db.query(m.AutorizacionFreelance)
-                .join(m.Servicio,
-                      m.Servicio.id == m.AutorizacionFreelance.servicio_id)
-                .filter(m.AutorizacionFreelance.persona_id == persona.id,
-                        m.AutorizacionFreelance.estado == "autorizada",
-                        m.Servicio.estatus.notin_(YA_NO_SE_ARMA))
-                .first())
+    urgencia = urgencia_viva(db, persona.id)
     if not info["asignable"] and urgencia is None:
         raise HTTPException(409, {
             "mensaje": f"El acceso se abre cuando su expediente está listo: "

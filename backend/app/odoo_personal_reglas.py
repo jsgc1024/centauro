@@ -301,6 +301,13 @@ def campos_por_capturar(campos: dict, cpf: str = "", cnh: str = "") -> dict:
             return tecnico
         candidatos = []
         for nombre, info in campos.items():
+            # Nunca un campo de archivo (seccion 128, hallazgo r4-03):
+            # si RH crea «CNH» como archivo, leerlo cada hora bajaria la
+            # licencia escaneada de todos los empleados. Aqui solo se
+            # mira si hay algo; con un archivo, el que diga su nombre
+            # (`x_studio_cnh_filename`) o el de Odoo.
+            if (info or {}).get("type") in ("binary", "image"):
+                continue
             visible = normal((info or {}).get("string"))
             palabras = set(re.split(r"[^a-z0-9]+", visible))
             if palabra in palabras or palabra in nombre.lower().split("_"):
@@ -487,6 +494,17 @@ def planear(empleados: list, personas: list, plazas: dict,
                 if candidata.get("odoo_id") and candidata["odoo_id"] != e["id"]:
                     pendiente(e, candidata["id"],
                               ["su correo ya es de otra persona en Centauro"])
+                    continue
+                if candidata.get("es_freelance"):
+                    # El freelance que RH contrata de planta y captura en
+                    # Odoo con su mismo correo no se adivina (seccion 128,
+                    # hallazgo r6-01): ligarlo lo dejaba freelance a
+                    # medias --su tarifa en la nomina, el candado del
+                    # expediente, la ficha que ya no se edita-- y Odoo le
+                    # pisaba la cuenta que RH valido. Queda pendiente.
+                    pendiente(e, candidata["id"],
+                              ["en Centauro es freelance; en Odoo ya es de "
+                               "planta: pasarlo a mano"])
                     continue
                 persona, vinculo = candidata, True
 

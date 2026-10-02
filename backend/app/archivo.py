@@ -186,6 +186,30 @@ def asignaciones_por_cierre(db: Session, cierres: list) -> dict[int, list[int]]:
     return salida
 
 
+# ================================================================ servir un archivo
+
+def cabecera_de_archivo(nombre: str, bajar: bool = False) -> dict:
+    """Las cabeceras con que se sirve un archivo subido (seccion 128,
+    hallazgo r7-01): el nombre en ASCII entre comillas y el completo en
+    `filename*` (RFC 5987). Starlette codifica las cabeceras en Latin-1,
+    y «Autorización – Henkel.pdf» --con guion largo, o el espacio fino de
+    las capturas de macOS-- se guardaba bien y despues nunca se podia
+    abrir (500). Y sin cache: un comprobante del cliente no se queda en
+    una computadora compartida."""
+    import unicodedata
+    import urllib.parse
+
+    nombre = " ".join((nombre or "").split()) or "archivo"
+    parecido = nombre.translate(str.maketrans({"–": "-", "—": "-", "“": "'",
+                                               "”": "'", "‘": "'", "’": "'"}))
+    ascii_ = (unicodedata.normalize("NFKD", parecido).encode("ascii", "ignore")
+              .decode().replace('"', "").replace("\\", "").strip() or "archivo")
+    forma = "attachment" if bajar else "inline"
+    return {"Content-Disposition": (f'{forma}; filename="{ascii_}"; '
+                                    f"filename*=UTF-8''{urllib.parse.quote(nombre)}"),
+            "Cache-Control": "no-store"}
+
+
 # ================================================================ Google
 
 def partir(objeto: str) -> tuple[str, str]:
@@ -212,6 +236,18 @@ class Google:
 
     def ruta(self, relativa: str) -> str:
         return f"{self.prefijo}/{relativa}" if self.prefijo else relativa
+
+    def _pedir(self, metodo: str, *args, **kwargs):
+        """Una llamada a Google que, si la red falla, lo dice como
+        `Fallo` (seccion 128, hallazgo r6-05): un tiempo de espera o una
+        conexion caida en httpx no era `Fallo`, se escapaba de quien
+        guarda el documento del expediente y tumbaba la carga entera
+        --500-- en vez de dejar el archivo aqui hasta la mudanza."""
+        try:
+            return getattr(self.http, metodo)(*args, **kwargs)
+        except (httpx.HTTPError, OSError) as error:
+            raise Fallo(f"Google no contesto ({type(error).__name__}): "
+                        f"{error}") from error
 
     def _cabeceras(self) -> dict:
         if not self._permiso or time.monotonic() >= self._vence:
@@ -246,8 +282,8 @@ class Google:
             f"charset=UTF-8\r\n\r\n".encode(), cabeza,
             f"\r\n--{frontera}\r\nContent-Type: {tipo}\r\n\r\n".encode(),
             datos, f"\r\n--{frontera}--\r\n".encode()])
-        r = self.http.post(
-            f"{STORAGE}/upload/storage/v1/b/{self.deposito}/o",
+        r = self._pedir(
+            "post", f"{STORAGE}/upload/storage/v1/b/{self.deposito}/o",
             params={"uploadType": "multipart", "ifGenerationMatch": "0"},
             headers={**self._cabeceras(),
                      "Content-Type": f"multipart/related; boundary={frontera}"},
@@ -260,7 +296,7 @@ class Google:
         return r.json()
 
     def describir(self, ruta: str) -> dict | None:
-        r = self.http.get(self._objeto(ruta), headers=self._cabeceras())
+        r = self._pedir("get", self._objeto(ruta), headers=self._cabeceras())
         if r.status_code == 404:
             return None
         if r.status_code >= 300:
@@ -268,8 +304,8 @@ class Google:
         return r.json()
 
     def bajar(self, ruta: str) -> tuple[bytes, str]:
-        r = self.http.get(self._objeto(ruta), params={"alt": "media"},
-                          headers=self._cabeceras())
+        r = self._pedir("get", self._objeto(ruta), params={"alt": "media"},
+                        headers=self._cabeceras())
         if r.status_code == 404:
             raise Fallo("La foto no esta en el archivo")
         if r.status_code >= 300:

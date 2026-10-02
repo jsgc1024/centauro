@@ -62,6 +62,11 @@ const FALTAS = {
   "su correo es de alguien del personal de seguridad en Centauro":
     "odo_f_correo_de_seguridad",
   "ahora es personal de seguridad en Odoo": "odo_f_ahora_seguridad",
+  /* Dos que salian crudos (seccion 128), y el freelance que RH contrata. */
+  "en Centauro es de oficina; en Odoo ya es de seguridad": "odo_f_oficina_a_seguridad",
+  "su cuenta bancaria no se pudo leer de Odoo": "odo_f_cuenta_no_leida",
+  "en Centauro es freelance; en Odoo ya es de planta: pasarlo a mano":
+    "odo_f_freelance_de_planta",
   /* Los clientes (seccion 75). */
   "sin pais": "odo_f_sin_pais",
   "se parece a mas de un cliente de Centauro": "odo_f_cliente_doble",

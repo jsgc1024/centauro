@@ -692,6 +692,13 @@ def revisar(db: Session, contrato: m.ContratoImplantado,
                        if d["tipo"] == m.TipoDesviacion.COBRO_MENOR.value
                        else "Justifica la desviacion o corrige el mes.")})
 
+    # La unidad que salio del servicio en este mes y no se entrego
+    # (seccion 107), como en el eventual (seccion 128, hallazgo r8-03):
+    # grave mientras siga abierta; la que se dio por entregada sin
+    # revision se dice.
+    from app import entregas
+    observaciones.extend(entregas.observaciones(db, servicio.id, ahora,
+                                                contrato.anio, contrato.mes))
     dias = _dias(db, contrato)
     # Las horas extra del mes en horas, las corregidas y si falta su
     # precio (seccion 65). Ninguna frena el visto bueno.

@@ -103,10 +103,19 @@ def usuario_opcional(token: str | None = Depends(esquema),
         carga = jwt.decode(token, _clave(), algorithms=[ALGORITMO])
     except jwt.PyJWTError:
         return None
+    if not _es_sesion(carga):
+        return None
     usuario = db.get(m.Usuario, int(carga["sub"]))
     if not usuario or not usuario.activo or _token_viejo(usuario, carga):
         return None
     return usuario
+
+
+def _es_sesion(carga: dict) -> bool:
+    """Solo una sesion vale como sesion (seccion 128, hallazgo r7-03):
+    el reto de la huella va firmado con la misma clave y traia `sub`; con
+    `tipo` no es sesion, y sin `sub` tampoco."""
+    return carga.get("tipo") is None and str(carga.get("sub") or "").isdigit()
 
 
 def usuario_actual(token: str | None = Depends(esquema),
@@ -123,6 +132,8 @@ def usuario_actual(token: str | None = Depends(esquema),
     except jwt.ExpiredSignatureError:
         raise HTTPException(401, "La sesion expiro, vuelve a iniciar sesion")
     except jwt.InvalidTokenError:
+        raise sin_acceso
+    if not _es_sesion(carga):
         raise sin_acceso
 
     usuario = db.get(m.Usuario, int(carga["sub"]))

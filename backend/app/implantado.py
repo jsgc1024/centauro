@@ -454,6 +454,12 @@ def generar_mes(db: Session, contrato_id: int,
     # La base del mes es la que marca el calendario, no un numero fijo.
     contrato.dias_base = len(dias)
     contrato.generado = True
+    # La unidad que "dejo el servicio" con el ultimo dia del mes anterior
+    # --porque este mes no existia todavia-- vuelve a tener dias: su
+    # entrega abierta se va (seccion 128).
+    if creadas:
+        from app import entregas
+        entregas.al_seguir_la_unidad(db, servicio.id)
     # Abrir el mes de noviembre no regresa a planeado un servicio que ya
     # trae hoja liberada y gente en la calle. Solo empuja hacia adelante
     # al que todavia no llegaba ahi.
@@ -644,6 +650,11 @@ def agregar_dia(db: Session, contrato_id: int, fecha: date,
     if contrato.vehiculo_id:
         db.add(m.AsignacionVehiculo(jornada_id=jornada.id,
                                     vehiculo_id=contrato.vehiculo_id))
+        db.flush()
+        # El sabado que entra despues del viernes cerrado: la unidad
+        # sigue y su entrega abierta se va (seccion 128).
+        from app import entregas
+        entregas.al_seguir_la_unidad(db, contrato.servicio_id)
     db.commit()
 
     cubre = db.get(m.Persona, cubre_id) if cubre_id else None
@@ -689,6 +700,10 @@ def _cubrir(db: Session, contrato: m.ContratoImplantado, jornada: m.Jornada,
         if contrato.vehiculo_id and not dia.vehiculos:
             db.add(m.AsignacionVehiculo(jornada_id=dia.id,
                                         vehiculo_id=contrato.vehiculo_id))
+    if contrato.vehiculo_id:
+        db.flush()
+        from app import entregas
+        entregas.al_seguir_la_unidad(db, contrato.servicio_id)
     db.commit()
 
     # Lo que de verdad es adicional --el fin de semana-- se cobra aparte;

@@ -27,7 +27,7 @@ from app import facturacion
 from app import models as m
 from app import tipo_cambio
 from ayudas import (asignar, configurar_origen, crear_servicio,
-                    ejecutar_jornada, jornada, manana)
+                    ejecutar_jornada, entregar_lo_pendiente, jornada, manana)
 
 D = Decimal
 MOTIVO = "El equipo cerro por telefono; confirmado con el cliente"
@@ -448,6 +448,10 @@ def _trabajar_el_mes(cliente, sesion, datos, alta, gasto="900"):
             params={"ahora": datetime.combine(dia, datetime.min.time())
                     .replace(hour=21).isoformat()})
         assert r.status_code == 200, r.text
+    # El viernes cerro sin un dia despues: Juan entrega la Suburban esa
+    # noche, que es lo que la revision del mes reclama (seccion 128).
+    entregar_lo_pendiente(cliente, sesion("juan"), alta["servicio_id"],
+                          datetime(2029, 9, 28, 21, 30))
     _comprobado(vid, gasto)
     from app.db import SessionLocal
     with SessionLocal() as sesion_db:

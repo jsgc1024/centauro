@@ -17,7 +17,8 @@ from datetime import date, datetime, timedelta
 import pytest
 
 from ayudas import (asignar, configurar_origen, cotizar_y_autorizar,
-                    crear_servicio, jornada, manana, marcar, marcar_fin)
+                    crear_servicio, entregar_lo_pendiente, jornada, manana,
+                    marcar, marcar_fin)
 
 MOTIVO = "El cliente confirmo por telefono la hora de termino"
 
@@ -662,6 +663,10 @@ def _cerrar_el_mes(cliente, sesion, servicio_id, extra_el_24):
                          params={"ahora": (fin + timedelta(hours=4))
                                  .isoformat()})
         assert r.status_code == 200, r.text
+    # El viernes cerro sin un dia despues: Juan entrega la Suburban esa
+    # noche, que es lo que la revision del mes reclama (seccion 128).
+    entregar_lo_pendiente(cliente, sesion("juan"), servicio_id,
+                          datetime(2029, 9, 29, 0, 30))
 
 
 def test_el_implantado_cobra_sus_horas_extra_en_el_mes(cliente, sesion, datos):

@@ -110,7 +110,12 @@ def _asentar(db: Session, usuario: m.Usuario, nueva: str) -> None:
     # activar su propio telefono: sin esto, cambiarla lo sacaba de la
     # sesion pero no de la puerta. El dueno la vuelve a activar al entrar
     # con la nueva: la entrada se la ofrece sola.
-    db.query(m.LlaveAcceso).filter_by(usuario_id=usuario.id).delete()
+    quitadas = db.query(m.LlaveAcceso).filter_by(usuario_id=usuario.id).delete()
+    if quitadas:
+        # En la bitacora de accesos (seccion 128): cuantas huellas se
+        # fueron con la contrasena nueva.
+        accesos.anotar(db, usuario, "huellas quitadas", "usuario", usuario.id,
+                       detalle=f"{quitadas} con la contrasena nueva")
 
 
 # --------------------------------------------------- cambiarla uno mismo

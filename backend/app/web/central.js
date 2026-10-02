@@ -1207,7 +1207,8 @@ function renglonEntrega(e, zona) {
   const cuando = `${fecha(e.limite.slice(0, 10))} ${hora(e.limite)}`;
   const cuerpo = h("div", { clase: "linea-sin-cerrar" },
     h("div", {},
-      h("a", { href: `#/servicio/${e.servicio_id}` }, h("b", {}, e.placa || "—")),
+      /* La ficha que es: la del implantado tiene la suya (seccion 128). */
+      h("a", { href: rutaDelServicio(e) }, h("b", {}, e.placa || "—")),
       h("span", { clase: "chico gris" }, ` · ${e.folio || ""}`),
       h("div", { clase: "chico gris" },
         `${t("ent_responde").replace("{quien}", e.persona || "—")} · `

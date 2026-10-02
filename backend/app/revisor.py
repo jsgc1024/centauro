@@ -240,36 +240,7 @@ def revisar(db: Session, servicio_id: int, ahora: datetime | None = None) -> dic
     # fotos ya no se pueden tomar, es registrarla sin revision con la
     # razon --y entonces se dice, informativo, quien lo decidio--.
     from app import entregas
-    for pendiente in entregas.del_servicio(db, servicio_id, ahora).values():
-        if pendiente["cerrada_en"] is None:
-            observaciones.append({
-                "nivel": GRAVE, "asunto": "Unidad sin entregar",
-                "clave": "entrega_pendiente",
-                "datos": {"placa": pendiente["placa"],
-                          "persona": pendiente["persona"],
-                          "limite": pendiente["limite"],
-                          "vencido": pendiente["vencido"],
-                          "entrega_id": pendiente["entrega_id"]},
-                "mensaje": (f"La unidad {pendiente['placa']} salio del "
-                            f"servicio y no tiene su revision de entrega "
-                            f"(responde {pendiente['persona']})"),
-                "accion": ("Que la entregue con las cinco fotos desde su "
-                           "app. Si ya no se puede, registrala como "
-                           "entregada sin revision, con la razon, desde la "
-                           "revision de la unidad en esta ficha.")})
-        elif pendiente["sin_revision"]:
-            observaciones.append({
-                "nivel": INFO, "asunto": "Entregada sin revision",
-                "clave": "entrega_sin_revision",
-                "datos": {"placa": pendiente["placa"],
-                          "quien": pendiente["justificada_por"],
-                          "justificacion": pendiente["justificacion"]},
-                "mensaje": (f"La unidad {pendiente['placa']} se dio por "
-                            f"entregada sin revision"
-                            f" ({pendiente['justificada_por']}): "
-                            f"{pendiente['justificacion']}"),
-                "accion": "No hay fotos de como volvio; queda escrito quien "
-                          "lo decidio y por que."})
+    observaciones.extend(entregas.observaciones(db, servicio_id, ahora))
 
     # --- viaticos que nadie cerro
     #

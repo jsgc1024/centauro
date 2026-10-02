@@ -67,6 +67,13 @@ def _cerrar_mes(cliente, sesion, servicio_id, dias=DIAS):
     jornadas = _jornadas(cliente, sesion, servicio_id)
     for dia in dias:
         _cerrar(cliente, sesion, jornadas[dia], dia)
+    # Si el ultimo dia cerrado no tiene un dia despues, la Suburban quedo
+    # por entregar y Juan la entrega esa misma noche: desde la seccion
+    # 128 la revision del mes la reclama, igual que la del eventual.
+    if dias:
+        from tests.ayudas import entregar_lo_pendiente
+        entregar_lo_pendiente(cliente, sesion("juan"), servicio_id,
+                              _a_las_21(max(dias)) + timedelta(minutes=30))
     return jornadas
 
 

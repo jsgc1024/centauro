@@ -111,6 +111,8 @@ def _fotos_fijas(db: Session) -> tuple:
         "referencia": p.referencia, "fecha_ingreso": p.fecha_ingreso,
         "foto": bool(p.foto_url), "sincronizado_en": p.odoo_sincronizado_en,
         "baja_odoo_en": p.baja_odoo_en, "oficina": p.oficina,
+        # El freelance no se liga solo (seccion 128).
+        "es_freelance": bool(p.es_freelance),
         # A donde se le deposita (seccion 105): para comparar con lo que
         # dice Odoo y cambiarlo solo cuando cambia.
         "banco": p.banco, "clabe": p.clabe, "titular_cuenta": p.titular_cuenta,
@@ -158,8 +160,6 @@ def _accesos_por_cerrar(db: Session) -> list:
 
 def _dar_de_baja(db: Session, baja: dict, ahora: datetime,
                  relojes: reloj.Relojes) -> None:
-    from app import push
-
     persona = db.get(m.Persona, baja["persona_id"])
     persona.activo = False
     persona.baja_odoo_en = ahora
@@ -171,13 +171,37 @@ def _dar_de_baja(db: Session, baja: dict, ahora: datetime,
         usuario.activo = False
 
     extra = (f" Tiene {len(deuda)} viatico(s) sin cerrar." if deuda else "")
+    alertas_de_baja(db, persona,
+                    f"{persona.nombre} fue dado de baja en Odoo y esta "
+                    "asignado a este dia: hay que reemplazarlo." + extra,
+                    relojes)
+
+
+def alertas_de_baja(db: Session, persona: m.Persona, mensaje: str,
+                    relojes: reloj.Relojes | None = None) -> list:
+    """Los dias por delante a los que sigue asignado quien se da de baja:
+    una alerta en cada uno para la central y un aviso al consultor de cada
+    servicio. La baja de Odoo y la del freelance (seccion 128, hallazgo
+    r6-04) hacen lo mismo. Devuelve las asignaciones que quedan colgando."""
+    from app import push
+
     avisados = set()
-    for asignacion in dias_por_delante(db, persona.id, relojes):
+    colgando = dias_por_delante(db, persona.id, relojes)
+    for asignacion in colgando:
+        # Una alerta abierta por dia y persona: la baja que se deshace
+        # y se vuelve a dar no apila otra sobre la que la central no ha
+        # atendido.
+        abierta = (db.query(m.Alerta.id)
+                   .filter_by(jornada_id=asignacion.jornada_id,
+                              tipo=m.TipoAlerta.PERSONAL_DE_BAJA,
+                              persona_id=persona.id, atendida=False)
+                   .first())
+        if abierta:
+            continue
         db.add(m.Alerta(
             jornada_id=asignacion.jornada_id,
             tipo=m.TipoAlerta.PERSONAL_DE_BAJA, persona_id=persona.id,
-            mensaje=(f"{persona.nombre} fue dado de baja en Odoo y esta "
-                     "asignado a este dia: hay que reemplazarlo." + extra)[:400]))
+            mensaje=mensaje[:400]))
         servicio = asignacion.jornada.equipo.servicio
         if servicio.consultor_id and servicio.id not in avisados:
             avisados.add(servicio.id)
@@ -198,6 +222,7 @@ def _dar_de_baja(db: Session, baja: dict, ahora: datetime,
                 # central ya quedo.
                 registro.exception("no se pudo avisar la baja de %s",
                                    persona.nombre)
+    return colgando
 
 
 # La foto de 512 px y no la de 128. Decision de Salvador, 29 sep: la

@@ -13,7 +13,7 @@ import { aviso, pieObligatorios, buscador, campo, coincide, conAyuda, dinero, en
          estatus, etiqueta, fecha, fechaLocal, h, hoyLocal, lista, listaBuscable,
          mensaje, tasa, telefono, vaciar } from "./util.js";
 import { buscadorDeLugar } from "./mapa.js";
-import { bloqueRevisionUnidad } from "./servicio.js";
+import { bloqueRevisionUnidad, bloqueRevisiones } from "./servicio.js";
 import { IDIOMAS, idioma, t } from "./idioma.js";
 import { diferenciaConLaLista, queda, tarjetaCierre } from "./cierre.js";
 import { soloConsulta, tiene } from "./menu.js";
@@ -1820,6 +1820,12 @@ export async function pantallaImplantado(main, servicioId) {
 
   if (ficha.meses) {
     await pintarMesDelServicio(main, servicioId, ficha, servicio, cat);
+    // Las revisiones de la unidad --recepcion, entrega y la entrega
+    // pendiente con «Registrar entrega sin revision»-- tambien en el
+    // implantado (seccion 128): antes solo vivian en la ficha del
+    // eventual, y la unidad que salia con el ultimo fin del mes no tenia
+    // donde registrarse.
+    main.append(await bloqueRevisiones(servicio));
     // Los hospitales antes de la hoja: es lo que la hoja va a llevar, y
     // si la ciudad no tiene ninguno mas vale verlo antes de liberarla.
     main.append(bloqueHospitales(servicioId));

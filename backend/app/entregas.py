@@ -83,6 +83,43 @@ def abrir_al_terminar(db: Session, jornada: m.Jornada, persona_id: int,
             for f, sin_recepcion in abiertas]
 
 
+def al_reabrir(db: Session, jornada: m.Jornada) -> int:
+    """Las abiertas que nacieron con el fin de ese dia se van cuando el
+    dia se reabre (seccion 128). Solo las abiertas: la que ya se cerro con
+    su revision o sin ella se queda."""
+    filas = (db.query(m.EntregaPendiente)
+             .filter(m.EntregaPendiente.jornada_id == jornada.id,
+                     m.EntregaPendiente.cerrada_en.is_(None)).all())
+    for fila in filas:
+        db.delete(fila)
+    if filas:
+        db.flush()
+    return len(filas)
+
+
+def al_seguir_la_unidad(db: Session, servicio_id: int) -> int:
+    """La abierta de una unidad que vuelve a salir se va (seccion 128).
+
+    Nace cuando el ultimo dia que habia se cierra sin un dia despues
+    --el mes que sigue no estaba abierto porque el proceso no corrio-- y
+    la unidad en realidad no dejo el servicio: al abrir el mes la
+    camioneta vuelve a tener dias, y reclamarla como "sin entregar"
+    seria pedir fotos de una entrega que nunca paso. Solo las abiertas,
+    igual que al reabrir: la que ya se cerro con su revision se queda."""
+    filas = (db.query(m.EntregaPendiente)
+             .filter(m.EntregaPendiente.servicio_id == servicio_id,
+                     m.EntregaPendiente.cerrada_en.is_(None)).all())
+    idas = 0
+    for fila in filas:
+        if fila.jornada is not None and revision._sigue_manana(
+                db, fila.jornada, fila.vehiculo_id):
+            db.delete(fila)
+            idas += 1
+    if idas:
+        db.flush()
+    return idas
+
+
 def cerrar_con_revision(db: Session, rev: m.RevisionUnidad,
                         ahora: datetime) -> bool:
     """La revision de entrega guardada cierra la pendiente de esa unidad."""
@@ -152,6 +189,9 @@ def _ficha(fila: m.EntregaPendiente, ahora: datetime) -> dict:
         "entrega_id": fila.id,
         "servicio_id": fila.servicio_id,
         "folio": servicio.folio if servicio else None,
+        # Eventual o implantado (seccion 128): la central y el correo
+        # llevan a la pantalla que es.
+        "tipo": (servicio.tipo.value if servicio and servicio.tipo else None),
         "cliente": (servicio.cliente.nombre
                     if servicio and servicio.cliente else None),
         "vehiculo_id": fila.vehiculo_id,
@@ -209,6 +249,76 @@ def pendientes_de(db: Session, persona_id: int,
     return salida
 
 
+def suyas_del_servicio(db: Session, servicio_id: int, persona_id: int,
+                       ahora: datetime) -> list[dict]:
+    """Las abiertas de ese servicio por las que responde esa persona
+    (seccion 128): lo que su app le ensena al cerrar el dia, aunque las
+    haya abierto el fin de otro del equipo."""
+    salida = []
+    for fila in _mias(db, persona_id):
+        if fila.servicio_id != servicio_id:
+            continue
+        ficha = _ficha(fila, ahora)
+        ficha["sin_recepcion"] = not revision._hecha(
+            db, fila.servicio_id, fila.vehiculo_id, m.TipoRevision.RECIBE)
+        salida.append(ficha)
+    return salida
+
+
+def observaciones(db: Session, servicio_id: int, ahora: datetime | None = None,
+                  anio: int | None = None, mes: int | None = None) -> list[dict]:
+    """Lo que el revisor del cierre dice de las entregas (seccion 107):
+    grave mientras una siga abierta --el cierre no sale a finanzas con
+    una camioneta de la que nadie sabe como volvio--, e informativo la que
+    se dio por entregada sin revision, con quien y por que. El eventual
+    las mira todas; el mes del implantado (seccion 128, hallazgo r8-03),
+    las de los dias de ese mes: antes el mes no las reclamaba y el
+    renglon se quedaba en la central para siempre."""
+    from app.revisor import GRAVE, INFO
+
+    filas = (db.query(m.EntregaPendiente)
+             .filter_by(servicio_id=servicio_id)
+             .order_by(m.EntregaPendiente.id).all())
+    if anio is not None and mes is not None:
+        filas = [f for f in filas if f.jornada is not None
+                 and (f.jornada.fecha.year, f.jornada.fecha.month) == (anio, mes)]
+    if not filas:
+        return []
+    momento = reloj.ahora_del_servicio(db, filas[0].servicio, ahora)
+    salida = []
+    for pendiente in (_ficha(f, momento) for f in filas):
+        if pendiente["cerrada_en"] is None:
+            salida.append({
+                "nivel": GRAVE, "asunto": "Unidad sin entregar",
+                "clave": "entrega_pendiente",
+                "datos": {"placa": pendiente["placa"],
+                          "persona": pendiente["persona"],
+                          "limite": pendiente["limite"],
+                          "vencido": pendiente["vencido"],
+                          "entrega_id": pendiente["entrega_id"]},
+                "mensaje": (f"La unidad {pendiente['placa']} salio del "
+                            f"servicio y no tiene su revision de entrega "
+                            f"(responde {pendiente['persona']})"),
+                "accion": ("Que la entregue con las cinco fotos desde su "
+                           "app. Si ya no se puede, registrala como "
+                           "entregada sin revision, con la razon, desde la "
+                           "revision de la unidad en esta ficha.")})
+        elif pendiente["sin_revision"]:
+            salida.append({
+                "nivel": INFO, "asunto": "Entregada sin revision",
+                "clave": "entrega_sin_revision",
+                "datos": {"placa": pendiente["placa"],
+                          "quien": pendiente["justificada_por"],
+                          "justificacion": pendiente["justificacion"]},
+                "mensaje": (f"La unidad {pendiente['placa']} se dio por "
+                            f"entregada sin revision"
+                            f" ({pendiente['justificada_por']}): "
+                            f"{pendiente['justificacion']}"),
+                "accion": "No hay fotos de como volvio; queda escrito quien "
+                          "lo decidio y por que."})
+    return salida
+
+
 def abiertas(db: Session, ahora: datetime | None = None) -> list[dict]:
     """Para la central: todas las que siguen abiertas, las vencidas
     primero."""
@@ -237,6 +347,15 @@ def del_servicio(db: Session, servicio_id: int,
 
 def _pantalla(fila: m.EntregaPendiente) -> str:
     return f"/app/#/revision/{fila.servicio_id}"
+
+
+def pantalla_de_consola(servicio: m.Servicio | None, servicio_id: int) -> str:
+    """La ficha del servicio en la consola, segun lo que es (seccion
+    128): el implantado tiene la suya; antes el correo y el aviso de la
+    entrega vencida llevaban siempre a la del eventual."""
+    if servicio is not None and servicio.tipo == m.TipoServicio.IMPLANTADO:
+        return f"/consola/#/implantado/{servicio_id}"
+    return f"/consola/#/servicio/{servicio_id}"
 
 
 def _avisar_al_terminar(db: Session, fila: m.EntregaPendiente,
@@ -318,7 +437,7 @@ def avisar_vencidas(db: Session, ahora: datetime | None = None) -> list[str]:
                      f"{fila.vence_en:%d/%m/%Y %H:%M}"),
                     (ta.t(lengua, "cie_que_hacer"),
                      ta.t(lengua, "ent_venc_que_hacer"))]),
-                enlace_seguimiento=f"/consola/#/servicio/{fila.servicio_id}"))
+                enlace_seguimiento=pantalla_de_consola(servicio, fila.servicio_id)))
 
         al_telefono(fila.persona_id, "entrega_vencida_titulo",
                     "entrega_vencida_cuerpo")

@@ -261,9 +261,9 @@ def eliminar(cotizacion_id: int, cuerpo: EliminarIn,
 
 def _archivo(contenido: bytes, tipo: str, nombre: str,
              bajar: bool) -> Response:
-    forma = "attachment" if bajar else "inline"
-    return Response(content=contenido, media_type=tipo, headers={
-        "Content-Disposition": f'{forma}; filename="{nombre}"'})
+    from app.archivo import cabecera_de_archivo
+    return Response(content=contenido, media_type=tipo,
+                    headers=cabecera_de_archivo(nombre, bajar))
 
 
 @router.get("/eventual/{cotizacion_id}/pdf",

@@ -34,4 +34,7 @@ Se um freelancer com o prontuário incompleto é a única saída, quem escala pe
 ## O acesso ao app {#app}
 Abre-se na ficha quando o prontuário está pronto, ou com uma urgência autorizada. Como na equipe do quadro, a central dita o código em Central → Código e ele define a senha.
 
+## O desligamento {#baja}
+«Desativar» na ficha deixa de oferecê-lo e fecha o seu acesso; o prontuário fica. Se ele continua escalado em dias à frente, a ficha diz na hora, a central vê o alerta em cada um desses dias e o consultor de cada serviço recebe o aviso no telefone: é preciso substituí-lo. Se o RH o contrata para o quadro e o cadastra no Odoo com o mesmo e-mail, a leitura do pessoal não o vincula sozinha: deixa-o nos pendentes —«no Centauro é freelancer; no Odoo já é do quadro»— para passar à mão.
+
 > Se um freelancer não pode ser escalado, a linha dele diz por quê; ver [um freelancer não pode ser escalado](#/manual/leer/sintoma-freelance-no-se-asigna).

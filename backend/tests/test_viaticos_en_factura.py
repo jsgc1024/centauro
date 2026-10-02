@@ -18,7 +18,7 @@ pruebas.
 from datetime import date, datetime
 
 from ayudas import (asignar, configurar_origen, crear_servicio,
-                    ejecutar_jornada, jornada, manana)
+                    ejecutar_jornada, entregar_lo_pendiente, jornada, manana)
 
 MOTIVO = "El equipo cerro por telefono; confirmado con el cliente"
 DIAS = [date(2029, 9, d) for d in (24, 25, 26, 27, 28)]
@@ -207,6 +207,10 @@ def _mes_con_visto_bueno(cliente, sesion, datos, **extra):
             params={"ahora": datetime.combine(dia, datetime.min.time())
                     .replace(hour=21).isoformat()})
         assert r.status_code == 200, r.text
+    # El viernes cerro sin un dia despues: Juan entrega la Suburban esa
+    # noche, que es lo que la revision del mes reclama (seccion 128).
+    entregar_lo_pendiente(cliente, sesion("juan"), alta["servicio_id"],
+                          datetime(2029, 9, 28, 21, 30))
     _comprobado(vid, "900")
 
     with SessionLocal() as db:

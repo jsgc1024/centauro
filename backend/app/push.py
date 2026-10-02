@@ -168,6 +168,9 @@ TEXTOS_PUSH = {
         "cambio_hora_cuerpo": "{fecha}: ahora es a las {hora} (antes {antes}). Entra a la app y vuelve a confirmar de enterado.",
         "cambio_fecha_titulo": "Cambió tu fecha",
         "cambio_fecha_cuerpo": "Ahora es el {fecha} a las {hora} (antes el {antes_fecha} a las {antes}). Entra a la app y vuelve a confirmar de enterado.",
+        # La razon del «por confirmar» que lee la central (seccion 128).
+        "reconfirmar_hora": "por reconfirmar: cambió la hora, antes {antes}",
+        "reconfirmar_fecha": "por reconfirmar: cambió la fecha, antes {antes}",
         "prueba": "Los avisos están funcionando en este teléfono.",
         "accion_confirmar": "Confirmo que voy",
         "accion_en_camino": "Voy en camino",
@@ -257,6 +260,8 @@ TEXTOS_PUSH = {
         "cambio_hora_cuerpo": "{fecha}: agora é às {hora} (antes {antes}). Entre no app e confirme de novo que está ciente.",
         "cambio_fecha_titulo": "A sua data mudou",
         "cambio_fecha_cuerpo": "Agora é dia {fecha} às {hora} (antes dia {antes_fecha} às {antes}). Entre no app e confirme de novo que está ciente.",
+        "reconfirmar_hora": "por reconfirmar: o horário mudou, antes {antes}",
+        "reconfirmar_fecha": "por reconfirmar: a data mudou, antes {antes}",
         "prueba": "Os avisos estão funcionando neste telefone.",
         "accion_confirmar": "Confirmo que vou",
         "accion_en_camino": "Estou a caminho",
@@ -828,15 +833,23 @@ def avisar_cambio_de_hora(db: Session, jornada, antes) -> dict:
     # confirmar", con la razon anotada, para que la app se lo vuelva a
     # pedir y la central lo vea pendiente en la vispera.
     reconfirman = 0
+    # La nota la lee la central del pais del servicio (seccion 128): en
+    # su idioma, no siempre en espanol.
+    servicio = jornada.equipo.servicio if jornada.equipo else None
+    pais = (db.get(m.Pais, servicio.pais_id)
+            if servicio and servicio.pais_id else None)
+    lengua_central = (getattr(pais, "idioma", None) or "es").lower()
+    lengua_central = lengua_central if lengua_central in TEXTOS_PUSH else "es"
     for a in jornada.personal:
         if a.confirmado and a.relevado_en is None:
             a.confirmado = False
             a.confirmado_en = None
             a.confirmado_por_id = None
             a.nota_confirmacion = (
-                f"por reconfirmar: cambió la fecha, antes {antes:%d/%m %H:%M}"
+                tx(lengua_central, "reconfirmar_fecha",
+                   antes=f"{antes:%d/%m %H:%M}")
                 if cambio_de_fecha else
-                f"por reconfirmar: cambió la hora, antes {antes:%H:%M}")
+                tx(lengua_central, "reconfirmar_hora", antes=f"{antes:%H:%M}"))
             reconfirman += 1
     avisados = []
     for persona_id in _asignados(db, [jornada]):

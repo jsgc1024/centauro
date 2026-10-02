@@ -111,7 +111,11 @@ def origenes() -> list[str]:
 # ------------------------------------------------------------ el reto
 
 def _firmar_reto(reto: bytes, uso: str, usuario_id: int | None) -> str:
-    carga = {"reto": _b64(reto), "uso": uso,
+    # `tipo`: un reto no es una sesion (seccion 128, hallazgo r7-03). Van
+    # firmados con la misma clave, y sin esto el «estado» de la alta
+    # --que trae `sub`-- valia como sesion del usuario cinco minutos, y
+    # el de la entrada, mandado como sesion, daba un 500 en vez de 401.
+    carga = {"reto": _b64(reto), "uso": uso, "tipo": "reto",
              "exp": datetime.now(timezone.utc) + timedelta(minutes=MINUTOS_RETO)}
     if usuario_id is not None:
         carga["sub"] = str(usuario_id)
@@ -216,6 +220,13 @@ def dar_de_alta(db: Session, usuario: m.Usuario, credencial: dict,
         contador=hecho.sign_count,
         nombre=(nombre or "").strip()[:120] or "Este equipo")
     db.add(llave)
+    db.flush()
+    # En la bitacora de accesos (seccion 128, hallazgo r7-05): una huella
+    # es una segunda forma de entrar, y activarla o quitarla es un
+    # evento de seguridad, como cambiar la contrasena.
+    from app import accesos
+    accesos.anotar(db, usuario, "huella activada", "usuario", usuario.id,
+                   detalle=llave.nombre)
     db.commit()
     db.refresh(llave)
     return llave
@@ -264,6 +275,8 @@ def entrar(db: Session, credencial: dict, estado: str) -> m.Usuario:
     """Comprueba la firma y devuelve a quien entra."""
     carga = _leer_reto(estado, "entrada")
     credencial_id = (credencial or {}).get("id") or ""
+    if not isinstance(credencial_id, str) or len(credencial_id) > 1024:
+        raise HTTPException(400, "No se reconoce la solicitud: vuelve a intentar.")
     llave = db.query(m.LlaveAcceso).filter_by(credencial_id=credencial_id).first()
     if not llave:
         # Con su codigo: la pantalla olvida que este equipo entraba con
@@ -312,5 +325,8 @@ def quitar(db: Session, usuario: m.Usuario, llave_id: int) -> None:
     llave = db.get(m.LlaveAcceso, llave_id)
     if not llave or llave.usuario_id != usuario.id:
         raise HTTPException(404, "No existe esa llave")
+    from app import accesos
+    accesos.anotar(db, usuario, "huella quitada", "usuario", usuario.id,
+                   detalle=llave.nombre)
     db.delete(llave)
     db.commit()

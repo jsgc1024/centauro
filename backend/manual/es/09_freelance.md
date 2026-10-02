@@ -34,4 +34,7 @@ Si un freelance con el expediente incompleto es la única salida, quien asigna p
 ## Su acceso a la app {#app}
 Se abre desde su ficha cuando su expediente está listo, o con una urgencia autorizada. Como al personal de planta, la central le dicta su código en Central → Código y él pone su contraseña.
 
+## La baja {#baja}
+«Dar de baja» en su ficha deja de ofrecerlo y le cierra el acceso; su expediente se queda. Si sigue asignado a días por delante, la ficha lo dice al momento, la central ve la alerta en cada uno de esos días y el consultor de cada servicio recibe el aviso en su teléfono: hay que reemplazarlo. Si Recursos Humanos lo contrata de planta y lo captura en Odoo con su mismo correo, la lectura del personal no lo liga sola: lo deja en pendientes —«en Centauro es freelance; en Odoo ya es de planta»— para pasarlo a mano.
+
 > Si un freelance no se puede asignar, su renglón dice por qué; ver [un freelance no se puede asignar](#/manual/leer/sintoma-freelance-no-se-asigna).

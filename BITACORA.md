@@ -9808,6 +9808,111 @@ prefactura (`04_odoo.md`) con «Volver a revisar en Odoo». Lo que cambia
 de pantalla: el botón en Facturación → En Odoo y el sello de la lista
 archivada.
 
+## 128. La revisión 360 de lo nuevo, ola 2: la entrega de la unidad, el freelance, los archivos y la huella
+
+La segunda ola de la revisión del 2 de octubre (sección 127): lo que
+dejaba una camioneta sin que nadie la reclamara, lo del freelance que
+la consola decía distinto que el servidor, los archivos que se guardaban
+bien y no se podían abrir, y el reto de la huella. Tampoco cambia ningún
+proceso; aplica la tercera regla avisada a Salvador en la 127: **la
+revisión del mes del implantado reclama la unidad sin entregar**, como
+la del eventual.
+
+- **r8-01** `cancelar_servicio` va en dos pasos: primero cancela y
+  escribe los días que no han arrancado, y después termina el que está
+  en la calle. `abrir_al_terminar` pregunta si la unidad «sigue mañana»
+  con los días futuros ya cancelados, y la entrega pendiente nace.
+  Antes el día en la calle se terminaba con los otros dos todavía vivos
+  —cancelados solo en memoria— y la camioneta salía sin reclamo.
+- **r8-02** El fin es del equipo: con el fin de uno, `abrir_al_terminar`
+  corre para cada persona del día que no fue relevada (como ya hacía el
+  cierre a mano), y lo que la app le enseña a quien marcó son las suyas
+  de ese servicio (`entregas.suyas_del_servicio`), aunque las haya
+  abierto el fin de un compañero. Con dos conductores y dos unidades,
+  el fin de Luis abría solo la suya; marcado por el escolta sin unidad,
+  ninguna.
+- **r8-03** `entregas.observaciones(db, servicio_id, ahora, anio, mes)`
+  junta las observaciones de la entrega —grave la abierta, informativa
+  la registrada sin revisión— y las usan el revisor del eventual y
+  `cierre_mes.revisar`, que filtra por los días de ese mes. La ficha del
+  implantado trae el bloque de revisiones de la unidad
+  (`servicio.bloqueRevisiones`, ahora exportado), con la entrega sin
+  revisión; el renglón de «Unidades por entregar» de la central lleva a
+  la pantalla que es (`rutaDelServicio`: la ficha del implantado abría
+  la del eventual) y la ficha trae `tipo`. Y lo que la ola 1 no vio: la
+  entrega que nace porque el mes que sigue no estaba abierto —el proceso
+  no corrió— o porque el sábado entra después del viernes cerrado se va
+  cuando la unidad vuelve a tener días (`entregas.al_seguir_la_unidad`,
+  desde `generar_mes`, `agregar_dia` y `_cubrir`): no se piden fotos de
+  una entrega que nunca pasó. Las pruebas del mes que cerraban los cinco
+  días a mano entregan ahora la unidad (`ayudas.entregar_lo_pendiente`).
+- **r8-04** `confirmar_recurso` borra `nota_confirmacion` (y
+  `confirmado_por_id`): la central veía la palomita y «por reconfirmar:
+  cambió la hora» juntas. La nota la escribe `avisar_cambio_de_hora` en
+  el idioma del país del servicio (`TEXTOS_PUSH` es/en/pt,
+  `reconfirmar_hora` / `reconfirmar_fecha`); la app sigue reconociendo
+  el prefijo «por reconfirmar» en los tres.
+- **r8-05** `reabrir` se lleva las entregas abiertas que nacieron con
+  ese cierre (`entregas.al_reabrir`); con el cierre bueno vuelven a
+  nacer. La que ya se cerró, con revisión o sin ella, se queda.
+- **r6-02 / r9-02** La ficha del freelance dice `puede_acceso`
+  (`freelance.puede_tener_acceso`, la misma regla que `dar_acceso`:
+  expediente listo o urgencia autorizada para un servicio vivo,
+  `urgencia_viva`) y el botón «Dar acceso» decide con eso, con su pie
+  (`fre_acceso_urgencia`): la consola decidía solo con el expediente y
+  dejaba en gris al urgente que el servidor sí aceptaba.
+- **r6-04** La baja del freelance avisa como la de Odoo
+  (`odoo_personal.alertas_de_baja`, sacado de `_dar_de_baja`): la
+  alerta `PERSONAL_DE_BAJA` en cada día por delante, el aviso al
+  consultor de cada servicio, y en la respuesta `jornadas_por_cubrir`
+  (lo de `accesos.jornadas_por_cubrir`), que la ficha enseña
+  («Sigue asignado a N día(s)…»). Una alerta abierta por día y persona:
+  la baja que se deshace y se vuelve a dar no apila otra. Y el título de
+  esa alerta en la bitácora del día ya no dice «en Odoo»
+  (`bit_alerta_personal_de_baja`: «Dado de baja»).
+- **r4-04 / r6-01** `odoo_personal_reglas`: la candidata por correo que
+  en Centauro es freelance queda pendiente —«en Centauro es freelance;
+  en Odoo ya es de planta: pasarlo a mano»— en vez de ligarse; `_fotos_fijas`
+  trae `es_freelance`. Ligarla la dejaba freelance a medias y Odoo le
+  pisaba la cuenta validada por RH.
+- **r4-08** Tres faltas de la lectura del personal que la pantalla de
+  Odoo no traducía: oficina → seguridad, la cuenta que no se pudo leer,
+  y la nueva del freelance (`odo_f_oficina_a_seguridad`,
+  `odo_f_cuenta_no_leida`, `odo_f_freelance_de_planta`, es/en/pt).
+- **r4-03** `campos_por_capturar` nunca escoge un campo `binary` o
+  `image`: si RH crea «CNH» como archivo, leerlo cada hora bajaría la
+  licencia escaneada de todos; se toma el que diga su nombre
+  (`x_studio_cnh_filename`), el de Odoo o ninguno.
+- **r6-05** `archivo.Google._pedir` convierte `httpx.HTTPError` y
+  `OSError` en `Fallo` (subir, describir, bajar): un tiempo de espera se
+  escapaba de quien guarda el documento del expediente y tumbaba la
+  carga entera, en vez de dejar el archivo aquí hasta la mudanza.
+- **r6-06 / r7-01** `archivo.cabecera_de_archivo(nombre, bajar)`: el
+  nombre en ASCII entre comillas y el completo en `filename*` (RFC
+  5987), y `Cache-Control: no-store`. «Autorización – Henkel.pdf» —guion
+  largo, o el espacio fino de las capturas de macOS— se guardaba bien y
+  nunca se podía abrir: Starlette codifica las cabeceras en Latin-1
+  (500). La usan el archivo del expediente del freelance y el PDF y el
+  comprobante de la cotización.
+- **r7-03** El reto de la huella lleva `tipo: reto`, y `auth._es_sesion`
+  solo acepta como sesión la carga sin tipo y con `sub` numérico: el
+  «estado» de la alta —que trae `sub`— valía como sesión del usuario
+  cinco minutos, y el de la entrada, mandado como sesión, daba 500 en
+  vez de 401. `entrar` rechaza con 400 una credencial que no sea texto
+  o pase de 1024.
+- **r7-05** La huella queda en el historial del acceso: «huella
+  activada» y «huella quitada» con el nombre del equipo, y «huellas
+  quitadas» con cuántas al cambiar la contraseña.
+
+Pruebas en `tests/test_revision_128.py` (17), más las del mes que ahora
+entregan la unidad. Manual: el camino (`02_camino.md`, la entrega con
+dos en el equipo, en el implantado y al reabrir), el implantado
+(`03_implantado.md`, el visto bueno del mes reclama la unidad y la ficha
+trae las revisiones) y el freelance (`09_freelance.md`, la baja). Lo que
+cambia de pantalla: el bloque de revisiones de la unidad en la ficha del
+implantado, el renglón de la central que abre la ficha correcta, el
+botón «Dar acceso» del urgente y el aviso de la baja con días asignados.
+
 ## 14. Lo que falta
 
 ### Abierto

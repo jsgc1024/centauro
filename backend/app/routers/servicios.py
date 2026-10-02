@@ -2318,6 +2318,22 @@ def cancelar_servicio(servicio_id: int, datos: s.CancelarIn,
     dias_cancelados = 0
     cancelados = []
     terminados = []
+    # Primero se cancelan los dias que no han arrancado, y se escriben
+    # (seccion 128, hallazgo r8-01): el dia en la calle que se termina
+    # abajo pregunta si la unidad «sigue manana» para abrir su entrega
+    # pendiente, y con los dias futuros todavia vivos --o cancelados solo
+    # en memoria, porque la sesion no escribe sola-- decia que si y la
+    # camioneta salia del servicio sin que nadie la reclamara.
+    for jornada in jornadas:
+        if jornada.estatus in m.ARRANCADAS:
+            continue
+        # Un dia que ya se trabajo no se borra del historial: se queda
+        # terminado, porque esas horas se pagan.
+        if jornada.estatus != m.EstatusJornada.TERMINADA:
+            jornada.estatus = m.EstatusJornada.CANCELADA
+            dias_cancelados += 1
+            cancelados.append(jornada)
+    db.flush()
     for jornada in jornadas:
         # El dia que esta en la calle termina ahora mismo, firmado como
         # terminado por cancelacion (seccion 105): esas horas se pagan y
@@ -2331,13 +2347,6 @@ def cancelar_servicio(servicio_id: int, datos: s.CancelarIn,
                 f"{jornada.fecha}: {operacion.TERMINADO_POR_CANCELACION.lower()} "
                 f"a las {momento_mx:%H:%M} · {datos.motivo}",
                 jornada_id=jornada.id)
-            continue
-        # Un dia que ya se trabajo no se borra del historial: se queda
-        # terminado, porque esas horas se pagan.
-        if jornada.estatus != m.EstatusJornada.TERMINADA:
-            jornada.estatus = m.EstatusJornada.CANCELADA
-            dias_cancelados += 1
-            cancelados.append(jornada)
 
     # El dinero: lo que no ha salido se cancela; lo que ya salio se
     # devuelve, y mientras no vuelva sigue siendo responsabilidad de
