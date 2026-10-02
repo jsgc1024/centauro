@@ -606,8 +606,10 @@ def pagar(db: Session, nomina_id: int, persona_id: int | None = None) -> dict:
                 "mensaje": ("Este corte es el borrador de las 7:00 y no cerró: "
                             "hay días trabajados sin tarifa que se quedaron "
                             "fuera"),
-                "que_hacer": ("Carga la tarifa que falta en el Tabulador y "
-                              "recalcula el corte; entonces se marca pagado."),
+                "que_hacer": ("Carga la tarifa que falta en el Tabulador --la "
+                              "del freelance, en su ficha (Personal de "
+                              "seguridad → Freelance)-- y recalcula el corte; "
+                              "entonces se marca pagado."),
                 "sin_tarifa": faltan})
 
     nomina.estatus = m.EstatusNomina.PAGADA

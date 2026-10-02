@@ -491,10 +491,35 @@ def expediente(db: Session, persona: m.Persona, ficha: m.Freelance,
                          for r in del_tipo(requisitos, PROGRAMADO)]
         falta = [r["requisito"].nombre for r in de_programado
                  if r["cuenta"] and r["estado"] not in (VALIDADO, "por_vencer")]
-        salida["para_programado"] = {
-            "faltan": falta,
-            "total": sum(1 for r in de_programado if r["cuenta"])}
+        total = sum(1 for r in de_programado if r["cuenta"])
+        if total and not falta:
+            # Ya no le falta nada de programado, venga de donde venga el
+            # cambio (seccion 129, hallazgo r6-10): el requisito que se
+            # quito del catalogo lo dejaba en «plazo vencido» sin que le
+            # faltara nada. Pasa a programado aqui mismo; quien llama
+            # guarda.
+            pasar_a_programado(db, None, persona, ficha, "ya no le falta nada "
+                                                         "de programado")
+            renglones = [renglon(r, suyos.get(r.id, []), hoy)
+                         for r in del_tipo(requisitos, PROGRAMADO)]
+            return resumir(ficha.tipo, renglones, ficha, hoy)
+        salida["para_programado"] = {"faltan": falta, "total": total}
     return salida
+
+
+def pasar_a_programado(db: Session, actor: m.Usuario | None, persona: m.Persona,
+                       ficha: m.Freelance, detalle: str) -> None:
+    """El de emergencia que completo lo de programado: cambia de tipo y
+    su plazo se borra. Con actor queda en su historial; sin el --lo
+    noto una lectura--, el cambio de tipo se ve en la ficha."""
+    ficha.tipo = PROGRAMADO
+    ficha.plazo_programado = None
+    ficha.plazo_puesto_en = None
+    ficha.plazo_avisado_en = None
+    db.flush()
+    if actor is not None:
+        _anotar(db, actor, persona, "paso a programado",
+                antes=EMERGENCIA, despues=PROGRAMADO, detalle=detalle)
 
 
 def resumen_por_persona(db: Session, personas: list, fichas: dict,
@@ -785,12 +810,10 @@ def _al_validar(db: Session, actor: m.Usuario, persona: m.Persona,
         persona.titular_cuenta = datos.get("titular")
     db.flush()
     if ficha.tipo == EMERGENCIA:
-        info = expediente(db, persona, ficha)
-        if not info["para_programado"]["faltan"]:
-            ficha.tipo = PROGRAMADO
-            ficha.plazo_programado = None
-            ficha.plazo_puesto_en = None
-            ficha.plazo_avisado_en = None
+        # `expediente` lo pasa a programado si ya no le falta nada
+        # (seccion 129); aqui queda en su historial con quien valido.
+        expediente(db, persona, ficha)
+        if ficha.tipo == PROGRAMADO:
             _anotar(db, actor, persona, "paso a programado",
                     antes=EMERGENCIA, despues=PROGRAMADO,
                     detalle="completó lo de programado")
@@ -1229,9 +1252,30 @@ def resolver_urgencia(db: Session, actor: m.Usuario,
             despues=servicio.folio if servicio else None,
             detalle=(respuesta or fila.motivo)[:400])
     db.flush()
+    # Al que la pidio le llega la respuesta (seccion 129, hallazgo
+    # r6-12): antes tenia que volver a abrir la lista de a quien asignar
+    # para enterarse.
+    if fila.pedida_por_id and servicio is not None:
+        quien = (db.query(m.Usuario)
+                 .filter_by(persona_id=fila.pedida_por_id, activo=True).first())
+        if quien is not None:
+            _avisar(db, [quien],
+                    "fre_respuesta_si_asunto" if autorizar else "fre_respuesta_no_asunto",
+                    "fre_respuesta_cuerpo",
+                    [("fre_quien", persona.nombre if persona else "-"),
+                     ("fre_servicio", servicio.folio),
+                     ("fre_respuesta", respuesta or "-")],
+                    f"/consola/#/servicio/{servicio.id}",
+                    f"freelance-respuesta-{fila.id}",
+                    quien=persona.nombre if persona else "-", folio=servicio.folio,
+                    respuesta=respuesta or ("sí" if autorizar else "no"))
 
 
 def urgencias(db: Session, estado: str | None = "pedida") -> list[dict]:
+    """Las urgencias, por estado. Las pedidas de un servicio que ya no se
+    arma --cancelado, terminado-- no se listan (seccion 129, hallazgo
+    r6-12): la bandeja de direccion las ensenaba hasta que alguien las
+    resolviera a mano."""
     q = db.query(m.AutorizacionFreelance)
     if estado:
         q = q.filter_by(estado=estado)
@@ -1239,6 +1283,9 @@ def urgencias(db: Session, estado: str | None = "pedida") -> list[dict]:
     for a in q.order_by(m.AutorizacionFreelance.pedida_en).all():
         persona = db.get(m.Persona, a.persona_id)
         servicio = db.get(m.Servicio, a.servicio_id)
+        if (a.estado == "pedida" and servicio is not None
+                and servicio.estatus in YA_NO_SE_ARMA):
+            continue
         pidio = db.get(m.Persona, a.pedida_por_id) if a.pedida_por_id else None
         resolvio = (db.get(m.Persona, a.resuelta_por_id)
                     if a.resuelta_por_id else None)
@@ -1403,6 +1450,14 @@ def revisar_vencimientos(db: Session, ahora: datetime | None = None,
 
     `hoy` es para las pruebas: el mismo dia para todos los paises."""
     rrhh = _de_rrhh(db)
+    if not rrhh:
+        # Sin nadie a quien avisar --ni RH ni direccion de operaciones
+        # con acceso-- no se marca nada como avisado (seccion 129,
+        # hallazgo r6-duda12): el aviso saldra el dia que haya alguien.
+        registro.warning("vencimientos del freelance: no hay a quien avisar")
+        return {"avisados": 0, "detalle": [], "plazos": [],
+                "omitido": "no hay nadie de Recursos Humanos ni de direccion "
+                           "de operaciones con acceso"}
     relojes = reloj.Relojes(db, ahora)
 
     def dia(persona):

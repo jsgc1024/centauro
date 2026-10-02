@@ -9913,6 +9913,115 @@ cambia de pantalla: el bloque de revisiones de la unidad en la ficha del
 implantado, el renglón de la central que abre la ficha correcta, el
 botón «Dar acceso» del urgente y el aviso de la baja con días asignados.
 
+## 129. La revisión 360 de lo nuevo, ola 3: los detalles
+
+La tercera ola de la revisión del 2 de octubre (secciones 127 y 128):
+los textos y botones chicos de cada proceso. Veinticuatro hallazgos,
+ninguno cambia un proceso.
+
+- **r1-05** «Monto fijo» sin monto en Cotizaciones: la pantalla manda
+  `gastos: fijo` tal cual (antes lo cambiaba a «dentro» y el borrador
+  volvía a «Incluidos» al reabrirlo); `_lineas` pone el renglón de
+  gastos aunque el monto sea cero, `modo_de_gastos` dice «fijo» con
+  cualquier renglón de gastos y `que_le_falta` reclama «El monto fijo de
+  gastos» antes de mandarla.
+- **r1-07** Cada versión de la tabla de versiones lleva su `moneda` y
+  se pinta con ella: la V1 en dólares ya no sale en pesos desde la V2.
+- **r1-duda5** La respuesta de autorizar y de recrear el servicio trae
+  `sin_consultor` y su aviso cuando quien firmó perdió su acceso entre
+  mandar y autorizar; la pantalla lo dice (`ctz_nacio_sin_consultor`)
+  antes de abrir el servicio, que ya decía «Sin asignar» en su titular.
+- **r2-05** `propuesta.montoEscrito(texto, moneda)`: en reales el punto
+  es de miles y la coma decimal («17.500,00»); en pesos y dólares al
+  revés; con los dos separadores manda el último. El precio sugerido va
+  sin separador de miles (`sinMiles`). Antes la coma de Brasil dejaba
+  el precio vacío sin decir nada.
+- **r2-07** `faltan_textos` (propuesta y cotización) solo pide la tasa
+  de IVA cuando el PDF va con IVA.
+- **r3-09** `odoo_facturacion.idioma_de_la_factura`: sin idioma en la
+  cotización o la propuesta —el eventual cotizado desde el servicio, el
+  mes abierto sin propuesta—, los renglones salen en el idioma del país
+  del servicio; antes, en español a Amazon Brasil.
+- **r4-06** `telefonos.con_lada`: el número que ya trae la lada escrita
+  sin el «+» («55 11 98765 4321») solo recibe el «+»; se reconoce porque
+  después de la lada quedan los dígitos de un número nacional (10 u 11).
+- **r4-07** El recontratado —su correo es de alguien dado de baja que ya
+  venía de Odoo— queda pendiente diciendo la salida: «en Odoo,
+  desarchiva al empleado anterior en vez de crear uno nuevo»
+  (`RECONTRATADO`, en el personal y en la oficina; `odo_f_recontratado`
+  es/en/pt). Manual de Odoo.
+- **r5-06** `_nombrados` cuenta también la hora extra del paquete
+  (`TarifaPaquete.producto_hora_extra_id`): la «Hora Extra Motorista +
+  Minivan» archivada en Odoo ya no se borra de la tabla con el tarifario
+  usándola.
+- **r5-07** `_cambio_del_pais` devuelve `None` para el país sin par (la
+  pantalla no pinta la línea) en vez del dólar a peso.
+- **r5-08** Los paquetes de cada lista se guardan en un orden fijo
+  (producto, rol, categoría, modalidad), no en el que Odoo entregue sus
+  reglas: «el primero» del cierre es siempre el mismo.
+- **r5-09** Sin la categoría en Odoo, la vuelta queda anotada
+  (`SincronizacionOdoo` con su pendiente `sin_categoria_pais`); antes
+  callaba sin renglón en el historial.
+- **r6-07** Filtro «Dados de baja» en la pestaña Freelance: la lista
+  pide `incluir_bajas=true` y los de baja salen solo con ese filtro; el
+  contador de la pestaña cuenta a los activos.
+- **r6-08** Los motivos (urgencia, rechazo, baja) y las notas de la
+  entrevista van `data-crudo`; el folio de la prueba, `data-mayusculas`.
+- **r6-09** La entrevista dice «Apto» / «No apto» (`RESULTADO` →
+  `fre_apto`, `fre_no_apto`), no `fre_res_apto`.
+- **r6-10** `freelance.expediente` pasa a programado al de emergencia en
+  cuanto no le falte nada de programado, venga de donde venga el cambio
+  (`pasar_a_programado`; `_al_validar` anota quién validó): el
+  requisito que se quitó del catálogo lo dejaba en «plazo vencido» sin
+  faltarle nada.
+- **r6-11** El mensaje de nómina, los tres textos de la pantalla y el
+  manual (`530_nomina.md`) mandan a la tarifa del freelance en su ficha,
+  no a un catálogo que la 111 quitó.
+- **r6-12** `urgencias` no lista las pedidas de un servicio que ya no se
+  arma (cancelado, terminado), y `resolver_urgencia` le avisa al que la
+  pidió, por correo y teléfono, con la respuesta
+  (`fre_respuesta_si_asunto` / `fre_respuesta_no_asunto` /
+  `fre_respuesta_cuerpo`, enlace al servicio).
+- **r6-13** `_historial` deja fuera «documento cargado / validado /
+  rechazado» para quien no puede ver el expediente (`DEL_EXPEDIENTE`).
+- **r6-14** `util.reducirImagen` conserva el nombre original (en .jpg):
+  las dos caras de la INE ya no son dos «comprobante.jpg».
+- **r6-duda12** `revisar_vencimientos` no marca nada como avisado si no
+  hay nadie de RH ni de dirección con acceso: devuelve `omitido` y lo
+  deja en el registro.
+- **r7-06** Antes de mandar el expediente, la pantalla suma los archivos
+  y con más de 20 MB dice «súbelos en dos veces» (`TOPE_PETICION`,
+  `fre_pasan_de_20mb`); y el 413 sin cuerpo del proxy sale como texto
+  (`api_413`), no como «Error 413».
+- **r7-04** La huella rechazada por el contador (el teléfono que
+  restauró un respaldo) dice la salida (`huella_rechazada`: quitarla y
+  activarla otra vez); `hue_pie` y `hue_quitada` dicen qué hacer con un
+  equipo robado o perdido (cambiar la contraseña cierra sesiones y
+  huellas); manual de accesos.
+- **r8-06** Gastos en modo consulta (`solo-consulta`, `fin_consulta`)
+  para quien no trae `viaticos.transferir`: el gerente de administración
+  y dirección de operaciones ya no ven «Depositar», «Confirmar» ni
+  «Cancelar» que les contestaban 403; las pestañas y los botones de ver
+  se quedan (`pestana`, `consulta-si`).
+- **r8-07 / r9-05** `celery_app.avanzar_cierres` corre sus cuatro pasos
+  cada uno en su propia sesión y su propio intento: el que falla queda
+  en `fallas` con su paso y los demás corren.
+- **r9-06** `despliegue/crear_env.py` y el LEEME traen las variables de
+  Odoo por país (`ODOO_ETIQUETA_CLIENTES`, `ODOO_CAMPO_IMPLANTADOS`,
+  `ODOO_CATEGORIA_PRODUCTOS`, `ODOO_PREFIJO_LISTAS`, `ODOO_IDIOMA` y sus
+  `_BR`, `ODOO_PRODUCTO_GASTOS`, `ODOO_CAMPO_CPF`, `ODOO_CAMPO_CNH`),
+  `PEGASUS_GRUPOS`, `ODOO_FACTURACION_API_KEY` y los dos depósitos, con
+  su valor de siempre.
+
+Pruebas en `tests/test_revision_129.py` (25), una por hallazgo; la de la
+coma decimal corre el `montoEscrito` de la pantalla en node, si lo hay.
+Manual: Odoo (`04_odoo.md`, el recontratado y la CNH como archivo),
+nómina (`530_nomina.md`) y accesos (`06_accesos.md`, el equipo robado).
+Lo que cambia de pantalla: el filtro «Dados de baja», Gastos en modo
+consulta, «Monto fijo» que se queda, la moneda por versión, «Apto», el
+aviso de los 20 MB y el precio sugerido de Brasil sin separador de
+miles.
+
 ## 14. Lo que falta
 
 ### Abierto

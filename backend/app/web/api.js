@@ -35,6 +35,9 @@ export class ErrorApi extends Error {
     /* Se fue la senal o se acabo el tiempo: la pantalla decia "sin_red"
        y "tardo" tal cual, que no es ningun idioma (seccion 101). */
     if (codigo === 0) return ErrorApi.texto(d === "tardo" ? "api_tardo" : "cc_sin_red");
+    /* Lo que pesa de mas lo rechaza la puerta del servidor, sin cuerpo
+       (seccion 129, hallazgo r7-06): «Error 413» a secas no decia nada. */
+    if (codigo === 413 && !(d && d.mensaje)) return ErrorApi.texto("api_413");
     if (!d) return null;
     if (typeof d === "string") return d;
     /* Un dato mal capturado (422): el servidor dice que campo y que le
@@ -91,6 +94,7 @@ ErrorApi.TIPOS = {
 ErrorApi.DE_FABRICA = {
   cc_sin_red: "No hay conexion. Revisa tu internet e intentalo otra vez.",
   api_tardo: "El servidor tardo demasiado en contestar. Intentalo otra vez.",
+  api_413: "Lo que mandaste pesa mas de 20 MB en total. Subelo en dos veces, o con fotos mas chicas.",
   api_sesion_vencio: "La sesion vencio. Vuelve a entrar.",
   val_falta: "Falta el dato «{campo}».",
   val_numero: "«{campo}» tiene que ser un numero.",

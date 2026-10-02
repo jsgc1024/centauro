@@ -79,6 +79,15 @@ function etiquetaTipo(tipo) {
   return etiqueta(t(`fre_tipo_${tipo}`), tipo === "emergencia" ? "alerta" : "info");
 }
 
+/* Lo mas que pesa una peticion al servidor, con un margen para los
+   campos: 20 MB (main.py y el Caddyfile). */
+const TOPE_PETICION = 20 * 1024 * 1024 - 64 * 1024;
+
+/* Como se dice cada resultado de un requisito: la entrevista tecnica
+   (apto / no apto) y la prueba (negativo / positivo). */
+const RESULTADO = { apto: "fre_apto", no_apto: "fre_no_apto",
+                    negativo: "fre_res_negativo", positivo: "fre_res_positivo" };
+
 /* =============================================================== la lista */
 
 let filtroTipo = "";
@@ -86,10 +95,16 @@ let filtroEstado = "";
 let busqueda = "";
 
 const FILTROS = ["listo", "por_revisar", "faltan", "vencido", "por_vencer",
-                 "plazo"];
+                 "plazo", "de_baja"];
 
 function pasaFiltro(f) {
   const x = f.expediente;
+  /* El dado de baja solo sale con su filtro (seccion 129, hallazgo
+     r6-07): antes no se listaba en ninguno y «Reactivar» vivia en una
+     ficha a la que solo se llegaba tecleando el numero. */
+  if (filtroEstado === "de_baja") return !f.activo
+    && (!busqueda.trim() || coincide(busqueda, f.nombre, f.plaza, f.correo));
+  if (!f.activo) return false;
   if (filtroTipo && f.tipo !== filtroTipo) return false;
   if (filtroEstado === "por_revisar" && !x.esperan_revision) return false;
   if (filtroEstado === "por_vencer" && !x.por_vencer.length) return false;
@@ -140,11 +155,11 @@ export async function pestanaFreelance(zona, paises, paisId, alCambiarPais,
   const cargar = async () => {
     tabla.replaceChildren(h("p", { clase: "gris" }, t("per_cargando")));
     try {
-      filas = await api.get(`/freelance?pais_id=${selector.value}`);
+      filas = await api.get(`/freelance?pais_id=${selector.value}&incluir_bajas=true`);
     } catch (err) {
       return tabla.replaceChildren(aviso(err.message, "grave"));
     }
-    contar(filas.length);
+    contar(filas.filter(f => f.activo).length);
     dibujar();
   };
 
@@ -469,7 +484,8 @@ function datosYCostos(f, recargar) {
   /* La baja: deja de ofrecerse y se le cierra el acceso; el expediente
      se queda (decision 7). */
   if (puede.editar) {
-    const motivo = h("input", { name: "motivo_baja", placeholder: t("fre_baja_motivo") });
+    const motivo = h("input", { name: "motivo_baja", placeholder: t("fre_baja_motivo"),
+                                "data-crudo": "" });
     bloques.push(h("div", { clase: "tarjeta lisa" },
       h("h3", {}, t("fre_baja_titulo")),
       f.activo
@@ -589,7 +605,9 @@ function queSeSubio(q, e) {
       .replace("{c}", e.ve_cuenta && x.clabe ? x.clabe : x.clabe_recortada));
   }
   if (x.riesgo) partes.push(t("fre_riesgo_n").replace("{n}", x.riesgo));
-  if (x.resultado) partes.push(t(`fre_res_${x.resultado}`));
+  /* Con su texto (seccion 129, hallazgo r6-09): la entrevista decia
+     «fre_res_apto» porque esa clave no existia. */
+  if (x.resultado) partes.push(t(RESULTADO[x.resultado] || `fre_res_${x.resultado}`));
   if (x.quien) partes.push(`${fechaCorta(x.fecha)} · ${x.quien}`);
   if (x.aplico) partes.push(`${t("fre_aplico")} ${x.aplico}`);
   if (x.contactos) partes.push(t("fre_n_contactos").replace("{n}", x.contactos.length));
@@ -663,7 +681,8 @@ function renglonRequisito(q, numero, e, f, recargar) {
 
 function abrirRechazo(fila, d, recargar) {
   const caja = fila.querySelector(".fre-forma");
-  const motivo = h("input", { name: "motivo_rechazo", placeholder: t("fre_motivo_rechazo") });
+  const motivo = h("input", { name: "motivo_rechazo", placeholder: t("fre_motivo_rechazo"),
+                              "data-crudo": "" });
   caja.replaceChildren(
     campo(t("fre_por_que_rechazo"), motivo, { obligatorio: true }),
     h("div", { clase: "acciones" },
@@ -716,7 +735,7 @@ function abrirCarga(fila, q, e, f, recargar) {
     datos.quien = h("input", { name: "quien" });
     datos.resultado = lista("resultado", [
       { valor: "apto", texto: t("fre_apto") }, { valor: "no_apto", texto: t("fre_no_apto") }]);
-    datos.notas = h("input", { name: "notas" });
+    datos.notas = h("input", { name: "notas", "data-crudo": "" });
     campos.push(campo(t("fre_fecha_entrevista"), datos.fecha, { obligatorio: true }),
                 campo(t("fre_quien_entrevisto"), datos.quien, { obligatorio: true }),
                 campo(t("fre_resultado"), datos.resultado, { obligatorio: true }),
@@ -740,7 +759,8 @@ function abrirCarga(fila, q, e, f, recargar) {
       { valor: "negativo", texto: t("fre_res_negativo") },
       { valor: "positivo", texto: t("fre_res_positivo") }]);
     datos.aplico = h("input", { name: "aplico" });
-    datos.servicio = h("input", { name: "servicio", placeholder: "EP/E-031" });
+    datos.servicio = h("input", { name: "servicio", placeholder: "EP/E-031",
+                                  "data-mayusculas": "" });
     campos.push(campo(t("fre_resultado"), datos.resultado, { obligatorio: true }),
                 campo(t("fre_quien_aplico"), datos.aplico, { obligatorio: true }),
                 campo(t("fre_servicio"), datos.servicio));
@@ -774,6 +794,15 @@ function abrirCarga(fila, q, e, f, recargar) {
       for (const a of archivos.files || []) {
         listos.push(a.type.startsWith("image/") && a.size > 1500000
           ? await reducirImagen(a, 2200, 0.85) : a);
+      }
+      /* El servidor no acepta mas de 20 MB por peticion (seccion 129,
+         hallazgo r7-06): seis archivos que caben uno por uno pueden no
+         caber juntos, y mejor decirlo antes de mandarlos. */
+      const peso = listos.reduce((a, x) => a + (x.size || 0), 0);
+      if (peso > TOPE_PETICION) {
+        guardar.disabled = false;
+        return mensaje(t("fre_pasan_de_20mb").replace("{m}", (peso / 1048576).toFixed(1)),
+                       "alerta");
       }
       envio.archivos = listos;
       const r = await api.formulario(
@@ -890,7 +919,11 @@ export function avisoFreelance(p, recargar) {
 }
 
 function pedirUrgencia(ancla, p, servicioId, recargar) {
-  const motivo = h("input", { name: "motivo_urgencia", placeholder: t("fre_motivo_urgencia") });
+  /* Lo que se escribe como motivo o nota va crudo (seccion 129, hallazgo
+     r6-08): no es un nombre, y «El Conductor de Planta Se Enfermó» llegaba
+     asi a la bandeja, al correo y a la bitacora. */
+  const motivo = h("input", { name: "motivo_urgencia", placeholder: t("fre_motivo_urgencia"),
+                              "data-crudo": "" });
   const caja = h("div", { clase: "fre-urgencia" },
     motivo,
     h("button", { type: "button", clase: "chico", onclick: async (ev) => {

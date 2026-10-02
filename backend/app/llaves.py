@@ -296,8 +296,16 @@ def entrar(db: Session, credencial: dict, estado: str) -> m.Usuario:
             require_user_verification=True)
     except Exception as error:                            # noqa: BLE001
         registro.info("entrada con llave rechazada: %s", error)
-        raise HTTPException(401, "No se pudo comprobar la huella: vuelve a "
-                                 "intentar o entra con tu contraseña.")
+        # El telefono que restauro un respaldo trae el contador atras y
+        # su huella queda rechazada para siempre (seccion 129, hallazgo
+        # r7-04): se dice la salida.
+        raise HTTPException(401, {
+            "mensaje": "No se pudo comprobar la huella: vuelve a intentar o "
+                       "entra con tu contraseña.",
+            "que_hacer": "Si sigue fallando --pasa cuando el teléfono "
+                         "restauró un respaldo--, entra con tu contraseña, "
+                         "quita la huella de este equipo y actívala otra vez.",
+            "codigo": "huella_rechazada"})
     usuario = llave.usuario
     if not usuario or not usuario.activo:
         raise HTTPException(403, "Ese acceso esta desactivado")

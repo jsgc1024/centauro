@@ -22,7 +22,7 @@ El implantado entra por día trabajado, cada semana, sin esperar el cierre del m
 
 ### Cómo se arregla
 - **Sin visto bueno:** el consultor lo da, y entra al corte que siga.
-- **Sin tarifa:** finanzas o dirección de operaciones la cargan en Nóminas → Tabulador —la del freelance, en Catálogos → Tarifas de freelance— y arman el corte ahí mismo, con «Armar el corte».
+- **Sin tarifa:** finanzas o dirección de operaciones la cargan en Nóminas → Tabulador —la del freelance, en su ficha: Personal de seguridad → Freelance, «Costos»— y arman el corte ahí mismo, con «Armar el corte».
 - **Lo que ya se pagó no se toca:** lo que cambie va como ajuste, con su motivo, al siguiente corte.
 
 > **La causa de fondo:** la nómina paga lo que ya va camino a facturación, con el monto que dice el tabulador. Lo que no llegó a esa puerta, o no tiene monto, todavía no se paga, y nunca se inventa.

@@ -338,13 +338,17 @@ def del_cliente(cliente_id: int, db: Session = Depends(get_db),
             **_catalogo(db)}
 
 
-def _cambio_del_pais(db: Session, pais_id: int | None) -> dict:
+def _cambio_del_pais(db: Session, pais_id: int | None) -> dict | None:
     """El que esta puesto, para la lista que no es de la moneda del pais
     (seccion 82): de ahi salen sus precios en gris. El de su pais: el
     dolar a real para el de Brasil (seccion 123)."""
     local = tipo_cambio.local_del_pais(db, pais_id)
-    return (tipo_cambio.estado(db, m.Moneda.USD, local)
-            if local and (m.Moneda.USD, local) in tipo_cambio.PARES
+    if local and (m.Moneda.USD, local) not in tipo_cambio.PARES:
+        # El pais sin par --Venezuela-- no ensena el dolar a peso como si
+        # fuera suyo (seccion 129, hallazgo r5-07): la pantalla, sin tipo
+        # de cambio, no pinta la linea.
+        return None
+    return (tipo_cambio.estado(db, m.Moneda.USD, local) if local
             else tipo_cambio.estado(db))
 
 

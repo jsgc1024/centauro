@@ -167,8 +167,12 @@ def planear(empleados: list, personas: list, plazas: dict,
             candidata = por_correo.get(correo)
             if candidata is not None:
                 if candidata.get("odoo_id") and candidata["odoo_id"] != e["id"]:
+                    # El recontratado (seccion 129, hallazgo r4-07): la
+                    # salida esta en Odoo.
+                    from app.odoo_personal_reglas import RECONTRATADO
                     pendiente(e, candidata["id"],
-                              ["su correo ya es de otra persona en Centauro"])
+                              [RECONTRATADO if not candidata.get("activo")
+                               else "su correo ya es de otra persona en Centauro"])
                     continue
                 if candidata.get("de_campo"):
                     pendiente(e, candidata["id"],

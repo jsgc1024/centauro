@@ -187,11 +187,29 @@ ODOO_API_KEY=
 # «Gastos de Operación (Viáticos)», ODOO_PRODUCTO_GASTOS lo dice.
 ODOO_FACTURACION_API_KEY=
 
-# Pegasus, el GPS de las unidades. Vacio = no se lee nada.
+# Lo de Odoo por pais (secciones 77, 112, 121 y 123). Vienen con su valor
+# de siempre: solo se cambian si en Odoo se llaman distinto. Los campos
+# del CPF y la CNH se buscan por su nombre visible («CPF», «CNH»); aqui
+# va el nombre tecnico si hace falta.
+ODOO_ETIQUETA_CLIENTES=Protección ejecutiva
+ODOO_CAMPO_IMPLANTADOS=x_studio_lista_de_implantados
+ODOO_CATEGORIA_PRODUCTOS=Protección Ejecutiva
+ODOO_PREFIJO_LISTAS=PE ·
+ODOO_IDIOMA=es_MX
+ODOO_CATEGORIA_PRODUCTOS_BR=Proteção Executiva Brasil
+ODOO_PREFIJO_LISTAS_BR=Brasil ·
+ODOO_IDIOMA_BR=pt_BR
+ODOO_PRODUCTO_GASTOS=Gastos de Operación (Viáticos)
+ODOO_CAMPO_CPF=
+ODOO_CAMPO_CNH=
+
+# Pegasus, el GPS de las unidades. Vacio = no se lee nada. PEGASUS_GRUPOS
+# dice que grupo se lee en cada pais.
 PEGASUS_SITIO=https://www.centaurosatelital.mx
 PEGASUS_USUARIO=
 PEGASUS_CLAVE=
 PEGASUS_SECRETO_AVISO=
+PEGASUS_GRUPOS=MX=2025 P.E.;BR=CENTAURO BRASIL
 
 # A donde va la copia del respaldo (paso 8).
 RESPALDO_GCS_DESTINO=gs://centauro-respaldos-project-8fda7c0c-0799-4989-9c2/postgres

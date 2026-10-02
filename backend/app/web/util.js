@@ -633,9 +633,13 @@ export function reducirImagen(archivo, lado = LADO_MAXIMO, calidad = CALIDAD) {
         lienzo.height = Math.round(img.height * escala);
         lienzo.getContext("2d").drawImage(img, 0, 0, lienzo.width,
                                           lienzo.height);
+        /* Con su nombre de siempre, ya en .jpg (seccion 129, hallazgo
+           r6-14): las dos caras de la INE del expediente se guardaban
+           las dos como «comprobante.jpg». */
+        const nombre = ((archivo && archivo.name) || "comprobante")
+          .replace(/\.[^.]+$/, "") + ".jpg";
         lienzo.toBlob(
-          (b) => b ? listo(new File([b], "comprobante.jpg",
-                                    { type: "image/jpeg" }))
+          (b) => b ? listo(new File([b], nombre, { type: "image/jpeg" }))
                    : falla(new Error("No se pudo preparar la imagen")),
           "image/jpeg", calidad);
       };

@@ -301,7 +301,16 @@ def _servicios(dias: list) -> list[dict]:
     return salida
 
 
-def _historial(db: Session, persona_id: int) -> list[dict]:
+# Lo que el historial cuenta del expediente: solo para quien puede verlo
+# (seccion 129, hallazgo r6-13). La central y el consultor ven si esta
+# listo, no «documento rechazado · Antecedentes penales · trae un
+# registro de 2019».
+DEL_EXPEDIENTE = ("documento cargado", "documento validado",
+                  "documento rechazado")
+
+
+def _historial(db: Session, persona_id: int,
+               con_expediente: bool = True) -> list[dict]:
     filas = (db.query(m.RegistroAdmin)
              .filter_by(objeto="freelance", objeto_id=persona_id)
              .order_by(m.RegistroAdmin.id.desc()).limit(80).all())
@@ -309,7 +318,8 @@ def _historial(db: Session, persona_id: int) -> list[dict]:
              "detalle": r.detalle,
              "quien": r.persona.nombre if r.persona else None,
              "cuando": r.creado_en.isoformat() if r.creado_en else None}
-            for r in filas]
+            for r in filas
+            if con_expediente or r.accion not in DEL_EXPEDIENTE]
 
 
 @router.get("/{persona_id}", summary="La ficha de un freelance")
@@ -326,7 +336,7 @@ def ver(persona_id: int, db: Session = Depends(get_db),
         "servicios": _servicios(dias),
         "urgencias": [u for u in motor.urgencias(db, None)
                       if u["persona_id"] == persona.id],
-        "historial": _historial(db, persona.id),
+        "historial": _historial(db, persona.id, puede["expediente"]),
         "puede": puede,
         # Si ya se le puede dar su acceso: expediente listo o urgencia
         # autorizada de un servicio vivo (seccion 128).

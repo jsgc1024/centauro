@@ -1037,7 +1037,7 @@ def _como_va(db: Session, prep: dict, calc: dict, moneda) -> SimpleNamespace:
         plaza=db.get(m.Plaza, prep["plaza_id"]) if prep["plaza_id"] else None,
         inicio=prep["inicio"], dias_servicio=prep["dias_servicio"],
         viaticos_incluidos=prep["viaticos"] == INCLUIDOS, moneda=moneda,
-        lleva_unidad=calc["unidades"] > 0)
+        con_iva=prep["con_iva"], lleva_unidad=calc["unidades"] > 0)
 
 
 def _en_json(calc: dict) -> dict:
@@ -1634,7 +1634,7 @@ def detalle(db: Session, cot: m.Cotizacion, usuario: m.Usuario) -> dict:
         cliente=cot.cliente, prospecto=cot.prospecto, plaza=cot.plaza,
         inicio=cot.inicio, dias_servicio=cot.dias_servicio,
         viaticos_incluidos=cot.viaticos_incluidos, moneda=cot.moneda,
-        lleva_unidad=calc["unidades"] > 0)
+        con_iva=cot.con_iva, lleva_unidad=calc["unidades"] > 0)
     vigente = especial_vigente(cot, calc)
     return {
         **renglon_de_lista(cot),
@@ -1803,7 +1803,11 @@ def faltan_textos(db: Session, pais_id: int | None, idioma: str,
         faltan.append("razon_social")
     if datos is None or not datos.rfc:
         faltan.append("rfc")
-    if datos is None or datos.tasa_iva is None:
+    # La tasa solo si la propuesta va con IVA (seccion 129, hallazgo
+    # r2-07): la de Amazon Brasil, sin IVA, avisaba que faltaba una tasa
+    # que su PDF no usa.
+    if (getattr(cot, "con_iva", True) is not False
+            and (datos is None or datos.tasa_iva is None)):
         faltan.append("tasa_iva")
     return faltan
 

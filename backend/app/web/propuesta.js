@@ -50,6 +50,38 @@ const FALTA_TEXTO = {
 };
 
 const numero = (v) => (v === null || v === undefined || v === "" ? null : Number(v));
+
+/* Lo que el consultor escribe como precio, en el formato de la moneda de
+   la propuesta (seccion 129, hallazgo r2-05): en reales el punto es de
+   miles y la coma es decimal --«17.500,00»--; en pesos y dolares, al
+   reves. Con los dos separadores, el ultimo es el decimal, venga la
+   moneda que venga. Antes «17.500,00» se leia como «17.500.00», no era
+   numero y se mandaba vacio: la fila quedaba «de la lista» sin que el
+   consultor lo notara. */
+export function montoEscrito(texto, moneda) {
+  const s = String(texto ?? "").trim().replace(/[^\d.,-]/g, "");
+  if (!s) return null;
+  const coma = s.lastIndexOf(","), punto = s.lastIndexOf(".");
+  let limpio;
+  if (coma >= 0 && punto >= 0) {
+    limpio = coma > punto ? s.replace(/\./g, "").replace(",", ".")
+                          : s.replace(/,/g, "");
+  } else if (moneda === "BRL") {
+    limpio = coma >= 0 ? s.replace(",", ".") : s.replace(/\./g, "");
+  } else {
+    limpio = s.replace(/,/g, "");
+  }
+  const n = Number(limpio);
+  return Number.isFinite(n) ? n : null;
+}
+
+/* El precio sugerido, sin separador de miles y con el decimal de la
+   moneda, para que se pueda copiar tal cual en el campo. */
+function sinMiles(valor, moneda) {
+  return new Intl.NumberFormat(moneda === "BRL" ? "pt-BR" : "en-US", {
+    useGrouping: false, minimumFractionDigits: 0, maximumFractionDigits: 2,
+  }).format(Number(valor));
+}
 /* Un rotulo que va a media frase: «Más viáticos» → «más viáticos». */
 const aMedia = (texto) => texto.charAt(0).toLocaleLowerCase() + texto.slice(1);
 
@@ -394,8 +426,8 @@ async function armar(main, cat, d) {
       if (!c) return;
       const k = enviados.indexOf(i);
       const x = ultimo && k >= 0 ? ultimo.posiciones[k] : null;
-      c.mes.placeholder = x && x.lista_precio_mes !== null ? dinero(x.lista_precio_mes, moneda)
-        .replace(/[^\d.,]/g, "") : t("pro_escribe_precio");
+      c.mes.placeholder = x && x.lista_precio_mes !== null
+        ? sinMiles(x.lista_precio_mes, moneda) : t("pro_escribe_precio");
       c.dia.replaceChildren(x && x.precio_dia !== null ? dinero(x.precio_dia, moneda) : "—");
       /* El mensual que la lista trae por mes, tal cual (seccion 123). */
       c.marca.replaceChildren(!x ? "" : x.especial ? etiqueta(t("pro_especial"), "alerta")
@@ -616,6 +648,7 @@ async function armar(main, cat, d) {
   function cuerpo() {
     const nueva = e.cliente_id === NUEVA;
     const otra = nueva || e.solicitante_id === OTRA;
+    const moneda = ultimo ? ultimo.moneda : (info ? info.moneda : "MXN");
     enviados = [];
     const posiciones = [];
     e.posiciones.forEach((p, i) => {
@@ -623,7 +656,7 @@ async function armar(main, cat, d) {
       if (!elegido || !(Number(p.cantidad) > 0)) return;
       enviados.push(i);
       posiciones.push({ ...elegido, cantidad: Number(p.cantidad),
-                        precio_mes: numero(String(p.precio_mes).replace(/,/g, "")),
+                        precio_mes: montoEscrito(p.precio_mes, moneda),
                         descripcion: p.descripcion.trim() || null });
     });
     return {
@@ -648,7 +681,7 @@ async function armar(main, cat, d) {
       horas_jornada: numero(e.horas_jornada),
       hora_presentacion: e.hora_presentacion || null,
       alcance: e.alcance.trim() || null,
-      precio_hora_extra: numero(String(e.precio_hora_extra).replace(/,/g, "")),
+      precio_hora_extra: montoEscrito(e.precio_hora_extra, moneda),
       especial_motivo: e.especial_motivo.trim() || null,
       motivo: e.version > 1 ? (e.motivo || null) : null,
       posiciones,

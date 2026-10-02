@@ -226,8 +226,21 @@ async def autorizar(cotizacion_id: int,
     servicio = motor.autorizar(db, usuario, cot, autorizada_por,
                                autorizada_el, cliente_id, adjunto)
     db.commit()
+    return _nacido(servicio)
+
+
+def _nacido(servicio: m.Servicio) -> dict:
+    """La respuesta del servicio que nace de la cotizacion. Si nacio sin
+    consultor titular --quien firmo perdio su acceso entre mandar y
+    autorizar (seccion 129, hallazgo r1-duda5)-- se dice aqui, para que
+    la pantalla lo diga y alguien lo asigne, en vez de descubrirlo cuando
+    falte en la cartera."""
     return {"servicio_id": servicio.id, "folio": servicio.folio,
-            "estatus": servicio.estatus.value}
+            "estatus": servicio.estatus.value,
+            "sin_consultor": servicio.consultor_id is None,
+            "aviso": (None if servicio.consultor_id else
+                      "Nació sin consultor titular: quien firmó la cotización "
+                      "ya no lleva servicios. Asígnale uno desde su ficha.")}
 
 
 # ------------------------------------------------------- su servicio se elimino
@@ -240,8 +253,7 @@ def recrear_servicio(cotizacion_id: int, db: Session = Depends(get_db),
     con lo mismo y la misma autorizacion, con folio nuevo."""
     servicio = motor.recrear_servicio(db, usuario, _de(db, cotizacion_id))
     db.commit()
-    return {"servicio_id": servicio.id, "folio": servicio.folio,
-            "estatus": servicio.estatus.value}
+    return _nacido(servicio)
 
 
 @router.post("/eventual/{cotizacion_id}/eliminar",

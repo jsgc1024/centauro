@@ -577,18 +577,32 @@ def avanzar_cierres():
     from app.db import SessionLocal
     from app import cierre, cierre_mes, entregas
 
-    db = SessionLocal()
-    try:
-        meses = cierre_mes.abrir_los_que_terminaron(db)
-        movidos = cierre.avanzar_cierres(db)
-        return {"meses_abiertos": meses, "movidos": movidos,
-                "avisos": cierre.avisar_plazos(db),
-                # La unidad que se vencio sin entregar (seccion 107):
-                # a la persona, al consultor y a direccion de operaciones,
-                # una vez. Va en la misma vuelta de cinco minutos.
-                "entregas_vencidas": entregas.avisar_vencidas(db)}
-    finally:
-        db.close()
+    # Cada paso en su propio intento (seccion 129, hallazgos r8-07 y
+    # r9-05): si un cierre con datos raros revienta el tercero, el
+    # cuarto --la unidad que lleva 24 horas sin entregarse-- corre igual,
+    # y lo que fallo queda anotado con su paso.
+    pasos = (("meses_abiertos", cierre_mes.abrir_los_que_terminaron),
+             ("movidos", cierre.avanzar_cierres),
+             ("avisos", cierre.avisar_plazos),
+             # La unidad que se vencio sin entregar (seccion 107): a la
+             # persona, al consultor y a direccion de operaciones, una
+             # vez. Va en la misma vuelta de cinco minutos.
+             ("entregas_vencidas", entregas.avisar_vencidas))
+    salida, fallas = {}, {}
+    for nombre, paso in pasos:
+        db = SessionLocal()
+        try:
+            salida[nombre] = paso(db)
+        except Exception as error:                        # noqa: BLE001
+            db.rollback()
+            logging.getLogger("centauro.cierre").exception(
+                "la vuelta del cierre fallo en %s", nombre)
+            fallas[nombre] = str(error)[:200]
+        finally:
+            db.close()
+    if fallas:
+        salida["fallas"] = fallas
+    return salida
 
 
 @celery.task(name="odoo.sincronizar_personal")

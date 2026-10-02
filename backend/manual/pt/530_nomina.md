@@ -22,7 +22,7 @@ O implantado entra por dia trabalhado, toda semana, sem esperar o fechamento do 
 
 ### Como se resolve
 - **Sem aval:** o consultor o dá, e entra no fechamento seguinte.
-- **Sem tarifa:** o financeiro ou a direção de operações a cadastram em Folha → Tabela de pagamentos —a do freelance, em Catálogos → Tarifas de freelance— e montam o fechamento ali mesmo, com «Montar o fechamento».
+- **Sem tarifa:** o financeiro ou a direção de operações a cadastram em Folha → Tabela de pagamentos —a do freelancer, na ficha dele: Pessoal de segurança → Freelance, «Custos»— e montam o fechamento ali mesmo, com «Montar o fechamento».
 - **O que já foi pago não se mexe:** o que mudar vai como ajuste, com o seu motivo, ao fechamento seguinte.
 
 > **A causa raiz:** a folha paga o que já está a caminho do faturamento, com o valor que a tabela diz. O que não chegou a essa porta, ou não tem valor, ainda não se paga, e nunca se inventa.

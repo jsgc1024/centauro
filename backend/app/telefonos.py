@@ -21,10 +21,25 @@ def con_lada(telefono: str | None, lada: str | None) -> str | None:
         return "+" + t[2:].lstrip()
     if not lada:
         return t
+    digitos = _solo_digitos(t)
     # Numeros cortos de emergencia (911, 190) se quedan como estan.
-    if len(_solo_digitos(t)) <= 5:
+    if len(digitos) <= 5:
         return t
+    # El que ya trae la lada escrita sin el «+» --«55 11 98765 4321» en
+    # Brasil, «52 55 1234 5678» en Mexico-- solo necesita el «+» (seccion
+    # 129, hallazgo r4-06): antes salia «+55 55 11 …», un numero que no
+    # existe, y el boton de llamar marcaba a nadie. Se reconoce porque
+    # despues de la lada quedan los digitos de un numero nacional.
+    lada_digitos = _solo_digitos(lada)
+    if (lada_digitos and digitos.startswith(lada_digitos)
+            and len(digitos) - len(lada_digitos) in LARGOS_NACIONALES):
+        return f"+{t}"
     return f"{lada} {t.lstrip('0').lstrip()}"
+
+
+# Cuantos digitos tiene un numero nacional: diez en Mexico, Venezuela y
+# los fijos de Brasil; once los celulares de Brasil.
+LARGOS_NACIONALES = (10, 11)
 
 
 def _solo_digitos(t: str) -> str:

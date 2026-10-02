@@ -15,10 +15,11 @@
    Un deposito sale como un solo renglon por persona aunque sean cinco
    dias: confirmar cinco veces al mismo agente es como se paga dos veces
    la misma cosa. */
-import { api } from "./api.js";
+import { api, sesion } from "./api.js";
 import { aviso, campo, conAyuda, dinero, entrada, estatus, etiqueta, fecha,
          h, mensaje, reducirImagen } from "./util.js";
 import { t } from "./idioma.js";
+import { tiene } from "./menu.js";
 
 const TIPOS = { vuelo: t("fin_tipo_vuelo"), hospedaje: t("fin_tipo_hospedaje"),
                 transporte: t("fin_tipo_transporte"), otro: t("fin_tipo_otro") };
@@ -53,6 +54,14 @@ export async function bandejaFinanzas(main) {
     h("h1", {}, t("fin_titulo")),
     h("p", { clase: "sub" },
       t("fin_sub")));
+  /* Quien ve Gastos sin depositar --el gerente de administracion,
+     direccion de operaciones-- lo ve en modo consulta (seccion 129,
+     hallazgo r8-06): completo y sin «Depositar», «Confirmar» ni
+     «Cancelar», que le contestaban que su puesto no puede. */
+  if (!tiene(sesion.usuario, "viaticos.transferir")) {
+    main.classList.add("solo-consulta");
+    main.append(aviso(t("fin_consulta"), "alerta"));
+  }
 
   const encabezado = h("div");
   const pestanas = h("div", { clase: "acciones", style: "margin:0 0 16px" });
@@ -62,7 +71,7 @@ export async function bandejaFinanzas(main) {
   function pintarPestanas() {
     pestanas.replaceChildren(...VISTAS.map(v => h("button", {
       type: "button",
-      clase: v.clave === vistaActual ? "chico" : "claro chico",
+      clase: (v.clave === vistaActual ? "chico" : "claro chico") + " pestana",
       onclick: () => { vistaActual = v.clave; pintarPestanas(); pintar(zona); },
     }, v.texto)));
   }
@@ -198,7 +207,7 @@ function bloqueDepositos(filas, moneda, repintar) {
 function renglonDeposito(f, moneda, repintar) {
   const zona = h("div", { hidden: true, style: "margin-top:10px" });
   const flecha = h("span", { clase: "gris" }, "\u25B8");
-  const abrir = h("button", { clase: "claro chico", type: "button",
+  const abrir = h("button", { clase: "claro chico consulta-si", type: "button",
     onclick: () => {
       zona.hidden = !zona.hidden;
       flecha.textContent = zona.hidden ? "\u25B8" : "\u25BE";
@@ -336,7 +345,7 @@ function desglose(f, moneda) {
 /* La captura del banco se baja con la sesion puesta: una pestana nueva
    no lleva el token y contestaba "no autenticado" (seccion 98). */
 function botonComprobanteDeposito(depositoId) {
-  return h("button", { clase: "claro chico", type: "button",
+  return h("button", { clase: "claro chico consulta-si", type: "button",
     onclick: async (e) => {
       e.target.disabled = true;
       try {

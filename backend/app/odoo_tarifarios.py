@@ -224,12 +224,15 @@ def prefijos() -> list[str]:
 
 def _nombrados(db: Session, producto_id: int) -> bool:
     """Si algun tarifario todavia nombra ese producto de la tabla: por un
-    precio o por su hora extra (seccion 116)."""
+    precio o por su hora extra (seccion 116), tambien la del paquete
+    (seccion 129, hallazgo r5-06): la «Hora Extra Motorista + Minivan»
+    de Amazon Brasil solo la nombra su paquete, y archivada en Odoo se
+    borraba de la tabla con el tarifario todavia usandola."""
     return (any(db.query(modelo.id).filter_by(producto_odoo_id=producto_id).first()
                 for modelo in (m.TarifaRecurso, m.TarifaVehiculo, m.TarifaPaquete))
             or any(db.query(modelo.id)
                    .filter_by(producto_hora_extra_id=producto_id).first()
-                   for modelo in (m.TarifaRecurso, m.Tarifario)))
+                   for modelo in (m.TarifaRecurso, m.TarifaPaquete, m.Tarifario)))
 
 
 def es_el_de_gastos(producto: dict | str | None) -> bool:
@@ -867,6 +870,13 @@ def _filas_de(precios: dict, pais_id: int, modalidades: dict) -> tuple:
         else:
             paquete.append({**fila, "perfil_id": perfil,
                             "categoria_id": categoria, **con_extra})
+    # Los paquetes en un orden que no dependa de como Odoo entregue sus
+    # reglas (seccion 129, hallazgo r5-08): se guardan en este orden y el
+    # cierre toma «el primero» cuando un rol cabe en dos el mismo dia;
+    # con el orden de Odoo, un conductor podia cerrarse con el otro
+    # paquete de una lectura a la siguiente.
+    paquete.sort(key=lambda f: (f["producto_odoo_id"] or 0, f["perfil_id"] or 0,
+                                f["categoria_id"] or 0, f["modalidad_id"]))
     return recurso, vehiculo, paquete, extra_general, sorted(faltan)
 
 
@@ -910,14 +920,26 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
     except SinCategoria as error:
         # Sin la categoria no se sabe que es de Proteccion Ejecutiva: no
         # se toca nada. Leer todo seria volver a traer el GPS (seccion 112).
-        return {"ensayo": ensayo, "sin_categoria": str(error), "leidas": 0,
-                "fuera": 0, "prefijo": settings.odoo_prefijo_listas,
-                "categoria": settings.odoo_categoria_productos,
-                "prefijos": prefijos(), "lecturas": [], "por_pais": [],
-                "generales": [], "por_cliente": [], "sin_cliente": [],
-                "precios": 0, "clientes": 0, "clientes_con_general": 0,
-                "cambian": [], "implantados": 0, "campo_implantados": None,
-                "pendientes": []}
+        informe = {"ensayo": ensayo, "sin_categoria": str(error), "leidas": 0,
+                   "fuera": 0, "prefijo": settings.odoo_prefijo_listas,
+                   "categoria": settings.odoo_categoria_productos,
+                   "prefijos": prefijos(), "lecturas": [], "por_pais": [],
+                   "generales": [], "por_cliente": [], "sin_cliente": [],
+                   "precios": 0, "clientes": 0, "clientes_con_general": 0,
+                   "cambian": [], "implantados": 0, "campo_implantados": None,
+                   "pendientes": [{"tipo": "sin_categoria_pais", "pais": None,
+                                   "categoria": str(error), "lista": None}]}
+        if not ensayo:
+            # La vuelta queda anotada con su pendiente (seccion 129,
+            # hallazgo r5-09): antes callaba sin dejar renglon en el
+            # historial y nadie veia que la categoria desaparecio.
+            db.add(m.SincronizacionOdoo(
+                tipo=TIPO, automatica=automatica,
+                hecha_por_id=quien.persona_id if quien else None,
+                leidos=0, altas=0, cambios=0, bajas=0, pendientes=1,
+                detalle=json.dumps(informe, ensure_ascii=False, default=str)))
+            db.commit()
+        return informe
     if not ensayo:
         # Los productos nuevos llegan con su sugerencia antes del plan:
         # asi finanzas los ve en la tabla aunque todavia no pongan precio.

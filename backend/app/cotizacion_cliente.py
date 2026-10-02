@@ -560,13 +560,19 @@ def _lineas(equipos: list[dict], gastos: str, monto) -> tuple[dict, list[dict]]:
                     "tipo": i["tipo"], "cantidad": i["cantidad"],
                     **({"perfil_id": i["id"]} if i["tipo"] == "recurso"
                        else {"categoria_id": i["id"]})})
-    if gastos == motor.GASTOS_FIJOS and monto and lineas:
+    # Con monto fijo el renglon de gastos va siempre, aunque el monto
+    # todavia no este escrito (seccion 129, hallazgo r1-05): en cero, el
+    # borrador guarda que son gastos fijos --antes volvia a «dentro del
+    # precio» al reabrirlo-- y `que_le_falta` reclama el monto antes de
+    # mandarla.
+    if gastos == motor.GASTOS_FIJOS and lineas:
         primero = next((e for e in equipos if e["dias"]), None)
         if primero is not None:
             lineas.append({"fecha": primero["dias"][0]["fecha"],
                            "equipo_clave": primero["clave"],
                            "tipo": m.TipoLinea.VIATICOS.value, "cantidad": 1,
-                           "precio_unitario": monto, "descripcion": "Gastos"})
+                           "precio_unitario": monto or Decimal("0.00"),
+                           "descripcion": "Gastos"})
     return modalidad_por_dia, lineas
 
 
@@ -638,7 +644,8 @@ def precios(db: Session, datos: dict) -> dict:
             cotizacion_pdf.intro_automatica(como_va, prep["idioma"], False)
             if como_va.dias and not sin_nombre else None),
         "firma": tiene_firma(db, prep["consultor_id"]),
-        "faltan_textos": faltan_textos(db, prep["pais_id"], prep["idioma"]),
+        "faltan_textos": faltan_textos(db, prep["pais_id"], prep["idioma"],
+                                       prep["con_iva"]),
         "tarifario": _tarifario(prep["tarifario"]),
         "moneda": prep["tarifario"].moneda.value,
         "lineas": [_renglon_de_salida(r) for r in renglones],
@@ -868,6 +875,9 @@ def que_le_falta(db: Session, cot: m.Cotizacion) -> list[str]:
             faltan.append("Lo que lleva cada día")
     if cot.version > 1 and not cot.motivo_recotizacion:
         faltan.append("Qué cambió en esta versión")
+    if (motor.modo_de_gastos(cot) == motor.GASTOS_FIJOS
+            and not gastos_fijos(cot) > 0):
+        faltan.append("El monto fijo de gastos")
     return faltan
 
 
@@ -1403,6 +1413,9 @@ def detalle(db: Session, cot: m.Cotizacion, puede_armar: bool) -> dict:
             "id": v.id, "version": v.version, "estatus": v.estatus.value,
             "motivo": v.motivo_recotizacion,
             "total": float(totales(v)["total"]),
+            # Cada version con su moneda (seccion 129, hallazgo r1-07):
+            # la V1 en dolares se pintaba en pesos desde la V2.
+            "moneda": v.moneda.value if v.moneda else None,
             "enviada_en": v.enviada_en.isoformat() if v.enviada_en else None,
             "pdf": archivo(v, "pdf") is not None}
             for v in versiones(db, cot.folio, cot.clase)],
@@ -1468,8 +1481,10 @@ def textos_de(db: Session, pais_id: int) -> dict:
     }
 
 
-def faltan_textos(db: Session, pais_id: int | None, idioma: str) -> list[str]:
-    """Lo que el PDF de ese pais en ese idioma no va a poder decir."""
+def faltan_textos(db: Session, pais_id: int | None, idioma: str,
+                  con_iva: bool = True) -> list[str]:
+    """Lo que el PDF de ese pais en ese idioma no va a poder decir. La
+    tasa de IVA solo si la cotizacion va con IVA (seccion 129)."""
     if not pais_id:
         return []
     d = textos_de(db, pais_id)
@@ -1478,7 +1493,7 @@ def faltan_textos(db: Session, pais_id: int | None, idioma: str) -> list[str]:
         faltan.append("razon_social")
     if not d["rfc"]:
         faltan.append("rfc")
-    if d["tasa_iva"] is None:
+    if con_iva is not False and d["tasa_iva"] is None:
         faltan.append("tasa_iva")
     return faltan
 

@@ -938,7 +938,11 @@ async function armar(main, cat, d) {
       idioma: e.idioma || null,
       moneda: e.moneda || null,
       con_iva: e.con_iva,
-      gastos: e.gastos === "fijo" && !(Number(e.monto) > 0) ? "dentro" : (e.gastos || "comprobar"),
+      /* «Monto fijo» se manda tal cual aunque el monto no este escrito
+         (seccion 129, hallazgo r1-05): la vista previa cotiza sin el
+         paquete, el borrador conserva el modo, y lo que falta es el
+         monto, que `faltante` dice y el servidor reclama al mandar. */
+      gastos: e.gastos || "comprobar",
       monto_gastos: e.gastos === "fijo" && Number(e.monto) > 0 ? Number(e.monto) : null,
       motivo: e.version > 1 ? (e.motivo || null) : null,
       equipos: e.equipos.map(q => ({
@@ -1186,6 +1190,7 @@ function pintarTarjeta(tarjeta, cat, d) {
     try {
       const r = await api.post(`/cotizaciones/eventual/${d.id}/servicio`);
       mensaje(reemplazar(t("ctz_servicio_creado"), { f: r.folio }), "ok");
+      if (r.sin_consultor) mensaje(t("ctz_nacio_sin_consultor"), "alerta");
       irA(`#/servicio/${r.servicio_id}`);
     } catch (err) { mensaje(err.message, "grave"); ev.target.disabled = false; }
   };
@@ -1254,7 +1259,9 @@ function tablaDeVersiones(d) {
           : h("a", { href: `#/cotizacion/${v.id}`, clase: "enlace" }, `V${v.version}`)),
         h("td", {}, estatusDe(v.estatus)),
         h("td", {}, v.motivo || (v.version === 1 ? t("ctz_primera") : "—")),
-        h("td", { clase: "der num" }, dinero(v.total, d.moneda)),
+        /* Con la moneda de esa version (seccion 129): la V1 en dolares
+           no se pinta en pesos desde la V2. */
+        h("td", { clase: "der num" }, dinero(v.total, v.moneda || d.moneda)),
         h("td", {}, v.pdf ? h("button", { clase: "enlace chico", type: "button",
           onclick: async () => {
             try { await bajar(`/cotizaciones/eventual/${v.id}/pdf?bajar=true`); }
@@ -1324,6 +1331,10 @@ async function formularioAutorizar(tarjeta, cat, d) {
         cliente_id: prospecto ? selCliente.value : null,
         comprobante: archivo.files[0] || null });
       mensaje(reemplazar(t("ctz_servicio_creado"), { f: r.folio }), "ok");
+      /* Quien firmo perdio su acceso entre mandar y autorizar (seccion
+         129): el servicio nace sin titular y se dice aqui, no cuando
+         falte en la cartera. */
+      if (r.sin_consultor) mensaje(t("ctz_nacio_sin_consultor"), "alerta");
       location.hash = `#/servicio/${r.servicio_id}`;
     } catch (err) {
       mensaje(err.message, "grave");

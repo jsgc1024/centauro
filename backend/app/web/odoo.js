@@ -50,6 +50,7 @@ const FALTAS = {
   "correo repetido en Odoo": "odo_f_correo_repetido",
   "su correo ya es de otro acceso en Centauro": "odo_f_correo_otro_acceso",
   "su correo ya es de otra persona en Centauro": "odo_f_correo_otra",
+  "su correo es de alguien dado de baja que ya venia de Odoo: en Odoo, desarchiva al empleado anterior en vez de crear uno nuevo": "odo_f_recontratado",
   "su correo nuevo ya es de otra persona en Centauro": "odo_f_correo_nuevo_otra",
   "activo en Odoo pero dado de baja en Centauro: reactivar a mano":
     "odo_f_reactivar_persona",

@@ -1071,7 +1071,9 @@ def test_sin_la_categoria_no_se_toca_nada(db, clientes, cliente, sesion, monkeyp
     con_filtros(monkeypatch, categoria="Seguridad privada")
     informe = leer(db, odoo)
     assert informe["sin_categoria"] == "Seguridad privada"
-    assert informe["pendientes"] == [] and informe["leidas"] == 0
+    # La vuelta lo dice como pendiente (seccion 129, hallazgo r5-09).
+    assert [p["tipo"] for p in informe["pendientes"]] == ["sin_categoria_pais"]
+    assert informe["leidas"] == 0
     assert db.query(m.Tarifario).filter(m.Tarifario.odoo_id.isnot(None)).count() == 0
     assert db.query(m.ProductoOdoo).count() == 0
     with pytest.raises(odoo_tarifarios.SinCategoria):

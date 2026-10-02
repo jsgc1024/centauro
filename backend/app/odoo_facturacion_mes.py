@@ -348,8 +348,11 @@ def prefactura_del_mes(db: Session, cierre: m.Cierre) -> dict:
     salida["moneda"] = comparativo["moneda"]
 
     propuesta = motor_propuesta.autorizada_de(db, servicio.id)
-    idioma = (propuesta.idioma if propuesta is not None
-              and propuesta.idioma in TEXTOS else "es")
+    # El de la propuesta; sin ella, el del pais del servicio (seccion
+    # 129, hallazgo r3-09): el mes de Brasil sin propuesta salia en
+    # espanol.
+    idioma = of.idioma_de_la_factura(
+        db, servicio, propuesta.idioma if propuesta is not None else None)
     T, Te = TEXTOS[idioma], of.TEXTOS[idioma]
     mes = f"{MESES[idioma][contrato.mes - 1]} {contrato.anio}"
     productos = Productos(db, contrato, faltan)

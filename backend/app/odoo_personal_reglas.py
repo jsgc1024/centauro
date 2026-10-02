@@ -290,6 +290,13 @@ CAMPO_CNH = "driving_license_name"
 NOMBRES_DE_CAMPO = {CAMPO_CNH: "Licencia para conducir"}
 
 
+# El que se fue y vuelve: en Centauro sigue ligado a su empleado anterior
+# de Odoo, dado de baja (seccion 129, hallazgo r4-07).
+RECONTRATADO = ("su correo es de alguien dado de baja que ya venia de Odoo: "
+                "en Odoo, desarchiva al empleado anterior en vez de crear "
+                "uno nuevo")
+
+
 def campos_por_capturar(campos: dict, cpf: str = "", cnh: str = "") -> dict:
     """En que campo de hr.employee viven el CPF y la CNH, o None si este
     Odoo no tiene ninguno (seccion 121): el tecnico que diga la
@@ -492,8 +499,13 @@ def planear(empleados: list, personas: list, plazas: dict,
                               if c in por_correo), None)
             if candidata is not None:
                 if candidata.get("odoo_id") and candidata["odoo_id"] != e["id"]:
+                    # Quien se fue y vuelve con un empleado nuevo en Odoo
+                    # y el mismo correo (seccion 129, hallazgo r4-07):
+                    # su persona de Centauro sigue ligada al empleado
+                    # anterior, y la salida esta en Odoo, no aqui.
                     pendiente(e, candidata["id"],
-                              ["su correo ya es de otra persona en Centauro"])
+                              [RECONTRATADO if not candidata.get("activo")
+                               else "su correo ya es de otra persona en Centauro"])
                     continue
                 if candidata.get("es_freelance"):
                     # El freelance que RH contrata de planta y captura en

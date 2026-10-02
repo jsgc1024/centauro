@@ -803,11 +803,13 @@ def con_gastos(servicio: m.Servicio, lineas: list[dict], modo: str,
 
 
 def modo_de_gastos(cotizacion: m.Cotizacion) -> str:
+    """Con un renglon de gastos, monto fijo aunque el monto siga en cero
+    (seccion 129, hallazgo r1-05): el borrador de Cotizaciones lo guarda
+    asi mientras el consultor no lo escribe, y mandarla lo reclama."""
     if not cotizacion.viaticos_incluidos:
         return GASTOS_COMPROBAR
-    fijos = sum((Decimal(str(l.subtotal)) for l in cotizacion.lineas
-                 if l.tipo == m.TipoLinea.VIATICOS), Decimal("0"))
-    return GASTOS_FIJOS if fijos > 0 else GASTOS_DENTRO
+    con_gastos = any(l.tipo == m.TipoLinea.VIATICOS for l in cotizacion.lineas)
+    return GASTOS_FIJOS if con_gastos else GASTOS_DENTRO
 
 
 def resumen(db: Session, cotizacion: m.Cotizacion) -> dict:

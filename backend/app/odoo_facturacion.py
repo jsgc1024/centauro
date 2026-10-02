@@ -297,6 +297,18 @@ def compania_de(db: Session, servicio: m.Servicio) -> int | None:
     return odoo_api.COMPANIAS.get(pais.codigo) if pais else None
 
 
+def idioma_de_la_factura(db, servicio, idioma: str | None) -> str:
+    """En que idioma salen los renglones: el de la cotizacion o la
+    propuesta y, sin el --el eventual cotizado desde el servicio, el mes
+    abierto sin propuesta--, el del pais del servicio (seccion 129,
+    hallazgo r3-09). Antes salian en espanol a Amazon Brasil."""
+    if idioma in TEXTOS:
+        return idioma
+    pais = db.get(m.Pais, servicio.pais_id) if servicio.pais_id else None
+    del_pais = (pais.idioma or "").lower() if pais else ""
+    return del_pais if del_pais in TEXTOS else "es"
+
+
 def la_compania(db: Session, servicio: m.Servicio, salida: dict,
                 faltan) -> None:
     """Pone en la prefactura su compania, o dice que falta."""
@@ -360,7 +372,7 @@ def _del_eventual(db: Session, cierre: m.Cierre) -> dict:
         faltan("sin_cotizacion")
         return salida
     salida["moneda"] = cotizacion.moneda.value
-    idioma = cotizacion.idioma if cotizacion.idioma in TEXTOS else "es"
+    idioma = idioma_de_la_factura(db, servicio, cotizacion.idioma)
     textos, modalidades = TEXTOS[idioma], MODALIDAD[idioma]
     productos = {p.id: p for p in db.query(m.ProductoOdoo)}
     lista = (db.get(m.Tarifario, cotizacion.tarifario_id)
