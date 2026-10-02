@@ -243,14 +243,25 @@ def preferir(producto_id: int, datos: PreferidoIn = PreferidoIn(),
                 if p["id"] == producto.id)
 
 
+class ConfirmarIn(BaseModel):
+    """Cuales: los de la pestana que se esta viendo (seccion 124). Sin
+    decirlo, todos, como antes."""
+    ids: list[int] | None = None
+
+
 @router.post("/productos/confirmar",
              summary="Confirmar lo que Centauro sugirio")
-def confirmar_sugeridos(db: Session = Depends(get_db),
+def confirmar_sugeridos(datos: ConfirmarIn = ConfirmarIn(),
+                        db: Session = Depends(get_db),
                         usuario: m.Usuario = Depends(PRODUCTOS)):
     """Confirma de un golpe cada sugerencia completa. Lo que no se supo
-    que es se queda para decidirlo uno por uno."""
+    que es se queda para decidirlo uno por uno. Con `ids`, solo esos: el
+    boton de la pestana de Brasil no confirma los de Mexico."""
     ahora, cuenta = _utc(), 0
-    for p in db.query(m.ProductoOdoo).filter_by(confirmado=False).all():
+    pendientes = db.query(m.ProductoOdoo).filter_by(confirmado=False)
+    if datos.ids is not None:
+        pendientes = pendientes.filter(m.ProductoOdoo.id.in_(datos.ids))
+    for p in pendientes.all():
         if p.clase is None:
             continue
         try:
@@ -316,7 +327,6 @@ def del_cliente(cliente_id: int, db: Session = Depends(get_db),
     cliente = db.get(m.Cliente, cliente_id)
     if cliente is None:
         raise HTTPException(404, "No existe ese cliente")
-    local = tipo_cambio.local_del_pais(db, cliente.pais_id)
     return {"cliente": {"id": cliente.id, "nombre": cliente.nombre,
                         "de_odoo": cliente.odoo_id is not None},
             "tarifario": _tarifario(cliente.tarifario),
@@ -324,12 +334,35 @@ def del_cliente(cliente_id: int, db: Session = Depends(get_db),
             "desde_odoo": odoo_tarifarios.en_marcha(db),
             # Si quien mira puede decir si los paquetes traen los viaticos.
             "puede_editar": auth.puede_el_usuario(db, usuario, "cierre.facturar"),
-            # El que esta puesto, para la lista que no es de la moneda del
-            # pais (seccion 82): de ahi salen sus precios en gris. El de su
-            # pais: el dolar a real para el de Brasil (seccion 123).
-            "tipo_cambio": (tipo_cambio.estado(db, m.Moneda.USD, local)
-                            if local and (m.Moneda.USD, local) in tipo_cambio.PARES
-                            else tipo_cambio.estado(db)),
+            "tipo_cambio": _cambio_del_pais(db, cliente.pais_id),
+            **_catalogo(db)}
+
+
+def _cambio_del_pais(db: Session, pais_id: int | None) -> dict:
+    """El que esta puesto, para la lista que no es de la moneda del pais
+    (seccion 82): de ahi salen sus precios en gris. El de su pais: el
+    dolar a real para el de Brasil (seccion 123)."""
+    local = tipo_cambio.local_del_pais(db, pais_id)
+    return (tipo_cambio.estado(db, m.Moneda.USD, local)
+            if local and (m.Moneda.USD, local) in tipo_cambio.PARES
+            else tipo_cambio.estado(db))
+
+
+@router.get("/lista/{tarifario_id}", summary="Una lista, sin cliente")
+def una_lista(tarifario_id: int, db: Session = Depends(get_db),
+              usuario: m.Usuario = Depends(VER)):
+    """Una lista vista por si misma (seccion 124). Las generales no siempre
+    tienen cliente --«Brasil · General USD» solo se usa al cotizar en
+    dolares--, y sin abrirla no habia donde marcar si sus paquetes traen
+    los viaticos. Se ve igual que la de un cliente."""
+    t = db.get(m.Tarifario, tarifario_id)
+    if t is None or not t.activo:
+        raise HTTPException(404, "No existe esa lista")
+    return {"cliente": {"id": None, "nombre": t.nombre, "de_odoo": False},
+            "tarifario": _tarifario(t), "implantados": None,
+            "desde_odoo": odoo_tarifarios.en_marcha(db),
+            "puede_editar": auth.puede_el_usuario(db, usuario, "cierre.facturar"),
+            "tipo_cambio": _cambio_del_pais(db, t.pais_id),
             **_catalogo(db)}
 
 

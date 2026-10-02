@@ -9623,6 +9623,35 @@ en la pantalla de Odoo y se aplica; finanzas marca «sus paquetes traen
 los viáticos» en las tres listas de Brasil. Se revisa contra Odoo con
 Salvador y Ari.
 
+## 124. Las generales se abren sin cliente, y los sugeridos van por pestaña
+
+Salvador, 2 de octubre, con la 123 ya arriba: «¿cómo cotizo o hago una
+propuesta para Brasil? No lo veo». No hay un apartado de Brasil —el país
+lo pone el cliente, o el país de la empresa que todavía no está en
+Odoo—, y sus precios llegan cuando finanzas confirma los productos de
+Brasil y se aplica la lectura. Al repasar esos pasos salieron dos
+huecos de la 123, que se arreglan aquí:
+
+- **La casilla de viáticos de una general sin cliente.** «Los paquetes
+  de esta lista traen los viáticos del día» solo se abría desde un
+  cliente que tuviera esa lista, y «Brasil · General USD» no tiene
+  ninguno —se usa al cotizar en dólares—; si Amazon es el único cliente
+  de Brasil, la de reales tampoco. «El tarifario del cliente» ofrece
+  ahora arriba las generales de cada país («— lista general») y las abre
+  por sí mismas: `GET /tarifarios/lista/{id}`, con el tipo de cambio de
+  su país (`_cambio_del_pais`, que también usa la del cliente).
+- **«Confirmar los sugeridos», por pestaña.** Desde la 123 la tabla de
+  productos va por país, pero el botón confirmaba los sugeridos de los
+  dos. Ahora la cuenta y el botón son de la pestaña que se ve: la
+  consola manda los `ids` de sus sugeridos; sin `ids`, todos, como
+  antes.
+
+Manual: «Lo que viene de Odoo», los tarifarios, en español y portugués.
+Pruebas en `tests/test_odoo_tarifarios_brasil.py`: la pestaña de Brasil
+no confirma los de México, y la general en dólares se abre sin cliente,
+con el dólar a real, y ahí se marca su casilla; quien cotiza la ve sin
+poder marcarla.
+
 ## 14. Lo que falta
 
 ### Abierto

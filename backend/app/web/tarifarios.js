@@ -341,25 +341,34 @@ function unPar(x, editable, pintar) {
   return nodos;
 }
 
+/* El tarifario de cualquier cliente y, arriba, las generales de cada
+   pais (seccion 124): «Brasil · General USD» no siempre tiene cliente, y
+   sin abrirla no habia donde marcar si sus paquetes traen los viaticos. */
 async function tarjetaCliente(caja) {
-  let clientes;
+  let clientes, listas;
   try {
-    clientes = await api.get("/catalogos/clientes");
+    [clientes, listas] = await Promise.all([
+      api.get("/catalogos/clientes"), api.get("/tarifarios").catch(() => [])]);
   } catch (err) {
     return caja.replaceChildren(aviso(err.message, "grave"));
   }
   const activos = clientes.filter(c => c.activo)
     .sort((a, b) => a.nombre.localeCompare(b.nombre));
+  const generales = listas.filter(x => x.general);
   const vista = h("div", { style: "margin-top:14px" });
   const escoger = h("select", { style: "max-width:460px" },
     h("option", { value: "" }, t("tar_escoge_cliente")),
+    ...generales.map(x => h("option", { value: `lista:${x.id}` },
+      reemplazar(t("tar_opcion_general"), { l: x.nombre, m: x.moneda }))),
     ...activos.map(c => h("option", { value: String(c.id) }, c.nombre)));
   escoger.addEventListener("change", async () => {
     if (!escoger.value) return vista.replaceChildren();
     vista.replaceChildren(h("p", { clase: "gris" }, t("tar_cargando")));
+    const lista = escoger.value.startsWith("lista:");
     try {
-      vista.replaceChildren(vistaTarifario(
-        await api.get(`/tarifarios/cliente/${escoger.value}`)));
+      vista.replaceChildren(vistaTarifario(await api.get(lista
+        ? `/tarifarios/lista/${escoger.value.slice("lista:".length)}`
+        : `/tarifarios/cliente/${escoger.value}`), !lista));
     } catch (err) {
       vista.replaceChildren(aviso(err.message, "grave"));
     }
@@ -572,8 +581,13 @@ async function tarjetaProductos(caja) {
     const lista = iguales[conceptoDe(p)];
     return lista && lista.length > 1 ? lista : null;
   };
-  const cuenta = { t: filas.length, c: 0, s: 0, f: 0 };
-  for (const p of filas) {
+  /* Cada pais con los suyos (seccion 123): Mexico y Brasil, cada uno de
+     su categoria de Odoo. La cuenta y «Confirmar los sugeridos» son de la
+     pestana que se ve (seccion 124): el de Brasil no confirma los de
+     Mexico. */
+  const pestanas = pestanasDePais(d, filas, repintar);
+  const cuenta = { t: pestanas.visibles.length, c: 0, s: 0, f: 0 };
+  for (const p of pestanas.visibles) {
     const e = estadoDe(p);
     if (e === "falta") cuenta.f += 1;
     else if (e === "sugerido") cuenta.s += 1;
@@ -599,7 +613,8 @@ async function tarjetaProductos(caja) {
   confirmar.addEventListener("click", async () => {
     confirmar.disabled = true;
     try {
-      const r = await api.post("/tarifarios/productos/confirmar", {});
+      const r = await api.post("/tarifarios/productos/confirmar", {
+        ids: pestanas.visibles.filter(p => estadoDe(p) === "sugerido").map(p => p.id) });
       mensaje(reemplazar(t("tar_confirmados"), { n: r.confirmados }));
       await repintar();
     } catch (err) {
@@ -615,9 +630,6 @@ async function tarjetaProductos(caja) {
     d.puede_editar ? leer : "",
     h("span", { clase: "gris chico" }, pie.join(" · ")));
 
-  /* Cada pais con los suyos (seccion 123): Mexico y Brasil, cada uno de
-     su categoria de Odoo. */
-  const pestanas = pestanasDePais(d, filas, repintar);
   const cuerpo = pestanas.visibles.length
     ? h("table", { clase: "lista" },
         h("thead", {}, h("tr", {},

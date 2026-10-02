@@ -33,6 +33,8 @@ Lo que se cuida, como lo aprobo Salvador:
   * La flota que la general de su pais no cobra --las Corolla Cross,
     «CUV Blindada»-- se dice, sin bloquear nada.
   * «Que mande este» es entre los productos de un mismo pais.
+  * «Confirmar los sugeridos» es de la pestana que se ve, y una general
+    sin cliente se abre por si misma (seccion 124).
 """
 from datetime import date, timedelta
 from decimal import Decimal
@@ -614,6 +616,65 @@ def test_el_que_manda_es_de_su_pais(db, brasil, mexico, cliente, sesion):
     assert db.get(m.ProductoOdoo, br_paquete).preferido
     assert not db.get(m.ProductoOdoo, br_puesto).preferido
     assert db.get(m.ProductoOdoo, mx).preferido
+
+
+def test_confirmar_los_sugeridos_de_una_pestana(db, brasil, mexico, cliente, sesion):
+    """«Confirmar los sugeridos» en la pestana de Brasil confirma los de
+    Brasil y deja los de Mexico para su pestana (seccion 124)."""
+    conductor = db.query(m.PerfilPersonal).filter_by(codigo="conductor_seguridad").one()
+
+    def sugerido(odoo_id, nombre, pais):
+        p = m.ProductoOdoo(odoo_id=odoo_id, nombre=nombre, clase="rol",
+                           perfil_id=conductor.id, modalidad="full_day",
+                           pais_id=pais.id, confirmado=False)
+        db.add(p)
+        db.flush()
+        return p.id
+
+    mx = sugerido(PRODUCTO0 + 910, "Conductor de Seguridad Bilingüe", mexico)
+    br = sugerido(PRODUCTO0 + 911, "Motorista Executivo Bilíngue", brasil)
+    db.commit()
+    h = sesion("finanzas")
+    r = cliente.post("/tarifarios/productos/confirmar", headers=h, json={"ids": [br]})
+    assert r.status_code == 200, r.text
+    assert r.json()["confirmados"] == 1
+    db.expire_all()
+    assert db.get(m.ProductoOdoo, br).confirmado
+    assert not db.get(m.ProductoOdoo, mx).confirmado
+    # Sin decir cuales, todos, como antes.
+    assert cliente.post("/tarifarios/productos/confirmar", headers=h,
+                        json={}).json()["confirmados"] == 1
+    # La consola manda los de la pestana que se ve.
+    import pathlib
+    js = (pathlib.Path(__file__).parent.parent / "app" / "web" / "tarifarios.js").read_text(
+        encoding="utf-8")
+    assert 'ids: pestanas.visibles.filter(p => estadoDe(p) === "sugerido")' in js
+
+
+def test_una_general_se_abre_sin_cliente(db, filtros, de_brasil, cliente, sesion,
+                                         monkeypatch):
+    """«Brasil · General USD» no tiene cliente: se abre por si misma, con
+    el dolar a real, y ahi se marca si sus paquetes traen los viaticos
+    (seccion 124)."""
+    odoo = OdooFalso(mundo_brasil())
+    _leido(db, odoo)
+    conectar(monkeypatch, odoo)
+    h = sesion("finanzas")
+    usd = tarifario(db, 38)
+    d = cliente.get(f"/tarifarios/lista/{usd.id}", headers=h).json()
+    assert (d["tarifario"]["nombre"], d["tarifario"]["general"]) == ("Brasil · General USD", True)
+    assert d["puede_editar"] is True and d["implantados"] is None
+    assert (d["tipo_cambio"]["moneda"], d["tipo_cambio"]["moneda_local"]) == ("USD", "BRL")
+    assert d["tarifario"]["leido_en"].endswith("+00:00")
+    r = cliente.patch(f"/tarifarios/{usd.id}/viaticos", headers=h, json={"incluidos": True})
+    assert r.status_code == 200 and r.json()["paquetes_con_viaticos"] is True
+    # Quien cotiza la ve, pero no la marca.
+    d = cliente.get(f"/tarifarios/lista/{usd.id}", headers=sesion("consultor")).json()
+    assert d["puede_editar"] is False and d["tarifario"]["paquetes_con_viaticos"] is True
+    assert cliente.get("/tarifarios/lista/999999", headers=h).status_code == 404
+    # En la consola, las generales van arriba de los clientes.
+    generales = [x for x in cliente.get("/tarifarios", headers=h).json() if x["general"]]
+    assert {x["nombre"] for x in generales} >= {"Brasil · General", "Brasil · General USD"}
 
 
 def test_el_dolar_a_real_lo_pone_finanzas(cliente, sesion, db):
