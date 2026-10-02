@@ -158,7 +158,7 @@ function vistaAutorizada(caja, d) {
   if (c.tipo_cambio && d.moneda_local && moneda !== d.moneda_local) {
     partes.push(h("p", { clase: "chico gris", style: "margin:4px 0 0" },
       reemplazar(t("cie_cot_otra_moneda"), {
-        m: moneda, l: d.moneda_local, t: c.tipo_cambio.tasa,
+        m: moneda, l: d.moneda_local, t: c.tipo_cambio.corta || c.tipo_cambio.tasa,
         f: fecha(c.registrada_el) })));
   }
   const acciones = h("div", { clase: "acciones", style: "margin-top:12px" }, ver);
@@ -644,7 +644,8 @@ function armar(caja, d) {
   caja.replaceChildren(
     cabeza(reemplazar(t("cot_armando"), { v: version }), "alerta"),
     h("p", { clase: "chico gris", style: "margin:8px 0 6px" },
-      reemplazar(t("cot_de_la_lista"), { l: d.tarifario.nombre, m: moneda })),
+      reemplazar(t(d.tarifario.escogida ? "cot_de_la_general_moneda" : "cot_de_la_lista"),
+                 { l: d.tarifario.nombre, m: moneda })),
     equipos,
     avisoPrecios,
     h("p", { clase: "chico gris", style: "margin:6px 0 16px" }, t("cot_nota_dias")),

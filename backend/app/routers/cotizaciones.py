@@ -70,6 +70,8 @@ class CotizacionIn(BaseModel):
                                      max_length=motor.LARGO_INTRODUCCION)
     valida_hasta: date | None = None
     idioma: Literal["es", "en", "pt"] | None = None
+    # La moneda que se escogio (seccion 120). Vacia: la de la lista.
+    moneda: str | None = Field(None, max_length=3)
     con_iva: bool = True
     gastos: Literal["dentro", "fijo", "comprobar"] = "comprobar"
     monto_gastos: Decimal | None = None
@@ -126,8 +128,9 @@ def lista_de_las_dos(vista: str = "todas", q: str | None = None,
 @router.get("/eventual/lista-de-precios",
             summary="La lista con que se cotiza a un cliente o a una empresa")
 def lista_de_precios(cliente_id: int | None = None, pais_id: int | None = None,
+                     moneda: str | None = None,
                      db: Session = Depends(get_db), _=Depends(ARMAR)):
-    return motor.lista_info(db, cliente_id, pais_id)
+    return motor.lista_info(db, cliente_id, pais_id, moneda)
 
 
 @router.post("/eventual/precios",

@@ -2,6 +2,9 @@
 
 Lo nuevo de cada actualización, escrito para quien usa el sistema. La más nueva va arriba.
 
+## 120 · 2026-10-02 · La moneda se escoge al cotizar
+La cotización del eventual tiene un campo nuevo, **«Moneda»**, junto al idioma del PDF. Si el país tiene lista general en pesos y otra en dólares, se escoge para la empresa que todavía no está en Odoo y para el cliente que está en la general: arranca en la del país —o en la de la lista de su ficha de Odoo— y al cambiarla los precios salen de la general de esa moneda, sin convertir nada. El cliente con lista pactada se cotiza en la moneda de su lista, y mientras haya una sola general el campo dice su moneda sin cambiarse. Mandarla, la versión siguiente y la recotización en el servicio siguen en la moneda escogida. Al autorizar una en dólares, la tarjeta dice el tipo de cambio que va a quedar fijo, o que falta. Ver [la cotización al cliente](#/manual/leer/cotizaciones).
+
 ## 119 · 2026-10-01 · La prefactura sale a la compañía de su país
 La prefactura en Odoo ya dice a qué compañía va: la del país del servicio, **CENTAURO ASS** en México y **Centauro Brasil** en Brasil. Antes Odoo la ponía en la compañía predeterminada de la conexión, que ahora ve las dos. Brasil también: con la llave de la factura puesta, el servicio o el mes de Brasil cuyo cliente no tiene ficha en Odoo no recibe el visto bueno, igual que en México. Y el programa que revisa Odoo dice la compañía y el diario de ventas de cada país, y si el real brasileño está activo. Ver [la prefactura en Odoo](#/manual/leer/odoo).
 

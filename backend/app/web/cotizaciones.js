@@ -58,6 +58,7 @@ const FALTA_TEXTO = {
   incluye_fijo: "ctz_ft_incluye", incluye_comprobar: "ctz_ft_incluye",
 };
 const IDIOMA_PDF = { es: "ctz_idioma_es", en: "ctz_idioma_en", pt: "ctz_idioma_pt" };
+const MONEDA_TEXTO = { MXN: "ctz_moneda_mxn", USD: "ctz_moneda_usd", BRL: "ctz_moneda_brl" };
 
 function reemplazar(texto, valores) {
   return Object.entries(valores).reduce(
@@ -394,6 +395,7 @@ async function armar(main, cat, d) {
     tipo_servicio: d ? (d.tipo_servicio || "") : t("ctz_tipo_omision"),
     valida_hasta: d && d.valida_hasta ? d.valida_hasta : finDeAnio(),
     idioma: d ? (d.idioma || "es") : "",
+    moneda: d ? (d.moneda || "") : "",
     con_iva: d ? d.con_iva : true,
     gastos: d ? d.gastos : "",
     gastos_escogidos: Boolean(d),
@@ -430,6 +432,7 @@ async function armar(main, cat, d) {
     if (selCliente.value === e.cliente_id) return;
     e.cliente_id = selCliente.value;
     e.solicitante_id = "";
+    e.moneda = "";
     await alCambiarCliente();
   } });
   selCliente.value = e.cliente_id;
@@ -440,7 +443,7 @@ async function armar(main, cat, d) {
     "data-crudo": "", placeholder: t("ctz_empresa_nombre"),
     oninput: () => { e.prospecto = prospecto.value; recalcular(); } });
   const selPais = lista("pais_id", cat.paises.map(p => ({ valor: p.id, texto: p.nombre })),
-    { onchange: async () => { e.pais_id = Number(selPais.value); await alCambiarCliente(); } });
+    { onchange: async () => { e.pais_id = Number(selPais.value); e.moneda = ""; await alCambiarCliente(); } });
   const cajaProspecto = h("div", { clase: "rejilla dos" },
     campo(t("ctz_empresa"), prospecto, { obligatorio: true }),
     campo(t("ctz_pais"), selPais, { obligatorio: true }));
@@ -478,6 +481,23 @@ async function armar(main, cat, d) {
     onchange: () => { e.valida_hasta = valida.value; revisar(); } });
   const selIdioma = lista("idioma", ["es", "en", "pt"].map(i => ({ valor: i, texto: t(IDIOMA_PDF[i]) })),
     { onchange: () => { e.idioma = selIdioma.value; recalcular(); } });
+  /* La moneda (seccion 120): se escoge si el pais tiene general en dos
+     monedas y la empresa es nueva o el cliente esta en la general. Si no,
+     se ve la de su lista, sin cambiarse. Cambiarla trae la otra lista y
+     vuelve a poner los precios. */
+  const selMoneda = h("select", { name: "moneda", onchange: async () => {
+    e.moneda = selMoneda.value; await alCambiarCliente(true);
+  } });
+  const notaMoneda = h("div", { clase: "chico gris", style: "margin-top:4px" });
+  function pintarMoneda() {
+    const opciones = info ? (info.monedas.length ? info.monedas : [info.tarifario.moneda]) : [];
+    selMoneda.replaceChildren(...opciones.map(x =>
+      h("option", { value: x }, t(MONEDA_TEXTO[x] || x) || x)));
+    selMoneda.value = e.moneda;
+    selMoneda.disabled = !info || info.monedas.length < 2;
+    notaMoneda.textContent = !info ? ""
+      : info.monedas.length > 1 ? "" : t(info.pactada ? "ctz_moneda_pactada" : "ctz_moneda_unica");
+  }
   const sinIva = h("input", { type: "checkbox",
     onchange: () => { e.con_iva = !sinIva.checked; recalcular(); } });
   sinIva.checked = !e.con_iva;
@@ -497,7 +517,7 @@ async function armar(main, cat, d) {
     revisar();
   }
 
-  async function alCambiarCliente() {
+  async function alCambiarCliente(soloMoneda = false) {
     const nueva = e.cliente_id === NUEVA;
     cajaProspecto.hidden = !nueva;
     if (!nueva && e.cliente_id) {
@@ -508,8 +528,9 @@ async function armar(main, cat, d) {
       e.pais_id = (cat.paises.find(p => p.codigo === "MX") || cat.paises[0] || {}).id;
     }
     selPais.value = e.pais_id ? String(e.pais_id) : "";
-    /* El PDF sale en la lengua del pais del cliente; se puede cambiar. */
-    if (!e.idioma || !d) {
+    /* El PDF sale en la lengua del pais del cliente; se puede cambiar.
+       Cambiar la moneda no la toca. */
+    if (!soloMoneda && (!e.idioma || !d)) {
       const p = paisDe(e.pais_id);
       e.idioma = (p && p.idioma) || "es";
     }
@@ -528,8 +549,10 @@ async function armar(main, cat, d) {
     lineaLista.replaceChildren();
     if (e.cliente_id && e.pais_id) {
       try {
-        const qs = nueva ? `pais_id=${e.pais_id}` : `cliente_id=${e.cliente_id}`;
+        const qs = (nueva ? `pais_id=${e.pais_id}` : `cliente_id=${e.cliente_id}`)
+          + (e.moneda ? `&moneda=${e.moneda}` : "");
         info = await api.get(`/cotizaciones/eventual/lista-de-precios?${qs}`);
+        e.moneda = info.tarifario.moneda;
         const codigoDe = Object.fromEntries(antes.map(x => [x.id, x.codigo]));
         const idDe = Object.fromEntries(info.modalidades.map(x => [x.codigo, x.id]));
         const porOmision = (info.modalidades.find(x => x.codigo === "full_day")
@@ -540,7 +563,7 @@ async function armar(main, cat, d) {
             else if (!info.modalidades.some(mo => mo.id === x.modalidad_id)) x.modalidad_id = porOmision;
           }
         }
-        lineaLista.append(...pintarLista(info.tarifario, nueva));
+        lineaLista.append(...pintarLista(info.tarifario, nueva, info.escogida));
         /* Si la lista trae sus paquetes Todo incluido, los gastos van
            dentro del precio; si no, por comprobar. Lo que el consultor
            ya escogio no se toca. */
@@ -552,6 +575,7 @@ async function armar(main, cat, d) {
       }
     }
     if (!e.gastos) e.gastos = "comprobar";
+    pintarMoneda();
     pintarQuien();
     pintarEquipos();
     pintarGastos();
@@ -559,8 +583,9 @@ async function armar(main, cat, d) {
   }
 
   /* «Precios de PE · General Mexico (MXN), la lista del cliente en Odoo.» */
-  function pintarLista(tarifario, nueva) {
-    const [antes, despues] = t(nueva ? "ctz_precios_general" : "ctz_precios_de").split("{l}");
+  function pintarLista(tarifario, nueva, escogida) {
+    const [antes, despues] = t(nueva ? "ctz_precios_general"
+      : escogida ? "ctz_precios_escogida" : "ctz_precios_de").split("{l}");
     return [antes, h("b", {}, tarifario.nombre),
             reemplazar(despues || "", { m: tarifario.moneda }),
             tarifario.paquetes_con_viaticos ? ` ${t("ctz_todo_incluido")}` : ""];
@@ -573,10 +598,11 @@ async function armar(main, cat, d) {
       campoQuien,
       campo(t("ctz_quien_firma"), consultor, { obligatorio: true })),
     cajaProspecto, quienOtra, lineaLista,
-    h("div", { clase: "rejilla tres" },
+    h("div", { clase: "rejilla cuatro" },
       campo(t("ctz_tipo_servicio"), tipo),
       campo(t("ctz_valida_hasta"), valida, { obligatorio: true }),
-      campo(t("ctz_idioma_pdf"), selIdioma)),
+      campo(t("ctz_idioma_pdf"), selIdioma),
+      h("div", {}, campo(t("ctz_moneda"), selMoneda), notaMoneda)),
     h("label", { clase: "opcion", style: "margin:0" }, sinIva, t("ctz_sin_iva")));
 
   /* ---------------------------------------------------- 2: equipos y dias */
@@ -885,6 +911,7 @@ async function armar(main, cat, d) {
       introduccion: e.introduccion.trim() || null,
       valida_hasta: e.valida_hasta || null,
       idioma: e.idioma || null,
+      moneda: e.moneda || null,
       con_iva: e.con_iva,
       gastos: e.gastos === "fijo" && !(Number(e.monto) > 0) ? "dentro" : (e.gastos || "comprobar"),
       monto_gastos: e.gastos === "fijo" && Number(e.monto) > 0 ? Number(e.monto) : null,
@@ -1262,6 +1289,16 @@ async function formularioAutorizar(tarjeta, cat, d) {
   });
 
   const equipos = [...new Set(d.lineas.filter(l => l.tipo !== "viaticos").map(l => l.equipo))];
+  /* En otra moneda que la del pais (seccion 120): el tipo de cambio que
+     queda fijo al autorizar, o que falta, antes de picar el boton. */
+  const otraMoneda = d.moneda_local && d.moneda !== d.moneda_local;
+  const tc = d.tipo_cambio_hoy;
+  const notaCambio = !otraMoneda ? null
+    : tc ? h("div", { clase: "aviso", style: "margin:6px 0 8px" },
+      reemplazar(t("ctz_autorizar_tc"), { m: d.moneda, l: d.moneda_local, t: tc.corta,
+        p: tc.por || "finanzas", f: fechaCorta(tc.fecha) }))
+      : h("div", { style: "margin:6px 0 8px" },
+        aviso(reemplazar(t("ctz_autorizar_sin_tc"), { m: d.moneda }), "alerta"));
   tarjeta.replaceChildren(...[
     conAyuda("h3", t("ctz_la_autorizo"), "ay_ctz_autorizar", { style: "margin:0" }),
     prospecto ? h("div", { style: "margin-top:12px" },
@@ -1280,6 +1317,7 @@ async function formularioAutorizar(tarjeta, cat, d) {
         e: equipos.length === 1 ? t("cot_un_equipo")
           : reemplazar(t("cot_n_equipos"), { n: equipos.length }),
         a: equipos.join(", "), f: rangoCorto(d.desde, d.hasta) })),
+    notaCambio,
     h("div", { clase: "acciones", style: "margin:0" }, boton, cancelar)].filter(Boolean));
 }
 

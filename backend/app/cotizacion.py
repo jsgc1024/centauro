@@ -33,11 +33,51 @@ def de_cotizacion(consulta):
     return consulta.filter(m.Cotizacion.clase == COTIZACION)
 
 
+def general_del_pais(db: Session, pais_id: int,
+                     moneda=None) -> m.Tarifario | None:
+    """La lista que paga quien no negocio la suya: la general de su pais
+    en Odoo (seccion 77). Con generales en dos monedas (seccion 120), la
+    de la moneda que se pide o, sin decir cual, la de la moneda del pais.
+    Con dos de la misma moneda, la que viene de Odoo."""
+    consulta = (db.query(m.Tarifario)
+                .filter(m.Tarifario.pais_id == pais_id,
+                        m.Tarifario.general.is_(True),
+                        m.Tarifario.activo.is_(True)))
+    orden = [m.Tarifario.odoo_id.is_(None), m.Tarifario.id]
+    if moneda is not None:
+        consulta = consulta.filter(m.Tarifario.moneda == m.Moneda(moneda))
+    else:
+        local = tipo_cambio.local_del_pais(db, pais_id)
+        if local is not None:
+            orden.insert(0, m.Tarifario.moneda != local)
+    return consulta.order_by(*orden).first()
+
+
+def monedas_generales(db: Session, pais_id: int) -> list[str]:
+    """Las monedas en que el pais tiene lista general: la del pais
+    primero. Con una sola no hay que escoger."""
+    local = tipo_cambio.local_del_pais(db, pais_id)
+    monedas = {t.moneda for t in db.query(m.Tarifario).filter(
+        m.Tarifario.pais_id == pais_id, m.Tarifario.general.is_(True),
+        m.Tarifario.activo.is_(True))}
+    return [x.value for x in sorted(monedas, key=lambda x: (x != local, x.value))]
+
+
 def _tarifario_de(db: Session, servicio: m.Servicio) -> m.Tarifario:
+    """La lista con que se recotiza el servicio: la del cliente. Si el
+    cliente esta en la general y la cotizacion autorizada salio en otra
+    moneda (seccion 120), la general de esa moneda: la recotizacion sigue
+    en la moneda que el cliente autorizo."""
     cliente = db.get(m.Cliente, servicio.cliente_id)
     if not cliente or not cliente.tarifario_id:
         raise HTTPException(400, "El cliente no tiene tarifario asignado")
-    return db.get(m.Tarifario, cliente.tarifario_id)
+    tarifario = db.get(m.Tarifario, cliente.tarifario_id)
+    vig = vigente(db, servicio.id)
+    if tarifario.general and vig is not None and vig.moneda != tarifario.moneda:
+        otra = general_del_pais(db, servicio.pais_id, vig.moneda)
+        if otra is not None:
+            return otra
+    return tarifario
 
 
 def _sin_precio(que: str, modalidad: m.Modalidad | None) -> HTTPException:
@@ -724,7 +764,8 @@ def resumen(db: Session, cotizacion: m.Cotizacion) -> dict:
         # El dia en el pais del servicio: registrada de noche en Mexico
         # es otro dia en el reloj del servidor.
         "registrada_el": _dia_en_el_pais(db, cotizacion),
-        "tipo_cambio": ({"tasa": tc.get("tasa"), "fecha": (
+        "tipo_cambio": ({"tasa": tc.get("tasa"),
+                         "corta": tipo_cambio.corto(tc.get("tasa")), "fecha": (
                             tc["fecha"].isoformat() if hasattr(tc.get("fecha"), "isoformat")
                             else tc.get("fecha"))} if tc else None),
         "dias": len({(l.equipo_clave, l.fecha) for l in trabajo}),
@@ -878,7 +919,7 @@ def bloque(db: Session, servicio_id: int) -> dict:
     if not servicio:
         raise HTTPException(404, f"No existe el servicio {servicio_id}")
     cliente = db.get(m.Cliente, servicio.cliente_id)
-    tarifario = (db.get(m.Tarifario, cliente.tarifario_id)
+    tarifario = (_tarifario_de(db, servicio)
                  if cliente and cliente.tarifario_id else None)
     vig = vigente(db, servicio_id)
     versiones = _versiones(db, servicio_id)
@@ -910,7 +951,11 @@ def bloque(db: Session, servicio_id: int) -> dict:
                      and not con_visto_bueno),
         "con_visto_bueno": con_visto_bueno,
         "tarifario": ({"id": tarifario.id, "nombre": tarifario.nombre,
-                       "moneda": tarifario.moneda.value} if tarifario else None),
+                       "moneda": tarifario.moneda.value,
+                       # La general de la moneda que autorizo el cliente,
+                       # no la de su ficha (seccion 120).
+                       "escogida": tarifario.id != cliente.tarifario_id}
+                      if tarifario else None),
         "vigente": resumen(db, vig) if vig else None,
         "versiones": [{
             "version": c.version, "estatus": c.estatus.value,

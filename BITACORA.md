@@ -9325,6 +9325,68 @@ después de la lectura de los tarifarios de las :57, correr otra vez el
 programa que revisa Odoo; si dice las variantes y la compañía de cada
 país, poner la llave de la factura en el `.env` y reiniciar.
 
+## 120. La moneda se escoge al cotizar
+
+Salvador, 2 de octubre: «si subo un tarifario general para México en
+dólares, ¿cuál toma la cotización?». Hasta hoy la moneda salía sola de
+la lista: el cliente de Odoo, con la de su ficha (la que le pusieron o,
+si nadie le puso ninguna, la primera de su país en el orden de las
+listas de Odoo); la empresa que todavía no está en Odoo, con la general
+que Connect conoció primero. Con dos generales, la de dólares nunca le
+habría tocado a una empresa nueva. Quiso poder escogerla, y aprobó la
+propuesta con sus pantallas el mismo día
+(`Claude outputs/Propuesta_escoger_la_moneda_al_cotizar.pdf`):
+
+- **Se escoge solo si el país tiene general en más de una moneda.**
+  Con una sola, el campo «Moneda» dice su moneda y no se cambia: así
+  queda México al subir esto, mientras no exista la general en dólares.
+- **A quién**: a la empresa que todavía no está en Odoo y al cliente que
+  está en la general. Arranca en la moneda del país; el cliente, en la
+  de la lista de su ficha. Sin decir moneda, la general es la de la
+  moneda del país, ya no la que Connect conoció primero.
+- **La lista pactada manda**: el cliente con su propia lista se cotiza
+  en la moneda de su lista, sin escoger, porque sus precios se pactaron
+  en ella (decisión de Salvador). Si pacta en dólares, su lista va en
+  dólares en Odoo, como Amazon.
+- **Nada se convierte**: los precios salen de la general de la moneda
+  escogida, tal como está en Odoo.
+- **La moneda se queda**: mandarla vuelve a cotizar en la misma moneda;
+  la versión siguiente sale en ella y en su borrador se puede cambiar.
+  En el servicio, si el cliente está en la general y la cotización se
+  autorizó en otra moneda, recotizar sigue con la general de esa moneda;
+  antes tomaba la de su ficha y la versión 2 cambiaba de moneda.
+- **Antes de autorizar** una cotización en otra moneda que la del país,
+  la tarjeta dice el tipo de cambio que va a quedar fijo y quién lo puso,
+  o que falta (sin él no se autoriza, como desde la sección 82). En el
+  servicio el tipo de cambio fijo se dice con dos decimales: «17.50», no
+  «17.5».
+
+Para usarlo, en Odoo: «PE · General México USD» con el grupo de países
+México y los productos de PE con su precio en dólares, **abajo** de la de
+pesos en el orden de las listas: Odoo le pone al cliente sin lista
+propia la primera de su país, y si la de dólares quedara arriba, todos
+los clientes de México sin lista propia pasarían a dólares en la
+siguiente lectura. Ari lo revisa en el ensayo de los tarifarios: en
+«Cambian de tarifario» no debe salir ningún cliente de México.
+
+Lo que no cambia: Brasil (una sola general, en reales, y Connect no
+convierte dólares a reales), la propuesta del implantado (sigue con la
+lista de implantados del cliente), los viáticos y la nómina (en la
+moneda del país) y las cotizaciones que ya existen.
+
+Por dentro: `cotizacion.general_del_pais(db, pais, moneda)` —se mudó de
+`cotizacion_cliente`, que la sigue nombrando— y `monedas_generales`;
+`cotizacion._tarifario_de` sigue la moneda de la cotización vigente y el
+bloque del servicio dice `escogida`; `cotizacion_cliente.lista_de` y
+`lista_info` reciben la moneda y dicen `monedas`, `escogida` y
+`pactada`; `datos_de` guarda la moneda para mandarla; el detalle trae
+`moneda_local` y `tipo_cambio_hoy`. La pantalla: el campo «Moneda» en
+«Para quién», la línea «la lista general del país en la moneda que
+escogiste» y la nota del tipo de cambio al autorizar. Sin migración: la
+cotización ya guardaba su moneda. Manual: «La cotización al cliente»,
+con su apartado «La moneda», en español y portugués. Pruebas:
+`tests/test_moneda_al_cotizar.py`, diez casos.
+
 ## 14. Lo que falta
 
 ### Abierto

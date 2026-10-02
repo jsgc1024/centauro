@@ -204,21 +204,28 @@ def orden_de(clave: str) -> int:
 
 # ------------------------------------------------------------- la lista
 
-def general_del_pais(db: Session, pais_id: int) -> m.Tarifario | None:
-    """La lista que paga quien no negocio la suya: la general de su pais
-    en Odoo (seccion 77). Con dos, la que viene de Odoo."""
-    return (db.query(m.Tarifario)
-            .filter(m.Tarifario.pais_id == pais_id,
-                    m.Tarifario.general.is_(True),
-                    m.Tarifario.activo.is_(True))
-            .order_by(m.Tarifario.odoo_id.is_(None), m.Tarifario.id)
-            .first())
+general_del_pais = motor.general_del_pais
+
+
+def _moneda(valor) -> m.Moneda | None:
+    if valor in (None, ""):
+        return None
+    try:
+        return valor if isinstance(valor, m.Moneda) else m.Moneda(valor)
+    except ValueError:
+        raise HTTPException(400, f"No conozco la moneda {valor}.")
 
 
 def lista_de(db: Session, cliente: m.Cliente | None,
-             pais_id: int) -> m.Tarifario:
+             pais_id: int, moneda=None) -> m.Tarifario:
     """La lista con la que se cotiza: la del cliente o, para la empresa
-    que todavia no esta en Odoo, la general de su pais."""
+    que todavia no esta en Odoo, la general de su pais.
+
+    Con generales en dos monedas (seccion 120) la moneda se escoge: la
+    empresa nueva y el cliente que esta en la general se cotizan con la
+    general de la moneda que se escogio. El cliente con lista pactada, en
+    la moneda de su lista: sus precios se pactaron en ella."""
+    moneda = _moneda(moneda)
     if cliente is not None:
         tarifario = (db.get(m.Tarifario, cliente.tarifario_id)
                      if cliente.tarifario_id else None)
@@ -228,17 +235,34 @@ def lista_de(db: Session, cliente: m.Cliente | None,
                 "que_hacer": "En Odoo ponle su lista de precios —o la "
                              "general de su país—; Connect la lee cada hora.",
                 "clave": "sin_lista"})
-        return tarifario
-    tarifario = general_del_pais(db, pais_id)
+        if (moneda is None or not tarifario.general
+                or moneda == tarifario.moneda):
+            return tarifario
+    tarifario = general_del_pais(db, pais_id, moneda)
     if tarifario is None:
         pais = db.get(m.Pais, pais_id)
+        nombre = pais.nombre if pais else "ese país"
         raise HTTPException(400, {
-            "mensaje": f"No hay lista general de "
-                       f"{pais.nombre if pais else 'ese país'}",
+            "mensaje": (f"No hay lista general de {nombre} en {moneda.value}"
+                        if moneda else f"No hay lista general de {nombre}"),
             "que_hacer": "La lista general del país se marca en Odoo; "
                          "Connect la lee cada hora.",
             "clave": "sin_lista"})
     return tarifario
+
+
+def monedas_a_escoger(db: Session, cliente: m.Cliente | None,
+                      pais_id: int) -> list[str]:
+    """Entre que monedas se escoge (seccion 120): las de las generales del
+    pais, para la empresa nueva y para el cliente que esta en la general.
+    Vacio si no hay que escoger: una sola general, o una lista pactada."""
+    if cliente is not None:
+        suya = (db.get(m.Tarifario, cliente.tarifario_id)
+                if cliente.tarifario_id else None)
+        if suya is None or not suya.general:
+            return []
+    monedas = motor.monedas_generales(db, pais_id)
+    return monedas if len(monedas) > 1 else []
 
 
 def _modalidades(db: Session, pais_id: int) -> dict[int, m.Modalidad]:
@@ -292,17 +316,18 @@ def tasa_iva(db: Session, pais_id: int | None) -> Decimal | None:
 
 
 def lista_info(db: Session, cliente_id: int | None,
-               pais_id: int | None) -> dict:
+               pais_id: int | None, moneda=None) -> dict:
     """Lo que la pantalla necesita al escoger el cliente: con que lista se
     cotiza, que roles y unidades tienen precio, las modalidades del pais,
-    la hora extra de cada rol y la tasa de IVA."""
+    la hora extra de cada rol y la tasa de IVA. Y entre que monedas se
+    escoge, si se escoge (seccion 120)."""
     cliente = db.get(m.Cliente, cliente_id) if cliente_id else None
     if cliente_id and cliente is None:
         raise HTTPException(404, f"No existe el cliente {cliente_id}")
     pais_id = cliente.pais_id if cliente else pais_id
     if not pais_id or db.get(m.Pais, pais_id) is None:
         raise HTTPException(400, "Di de qué país es la empresa.")
-    tarifario = lista_de(db, cliente, pais_id)
+    tarifario = lista_de(db, cliente, pais_id, moneda)
     roles, unidades = motor.lo_que_tiene_precio(db, tarifario.id)
     modalidades = sorted(_modalidades(db, pais_id).values(),
                          key=lambda x: MODALIDADES_DEL_EVENTUAL.index(x.codigo))
@@ -310,6 +335,12 @@ def lista_info(db: Session, cliente_id: int | None,
     return {
         "pais_id": pais_id,
         "tarifario": _tarifario(tarifario),
+        "monedas": monedas_a_escoger(db, cliente, pais_id),
+        # La general de otra moneda que la de su ficha: se dice que se
+        # escogio, no que es «la lista del cliente en Odoo».
+        "escogida": bool(cliente and cliente.tarifario_id != tarifario.id),
+        # La lista pactada del cliente: su moneda no se escoge.
+        "pactada": bool(cliente and not tarifario.general),
         "roles": roles, "unidades": unidades,
         "modalidades": [{"id": x.id, "codigo": x.codigo.value,
                          "horas": float(x.horas)} for x in modalidades],
@@ -464,7 +495,7 @@ def preparar(db: Session, datos: dict) -> dict:
     if cliente is None and not prospecto:
         raise HTTPException(400, "Escoge el cliente o escribe el nombre de "
                                  "la empresa.")
-    tarifario = lista_de(db, cliente, pais_id)
+    tarifario = lista_de(db, cliente, pais_id, datos.get("moneda"))
 
     consultor_id = datos.get("consultor_id")
     if consultor_id and not accesos.lleva_servicios(db, consultor_id):
@@ -747,6 +778,7 @@ def datos_de(cot: m.Cotizacion) -> dict:
         "consultor_id": cot.consultor_id, "tipo_servicio": cot.tipo_servicio,
         "introduccion": cot.introduccion, "valida_hasta": cot.valida_hasta,
         "idioma": cot.idioma, "con_iva": cot.con_iva,
+        "moneda": cot.moneda.value if cot.moneda else None,
         "gastos": motor.modo_de_gastos(cot),
         "monto_gastos": gastos_fijos(cot) or None,
         "motivo": cot.motivo_recotizacion,
@@ -1199,8 +1231,18 @@ def detalle(db: Session, cot: m.Cotizacion, puede_armar: bool) -> dict:
     es_ultima = ultima(db, cot.folio, cot.clase).id == cot.id
     tarifario = db.get(m.Tarifario, cot.tarifario_id)
     perfiles = {l.perfil_id for l in cot.lineas if l.perfil_id}
+    # En otra moneda que la del pais, el tipo de cambio que quedaria fijo
+    # si se autoriza hoy (seccion 120): se ve antes de autorizar.
+    local = tipo_cambio.local_del_pais(db, cot.pais_id)
+    otra = local is not None and cot.moneda != local
+    tc = (tipo_cambio.vigente(db, cot.moneda, local)
+          if otra and tipo_cambio.se_puede(cot.moneda, local) else None)
     return {
         **renglon_de_lista(cot),
+        "moneda_local": local.value if local else None,
+        "tipo_cambio_hoy": ({**tipo_cambio.en_json(tc),
+                             "corta": tipo_cambio.corto(tc["tasa"])}
+                            if tc else None),
         "pais_id": cot.pais_id,
         "pais": cot.pais.nombre if cot.pais else None,
         "cliente_id": cot.cliente_id, "prospecto": cot.prospecto,

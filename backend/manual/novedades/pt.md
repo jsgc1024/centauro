@@ -2,6 +2,9 @@
 
 O que há de novo em cada atualização, escrito para quem usa o sistema. A mais nova fica em cima.
 
+## 120 · 2026-10-02 · A moeda se escolhe ao cotar
+A cotação do eventual tem um campo novo, **«Moeda»**, ao lado do idioma do PDF. Se o país tem lista geral em pesos e outra em dólares, ela se escolhe para a empresa que ainda não está no Odoo e para o cliente que está na geral: começa na do país —ou na da lista da sua ficha do Odoo— e ao trocá-la os preços saem da geral dessa moeda, sem converter nada. O cliente com lista acordada é cotado na moeda da sua lista, e enquanto houver uma só geral o campo diz a sua moeda sem trocar. O envio, a versão seguinte e a nova cotação no serviço seguem na moeda escolhida. Ao aprovar uma em dólares, o cartão diz a taxa de câmbio que vai ficar fixa, ou que falta. Ver [a cotação ao cliente](#/manual/leer/cotizaciones).
+
 ## 119 · 2026-10-01 · A pré-fatura sai para a empresa do seu país
 A pré-fatura no Odoo agora diz para qual empresa vai: a do país do serviço, **CENTAURO ASS** no México e **Centauro Brasil** no Brasil. Antes o Odoo a colocava na empresa padrão da conexão, que agora vê as duas. O Brasil também: com a chave da fatura colocada, o serviço ou o mês do Brasil cujo cliente não tem ficha no Odoo não recebe o aval, igual ao México. E o programa que revisa o Odoo diz a empresa e o diário de vendas de cada país, e se o real está ativo. Ver [a pré-fatura no Odoo](#/manual/leer/odoo).
 
