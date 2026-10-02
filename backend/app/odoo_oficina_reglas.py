@@ -25,20 +25,31 @@ Las decisiones que viven aqui:
     dice un lugar que Centauro no tiene-- se le pone la de la oficina
     central, y el informe lo cuenta. En oficina la plaza solo decide con
     que pais abren sus pantallas.
+  * Cada quien con su pais (seccion 121): la compania de Odoo dice de que
+    pais es, la ciudad se busca entre las de ese pais y la oficina central
+    es la suya --Sao Paulo en Brasil--. El motorista de Brasil es personal
+    de seguridad: nunca entra aqui. Y solo las companias de Connect: la
+    gente de otra compania que la conexion alcanza a ver --Centauro
+    Logistic-- no es de oficina de Centauro.
 """
 import collections
 import re
 
-from app.odoo_personal_reglas import (CORREO_VALIDO, DOMINIOS_RAROS, corto,
-                                      es_de_seguridad, nombre_de, normal,
-                                      plaza_de, texto)
+from app.odoo_personal_reglas import (CORREO_VALIDO, DOMINIOS_RAROS, PERSONAL,
+                                      corto, es_de_seguridad,
+                                      grupo_de_compania, id_de, nombre_de,
+                                      normal, plaza_de, texto)
 
-# La oficina central: donde queda quien no tiene lugar de trabajo en Odoo.
-PLAZA_CENTRAL = "ciudad de mexico"
+# La oficina central de Mexico: donde queda quien no tiene lugar de
+# trabajo en Odoo. Cada pais tiene la suya (`PERSONAL`, seccion 121).
+PLAZA_CENTRAL = PERSONAL[0]["central"]
 
 
 def es_de_oficina(empleado: dict) -> bool:
-    return not es_de_seguridad(empleado)
+    """De una compania de Connect y sin puesto de seguridad de ningun
+    pais (seccion 121)."""
+    return (not es_de_seguridad(empleado)
+            and grupo_de_compania(id_de(empleado.get("company_id"))) is not None)
 
 
 def correo_de(empleado: dict) -> str:
@@ -95,16 +106,27 @@ def sugerir(puesto_odoo: str | None, puestos: list) -> dict | None:
 
 # ------------------------------------------------------------------ el plan
 
+def ciudades_de(empleado: dict, plazas: dict, paises: dict) -> tuple:
+    """(las ciudades de su pais, su oficina central) por la compania del
+    empleado (seccion 121). Sin compania que Connect conozca, las de
+    Mexico, como antes."""
+    grupo = grupo_de_compania(id_de(empleado.get("company_id"))) or PERSONAL[0]
+    pais = paises.get(grupo["pais"])
+    suyas = plazas.get(pais["id"], {}) if pais else {}
+    return suyas, suyas.get(grupo["central"])
+
+
 def planear(empleados: list, personas: list, plazas: dict,
-            correos_de_acceso: dict) -> dict:
+            correos_de_acceso: dict, paises: dict | None = None) -> dict:
     """Que hacer con cada empleado de oficina, sin hacerlo.
 
     `personas`: foto fija de Centauro, con id, odoo_id, nombre, correo,
     plaza_id, activo, oficina, de_campo (tiene acceso a la app de campo),
-    puesto_odoo, area_odoo y sincronizado_en. `plazas`: por nombre
-    normalizado. `correos_de_acceso`: correo -> persona_id de los accesos
-    que ya existen.
+    puesto_odoo, area_odoo y sincronizado_en. `plazas`: por pais (su id) y
+    nombre normalizado. `correos_de_acceso`: correo -> persona_id de los
+    accesos que ya existen. `paises`: por codigo, con id.
     """
+    paises = paises or {}
     elegidos = [e for e in empleados if es_de_oficina(e)]
     por_odoo = {p["odoo_id"]: p for p in personas if p.get("odoo_id")}
     por_correo = {texto(p.get("correo")).lower(): p
@@ -112,7 +134,6 @@ def planear(empleados: list, personas: list, plazas: dict,
     cuenta = collections.Counter(correo_de(e) for e in elegidos
                                  if correo_de(e))
     repetidos = {c for c, n in cuenta.items() if n > 1}
-    central = plazas.get(PLAZA_CENTRAL)
 
     plan = {"leidos": len(elegidos), "altas": [], "vinculos": [],
             "cambios": [], "pendientes": [], "sin_correo": [],
@@ -132,7 +153,8 @@ def planear(empleados: list, personas: list, plazas: dict,
         problema = (None if not correo
                     else "correo de trabajo repetido en Odoo"
                     if correo in repetidos else problema_de_correo(correo))
-        plaza, lugar = plaza_de(e, plazas)
+        suyas, central = ciudades_de(e, plazas, paises)
+        plaza, lugar = plaza_de(e, suyas)
 
         persona, vinculo = por_odoo.get(e["id"]), False
         if persona is not None and not persona.get("oficina"):
@@ -244,15 +266,29 @@ def planear(empleados: list, personas: list, plazas: dict,
 
 def clasificar_salidas(revisar: list, estados: dict) -> tuple:
     """(bajas, pendientes). `estados`: lo que dice Odoo de cada una,
-    leido con los archivados incluidos."""
+    leido con los archivados incluidos.
+
+    La de otra compania (seccion 121) --la gente de Centauro Logistic que
+    la lectura se trajo cuando la conexion empezo a verla-- no es de
+    Connect: sin acceso se da de baja, como la archivada; con acceso no se
+    toca sola, se dice para que alguien decida."""
     bajas, pendientes = [], []
     for p in revisar:
         f = estados.get(p["odoo_id"])
         if f is not None and f.get("active", True) is not False:
+            compania = f.get("company_id")
+            otra = ("company_id" in f
+                    and grupo_de_compania(id_de(compania)) is None)
+            if otra and not p.get("con_acceso"):
+                bajas.append({"odoo_id": p["odoo_id"], "persona_id": p["id"],
+                              "nombre": p.get("nombre"),
+                              "motivo": "es de otra compania en Odoo"})
+                continue
+            falta = (f"en Odoo es de «{nombre_de(compania) or 'otra compania'}»: "
+                     "no es de Connect" if otra
+                     else "ahora es personal de seguridad en Odoo")
             pendientes.append({"odoo_id": p["odoo_id"], "persona_id": p["id"],
-                               "nombre": p.get("nombre"),
-                               "falta": ["ahora es personal de seguridad en "
-                                         "Odoo"]})
+                               "nombre": p.get("nombre"), "falta": [falta]})
         else:
             bajas.append({"odoo_id": p["odoo_id"], "persona_id": p["id"],
                           "nombre": p.get("nombre"),

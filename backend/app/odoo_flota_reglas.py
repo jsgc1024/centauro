@@ -14,6 +14,10 @@ Las decisiones de Salvador (23 de septiembre) que viven aqui:
     CENTAURO ASS con esa etiqueta; Brasil, la compania Centauro Brasil con
     «PROTECCION EJECUTIVA BRASIL». Nunca se mezclan: la etiqueta de un
     pais con la compania de otro no entra en ninguna flota.
+  * La etiqueta se reconoce por su numero en Odoo (seccion 121): la de
+    Mexico es la 3 y la de Brasil la 5, se llamen como se llamen. Asi la
+    de Mexico se puede renombrar «PROTECCION EJECUTIVA MEXICO» sin que la
+    flota salga de Connect. Su nombre sigue valiendo de respaldo.
   * La llave es el numero interno de Odoo; la primera vez se vincula por
     placa con la que ya estaba en Centauro.
   * Las categorias de Odoo son las de Centauro --con la CUV Blindada de
@@ -30,7 +34,7 @@ import collections
 import re
 
 from app.odoo_api import COMPANIAS
-from app.odoo_personal_reglas import (ALIAS_PLAZA, corto, fecha, nombre_de,
+from app.odoo_personal_reglas import (buscar_plaza, corto, fecha, nombre_de,
                                       normal, texto)
 
 # Que unidades de Odoo son la flota de cada pais (decision de Salvador,
@@ -44,11 +48,18 @@ from app.odoo_personal_reglas import (ALIAS_PLAZA, corto, fecha, nombre_de,
 # septiembre). La flota de Brasil llega a Odoo sin VIN, color ni Ubicacion,
 # que se capturan despues: entra igual, y lo que le falta se dice aparte,
 # como por capturar, sin detener nada. Connect no lee el VIN.
+#
+# `etiqueta`: el numero de su etiqueta en fleet.vehicle.tag (seccion 121).
+# Manda el numero; los nombres de `etiquetas` son el respaldo, con el de
+# Mexico de antes y el de despues del cambio.
 FLOTAS = (
     {"pais": "MX", "nombre": "México", "compania": COMPANIAS["MX"],
-     "etiquetas": frozenset({"proteccion ejecutiva", "pe"}),
+     "etiqueta": 3,
+     "etiquetas": frozenset({"proteccion ejecutiva",
+                             "proteccion ejecutiva mexico", "pe"}),
      "ciudad_obligatoria": True},
     {"pais": "BR", "nombre": "Brasil", "compania": COMPANIAS["BR"],
+     "etiqueta": 5,
      "etiquetas": frozenset({"proteccion ejecutiva brasil"}),
      "ciudad_obligatoria": False},
 )
@@ -108,17 +119,34 @@ def color_de(valor) -> str:
 
 
 def plaza_de(lugar, plazas: dict) -> tuple:
-    """(plaza o None, lo que dice Odoo). `plazas` va por nombre normalizado."""
+    """(plaza o None, lo que dice Odoo). `plazas` va por nombre normalizado.
+    «Sao Paulo - Barueri» es Sao Paulo, como en el personal (seccion 121)."""
     lugar = texto(lugar)
-    clave = normal(lugar)
-    return plazas.get(ALIAS_PLAZA.get(clave, clave)), lugar
+    return buscar_plaza(lugar, plazas), lugar
+
+
+def marcadas(unidad: dict, etiquetas: dict) -> list:
+    """Las flotas cuya etiqueta trae la unidad: por su numero o, de
+    respaldo, por su nombre. `etiquetas`: id -> nombre, de
+    fleet.vehicle.tag."""
+    ids = {id_de(t) for t in (unidad.get("tag_ids") or [])}
+    nombres = {normal(etiquetas.get(t, "")) for t in ids}
+    return [f for f in FLOTAS
+            if f["etiqueta"] in ids or f["etiquetas"] & nombres]
 
 
 def es_de_proteccion(unidad: dict, etiquetas: dict) -> bool:
-    """Si trae la etiqueta de alguna de las flotas. `etiquetas`: id ->
-    nombre, de fleet.vehicle.tag."""
-    return any(normal(etiquetas.get(t, "")) in ETIQUETAS
-               for t in (unidad.get("tag_ids") or []))
+    """Si trae la etiqueta de alguna de las flotas."""
+    return bool(marcadas(unidad, etiquetas))
+
+
+def etiquetas_de_las_flotas(etiquetas: dict) -> list:
+    """Con que nombre esta hoy en Odoo la etiqueta de cada flota, por su
+    numero (seccion 121). La que no existe se dice: esa flota solo se
+    reconoce por el nombre, y renombrarla la sacaria de Connect."""
+    return [{"pais": f["nombre"], "id": f["etiqueta"],
+             "nombre": texto(etiquetas.get(f["etiqueta"])) or None}
+            for f in FLOTAS]
 
 
 def flota_de(unidad: dict, etiquetas: dict) -> tuple:
@@ -126,15 +154,14 @@ def flota_de(unidad: dict, etiquetas: dict) -> tuple:
     unidad. Con la etiqueta de una flota y otra compania --o ninguna-- no
     es de ninguna: (None, por que). Sin etiqueta de Proteccion Ejecutiva
     no es asunto de Connect: (None, None)."""
-    nombres = {normal(etiquetas.get(t, "")) for t in (unidad.get("tag_ids") or [])}
-    marcadas = [f for f in FLOTAS if f["etiquetas"] & nombres]
-    if not marcadas:
+    suyas = marcadas(unidad, etiquetas)
+    if not suyas:
         return None, None
     compania = id_de(unidad.get("company_id"))
-    for flota in marcadas:
+    for flota in suyas:
         if flota["compania"] == compania:
             return flota, None
-    flota = marcadas[0]
+    flota = suyas[0]
     if compania is None:
         return None, (f"la etiqueta es de «{flota['nombre']}» y en Odoo no "
                       "tiene compania")

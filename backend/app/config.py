@@ -116,6 +116,12 @@ class Settings(BaseSettings):
     # Studio; se busca por su nombre visible, y si no, por este tecnico.
     odoo_etiqueta_clientes: str = "Protección ejecutiva"
     odoo_campo_implantados: str = "x_studio_lista_de_implantados"
+    # Seccion 121. El personal de Brasil llega a Odoo sin CPF ni CNH --RH
+    # los captura despues-- y se dicen como «por capturar», sin detener a
+    # nadie. Los campos se buscan por su nombre visible («CPF», «CNH»); si
+    # no, por estos tecnicos.
+    odoo_campo_cpf: str = ""
+    odoo_campo_cnh: str = ""
     # Seccion 112. Odoo vende de todo --el GPS, la Central de
     # Inteligencia, ATLAS-- y la lectura de los tarifarios los traia a
     # todos. Ahora solo lee los productos de esta categoria de Odoo, con

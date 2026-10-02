@@ -11,6 +11,8 @@ lee de ahi, igual que el personal.
     EJECUTIVA BRASIL». Nunca se mezclan. La unidad de Brasil entra aunque
     Odoo no tenga todavia su color ni su Ubicacion: se capturan despues, y
     se dice aparte lo que falta, sin detener nada.
+  * La etiqueta de cada pais se reconoce por su numero en Odoo (seccion
+    121): la 3 es la de Mexico y la 5 la de Brasil, aunque se renombren.
   * La llave es el numero interno de Odoo; la primera vez se vincula por
     placa con la unidad que ya estaba.
   * Placa, categoria, plaza (la Ubicacion), marca y modelo, color y año
@@ -218,6 +220,10 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
             "por_pais": [{"codigo": f["pais"], "pais": f["nombre"],
                           "leidas": plan["por_pais"][f["pais"]]}
                          for f in reglas.FLOTAS],
+            # La etiqueta de cada flota por su numero, con el nombre que
+            # trae hoy en Odoo (seccion 121): antes de renombrarla se ve
+            # aqui que Connect la reconoce por el numero.
+            "etiquetas": reglas.etiquetas_de_las_flotas(etiquetas),
             "altas": [{k: a[k] for k in ("odoo_id", "placa", "categoria",
                                          "plaza", "pais")}
                       for a in plan["altas"]],

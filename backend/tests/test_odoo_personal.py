@@ -81,7 +81,9 @@ def empleado(n, **cambios):
          "private_email": f"agente{n}@{DOMINIO}",
          "mobile_phone": f"55 5000 {n:04d}", "registration_number": f"PO-{n}",
          "first_contract_date": "2024-03-01",
-         "write_date": "2026-01-01 10:00:00", "active": True}
+         "write_date": "2026-01-01 10:00:00", "active": True,
+         # Cada pais lee a su gente por su compania (seccion 121).
+         "company_id": [1, "CENTAURO ASS"]}
     e.update(cambios)
     return e
 

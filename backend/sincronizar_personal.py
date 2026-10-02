@@ -47,7 +47,11 @@ def main(argv: list) -> int:
     fotos = r["fotos"]
     print("Aplicado: quedo guardado en Centauro." if aplicar
           else "ENSAYO: no se guardo nada.")
-    print(f"Personal de seguridad en Odoo: {r['leidos']}")
+    # Cada pais lee a su gente por su compania (seccion 121).
+    paises = " · ".join(f"{p['pais']} {p['leidos']}"
+                        for p in informe.get("por_pais", []))
+    print(f"Personal de seguridad en Odoo: {r['leidos']}"
+          + (f" ({paises})" if paises else ""))
     print(f"Altas: {r['altas']} · vinculadas: {r['vinculadas']} · "
           f"con cambios: {r['cambios']} · sin cambio: {r['sin_cambio']}")
     print(f"Bajas: {r['bajas']} · accesos que se cierran: "
@@ -65,6 +69,13 @@ def main(argv: list) -> int:
             print(f"  {cuantos:>3}  {motivo}")
     else:
         print("Pendientes: ninguno")
+    # Lo que a la gente de Brasil le falta en Odoo (seccion 121): entra
+    # igual, y se dice para que RH lo capture alla.
+    if r["por_capturar"]:
+        print("Por capturar en Odoo (no detiene nada):")
+        for motivo, cuantos in sorted(r["por_capturar"].items(),
+                                      key=lambda x: -x[1]):
+            print(f"  {cuantos:>3}  {motivo}")
     print(f"El detalle, con nombres, quedo en {DETALLE.name} (no va a git).")
     return 0
 

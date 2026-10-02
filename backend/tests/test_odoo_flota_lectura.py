@@ -51,10 +51,11 @@ def taller(n, dueno, **cambios):
 
 
 class OdooFalso:
-    def __init__(self, *unidades, taller=(), con_fechas=True):
+    def __init__(self, *unidades, taller=(), con_fechas=True, etiquetas=None):
         self.unidades = {u["id"]: u for u in unidades}
         self.taller = {r["id"]: r for r in taller}
         self.con_fechas = con_fechas
+        self.etiquetas = ETIQUETAS if etiquetas is None else etiquetas
 
     def campos(self, modelo):
         assert modelo == "fleet.vehicle.log.services"
@@ -65,7 +66,7 @@ class OdooFalso:
 
     def leer(self, modelo, dominio, campos, archivados=False):
         if modelo == "fleet.vehicle.tag":
-            return [{"id": i, "name": n} for i, n in ETIQUETAS.items()]
+            return [{"id": i, "name": n} for i, n in self.etiquetas.items()]
         if modelo == "fleet.vehicle.log.services":
             filas = list(self.taller.values())
         else:
@@ -463,6 +464,33 @@ def test_cada_pais_lee_su_compania_con_su_etiqueta(db, datos):
     assert datos["categorias"]["cuv_blindada"]["blindado"] is True
     mx = vehiculo(db, 1)
     assert (mx.plaza_id, mx.pais_id) == (datos["cdmx"]["id"], datos["mx"]["id"])
+
+
+def test_la_etiqueta_se_reconoce_por_su_numero_aunque_se_renombre(db):
+    """Seccion 121: la de Mexico es la 3 y la de Brasil la 5 en Odoo. La
+    de Mexico se va a llamar «PROTECCION EJECUTIVA MEXICO»; con cualquier
+    nombre, el numero manda."""
+    renombradas = {1: "pe", 2: "Logística", 3: "PROTECCIÓN EJECUTIVA MÉXICO",
+                   5: "PE · Frota Brasil"}
+    informe = leer(db, OdooFalso(
+        unidad(1, tag_ids=[3]),
+        de_brasil(2, location="São Paulo"),
+        unidad(3, tag_ids=[2]), etiquetas=renombradas), ensayo=True)
+    assert sorted(a["odoo_id"] - ODOO0 for a in informe["altas"]) == [1, 2]
+    assert [(p["codigo"], p["leidas"]) for p in informe["por_pais"]] == [
+        ("MX", 1), ("BR", 1)]
+    assert informe["etiquetas"] == [
+        {"pais": "México", "id": 3, "nombre": "PROTECCIÓN EJECUTIVA MÉXICO"},
+        {"pais": "Brasil", "id": 5, "nombre": "PE · Frota Brasil"}]
+    # Y la de Mexico con el nombre nuevo pero otro numero tambien vale, de
+    # respaldo, como «pe».
+    informe = leer(db, OdooFalso(
+        unidad(4, tag_ids=[7]), unidad(5, tag_ids=[1]),
+        etiquetas={1: "pe", 7: "Protección Ejecutiva México"}), ensayo=True)
+    assert sorted(a["odoo_id"] - ODOO0 for a in informe["altas"]) == [4, 5]
+    # Sin la etiqueta 3 en Odoo se dice: la de Mexico solo se reconoce por
+    # el nombre, y renombrarla la sacaria.
+    assert informe["etiquetas"][0] == {"pais": "México", "id": 3, "nombre": None}
 
 
 def test_la_etiqueta_de_un_pais_con_la_compania_de_otro_no_entra(db):

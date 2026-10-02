@@ -28,6 +28,12 @@ que va a la calle en vez de capturarla a mano.
   * La tarea de cada hora no arranca sola: espera a que alguien haya
     hecho la primera sincronizacion a mano, despues de ver el ensayo.
 
+Cada pais lee a su gente por su compania (seccion 121): Mexico, CENTAURO
+ASS con sus puestos de siempre; Brasil, su compania con «Motorista
+Executivo Bilingue» o «Condutor Folguista». A la gente de Brasil le pueden
+faltar el CPF, la CNH y la cuenta bancaria: entra igual y se dice como
+«por capturar».
+
 La cuenta bancaria tambien viene de Odoo (decision 7 de Salvador, 29 de
 septiembre, seccion 105): los registros bancarios viven alla, Connect
 solo los lee en esta misma lectura y no los captura. Si el usuario de la
@@ -47,13 +53,14 @@ from app import accesos, odoo_api
 from app import models as m
 from app import odoo_personal_reglas as reglas
 from app import reloj, telefonos
+from app.config import settings
 
 registro = logging.getLogger("centauro.odoo")
 
 TIPO = "personal"
 CAMPOS = ["name", "job_id", "job_title", "work_location_id", "work_email",
           "private_email", "mobile_phone", "registration_number",
-          "first_contract_date", "write_date"]
+          "first_contract_date", "write_date", "company_id"]
 # La cuenta bancaria del empleado (seccion 105): un many2one a
 # res.partner.bank. Va aparte de CAMPOS porque puede no estar: en Odoo
 # es un campo de RH (grupo hr.group_hr_user) y `fields_get` no se lo
@@ -82,10 +89,20 @@ def _utc() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def _plazas_y_paises(db: Session) -> tuple:
+    """Las ciudades por pais (su id) y nombre normalizado, y los paises
+    por codigo (seccion 121): cada quien se busca entre las de su pais."""
+    plazas = {}
+    for p in db.query(m.Plaza).filter(m.Plaza.activo.is_(True)).all():
+        plazas.setdefault(p.pais_id, {})[reglas.normal(p.nombre)] = {
+            "id": p.id, "nombre": p.nombre, "pais_id": p.pais_id}
+    paises = {p.codigo.upper(): {"id": p.id, "nombre": p.nombre}
+              for p in db.query(m.Pais).all()}
+    return plazas, paises
+
+
 def _fotos_fijas(db: Session) -> tuple:
-    plazas = {reglas.normal(p.nombre): {"id": p.id, "nombre": p.nombre,
-                                        "pais_id": p.pais_id}
-              for p in db.query(m.Plaza).filter(m.Plaza.activo.is_(True)).all()}
+    plazas, _ = _plazas_y_paises(db)
     personas = [{
         "id": p.id, "odoo_id": p.odoo_id, "nombre": p.nombre,
         "correo": p.correo, "plaza_id": p.plaza_id,
@@ -198,7 +215,7 @@ def _contar_fotos(odoo, ids: list) -> tuple:
     return filas, sum(1 for f in filas if reglas.foto_de(f.get(CAMPO_FOTO)))
 
 
-def _campo_de_cuenta(odoo) -> tuple:
+def _campo_de_cuenta(odoo, visibles: dict | None = None) -> tuple:
     """(el campo de la cuenta bancaria que esta conexion ve, o None y
     por que no).
 
@@ -210,7 +227,8 @@ def _campo_de_cuenta(odoo) -> tuple:
     era--. Eso lo dice ir.model.fields; si tampoco se puede leer, se dice
     que no se sabe.
     """
-    visibles = odoo.campos("hr.employee")
+    if visibles is None:
+        visibles = odoo.campos("hr.employee")
     for campo in reglas.CAMPOS_DE_CUENTA:
         if campo in visibles:
             return campo, None
@@ -308,19 +326,27 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
     # La cuenta bancaria solo se pide si esta conexion la puede leer
     # (seccion 105): pedirla sin permiso tumbaba la lectura entera. Se
     # pide con el nombre que tenga en este Odoo y se ve con el nuevo.
-    campo_cuenta, por_que = _campo_de_cuenta(odoo)
-    empleados = odoo.leer("hr.employee", [],
-                          CAMPOS + ([campo_cuenta] if campo_cuenta else []))
+    visibles = odoo.campos("hr.employee", ["string", "type"])
+    campo_cuenta, por_que = _campo_de_cuenta(odoo, visibles)
+    # En que campos viven el CPF y la CNH de Brasil (seccion 121): se
+    # leen solo para decir si faltan; Connect no los guarda.
+    extra = reglas.campos_por_capturar(visibles, settings.odoo_campo_cpf,
+                                       settings.odoo_campo_cnh)
+    empleados = odoo.leer(
+        "hr.employee", [],
+        CAMPOS + ([campo_cuenta] if campo_cuenta else [])
+        + sorted({c for c in extra.values() if c and c not in CAMPOS}))
     if campo_cuenta and campo_cuenta != CAMPO_CUENTA:
         for e in empleados:
             e[CAMPO_CUENTA] = e.pop(campo_cuenta, False)
     cuentas, error_cuentas = _leer_cuentas(odoo, empleados,
                                            campo_cuenta is not None, por_que)
     plazas, personas, correos = _fotos_fijas(db)
+    _, paises = _plazas_y_paises(db)
     plan = reglas.planear(
         empleados, personas, plazas, correos,
         lambda numero, pais_id: telefonos.normalizar(db, numero, pais_id),
-        cuentas=cuentas)
+        cuentas=cuentas, paises=paises, campos_extra=extra)
 
     estados = {}
     if plan["revisar_salida"]:
@@ -344,6 +370,11 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
     informe = {
         "ensayo": ensayo,
         "leidos": plan["leidos"],
+        # Cuantos de cada pais (seccion 121). Brasil en cero con su gente
+        # cargada en Odoo es la conexion sin su compania.
+        "por_pais": [{"codigo": g["pais"], "pais": g["nombre"],
+                      "leidos": plan["por_pais"][g["pais"]]}
+                     for g in reglas.PERSONAL],
         "altas": [{k: a[k] for k in ("odoo_id", "nombre", "plaza", "correo")}
                   for a in plan["altas"]],
         "vinculadas": plan["vinculos"],
@@ -357,6 +388,11 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
         # Odoo dice algo que no es un numero («sin dispositivo»): no se
         # guardo como telefono ni borro el que ya habia.
         "celular_no_valido": plan["celular_no_valido"],
+        # Lo que a la gente de Brasil le falta en Odoo y no detiene nada:
+        # el CPF, la CNH o la cuenta. Y en que campo de Odoo se buscan;
+        # None: este Odoo no tiene ese campo todavia.
+        "por_capturar": plan["por_capturar"],
+        "campos_por_capturar": reglas.nombres_de_campos(visibles, extra),
         # «sin_foto_real»: Odoo solo tiene el circulo con sus iniciales.
         "fotos": {"revisadas": len(filas_de_foto), "reales": reales,
                   "sin_foto_real": len(filas_de_foto) - reales,
@@ -463,14 +499,33 @@ def _tocadas(plan: dict) -> int:
                | {v["persona_id"] for v in plan["vinculos"]})
 
 
+def _por_falta(lista: list) -> dict:
+    faltas = {}
+    for p in lista:
+        for falta in p["falta"]:
+            faltas[falta] = faltas.get(falta, 0) + 1
+    return faltas
+
+
 def resumen(informe: dict) -> dict:
     """Solo cuentas: para la terminal y para la tarea de cada hora."""
     faltas = {}
     for p in informe["pendientes"]:
         for falta in p["falta"]:
-            clave = "plaza no existe" if falta.startswith("la plaza") else falta
+            clave = ("plaza no existe" if falta.startswith("la plaza")
+                     else "puesto de un pais y compania de otro"
+                     if falta.startswith("el puesto es de")
+                     else "de otro pais en Centauro"
+                     if falta.endswith("en Centauro es de otro pais")
+                     else falta)
             faltas[clave] = faltas.get(clave, 0) + 1
-    return {"leidos": informe["leidos"], "altas": len(informe["altas"]),
+    return {"leidos": informe["leidos"],
+            "por_pais": {p["codigo"]: p["leidos"]
+                         for p in informe.get("por_pais", [])},
+            # Cuantas personas por cada cosa que falta (seccion 121), como
+            # en la flota: sin CPF, sin CNH, sin cuenta bancaria.
+            "por_capturar": _por_falta(informe.get("por_capturar", [])),
+            "altas": len(informe["altas"]),
             "vinculadas": len(informe["vinculadas"]),
             "cambios": len(informe["cambios"]), "bajas": len(informe["bajas"]),
             "accesos_cerrados": len(informe["accesos_cerrados"]),

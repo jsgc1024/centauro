@@ -497,7 +497,8 @@ def _empleado_oficina(n, **cambios):
          "work_email": f"oficina{n}@{DOMINIO}",
          "private_email": f"personal{n}@{DOMINIO}",
          "mobile_phone": "55 1234 5678",
-         "write_date": "2026-09-01 10:00:00", "active": True}
+         "write_date": "2026-09-01 10:00:00", "active": True,
+         "company_id": [1, "CENTAURO ASS"]}
     e.update(cambios)
     return e
 

@@ -79,6 +79,10 @@ const FALTAS = {
   "su placa ya es de una unidad de otro pais en Centauro": "odo_f_placa_otro_pais",
   "sin ubicacion": "odo_f_sin_ubicacion",
   "sin color": "odo_f_sin_color",
+  /* El personal de Brasil (seccion 121): lo que RH captura despues. */
+  "sin CPF": "odo_f_sin_cpf",
+  "sin CNH": "odo_f_sin_cnh",
+  "sin cuenta bancaria": "odo_f_sin_cuenta",
   "sin fecha de entrada": "odo_f_taller_sin_entrada",
   "la salida es antes que la entrada": "odo_f_taller_al_reves",
   "terminado sin fecha de salida: se tomo el dia de entrada":
@@ -102,6 +106,17 @@ const CON_NOMBRE = [
    "odo_f_otro_pais"],
   [/^la ubicacion «(.*)» no es una ciudad de «(.*)» en Centauro$/,
    "odo_f_ubicacion_no_existe"],
+  /* El personal por pais (seccion 121): el puesto de un pais con la
+     compania de otro, la persona de otro pais y la ciudad de otro pais. */
+  [/^el puesto es de «(.*)» y en Odoo no tiene compania$/,
+   "odo_f_puesto_sin_compania"],
+  [/^el puesto es de «(.*)» y su compania en Odoo es «(.*)»$/,
+   "odo_f_puesto_otra_compania"],
+  [/^en Odoo es de «(.*)» y en Centauro es de otro pais$/,
+   "odo_f_persona_otro_pais"],
+  [/^la plaza «(.*)» no es una ciudad de «(.*)» en Centauro$/,
+   "odo_f_plaza_otro_pais"],
+  [/^en Odoo es de «(.*)»: no es de Connect$/, "odo_f_otra_compania"],
 ];
 
 function falta(texto) {
@@ -133,6 +148,7 @@ const MOTIVOS = {
   "archivado en Odoo": "odo_b_archivado",
   "archivada en Odoo": "odo_b_archivada",
   "ya no esta en Odoo": "odo_b_ya_no_esta",
+  "es de otra compania en Odoo": "odo_b_otra_compania",
   "se cierra": "odo_b_se_cierra",
   "sigue abierto hasta que compruebe sus viaticos": "odo_b_viaticos",
   "no tenia": "odo_b_no_tenia",
@@ -147,8 +163,16 @@ function motivo(texto) {
 const LECTURAS = {
   personal: {
     ensayo: "/odoo/personal/ensayo", aplicar: "/odoo/personal/sincronizar",
-    leidos: (d) => reemplazar(t("odo_leidos_personal"),
-                              { n: d.leidos, s: d.sin_cambio }),
+    /* Con los de cada pais al lado (seccion 121), como la flota. */
+    leidos: (d) => reemplazar(t("odo_leidos_personal"), {
+      n: (d.por_pais || []).length
+        ? reemplazar(t("odo_leidas_por_pais"), {
+            n: d.leidos,
+            p: d.por_pais.map(p => reemplazar(t("odo_pais_n"),
+                                              { p: p.pais, n: p.leidos }))
+              .join(" · ") })
+        : d.leidos,
+      s: d.sin_cambio }),
     quien: (x) => x.nombre || "—",
     pieAltas: "odo_altas_personal_pie", pieBajas: "odo_bajas_personal_pie",
     confirmar: "odo_confirmar_personal",
@@ -385,6 +409,35 @@ function celda(titulo, numero, pie, color) {
     h("div", { clase: "chico gris" }, pie));
 }
 
+/* En que campo de Odoo se busca el CPF y la CNH de Brasil (seccion 121).
+   El que Odoo no tiene todavia se dice: hasta que exista, a todos les
+   falta. */
+function camposPorCapturar(tipo, d) {
+  const c = d.campos_por_capturar;
+  if (tipo !== "personal" || !c) return [];
+  const uno = (nombre, campo) => campo
+    ? reemplazar(t("odo_campo_de"), { q: nombre, c: campo })
+    : reemplazar(t("odo_campo_sin"), { q: nombre });
+  return [h("p", { clase: "gris chico", style: "margin:0 0 6px" },
+    `${uno("CPF", c.cpf)} · ${uno("CNH", c.cnh)}`)];
+}
+
+/* La etiqueta de cada flota, por su numero en Odoo (seccion 121): con el
+   nombre que trae hoy. La que no existe se dice en amarillo: esa flota se
+   reconoce solo por su nombre y renombrarla la sacaria de Connect. */
+function lineaDeEtiquetas(tipo, d) {
+  if (tipo !== "flota" || !(d.etiquetas || []).length) return [];
+  const faltan = d.etiquetas.filter(x => !x.nombre);
+  return [
+    h("p", { clase: "gris chico", style: "margin:4px 0 0" },
+      reemplazar(t("odo_etiquetas_flota"), {
+        l: d.etiquetas.filter(x => x.nombre).map(x => reemplazar(t("odo_etiqueta_n"),
+          { p: x.pais, i: x.id, e: x.nombre })).join(" · ") || "—" })),
+    ...faltan.map(x => h("div", { style: "margin:6px 0 0" },
+      aviso(reemplazar(t("odo_etiqueta_no_existe"), { p: x.pais, i: x.id }), "alerta"))),
+  ];
+}
+
 function informe(tipo, d) {
   const cfg = LECTURAS[tipo];
   if (cfg.informe) return cfg.informe(d);
@@ -397,13 +450,17 @@ function informe(tipo, d) {
   const pendientes = tipo === "flota"
     ? d.pendientes.concat((d.taller || {}).pendientes || [])
     : d.pendientes;
-  const porCapturar = tipo === "flota" ? (d.por_capturar || []) : [];
+  /* Lo que falta en Odoo y no detiene nada: la flota de Brasil sin color
+     ni Ubicacion (seccion 118) y su gente sin CPF, CNH o cuenta (121). */
+  const porCapturar = (tipo === "flota" || tipo === "personal")
+    ? (d.por_capturar || []) : [];
 
   const partes = [
     h("p", { clase: "gris chico", style: "margin:14px 0 0" },
       reemplazar(t(d.ensayo ? "odo_ensayo_de" : "odo_aplicado_de"),
                  { hora: hora(new Date().toISOString()) }),
       " · ", cfg.leidos(d)),
+    ...lineaDeEtiquetas(tipo, d),
     h("div", { clase: "camino", style: "background:#fff;margin:8px 0 12px" },
       celda(t("odo_altas"), d.altas.length, t(cfg.pieAltas)),
       celda(t("odo_cambios"), tocadas(d),
@@ -446,7 +503,9 @@ function informe(tipo, d) {
     partes.push(plegable(`${t("odo_l_por_capturar")} (${porCapturar.length})`,
       h("div", {},
         h("p", { clase: "gris chico", style: "margin:0 0 6px" },
-          t("odo_por_capturar_que")),
+          t(tipo === "personal" ? "odo_por_capturar_que_personal"
+                                : "odo_por_capturar_que")),
+        ...camposPorCapturar(tipo, d),
         listaDePendientes(porCapturar, cfg)),
       null, {}, false));
   }

@@ -27,6 +27,21 @@ Y de esa misma noche, ya con la hoja de RH cargada:
     tiene; el informe lo cuenta aparte. No detiene el alta: la persona
     entra sin celular.
 
+Y la de Brasil (seccion 121), con Odoo ya listo:
+
+  * Cada pais lee a su gente por su compania, como la flota, y nunca se
+    mezclan: Mexico, CENTAURO ASS con «Personal de Seguridad» o «Security
+    Driver»; Brasil, CENTAURO SOLUCOES AVANCADAS DE SEGURANCA LTDA con
+    «Motorista Executivo Bilingue» --el conductor de seguridad bilingue--
+    o «Condutor Folguista», el de relevo. Los administrativos de Brasil
+    son de oficina. El puesto de un pais con la compania de otro no entra.
+  * La plaza, entre las ciudades de su pais. «Sao Paulo - Barueri» es Sao
+    Paulo: el lugar de trabajo que trae un barrio o un municipio despues
+    del guion se busca tambien por lo de antes.
+  * A la gente de Brasil le pueden faltar en Odoo el CPF, la CNH y la
+    cuenta bancaria: entra igual, y lo que falta se dice aparte, como
+    «por capturar». Lo que Centauro ya tiene no se borra por eso.
+
 Y la del 29 de septiembre (decision 7, seccion 105):
 
   * La cuenta bancaria de Odoo manda. Si el empleado trae cuenta con
@@ -41,7 +56,24 @@ import re
 import unicodedata
 from datetime import date, datetime
 
-PUESTOS = ("personal de seguridad", "security driver")
+from app.odoo_api import COMPANIAS
+
+# El personal de seguridad de cada pais (seccion 121). En Odoo cada pais es
+# una compania, con sus puestos. `central`: la ciudad de la oficina de ese
+# pais, donde queda la oficina que no dice donde trabaja. `por_capturar`:
+# lo que a la gente de ese pais le puede faltar en Odoo sin detener nada.
+PERSONAL = (
+    {"pais": "MX", "nombre": "México", "compania": COMPANIAS["MX"],
+     "puestos": ("personal de seguridad", "security driver"),
+     "central": "ciudad de mexico", "por_capturar": False},
+    {"pais": "BR", "nombre": "Brasil", "compania": COMPANIAS["BR"],
+     "puestos": ("motorista executivo bilingue", "condutor folguista"),
+     "central": "sao paulo", "por_capturar": True},
+)
+PUESTOS = tuple(p for grupo in PERSONAL for p in grupo["puestos"])
+# Lo que se dice de quien le falta en Odoo (seccion 121), por campo.
+FALTA_CPF, FALTA_CNH, FALTA_CUENTA = ("sin CPF", "sin CNH",
+                                      "sin cuenta bancaria")
 # La cuenta bancaria del empleado en Odoo: un many2one a res.partner.bank.
 # En la version saas~19.3 es la cuenta principal, primary_bank_account_id
 # (junto a la lista bank_account_ids); en las de antes, bank_account_id.
@@ -162,11 +194,44 @@ def instante(valor) -> datetime | None:
         return None
 
 
+def _puestos(empleado: dict) -> list:
+    return [normal(t) for t in (nombre_de(empleado.get("job_id")),
+                                empleado.get("job_title"))]
+
+
 def es_de_seguridad(empleado: dict) -> bool:
-    """Por el puesto del catalogo y, si no lo tiene, por el escrito."""
-    return any(normal(t).startswith(PUESTOS)
-               for t in (nombre_de(empleado.get("job_id")),
-                         empleado.get("job_title")))
+    """Por el puesto del catalogo y, si no lo tiene, por el escrito: el
+    de seguridad de cualquier pais. Asi la oficina nunca se lleva a un
+    motorista de Brasil."""
+    return any(t.startswith(PUESTOS) for t in _puestos(empleado))
+
+
+def grupo_de_compania(compania_id) -> dict | None:
+    """El pais de una compania de Odoo, o None si no es de Connect."""
+    return next((g for g in PERSONAL if g["compania"] == compania_id), None)
+
+
+def personal_de(empleado: dict) -> tuple:
+    """(grupo, problema). El pais cuyo puesto de seguridad Y cuya
+    compania trae el empleado (seccion 121). Con el puesto de un pais y
+    la compania de otro --o ninguna-- no es de ninguno: (None, por que).
+    Sin puesto de seguridad no es de esta lectura: (None, None)."""
+    puestos = _puestos(empleado)
+    suyos = [g for g in PERSONAL
+             if any(t.startswith(g["puestos"]) for t in puestos)]
+    if not suyos:
+        return None, None
+    compania = id_de(empleado.get("company_id"))
+    for grupo in suyos:
+        if grupo["compania"] == compania:
+            return grupo, None
+    grupo = suyos[0]
+    if compania is None:
+        return None, (f"el puesto es de «{grupo['nombre']}» y en Odoo no "
+                      "tiene compania")
+    nombre = nombre_de(empleado.get("company_id")) or str(compania)
+    return None, (f"el puesto es de «{grupo['nombre']}» y su compania en "
+                  f"Odoo es «{nombre}»")
 
 
 def correo_de(empleado: dict) -> str:
@@ -194,11 +259,68 @@ def es_celular(numero) -> bool:
     return sum(c.isdigit() for c in texto(numero)) >= DIGITOS_CELULAR
 
 
-def plaza_de(empleado: dict, plazas: dict) -> tuple:
-    """(plaza o None, lo que dice Odoo). `plazas` va por nombre normalizado."""
-    lugar = nombre_de(empleado.get("work_location_id"))
+def buscar_plaza(lugar, plazas: dict):
+    """La plaza de un lugar de Odoo, o None. `plazas` va por nombre
+    normalizado. El lugar con un barrio o un municipio despues del guion
+    --«Sao Paulo - Barueri»-- tambien se busca por lo de antes (seccion
+    121)."""
     clave = normal(lugar)
-    return plazas.get(ALIAS_PLAZA.get(clave, clave)), lugar
+    if not clave:
+        return None
+    for candidata in (clave, re.split(r"\s[-–—]\s", clave)[0].strip()):
+        plaza = plazas.get(ALIAS_PLAZA.get(candidata, candidata))
+        if plaza is not None:
+            return plaza
+    return None
+
+
+def plaza_de(empleado: dict, plazas: dict) -> tuple:
+    """(plaza o None, lo que dice Odoo). `plazas` va por nombre normalizado:
+    las de su pais."""
+    lugar = nombre_de(empleado.get("work_location_id"))
+    return buscar_plaza(lugar, plazas), lugar
+
+
+# Donde vive en Odoo lo que a la gente de Brasil le puede faltar (seccion
+# 121), si nadie dice otra cosa: el CPF, en «Numero de identificacion»; la
+# CNH, en «Licencia para conducir», el archivo escaneado --se lee su nombre
+# de archivo, que Odoo llena al subirlo, y no el archivo--.
+CAMPO_CPF = "identification_id"
+CAMPO_CNH = "driving_license_name"
+NOMBRES_DE_CAMPO = {CAMPO_CNH: "Licencia para conducir"}
+
+
+def campos_por_capturar(campos: dict, cpf: str = "", cnh: str = "") -> dict:
+    """En que campo de hr.employee viven el CPF y la CNH, o None si este
+    Odoo no tiene ninguno (seccion 121): el tecnico que diga la
+    configuracion; si no, uno cuyo nombre visible diga «CPF» o «CNH» --el
+    que RH agregue con Studio--; si no, los de Odoo. `campos`: el
+    fields_get del empleado, con su «string»."""
+    def buscar(palabra, tecnico, de_odoo):
+        if tecnico and tecnico in campos:
+            return tecnico
+        candidatos = []
+        for nombre, info in campos.items():
+            visible = normal((info or {}).get("string"))
+            palabras = set(re.split(r"[^a-z0-9]+", visible))
+            if palabra in palabras or palabra in nombre.lower().split("_"):
+                candidatos.append((0 if visible == palabra else 1, nombre))
+        if candidatos:
+            return min(candidatos)[1]
+        return de_odoo if de_odoo in campos else None
+    return {"cpf": buscar("cpf", cpf, CAMPO_CPF),
+            "cnh": buscar("cnh", cnh, CAMPO_CNH)}
+
+
+def nombres_de_campos(campos: dict, extra: dict) -> dict:
+    """Como se llaman en la pantalla de Odoo los campos de `extra`, para
+    decir donde se busca cada cosa. None: Odoo no tiene ese campo."""
+    def nombre(tecnico):
+        if not tecnico:
+            return None
+        return (NOMBRES_DE_CAMPO.get(tecnico)
+                or texto((campos.get(tecnico) or {}).get("string")) or tecnico)
+    return {clave: nombre(tecnico) for clave, tecnico in extra.items()}
 
 
 def foto_de(base64: str | None) -> str | None:
@@ -216,32 +338,51 @@ def foto_de(base64: str | None) -> str | None:
 
 def planear(empleados: list, personas: list, plazas: dict,
             correos_de_acceso: dict, normalizar_tel,
-            cuentas: dict | None = None) -> dict:
+            cuentas: dict | None = None, paises: dict | None = None,
+            campos_extra: dict | None = None) -> dict:
     """Que hacer con cada empleado de Odoo, sin hacerlo.
 
     `empleados`: lo que leyo Odoo (los activos). `personas`: foto fija de
     Centauro, una por persona, con id, odoo_id, nombre, correo, plaza_id,
     pais_id, activo, telefono, referencia, fecha_ingreso, foto (si tiene),
     sincronizado_en, baja_odoo_en y sus datos bancarios (banco, clabe,
-    titular_cuenta). `plazas`: por nombre normalizado, con id, nombre y
-    pais_id. `correos_de_acceso`: correo -> persona_id de los accesos que
-    ya existen. `normalizar_tel(numero, pais_id)`: la regla de la lada
-    del sistema. `cuentas`: las de res.partner.bank por su id, o None si
-    no se pudieron leer (seccion 105): entonces lo bancario no se toca.
+    titular_cuenta). `plazas`: por pais (su id) y nombre normalizado, con
+    id, nombre y pais_id. `correos_de_acceso`: correo -> persona_id de los
+    accesos que ya existen. `normalizar_tel(numero, pais_id)`: la regla de
+    la lada del sistema. `cuentas`: las de res.partner.bank por su id, o
+    None si no se pudieron leer (seccion 105): entonces lo bancario no se
+    toca. `paises`: por codigo, con id y nombre. `campos_extra`: en que
+    campo de Odoo viven el CPF y la CNH (seccion 121), o None.
     """
-    elegidos = [e for e in empleados if es_de_seguridad(e)]
+    paises = paises or {}
+    campos_extra = campos_extra or {}
+    elegidos, mezclados = [], []
+    for e in empleados:
+        grupo, problema = personal_de(e)
+        if grupo is not None:
+            elegidos.append((e, grupo))
+        elif problema:
+            mezclados.append((e, problema))
     por_odoo = {p["odoo_id"]: p for p in personas if p.get("odoo_id")}
     por_correo = {texto(p.get("correo")).lower(): p
                   for p in personas if p.get("correo")}
-    cuenta = collections.Counter(correo_de(e) for e in elegidos if correo_de(e))
+    cuenta = collections.Counter(correo_de(e) for e, _ in elegidos
+                                 if correo_de(e))
     repetidos = {c for c, n in cuenta.items() if n > 1}
-    de_trabajo = collections.Counter(correo_de_trabajo(e) for e in elegidos
+    de_trabajo = collections.Counter(correo_de_trabajo(e) for e, _ in elegidos
                                      if correo_de_trabajo(e))
+    # De que pais es cada ciudad, para decir que la de otro pais no es de
+    # aqui en vez de que no existe.
+    pais_de_ciudad = {nombre: pais_id for pais_id, suyas in plazas.items()
+                      for nombre in suyas}
+    nombres_pais = {x["id"]: x.get("nombre") for x in paises.values()}
 
-    plan = {"leidos": len(elegidos), "altas": [], "vinculos": [],
+    plan = {"leidos": len(elegidos),
+            "por_pais": {g["pais"]: 0 for g in PERSONAL},
+            "altas": [], "vinculos": [],
             "cambios": [], "fotos": [], "pendientes": [], "sin_cambio": 0,
             "procesadas": [], "revisar_salida": [], "celular_no_valido": [],
-            "con_cuenta": 0, "sin_cuenta": 0}
+            "por_capturar": [], "con_cuenta": 0, "sin_cuenta": 0}
     tomados = set()        # correos que este plan ya aparto
 
     def pendiente(e, persona_id, faltas):
@@ -249,15 +390,50 @@ def planear(empleados: list, personas: list, plazas: dict,
                                    "nombre": texto(e.get("name")),
                                    "falta": faltas})
 
-    def banco(e):
+    def banco(e, grupo):
         """Lo bancario que dice Odoo, o None si no se toca. Cuenta a
-        quien la trae y a quien no."""
+        quien la trae y a quien no. En el pais cuya gente llega a Odoo
+        sin cuenta todavia (seccion 121), la que falta en Odoo no borra la
+        que Centauro ya tiene: se dice como por capturar."""
         if cuentas is None:
             return None, None
         datos, aviso = cuenta_de(e, cuentas)
         if datos is not None:
             plan["con_cuenta" if datos["clabe"] else "sin_cuenta"] += 1
+            if grupo["por_capturar"] and not datos["clabe"]:
+                return None, None
         return datos, aviso
+
+    def capturar(e, persona, grupo, nombre, plaza_pais):
+        """Lo que a la persona de ese pais le falta en Odoo y no detiene
+        nada (seccion 121): el CPF, la CNH y la cuenta bancaria, si
+        tampoco la tiene Centauro."""
+        if not grupo["por_capturar"]:
+            return
+        persona = persona or {}
+        falta = []
+        for clave, aviso in (("cpf", FALTA_CPF), ("cnh", FALTA_CNH)):
+            campo = campos_extra.get(clave)
+            if not campo or not texto(e.get(campo)):
+                falta.append(aviso)
+        if cuentas is not None and not persona.get("clabe"):
+            datos, _ = cuenta_de(e, cuentas)
+            if datos is not None and not datos["clabe"]:
+                falta.append(FALTA_CUENTA)
+        if falta:
+            plan["por_capturar"].append({
+                "odoo_id": e["id"], "persona_id": persona.get("id"),
+                "nombre": nombre, "pais": plaza_pais, "falta": falta})
+
+    def sin_ciudad(lugar, pais):
+        """Por que no hay plaza: el lugar es de otro pais, o no existe."""
+        if not lugar:
+            return "sin plaza"
+        otro = pais_de_ciudad.get(normal(lugar))
+        if otro is not None and otro != pais["id"]:
+            return (f"la plaza «{lugar}» no es una ciudad de "
+                    f"«{pais['nombre']}» en Centauro")
+        return f"la plaza «{lugar}» no existe en Centauro"
 
     def celular(e, pais_id, persona_id, nombre):
         """El celular de Odoo con su lada, o None si Odoo no trae un numero."""
@@ -272,12 +448,28 @@ def planear(empleados: list, personas: list, plazas: dict,
                                           "nombre": nombre})
         return None
 
-    for e in elegidos:
+    # El puesto de un pais con la compania de otro (seccion 121): no entra
+    # en ninguno ni se toca a quien ya estaba. Cuenta como visto, para que
+    # no se tome por una salida.
+    for e, problema in mezclados:
+        ya = por_odoo.get(e["id"])
+        pendiente(e, ya["id"] if ya else None, [problema])
+
+    for e, grupo in elegidos:
+        plan["por_pais"][grupo["pais"]] += 1
         nombre = corto(e.get("name"), 160)
+        pais = paises.get(grupo["pais"])
+        if pais is None:
+            ya = por_odoo.get(e["id"])
+            pendiente(e, ya["id"] if ya else None,
+                      [f"el pais «{grupo['pais']}» no existe en Centauro"])
+            continue
         correo = correo_de(e)
         problema = ("correo repetido en Odoo" if correo in repetidos
                     else problema_de_correo(correo))
-        plaza, lugar = plaza_de(e, plazas)
+        # La ciudad, entre las de su pais: «Guadalajara» en un motorista
+        # de Brasil no lo manda a Mexico.
+        plaza, lugar = plaza_de(e, plazas.get(pais["id"], {}))
 
         persona, vinculo = por_odoo.get(e["id"]), False
         if persona is None:
@@ -302,8 +494,7 @@ def planear(empleados: list, personas: list, plazas: dict,
         if persona is None:
             faltas = []
             if plaza is None:
-                faltas.append(f"la plaza «{lugar}» no existe en Centauro"
-                              if lugar else "sin plaza")
+                faltas.append(sin_ciudad(lugar, pais))
             if problema:
                 faltas.append(problema)
             elif correo in correos_de_acceso or correo in tomados:
@@ -314,7 +505,7 @@ def planear(empleados: list, personas: list, plazas: dict,
             tomados.add(correo)
             # Con su cuenta, si Odoo la trae; sin cuentas leidas o con
             # una que no se alcanzo, entra sin ella y se dice.
-            datos_banco, aviso_banco = banco(e)
+            datos_banco, aviso_banco = banco(e, grupo)
             plan["altas"].append({
                 "odoo_id": e["id"], "nombre": nombre, "correo": correo,
                 "plaza_id": plaza["id"], "plaza": plaza["nombre"],
@@ -325,6 +516,7 @@ def planear(empleados: list, personas: list, plazas: dict,
             plan["fotos"].append(e["id"])
             if aviso_banco:
                 pendiente(e, None, [aviso_banco])
+            capturar(e, None, grupo, nombre, pais["nombre"])
             continue
 
         # ------------------------------------------------ quien ya esta
@@ -342,6 +534,12 @@ def planear(empleados: list, personas: list, plazas: dict,
             pendiente(e, persona["id"], ["en Centauro es de oficina; en Odoo "
                                          "ya es de seguridad"])
             continue
+        if persona.get("pais_id") and persona["pais_id"] != pais["id"]:
+            # Una persona no cambia de pais sola (seccion 121), como la
+            # unidad: el cambio lo decide alguien.
+            pendiente(e, persona["id"], [f"en Odoo es de «{pais['nombre']}» y "
+                                         "en Centauro es de otro pais"])
+            continue
 
         valores, que, avisos = {}, [], []
         if nombre and nombre != persona.get("nombre"):
@@ -351,9 +549,9 @@ def planear(empleados: list, personas: list, plazas: dict,
             valores["plaza_id"] = plaza["id"]
             que.append("plaza")
         elif plaza is None and lugar:
-            avisos.append(f"la plaza «{lugar}» no existe en Centauro")
-        pais = plaza["pais_id"] if plaza is not None else persona.get("pais_id")
-        tel = celular(e, pais, persona["id"], nombre or persona.get("nombre"))
+            avisos.append(sin_ciudad(lugar, pais))
+        lada = plaza["pais_id"] if plaza is not None else persona.get("pais_id")
+        tel = celular(e, lada, persona["id"], nombre or persona.get("nombre"))
         if tel and tel != persona.get("telefono"):
             valores["telefono"] = tel
             que.append("celular")
@@ -385,7 +583,7 @@ def planear(empleados: list, personas: list, plazas: dict,
 
         # La cuenta bancaria: lo que dice Odoo manda, tambien para vaciar
         # (seccion 105). Con las cuentas sin leer, `banco` no dice nada.
-        datos_banco, aviso_banco = banco(e)
+        datos_banco, aviso_banco = banco(e, grupo)
         if aviso_banco:
             avisos.append(aviso_banco)
         elif datos_banco is not None:
@@ -417,14 +615,17 @@ def planear(empleados: list, personas: list, plazas: dict,
             plan["sin_cambio"] += 1
         if avisos:
             pendiente(e, persona["id"], avisos)
+        capturar(e, persona, grupo, nombre or persona.get("nombre"),
+                 pais["nombre"])
         plan["procesadas"].append(persona["id"])
 
     # Las que Centauro ya lleva desde Odoo y hoy no salieron en la lista:
     # o las archivaron, o dejaron de ser de seguridad. Se pregunta a Odoo
     # por cada una antes de decidir. Las de oficina no: esas las lleva su
     # propia lectura (seccion 74), y aqui saldrian cada hora como
-    # pendientes de algo que no son.
-    ids = {e["id"] for e in elegidos}
+    # pendientes de algo que no son. Las de puesto y compania de paises
+    # distintos ya salieron como pendientes: no son salidas.
+    ids = {e["id"] for e, _ in elegidos} | {e["id"] for e, _ in mezclados}
     plan["revisar_salida"] = [
         p for p in personas
         if p.get("odoo_id") and p.get("activo") and p.get("sincronizado_en")

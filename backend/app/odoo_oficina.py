@@ -35,7 +35,7 @@ registro = logging.getLogger("centauro.odoo")
 
 TIPO = "oficina"
 CAMPOS = ["name", "job_id", "job_title", "department_id", "work_location_id",
-          "work_email", "write_date"]
+          "work_email", "write_date", "company_id"]
 
 
 def _utc() -> datetime:
@@ -43,16 +43,22 @@ def _utc() -> datetime:
 
 
 def _fotos_fijas(db: Session) -> tuple:
-    plazas = {odoo_personal_reglas.normal(p.nombre):
-              {"id": p.id, "nombre": p.nombre, "pais_id": p.pais_id}
-              for p in db.query(m.Plaza).filter(m.Plaza.activo.is_(True)).all()}
+    # Las ciudades por pais (seccion 121): cada quien entre las suyas.
+    plazas = {}
+    for p in db.query(m.Plaza).filter(m.Plaza.activo.is_(True)).all():
+        plazas.setdefault(p.pais_id, {})[odoo_personal_reglas.normal(p.nombre)] = {
+            "id": p.id, "nombre": p.nombre, "pais_id": p.pais_id}
     usuarios = db.query(m.Usuario).all()
     de_campo = {u.persona_id for u in usuarios
                 if u.rol == m.Rol.PERSONAL_SEGURIDAD}
+    # Quien tiene un acceso abierto (seccion 121): la de otra compania con
+    # acceso no se da de baja sola.
+    con_acceso = {u.persona_id for u in usuarios if u.activo}
     personas = [{
         "id": p.id, "odoo_id": p.odoo_id, "nombre": p.nombre,
         "correo": p.correo, "plaza_id": p.plaza_id, "activo": p.activo,
         "oficina": p.oficina, "de_campo": p.id in de_campo,
+        "con_acceso": p.id in con_acceso,
         "puesto_odoo": p.puesto_odoo, "area_odoo": p.area_odoo,
         "sincronizado_en": p.odoo_sincronizado_en,
     } for p in db.query(m.Persona).all()]
@@ -84,14 +90,16 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
     ahora = _utc()
     empleados = odoo.leer("hr.employee", [], CAMPOS)
     plazas, personas, correos = _fotos_fijas(db)
-    plan = reglas.planear(empleados, personas, plazas, correos)
+    paises = {p.codigo.upper(): {"id": p.id, "nombre": p.nombre}
+              for p in db.query(m.Pais).all()}
+    plan = reglas.planear(empleados, personas, plazas, correos, paises)
 
     estados = {}
     if plan["revisar_salida"]:
         estados = {f["id"]: f for f in odoo.leer(
             "hr.employee",
             [["id", "in", [p["odoo_id"] for p in plan["revisar_salida"]]]],
-            ["active"], archivados=True)}
+            ["active", "company_id"], archivados=True)}
     bajas, pendientes_de_salida = reglas.clasificar_salidas(
         plan["revisar_salida"], estados)
     plan["pendientes"].extend(pendientes_de_salida)

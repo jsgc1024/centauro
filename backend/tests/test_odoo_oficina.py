@@ -62,7 +62,8 @@ def empleado(n, puesto="Monitorista Bilingüe", **cambios):
          "department_id": [5, "Central de Inteligencia"],
          "work_location_id": [30, "Ciudad de México"],
          "work_email": f"oficina{n}@{DOMINIO}",
-         "write_date": "2026-09-01 10:00:00", "active": True}
+         "write_date": "2026-09-01 10:00:00", "active": True,
+         "company_id": [1, "CENTAURO ASS"]}
     e.update(cambios)
     return e
 

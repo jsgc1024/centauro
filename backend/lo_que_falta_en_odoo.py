@@ -27,8 +27,10 @@ from app.db import SessionLocal
 AREAS = [
     ("personal", "El personal de seguridad", "Recursos Humanos", odoo_personal,
      # Las cuentas bancarias (seccion 105): cuantos sin cuenta, y si la
-     # conexion no las pudo leer.
-     ("pendientes", "celular_no_valido", "bajas", "fotos", "cuentas")),
+     # conexion no las pudo leer. Lo por capturar de la gente de Brasil
+     # (seccion 121): el CPF, la CNH y la cuenta, que RH completa en Odoo.
+     ("pendientes", "por_capturar", "celular_no_valido", "bajas", "fotos",
+      "cuentas")),
     # Lo por capturar de la flota de Brasil (seccion 118) no detiene
     # nada, pero es lo que su area tiene que completar en Odoo.
     ("flota", "La flota y el taller", "Flota", odoo_flota,

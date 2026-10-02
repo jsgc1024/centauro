@@ -9387,6 +9387,96 @@ cotización ya guardaba su moneda. Manual: «La cotización al cliente»,
 con su apartado «La moneda», en español y portugués. Pruebas:
 `tests/test_moneda_al_cotizar.py`, diez casos.
 
+## 121. La gente de Brasil desde Odoo, y las etiquetas de la flota por su número
+
+Pedido de Salvador (2 de octubre), «Brasil en Odoo: lo que falta para que
+Connect lo vea completo». Odoo ya está listo; Connect solo lee. Aquí
+quedan los puntos 0, 1 y 3 de su lista; el 2, el tarifario de Brasil, va
+primero con su propuesta y sus pantallas.
+
+0. **La flota de Brasil.** La sección 118 ya está en el servidor y la
+   primera lectura de la flota se hizo a mano el 28 de septiembre, así
+   que la de cada hora toma sola las 13 unidades de Brasil (compañía 5,
+   etiqueta 5). Salvador tiene un bloque que lo confirma; si no
+   entraron, el ensayo de la flota dice por qué.
+1. **El personal de Brasil.** En Odoo, la compañía 5, «CENTAURO SOLUCOES
+   AVANCADAS DE SEGURANCA LTDA», tiene 43 empleados: 35 «Motorista
+   Executivo Bilíngue» (el conductor de seguridad bilingüe), 5 «Condutor
+   Folguista» (el relevo) y 3 administrativos, todos en «São Paulo -
+   Barueri». México sigue en CENTAURO ASS (compañía 1).
+   - **Cada país lee a su gente por su compañía**, y nunca se mezclan:
+     México, CENTAURO ASS con «Personal de Seguridad» o «Security
+     Driver»; Brasil, la compañía 5 con sus dos puestos. El puesto de un
+     país con la compañía de otro —o sin compañía— no entra en ninguno:
+     queda pendiente con su porqué. La persona que ya estaba no cambia de
+     país sola. Los administrativos no entran a la operación: son de
+     oficina. Las etiquetas del empleado («Fort Tecn», «contratação
+     direta») son informativas y no filtran.
+   - **La ciudad** sale del lugar de trabajo, buscada entre las del país
+     de la persona: «São Paulo - Barueri» es Sao Paulo (lo que va
+     después del guion no cuenta). El celular, con +55.
+   - **Por capturar.** Si a la gente de Brasil le falta en Odoo el CPF, la
+     CNH o la cuenta bancaria, entra igual. Lo que falta sale aparte, en
+     «Por capturar», sin detener nada, para que RH lo capture allá. El CPF se
+     busca en el «Número de identificación» del empleado
+     (`identification_id`). La CNH, en el archivo de su «Licencia para
+     conducir» (`driving_license_name`: solo se mira si hay archivo, no se
+     baja). Si RH crea campos propios llamados «CPF» y «CNH», mandan esos;
+     el servidor también puede nombrar otros con `ODOO_CAMPO_CPF` y
+     `ODOO_CAMPO_CNH`. Connect no guarda el CPF ni la CNH: solo dice si
+     faltan. La cuenta es la principal del empleado, como en México. En
+     Brasil, la que falta en Odoo no borra la que Connect ya tiene; en
+     México sigue mandando Odoo.
+2. **La oficina, solo de las compañías de Connect.** Lo encontró el
+   diagnóstico del punto 1: el usuario de la conexión ve también a
+   «Centauro Logistic SA CV» (57 empleados). La lectura de la oficina
+   tomaba como oficina a todo el que no fuera de seguridad, de cualquier
+   compañía, y así entraron 14 personas de Logistic, ninguna con acceso.
+   Ahora es de oficina solo quien es de CENTAURO ASS o de la compañía de
+   Brasil y no es de seguridad. Su ciudad es una de su país, o la oficina
+   central de su país (Brasil: Sao Paulo). La gente de otra compañía que
+   ya estaba en Connect sin acceso se da de baja sola: «es de otra
+   compañía en Odoo». Con acceso queda pendiente, para que RH decida. Los
+   3 administrativos de Brasil son de oficina, pero sin correo de trabajo
+   en Odoo todavía no llegan.
+3. **La etiqueta de la flota por su número.** Salvador va a renombrar la
+   de México a «PROTECCIÓN EJECUTIVA MÉXICO». La lectura ya no depende del
+   nombre: cada etiqueta se reconoce por su número en Odoo —la 3 es la
+   de México y la 5 la de Brasil—, y por su nombre por si acaso. El
+   ensayo de la flota dice el nombre que trae hoy cada una; si una no
+   existiera, lo dice en amarillo y pide no renombrarla.
+
+La pantalla de Odoo dice cuántos leyó de cada país en el personal, como
+en la flota, y su «Por capturar» con los campos de Odoo de donde salen el
+CPF y la CNH. La terminal (`sincronizar_personal.py`) dice lo mismo, y la
+lista de lo que falta en Odoo (`lo_que_falta_en_odoo.py`) lleva lo por
+capturar del personal.
+
+Por dentro: `odoo_personal_reglas.PERSONAL` (país, compañía, puestos,
+oficina central y si lleva por capturar), `personal_de`, `buscar_plaza`
+(sin lo que va después del guion), `campos_por_capturar` y
+`nombres_de_campos`; `planear` recibe las ciudades por país y los
+países, y su plan trae `por_pais` y `por_capturar`. `odoo_personal` lee
+`company_id` y los campos del CPF y la CNH; `resumen` agrupa lo por
+capturar. `config`: `odoo_campo_cpf` y `odoo_campo_cnh`.
+`odoo_oficina_reglas.es_de_oficina` solo en las compañías de Connect,
+`ciudades_de` por país y la baja de otra compañía; `odoo_oficina` lee
+`company_id` y si la persona tiene acceso. `odoo_flota_reglas.FLOTAS`
+con su `etiqueta`, `marcadas` y `etiquetas_de_las_flotas`; el informe de
+la flota trae `etiquetas`. Sin migración. En la consola `odoo.js`;
+`idioma.js` con 15 textos nuevos en tres idiomas. Manual: lo que viene de
+Odoo, en español y portugués. Pruebas: `tests/test_odoo_brasil_personal.py`,
+ocho casos, y uno nuevo en `tests/test_odoo_flota_lectura.py`; los
+empleados de prueba ya traen su compañía.
+
+**Lo que sigue.** Subir con el bloque de siempre (sin migración). La
+lectura del personal de las :17 da de alta a los 40 de Brasil con su
+acceso a la app, sin contraseña; entran con el código que les dicta su
+consultor o la central. La de la oficina de las :37 da de baja a los 14
+de Logistic. Para verlo antes: Odoo → Personal → Ensayo apenas termine
+de subir. Y en cuanto el ensayo de la flota diga «México, la n.º 3» y
+«Brasil, la n.º 5», la etiqueta de México se puede renombrar.
+
 ## 14. Lo que falta
 
 ### Abierto
@@ -9456,6 +9546,15 @@ con su apartado «La moneda», en español y portugués. Pruebas:
   la 4, anotar la factura hecha en Odoo, en la 96, y la 5, el arranque,
   en la 97. Las cinco piezas quedaron hechas; lo que sigue lo dice el
   arranque, en vivo.
+- **Brasil en Odoo: el tarifario** (pedido del 2 de octubre, punto 2).
+  La categoría «Proteção Executiva Brasil» (5), las listas que empiezan
+  con «Brasil ·» y sus nombres en portugués. La primera es «Brasil ·
+  Amazon Implantados (USD)» (lista 35, compañía 5), con el paquete
+  mensual de USD 16,855 «Tudo incluído» y la hora extra de USD 112
+  después de 12 horas. Brasil no tiene lista general: se avisa y no se
+  usa la de México. El cliente Amazon Brasil todavía no está en Odoo. Va
+  primero la propuesta con sus pantallas; los puntos 0, 1 y 3 quedaron
+  en la sección 121.
 - **El primer agente del sistema: los casos resueltos** (sección 90).
   Salvador, 27 de septiembre: «más adelante podemos poner a un agente
   dedicado a ello… será el primer agente que coloquemos en el sistema».
