@@ -53,6 +53,11 @@ class FuenteCambio(BaseModel):
 class ParametrosIn(BaseModel):
     tope_x_dia: int | None = Field(None, ge=0, le=100000)
     pausado: bool | None = None
+    # Lo que Connect publica solo (seccion 143).
+    solo_activo: bool | None = None
+    solo_oficial: bool | None = None
+    solo_confirmado: bool | None = None
+    solo_informativo: bool | None = None
 
 
 def _mexico(db: Session) -> m.Pais:
@@ -145,7 +150,8 @@ def cambiar_fuente(fuente_id: int, datos: FuenteCambio,
     return motor.fuentes(db, _mexico(db))
 
 
-@router.put("/parametros", summary="El tope de X y la pausa del lector")
+@router.put("/parametros",
+            summary="El tope de X, la pausa y lo que publica solo")
 def cambiar_parametros(datos: ParametrosIn, db: Session = Depends(get_db),
                        _=Depends(CATALOGO)):
     par = motor.parametros(db)
@@ -153,5 +159,9 @@ def cambiar_parametros(datos: ParametrosIn, db: Session = Depends(get_db),
         par.tope_x_dia = datos.tope_x_dia
     if datos.pausado is not None:
         par.pausado = datos.pausado
+    for regla in ("solo_activo", "solo_oficial", "solo_confirmado",
+                  "solo_informativo"):
+        if getattr(datos, regla) is not None:
+            setattr(par, regla, getattr(datos, regla))
     db.commit()
     return motor.fuentes(db, _mexico(db))

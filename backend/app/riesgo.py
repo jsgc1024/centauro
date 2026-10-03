@@ -12,9 +12,12 @@ cuida cada una:
 
 Tres reglas sostienen todo lo demas:
 
-1. **Nada llega al cliente sin que un analista lo publique.** Lo que
-   propone el lector automatico (fase 2) nace igual que lo que captura
-   un analista: propuesto, y solo la central lo ve.
+1. **Nada llega al cliente sin que un analista lo publique**, salvo lo
+   que la Central decidio que Connect publique solo (seccion 143): nivel
+   1 o 2, reciente, de fuente oficial, confirmado por tres medios o
+   informativo, segun las reglas que encienda. Nunca un 3 o un 4. Lo
+   demas que propone el lector nace igual que lo que captura un
+   analista: propuesto, y solo la central lo ve.
 2. **El nivel 4 lo confirma otra persona** (decision de Salvador, 2 oct):
    el jefe de turno, y nunca quien lo pidio. Un evento ya publicado que
    sube a 4 sigue en su nivel mientras tanto: el 4 espera en
@@ -31,6 +34,7 @@ Quien recibe la alerta lo decide el modulo de alertas (seccion 134), que
 se cuelga de `AL_PUBLICAR`: aqui solo se dice cuando un evento empieza a
 ser publico o sube de nivel.
 """
+import contextvars
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -58,9 +62,15 @@ def _ahora(ahora: datetime | None) -> datetime:
     return ahora or datetime.now(timezone.utc)
 
 
+# Quien firma en la bitacora lo que no hace una persona. Lo que publica
+# el lector solo firma «Connect» (seccion 143).
+QUIEN_SISTEMA: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "quien_sistema", default="El sistema")
+
+
 def _quien(usuario: m.Usuario | None) -> str:
     if usuario is None:
-        return "El sistema"
+        return QUIEN_SISTEMA.get()
     persona = getattr(usuario, "persona", None)
     return persona.nombre if persona else usuario.correo
 
@@ -156,6 +166,7 @@ def vista(evento: m.EventoRiesgo, completa: bool = True) -> dict:
         "verificacion": evento.verificacion.value,
         "tendencia": evento.tendencia.value if evento.tendencia else None,
         "estado": evento.estado.value, "origen": evento.origen,
+        "auto_regla": evento.auto_regla, "auto_dato": evento.auto_dato,
         "publicado_en": _local(evento.publicado_en, pais),
         "actualizado_en": _local(evento.actualizado_en, pais),
     }
@@ -344,8 +355,9 @@ def editar(db: Session, usuario: m.Usuario, evento: m.EventoRiesgo,
     return evento
 
 
-def publicar(db: Session, usuario: m.Usuario, evento: m.EventoRiesgo,
-             ahora: datetime | None = None) -> m.EventoRiesgo:
+def publicar(db: Session, usuario: m.Usuario | None,
+             evento: m.EventoRiesgo, ahora: datetime | None = None,
+             detalle: str | None = None) -> m.EventoRiesgo:
     ahora = _ahora(ahora)
     if evento.estado != E.PROPUESTO:
         raise HTTPException(409, f"El evento {evento.folio} está "
@@ -367,10 +379,10 @@ def publicar(db: Session, usuario: m.Usuario, evento: m.EventoRiesgo,
                 "Nivel 4: espera la confirmación del jefe de turno")
         return evento
     evento.estado = E.PUBLICADO
-    evento.publicado_por_id = usuario.id
+    evento.publicado_por_id = usuario.id if usuario else None
     evento.publicado_en = ahora
     evento.actualizado_en = ahora
-    _anotar(db, evento, usuario, "publico", f"Nivel {evento.nivel}")
+    _anotar(db, evento, usuario, "publico", detalle or f"Nivel {evento.nivel}")
     _avisar(db, evento, "nuevo")
     return evento
 
@@ -489,7 +501,8 @@ def agregar_fuente(db: Session, usuario: m.Usuario, evento: m.EventoRiesgo,
         raise HTTPException(400, "El enlace empieza con http:// o https://")
     fuente = m.FuenteEvento(evento_id=evento.id, url=url,
                             descripcion=descripcion[:300], oficial=oficial,
-                            registrada_por_id=usuario.id)
+                            registrada_por_id=usuario.id if usuario
+                            else None)
     evento.fuentes.append(fuente)
     db.flush()
     evento.verificacion = _verificacion(evento)

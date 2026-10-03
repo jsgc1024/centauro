@@ -269,11 +269,23 @@ async function pintarCola(zona, ficha) {
   zona.replaceChildren(...bloques);
 }
 
+/* Lo que publico Connect solo (seccion 143): por que regla, a que hora,
+   y que el analista lo puede corregir o cerrar. */
+function avisoDeConnect(e) {
+  const regla = ["oficial", "confirmado", "informativo"].includes(e.auto_regla) ? e.auto_regla : "informativo";
+  const porQue = t(`rsg_auto_${regla}`).replace("{dato}", e.auto_dato || "").replace("{nivel}", e.nivel);
+  const hora = (e.publicado_en || "").slice(11, 16);
+  return h("div", { clase: "aviso rsg-auto-aviso" },
+    h("b", {}, t("rsg_auto_aviso").replace("{hora}", hora)), " ", porQue, ". ",
+    t("rsg_auto_aviso_sub"));
+}
+
 function renglonEvento(e) {
   const donde = e.municipio ? `${e.municipio}, ${e.region}` : e.region;
   return h("button", { type: "button", clase: "rsg-renglon", onclick: () => abrirEvento(e.id) },
     h("div", {}, etiquetaNivel(e.nivel),
-      e.nivel_pendiente ? h("span", { clase: "etiqueta alerta" }, t("rsg_pide_4")) : null),
+      e.nivel_pendiente ? h("span", { clase: "etiqueta alerta" }, t("rsg_pide_4")) : null,
+      e.auto_regla ? h("span", { clase: "etiqueta info rsg-auto" }, t("rsg_auto_etiqueta")) : null),
     h("strong", {}, e.titulo),
     h("div", { clase: "chico gris" }, `${e.folio} · ${e.tipo} · ${donde}`));
 }
@@ -522,11 +534,13 @@ function pintarFicha(ficha, e) {
     ? h("div", { clase: "rsg-cabeza" }, h("strong", {}, e.folio), " ",
         h("span", { clase: "etiqueta" }, t(`rsg_estado_${e.estado}`)), " ",
         h("span", { clase: "etiqueta" }, t(`rsg_verif_${e.verificacion}`)),
-        e.nivel_pendiente ? h("span", { clase: "etiqueta alerta" }, t("rsg_pide_4")) : null)
+        e.nivel_pendiente ? h("span", { clase: "etiqueta alerta" }, t("rsg_pide_4")) : null,
+        e.auto_regla ? h("span", { clase: "etiqueta info" }, t("rsg_auto_etiqueta")) : null)
     : h("div", { clase: "rsg-cabeza" }, h("strong", {}, t("rsg_nuevo")));
 
   const tarjeta = h("div", { clase: "tarjeta" },
     cabeza,
+    e && e.auto_regla ? avisoDeConnect(e) : null,
     e && e.motivo ? aviso(e.motivo) : null,
     h("div", { clase: "rejilla" },
       campo(t("rsg_tipo"), tipo, { obligatorio: true }),

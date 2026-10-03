@@ -2,6 +2,9 @@
 
 Lo nuevo de cada actualización, escrito para quien usa el sistema. La más nueva va arriba.
 
+## 143 · 2026-10-03 · Lo que Connect publica solo
+Algunas cosas ya salen al cliente **sin pasar por el analista**: lo de nivel 1 o 2 que dice una **fuente oficial**, lo de nivel 1 o 2 que dicen **3 o más medios distintos**, y todo lo de **nivel 1** (informativo). Sale al momento con el texto que escribe Claude, y en Mapa y eventos queda marcado **«Lo publicó Connect»**, con el porqué; el analista lo corrige o lo cierra como cualquier otro, y queda en la bitácora. Siempre van al analista: lo de nivel 3 o 4, lo que pasó hace más de 6 horas, lo que Connect no sabe ubicar, lo que parece el mismo hecho que un evento que ya existe y lo que no trae texto para el cliente. Las reglas se encienden o apagan en Lector → «Ver lo que lee», donde también se ve cuántos publicó solo hoy. Además, el evento que crea el analista desde el lector ya trae escrito el texto para el cliente. Ver [el mapa de riesgo](#/riesgo).
+
 ## 142 · 2026-10-03 · El tope de X cuenta lo que X cobra
 X cobra cada publicación **una sola vez al día**, aunque el lector la vuelva a ver en varias vueltas. Antes Connect contaba cada repetida y llegaba al tope a media tarde sin haber gastado tanto; ahora cuenta solo las publicaciones distintas del día, que es lo que cobra X, y en «Ver lo que lee» lo dice así. Ver [el mapa de riesgo](#/riesgo).
 

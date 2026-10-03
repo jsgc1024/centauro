@@ -415,6 +415,12 @@ def _herramienta(tipos: list[str], estados: list[str]) -> dict:
                         "caracteres, en espanol, sin adjetivos"},
                     "resumen": {"type": "string", "description":
                         "Dos frases con lo que se sabe"},
+                    "texto_cliente": {"type": "string", "description":
+                        "Lo que leera el cliente de Centauro: que paso, "
+                        "donde y que hacer (evitar la zona, usar otra ruta), "
+                        "en una o dos frases, en espanol neutro. Sin nombrar "
+                        "medios ni cuentas, sin adjetivos, sin especular, "
+                        "sin cifras que la nota no de"},
                     "ocurrio": {"type": "string", "description":
                         "Cuando paso o empieza, ISO 8601 con zona, o vacio"},
                     "sigue": {"type": "boolean"},
@@ -551,6 +557,8 @@ def _aplicar_lo_que_dijo(db: Session, pais: m.Pais, h: m.HallazgoLector,
         h.titulo = _texto(dijo, "titulo")[:300]
     if _texto(dijo, "resumen"):
         h.resumen = _texto(dijo, "resumen")[:1000]
+    if len(_texto(dijo, "texto_cliente")) >= 20:
+        h.texto_cliente = _texto(dijo, "texto_cliente")[:600]
     tipo = (db.query(m.TipoEvento)
             .filter_by(pais_id=pais.id, nombre=_texto(dijo, "tipo")).first())
     if tipo:
@@ -818,6 +826,8 @@ def vuelta(db: Session, cliente=None, ahora: datetime | None = None) -> dict:
     salida = entender(db, ahora)
     db.commit()
     salida["leidas"] = leidas
+    salida["publico_solo"] = publicar_solos(db, ahora)
+    db.commit()
     return salida
 
 
@@ -999,13 +1009,14 @@ def _sin_revisar(h: m.HallazgoLector) -> None:
         raise HTTPException(409, "Ese hallazgo ya se revisó")
 
 
-def _cerrar(h: m.HallazgoLector, usuario: m.Usuario, estado: str) -> None:
+def _cerrar(h: m.HallazgoLector, usuario: m.Usuario | None,
+            estado: str) -> None:
     h.estado = estado
-    h.revisado_por_id = usuario.id
+    h.revisado_por_id = usuario.id if usuario else None
     h.revisado_en = _ahora()
 
 
-def _fuentes_al_evento(db: Session, usuario: m.Usuario,
+def _fuentes_al_evento(db: Session, usuario: m.Usuario | None,
                        evento: m.EventoRiesgo, h: m.HallazgoLector) -> None:
     from app import riesgo
     ya = {f.url for f in evento.fuentes if f.url}
@@ -1018,8 +1029,8 @@ def _fuentes_al_evento(db: Session, usuario: m.Usuario,
             n.fuente.oficial)
 
 
-def crear_evento(db: Session, usuario: m.Usuario, h: m.HallazgoLector,
-                 cambios: dict) -> m.EventoRiesgo:
+def crear_evento(db: Session, usuario: m.Usuario | None,
+                 h: m.HallazgoLector, cambios: dict) -> m.EventoRiesgo:
     """El evento propuesto con lo que entendio Connect (y lo que el
     analista corrigio), y las notas como sus fuentes."""
     from app import riesgo
@@ -1033,6 +1044,8 @@ def crear_evento(db: Session, usuario: m.Usuario, h: m.HallazgoLector,
         "municipio": h.municipio.nombre if h.municipio else None,
         "lugar": h.lugar,
         "ocurrio_en": h.ocurrio_en or _ahora(),
+        # Lo que escribio Claude para el cliente: el analista lo corrige.
+        "texto_cliente": h.texto_cliente or "",
     }
     if h.lat is not None:
         datos["lat"], datos["lon"] = float(h.lat), float(h.lon)
@@ -1057,6 +1070,130 @@ def crear_evento(db: Session, usuario: m.Usuario, h: m.HallazgoLector,
 # La vigencia con la que nace el evento, por tipo. El analista la ajusta.
 VIGENCIA_HORAS = {"Bloqueo carretero": 8, "Manifestación": 6,
                   "Fenómeno natural": 24}
+
+
+# ============================================================ lo que publica solo
+#
+# Seccion 143 (Salvador, 3 oct): lo de nivel 1 o 2 que dice una fuente
+# oficial, que dicen tres medios distintos, o que es informativo, sale al
+# cliente sin analista. Siempre al analista: nivel 3 o 4, lo de hace mas
+# de seis horas, lo que no se sabe ubicar (tipo, estado y municipio), lo
+# que es el mismo hecho que un evento, y lo que no trae texto para el
+# cliente. Firma «Connect» en la bitacora y el evento queda marcado.
+
+VENTANA_SOLO = timedelta(hours=6)
+MEDIOS_PARA_CONFIRMAR = 3
+MAX_SOLOS_POR_VUELTA = 10
+REGLAS_SOLO = ("oficial", "confirmado", "informativo")
+
+
+def _cuando(h: m.HallazgoLector):
+    if h.ocurrio_en:
+        return h.ocurrio_en
+    fechas = [n.publicada_en for n in h.notas if n.publicada_en]
+    return min(fechas) if fechas else None
+
+
+def regla_para_publicar_solo(h: m.HallazgoLector, par: m.ParametrosLector,
+                             ahora: datetime) -> tuple[str, str] | None:
+    """Por que regla sale solo este hallazgo, con su dato, o None si va
+    al analista."""
+    if not par.solo_activo or h.estado != "por_revisar" or h.evento_id:
+        return None
+    if h.nivel not in (1, 2) or not h.con_ia:
+        return None
+    if not (h.tipo_id and h.region_id and h.municipio_id):
+        return None
+    if len((h.texto_cliente or "").strip()) < 20:
+        return None
+    cuando = _cuando(h)
+    if cuando is None or cuando < ahora - VENTANA_SOLO:
+        return None
+    oficiales = [n.fuente.nombre for n in h.notas if n.fuente.oficial]
+    if par.solo_oficial and oficiales:
+        return "oficial", oficiales[0][:120]
+    medios = {(n.medio or n.fuente.nombre).strip().lower() for n in h.notas}
+    if par.solo_confirmado and len(medios) >= MEDIOS_PARA_CONFIRMAR:
+        return "confirmado", str(len(medios))
+    if par.solo_informativo and h.nivel == 1:
+        return "informativo", ""
+    return None
+
+
+def _por_que(regla: tuple[str, str], nivel: int) -> str:
+    """Lo que queda en la bitacora."""
+    clave, dato = regla
+    if clave == "oficial":
+        motivo = f"fuente oficial ({dato})"
+    elif clave == "confirmado":
+        motivo = f"lo dicen {dato} medios distintos"
+    else:
+        motivo = "informativo"
+    return f"Lo publicó solo: {motivo}, nivel {nivel}"
+
+
+def publicar_solos(db: Session, ahora: datetime | None = None) -> int:
+    """Lo que cumple una regla se crea y se publica sin analista. Cada uno
+    en su propio intento: uno que falla no frena a los demas."""
+    from sqlalchemy.orm import selectinload
+
+    from app import riesgo
+    ahora = _ahora(ahora)
+    par = parametros(db)
+    if not par.solo_activo:
+        return 0
+    candidatos = (db.query(m.HallazgoLector)
+                  .options(selectinload(m.HallazgoLector.notas)
+                           .selectinload(m.NotaLector.fuente))
+                  .filter(m.HallazgoLector.estado == "por_revisar",
+                          m.HallazgoLector.evento_id.is_(None),
+                          m.HallazgoLector.nivel.in_([1, 2]),
+                          m.HallazgoLector.actualizado_en
+                          >= ahora - VENTANA_SOLO)
+                  .order_by(m.HallazgoLector.nivel.desc(),
+                            m.HallazgoLector.id).all())
+    publicados = 0
+    for h in candidatos:
+        if publicados >= MAX_SOLOS_POR_VUELTA:
+            break
+        regla = regla_para_publicar_solo(h, par, ahora)
+        if not regla:
+            continue
+        firma = riesgo.QUIEN_SISTEMA.set("Connect")
+        try:
+            with db.begin_nested():
+                evento = crear_evento(db, None, h, {})
+                evento.auto_regla, evento.auto_dato = regla
+                riesgo.publicar(db, None, evento, ahora,
+                                detalle=_por_que(regla, evento.nivel))
+            publicados += 1
+        except Exception as e:                           # noqa: BLE001
+            log.warning("No se pudo publicar solo el hallazgo H%s: %s",
+                        h.id, e)
+        finally:
+            riesgo.QUIEN_SISTEMA.reset(firma)
+    return publicados
+
+
+def vista_solos(db: Session, pais: m.Pais, ahora: datetime) -> dict:
+    """Las reglas y lo que publico solo hoy, por regla."""
+    from app import reloj
+    par = parametros(db)
+    hoy = ahora.astimezone(reloj.zona(pais.zona_horaria)).replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    filas = (db.query(m.EventoRiesgo.auto_regla, m.EventoRiesgo.estado)
+             .filter(m.EventoRiesgo.pais_id == pais.id,
+                     m.EventoRiesgo.auto_regla.isnot(None),
+                     m.EventoRiesgo.publicado_en >= hoy).all())
+    return {"activo": par.solo_activo, "oficial": par.solo_oficial,
+            "confirmado": par.solo_confirmado,
+            "informativo": par.solo_informativo,
+            "hoy": {"total": len(filas),
+                    **{r: sum(1 for x, _ in filas if x == r)
+                       for r in REGLAS_SOLO},
+                    "cerrados": sum(1 for _, e in filas if e in (
+                        m.EstadoEvento.CERRADO,
+                        m.EstadoEvento.DESCARTADO))}}
 
 
 def sumar(db: Session, usuario: m.Usuario, h: m.HallazgoLector,
@@ -1119,7 +1256,8 @@ def fuentes(db: Session, pais: m.Pais, ahora: datetime | None = None) -> dict:
             "pausado": par.pausado,
             "llaves": {"ia": bool(settings.anthropic_api_key),
                        "x": bool(settings.x_bearer_token)},
-            "ia": vista_falla(db)}
+            "ia": vista_falla(db),
+            "solos": vista_solos(db, pais, ahora)}
 
 
 def agregar_fuente(db: Session, usuario: m.Usuario, pais: m.Pais,

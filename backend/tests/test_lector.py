@@ -523,3 +523,153 @@ def test_si_claude_no_contesta_la_consola_lo_dice(cliente, sesion):
                                headers=yo).json()["ia"] is None
     finally:
         db.close()
+
+
+# ------------------------------------------------- lo que publica solo (143)
+
+TEXTO = ("Balacera en la colonia Las Quintas de Culiacán. Evite la zona "
+         "y siga las indicaciones de la autoridad.")
+
+
+def _para_solo(nivel=2, oficial=False, texto=TEXTO, notas=(NOTAS[2],),
+               ocurrio=None):
+    """Un hallazgo como lo deja Claude, listo para ver si sale solo."""
+    fid = _fuente(oficial=oficial)
+    db = SessionLocal()
+    try:
+        lector.leer_fuente(db, db.get(m.FuenteLector, fid),
+                           _Cliente(_Respuesta(_rss(*notas))), AHORA)
+        dijo = [{"n": 1, "es_hecho": True, "estado": "Sinaloa",
+                 "municipio": "Culiacán", "nivel": nivel,
+                 "tipo": "Ataque armado (arma de fuego)",
+                 "titulo": "Balacera en Culiacán", "texto_cliente": texto}]
+        if ocurrio:
+            dijo[0]["ocurrio"] = ocurrio.isoformat()
+        dijo += [{"n": i + 1, "es_hecho": True, "mismo_que": "N1"}
+                 for i in range(1, len(notas))]
+        a, b = _con_claude([dijo])
+        with a, b:
+            lector.entender(db, AHORA)
+        db.commit()
+        return db.query(m.HallazgoLector).order_by(
+            m.HallazgoLector.id.desc()).first().id
+    finally:
+        db.close()
+
+
+def _publicar_solos():
+    db = SessionLocal()
+    try:
+        n = lector.publicar_solos(db, AHORA)
+        db.commit()
+        return n
+    finally:
+        db.close()
+
+
+def test_lo_oficial_de_nivel_2_sale_solo_y_firma_connect(cliente, sesion):
+    hid = _para_solo(oficial=True)
+    assert _publicar_solos() == 1
+    db = SessionLocal()
+    try:
+        h = db.get(m.HallazgoLector, hid)
+        assert h.estado == "evento" and h.revisado_por_id is None
+        e = db.get(m.EventoRiesgo, h.evento_id)
+        assert e.estado == m.EstadoEvento.PUBLICADO
+        assert (e.auto_regla, e.auto_dato) == ("oficial", "Fuente busqueda")
+        assert e.texto_cliente == TEXTO and e.publicado_por_id is None
+        assert e.verificacion == m.VerificacionEvento.OFICIAL
+        firmas = {(c.quien, c.accion) for c in
+                  db.query(m.CambioEvento).filter_by(evento_id=e.id)}
+        assert ("Connect", "publico") in firmas
+        assert all(q == "Connect" for q, _ in firmas)
+        publico = db.query(m.CambioEvento).filter_by(
+            evento_id=e.id, accion="publico").one()
+        assert "fuente oficial (Fuente busqueda)" in publico.detalle
+        folio = e.folio
+    finally:
+        db.close()
+    # La consola lo ve marcado, y lo que hizo hoy por regla.
+    yo = sesion("central")
+    mapa = cliente.get("/riesgo/mapa", headers=yo)
+    assert mapa.status_code == 200, mapa.text
+    vivos = {x["folio"]: x for x in mapa.json()["publicados"]}
+    assert vivos[folio]["auto_regla"] == "oficial"
+    solos = cliente.get("/riesgo/lector/fuentes", headers=yo).json()["solos"]
+    assert solos["activo"] is True
+    assert solos["hoy"]["total"] == 1 and solos["hoy"]["oficial"] == 1
+    # Ya salio: no sale dos veces.
+    assert _publicar_solos() == 0
+
+
+def test_lo_que_siempre_va_al_analista():
+    _para_solo(nivel=3, oficial=True)                     # nivel 3
+    _para_solo(oficial=True, texto="")                    # sin texto
+    _para_solo(oficial=True,                              # de hace 8 h
+               ocurrio=AHORA - timedelta(hours=8))
+    _para_solo(nivel=2)                                   # una sola nota
+    assert _publicar_solos() == 0
+
+
+def test_lo_confirmado_por_tres_medios_y_lo_informativo():
+    otros = (("Bloqueo en la México-Puebla, km 72", "Milenio",
+              "https://milenio.com/x", _fecha(1)),
+             ("Bloqueo en la autopista México-Puebla", "El Sol",
+              "https://elsol.com/y", _fecha(1)),
+             ("Bloquean la México-Puebla a la altura de Texmelucan",
+              "Excélsior", "https://excelsior.com/z", _fecha(1)))
+    hid = _para_solo(notas=otros)
+    informativo = _para_solo(nivel=1, notas=(NOTAS[0],))
+    db = SessionLocal()
+    try:
+        par = lector.parametros(db)
+        par.solo_informativo = False
+        db.commit()
+    finally:
+        db.close()
+    assert _publicar_solos() == 1                 # el confirmado, no el 1
+    db = SessionLocal()
+    try:
+        e = db.get(m.EventoRiesgo, db.get(m.HallazgoLector, hid).evento_id)
+        assert (e.auto_regla, e.auto_dato) == ("confirmado", "3")
+        assert db.get(m.HallazgoLector, informativo).estado == "por_revisar"
+        lector.parametros(db).solo_informativo = True
+        db.commit()
+    finally:
+        db.close()
+    assert _publicar_solos() == 1
+    db = SessionLocal()
+    try:
+        h = db.get(m.HallazgoLector, informativo)
+        assert db.get(m.EventoRiesgo, h.evento_id).auto_regla == \
+            "informativo"
+        # Apagado, nada sale solo.
+        lector.parametros(db).solo_activo = False
+        db.commit()
+    finally:
+        db.close()
+    _para_solo(oficial=True)
+    assert _publicar_solos() == 0
+
+
+def test_las_reglas_las_mueve_quien_lleva_el_catalogo(cliente, sesion):
+    r = cliente.put("/riesgo/lector/parametros", headers=sesion("rrhh"),
+                    json={"solo_activo": False})
+    assert r.status_code == 403
+    r = cliente.put("/riesgo/lector/parametros",
+                    headers=sesion("diroperaciones"),
+                    json={"solo_oficial": False, "solo_activo": True})
+    assert r.status_code == 200, r.text
+    solos = r.json()["solos"]
+    assert solos["oficial"] is False and solos["activo"] is True
+    assert solos["confirmado"] is True
+
+
+def test_el_texto_de_claude_llega_al_evento_que_crea_el_analista(cliente,
+                                                                 sesion):
+    hid = _para_solo(nivel=3)
+    r = cliente.post(f"/riesgo/lector/hallazgos/{hid}/evento", json={},
+                     headers=sesion("central"))
+    assert r.status_code == 200, r.text
+    assert r.json()["texto_cliente"] == TEXTO
+    assert r.json()["estado"] == "propuesto" and r.json()["auto_regla"] is None

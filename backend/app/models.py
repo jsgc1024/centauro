@@ -5364,6 +5364,11 @@ class EventoRiesgo(Base):
     # "analista" o "lector" (el lector automatico de la fase 2).
     origen: Mapped[str] = mapped_column(String(12), default="analista",
                                         server_default="analista")
+    # Si lo publico Connect solo, sin analista (seccion 143): por que
+    # regla (oficial, confirmado, informativo) y su dato (la fuente
+    # oficial o cuantos medios).
+    auto_regla: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    auto_dato: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
     creado_por_id: Mapped[int | None] = mapped_column(
         ForeignKey("usuario.id", ondelete="SET NULL"), nullable=True)
@@ -5859,6 +5864,9 @@ class HallazgoLector(Base):
                                         server_default="por_revisar")
     titulo: Mapped[str] = mapped_column(String(300))
     resumen: Mapped[str] = mapped_column(Text, server_default="")
+    # Lo que leeria el cliente, escrito por Claude (seccion 143): con el se
+    # publica solo y llena el texto del evento que crea el analista.
+    texto_cliente: Mapped[str] = mapped_column(Text, server_default="")
     tipo_id: Mapped[int | None] = mapped_column(
         ForeignKey("tipo_evento.id", ondelete="SET NULL"), nullable=True)
     region_id: Mapped[int | None] = mapped_column(
@@ -5948,3 +5956,13 @@ class ParametrosLector(Base):
                                                    nullable=True)
     ia_falla_en: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True)
+    # Lo que Connect publica solo (seccion 143): el interruptor y sus
+    # tres reglas. Nunca nivel 3 o 4: eso lo ve siempre el analista.
+    solo_activo: Mapped[bool] = mapped_column(Boolean, default=True,
+                                              server_default="true")
+    solo_oficial: Mapped[bool] = mapped_column(Boolean, default=True,
+                                               server_default="true")
+    solo_confirmado: Mapped[bool] = mapped_column(Boolean, default=True,
+                                                  server_default="true")
+    solo_informativo: Mapped[bool] = mapped_column(Boolean, default=True,
+                                                   server_default="true")

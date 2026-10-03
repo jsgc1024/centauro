@@ -10791,6 +10791,35 @@ todas, que es lo seguro. Salvador, 3 oct: «de acuerdo». El texto de
 Pruebas: `tests/test_lector.py` (16; la del tope cubre la repetida y el
 dia siguiente).
 
+## 143. Lo que Connect publica solo
+
+Salvador, 3 oct: «hay forma que se publiquen algunas cosas solas?».
+Eligio las reglas (fuente oficial nivel 1-2, tres medios nivel 1-2,
+todo lo de nivel 1) y que salga al momento, marcado, para que el
+analista lo corrija o lo cierre despues. Boceto aprobado el 3 oct.
+
+- **Las reglas** (`ParametrosLector.solo_activo`, `solo_oficial`,
+  `solo_confirmado`, `solo_informativo`; migracion `e3a5c7e9f1b2`), en
+  «Ver lo que lee»; las mueve quien lleva el catalogo de riesgo.
+  Nacen encendidas.
+- **Los candados fijos** (`regla_para_publicar_solo`): nunca nivel 3 o
+  4; solo lo que paso (o empieza) en las ultimas 6 horas; tipo, estado
+  y municipio sabidos; no si es el mismo hecho que un evento
+  (`evento_id`); no sin texto para el cliente. Hasta 10 por vuelta.
+- **El texto para el cliente** lo escribe Claude (`texto_cliente` en la
+  herramienta y en `HallazgoLector`). Tambien llena el texto del evento
+  que crea el analista a mano. Lo de antes de esta seccion no lo trae:
+  nada de lo que ya esperaba sale solo.
+- **Como sale** (`publicar_solos`, al final de cada vuelta): crea el
+  evento y lo publica por las mismas puertas que el analista
+  (`riesgo.crear`, `agregar_fuente`, `publicar`, con sus avisos), con
+  `usuario=None`. La bitacora firma «Connect» (`riesgo.QUIEN_SISTEMA`)
+  y dice la regla. El evento guarda `auto_regla` y `auto_dato`; la
+  consola lo marca «Lo publicó Connect» en la lista y en la ficha, con
+  el porque.
+
+Pruebas: `tests/test_lector.py` (21).
+
 ## 14. Lo que falta
 
 ### Abierto

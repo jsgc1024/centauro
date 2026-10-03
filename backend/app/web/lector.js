@@ -400,6 +400,46 @@ async function pintarFuentes(cuerpo, ctx, alVolver) {
   guardarTope.onclick = () => cambiar({ tope_x_dia: Number(tope.value) });
   pausa.onclick = () => cambiar({ pausado: !datos.pausado });
 
+  /* Lo que Connect publica solo (seccion 143). Quien no lleva el
+     catalogo lo ve, pero no lo mueve. */
+  const solos = datos.solos;
+  const casilla = (clave, texto, sangria) => {
+    const caja = h("input", { type: "checkbox", name: `solo_${clave}` });
+    caja.checked = !!solos[clave];
+    caja.disabled = !ctx.puedeFuentes;
+    return [caja, h("label", { clase: sangria ? "casilla lec-solo-regla" : "casilla" }, caja, " ", texto)];
+  };
+  const [cActivo, lActivo] = casilla("activo", t("lec_solo_activo"), false);
+  const [cOficial, lOficial] = casilla("oficial", t("lec_solo_oficial"), true);
+  const [cConfirmado, lConfirmado] = casilla("confirmado", t("lec_solo_confirmado"), true);
+  const [cInformativo, lInformativo] = casilla("informativo", t("lec_solo_informativo"), true);
+  const guardarSolos = h("button", { type: "button", clase: "claro" }, t("lec_solo_guardar"));
+  guardarSolos.onclick = async () => {
+    guardarSolos.disabled = true;
+    try {
+      await api.put("/riesgo/lector/parametros", {
+        solo_activo: cActivo.checked, solo_oficial: cOficial.checked,
+        solo_confirmado: cConfirmado.checked, solo_informativo: cInformativo.checked });
+      mensaje(t("lec_solo_guardado"));
+      await pintarFuentes(cuerpo, ctx, alVolver);
+    } catch (e) {
+      salida.replaceChildren(aviso(e.message, "grave"));
+      guardarSolos.disabled = false;
+    }
+  };
+  const hoySolos = solos.hoy;
+  const bloqueSolos = [
+    h("h3", {}, t("lec_solo_titulo")),
+    h("p", { clase: "chico gris" }, t("lec_solo_sub")),
+    h("div", { clase: "lec-solo-reglas" }, lActivo, lOficial, lConfirmado, lInformativo,
+      ctx.puedeFuentes ? h("div", {}, guardarSolos) : null),
+    h("p", { clase: "chico gris" }, t("lec_solo_siempre")),
+    h("div", { clase: "chico" }, h("b", {}, t("lec_solo_hoy").replace("{total}", hoySolos.total)),
+      hoySolos.total ? h("span", { clase: "gris" }, " · ", t("lec_solo_hoy_detalle")
+        .replace("{oficial}", hoySolos.oficial).replace("{confirmado}", hoySolos.confirmado)
+        .replace("{informativo}", hoySolos.informativo).replace("{cerrados}", hoySolos.cerrados)) : null),
+  ];
+
   const tipo = lista("tipo", Object.keys(NOMBRE_TIPO).map((k) => ({ valor: k, texto: t(`${NOMBRE_TIPO[k]}_largo`) })));
   const direccion = entrada("direccion", { "data-crudo": "", placeholder: t("lec_ph_direccion") });
   const nombre = entrada("nombre", { placeholder: t("lec_ph_nombre") });
@@ -432,6 +472,7 @@ async function pintarFuentes(cuerpo, ctx, alVolver) {
           "lec_col_ultima", "lec_col_leidas", "lec_col_propuso", "", ""].map((k) => h("th", {}, k ? t(k) : "")))),
         cuerpoTabla),
       verTodas,
+      ...bloqueSolos,
       h("h3", {}, t("lec_x_titulo")),
       h("p", { clase: "chico gris" }, t("lec_x_cuenta").replace("{hoy}", datos.x_hoy).replace("{tope}", datos.tope_x_dia)),
       ctx.puedeFuentes ? h("div", { clase: "rsg-linea" }, campo(t("lec_tope"), tope), guardarTope, pausa) : null,
