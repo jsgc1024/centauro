@@ -132,7 +132,10 @@ PUESTOS: list[dict] = [
     # (Tesoreria), quien arma el corte (Nomina) y quien lo marca pagado y
     # paga el bono (Jefe de finanzas); es la misma regla de siempre, quien
     # autoriza no paga. No da accesos --Recursos Humanos y sistema y
-    # calidad-- y no toca Odoo ni los catalogos que no deciden dinero.
+    # calidad-- ni administra la conexion con Odoo ni los catalogos que
+    # no deciden dinero; lo que si hace con Odoo es parte de firmar el
+    # dinero: leer sus listas de precios, confirmar productos y tipo de
+    # cambio y volver a mandar prefacturas (seccion 132, decision 18).
     {
         "nombre": "Gerente de administración",
         "area": "Administración",

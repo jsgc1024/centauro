@@ -11,7 +11,7 @@ from datetime import date, datetime
 
 from fastapi import (APIRouter, Depends, File, Form, HTTPException, Response,
                      UploadFile)
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app import accesos, auth, experiencia, imagenes, reloj, telefonos
@@ -42,19 +42,33 @@ def _plaza(db: Session, plaza_id: int) -> m.Plaza:
     return plaza
 
 
-def _correo_libre(db: Session, correo: str, persona_id: int | None = None) -> str:
+def _correo_libre(db: Session, correo: str, persona_id: int | None = None,
+                  o_quien_vuelve: bool = False) -> str | tuple[str, m.Persona]:
+    """El correo, limpio y de nadie mas. Con `o_quien_vuelve`, el alta
+    acepta el correo de quien ya estuvo en Centauro y esta dado de baja
+    sin ser freelance --se fue de Odoo-- y devuelve a esa persona
+    (seccion 132, decision 6): vuelve como freelance con su historia."""
     correo = (correo or "").strip().lower()
     if "@" not in correo or "." not in correo.split("@")[-1]:
         raise HTTPException(400, "Ese correo no tiene forma de correo.")
     otra = (db.query(m.Persona)
             .filter(func.lower(func.trim(m.Persona.correo)) == correo,
                     m.Persona.id != (persona_id or 0)).first())
-    if otra is not None:
+    if otra is None:
+        return (correo, None) if o_quien_vuelve else correo
+    if o_quien_vuelve and not otra.activo and not otra.es_freelance:
+        return correo, otra
+    if o_quien_vuelve and not otra.activo:
         raise HTTPException(409, {
-            "mensaje": f"Ese correo ya es de {otra.nombre}.",
-            "que_hacer": "Cada quien entra a la app con el suyo: pide el "
-                         "correo personal del freelance."})
-    return correo
+            "mensaje": f"Ese correo ya es de {otra.nombre}, dado de baja como "
+                       "freelance.",
+            "que_hacer": "No se da de alta dos veces: búscalo en la lista con "
+                         "el filtro «De baja» y vuelve a darlo de alta desde "
+                         "su ficha."})
+    raise HTTPException(409, {
+        "mensaje": f"Ese correo ya es de {otra.nombre}.",
+        "que_hacer": "Cada quien entra a la app con el suyo: pide el "
+                     "correo personal del freelance."})
 
 
 def _telefono(db: Session, lada: str | None, numero: str, pais_id: int) -> str:
@@ -132,6 +146,9 @@ def _fila(p: m.Persona, ficha: m.Freelance, info: dict, costos: dict,
         "ultimo_servicio": ultimo, "proximo_servicio": proximo,
         "horas_en_centauro": horas,
         "acceso": _acceso(usuario),
+        # El que ya paso a planta (seccion 132, decision 6): su ficha es
+        # historia y la lista lo dice.
+        "planta_en": ficha.planta_en.isoformat() if ficha.planta_en else None,
     }
 
 
@@ -154,14 +171,18 @@ def _filas(db: Session, personas: list, ahora: datetime | None = None) -> list[d
             for p in personas]
 
 
-def _puede(db: Session, u: m.Usuario) -> dict:
+def _puede(db: Session, u: m.Usuario, persona: m.Persona | None = None) -> dict:
+    """Lo que este usuario puede hacer en la ficha. La del que ya paso a
+    planta (seccion 132) se lee y nada mas: lo suyo lo lleva Odoo."""
     tiene = accesos.actividades_de(db, u)
-    return {"editar": "freelance.alta" in tiene,
-            "costos": "catalogos.dinero" in tiene,
+    vivo = persona is None or persona.es_freelance
+    return {"editar": vivo and "freelance.alta" in tiene,
+            "costos": vivo and "catalogos.dinero" in tiene,
             "expediente": "freelance.expediente" in tiene,
-            "validar": "freelance.validar" in tiene,
-            "tipo": "freelance.validar" in tiene,
-            "autorizar": "freelance.autorizar" in tiene,
+            "validar": vivo and "freelance.validar" in tiene,
+            "tipo": vivo and "freelance.validar" in tiene,
+            "autorizar": vivo and "freelance.autorizar" in tiene,
+            "a_planta": vivo and "freelance.validar" in tiene,
             "ve_cuenta": "viaticos.transferir" in tiene}
 
 
@@ -171,13 +192,19 @@ def _puede(db: Session, u: m.Usuario) -> dict:
 def lista(pais_id: int | None = None, incluir_bajas: bool = False,
           db: Session = Depends(get_db), _=Depends(VER)):
     """La pestana Freelance de Personal de seguridad: su foto, su tipo,
-    como va su expediente, sus costos y su ultimo servicio."""
+    como va su expediente, sus costos y su ultimo servicio. Con
+    `incluir_bajas` salen tambien los dados de baja y los que pasaron a
+    planta (seccion 132), para su filtro."""
     q = (db.query(m.Persona).join(m.Plaza, m.Plaza.id == m.Persona.plaza_id)
-         .filter(m.Persona.es_freelance.is_(True)))
+         .outerjoin(m.Freelance, m.Freelance.persona_id == m.Persona.id))
+    if incluir_bajas:
+        q = q.filter(or_(m.Persona.es_freelance.is_(True),
+                         m.Freelance.planta_en.isnot(None)))
+    else:
+        q = q.filter(m.Persona.es_freelance.is_(True),
+                     m.Persona.activo.is_(True))
     if pais_id:
         q = q.filter(m.Plaza.pais_id == pais_id)
-    if not incluir_bajas:
-        q = q.filter(m.Persona.activo.is_(True))
     filas = _filas(db, q.order_by(m.Persona.nombre).all())
     # Por si a alguno de antes le faltaba su ficha y se le armo aqui.
     db.commit()
@@ -188,10 +215,21 @@ def lista(pais_id: int | None = None, incluir_bajas: bool = False,
 def alta(datos: s.FreelanceIn, db: Session = Depends(get_db),
          actor: m.Usuario = Depends(ALTA)):
     """Nace con su ficha y sin expediente: se asigna cuando Recursos
-    Humanos lo valida y tiene sus costos."""
+    Humanos lo valida y tiene sus costos. Si el correo es de alguien que
+    ya estuvo en Centauro y se dio de baja en Odoo, vuelve esa misma
+    persona (seccion 132, decision 6)."""
     plaza = _plaza(db, datos.plaza_id)
-    correo = _correo_libre(db, datos.correo)
+    correo, vuelve = _correo_libre(db, datos.correo, o_quien_vuelve=True)
     telefono = _telefono(db, datos.lada, datos.telefono, plaza.pais_id)
+    if vuelve is not None:
+        motor.volver_de_odoo(db, actor, vuelve, datos.tipo, datos.nombre,
+                             datos.apellidos, plaza, telefono)
+        db.commit()
+        return {"persona_id": vuelve.id, "nombre": vuelve.nombre,
+                "vuelve": True,
+                "aviso": f"{vuelve.nombre} ya estaba en Centauro y se había "
+                         "dado de baja: vuelve como freelance con su misma "
+                         "historia."}
     persona = m.Persona(nombre=motor.nombre_completo(datos.nombre, datos.apellidos),
                         correo=correo, plaza_id=plaza.id, es_freelance=True,
                         activo=True, oficina=False, telefono=telefono)
@@ -325,13 +363,17 @@ def _historial(db: Session, persona_id: int,
 @router.get("/{persona_id}", summary="La ficha de un freelance")
 def ver(persona_id: int, db: Session = Depends(get_db),
         actor: m.Usuario = Depends(VER)):
-    persona, ficha = motor.ficha_de(db, persona_id)
+    # La del que ya paso a planta se abre tambien: como historia.
+    persona, ficha = motor.ficha_de(db, persona_id, solo_vivo=False)
     fila = _filas(db, [persona])[0]
     dias = _servicios_de(db, [persona.id]).get(persona.id, [])
     alta_por = db.get(m.Persona, ficha.alta_por_id) if ficha.alta_por_id else None
-    puede = _puede(db, actor)
+    planta_por = (db.get(m.Persona, ficha.planta_por_id)
+                  if ficha.planta_por_id else None)
+    puede = _puede(db, actor, persona)
     fila.update({
         "alta_por": alta_por.nombre if alta_por else None,
+        "planta_por": planta_por.nombre if planta_por else None,
         "lada": persona.plaza.pais.lada if persona.plaza and persona.plaza.pais else "",
         "servicios": _servicios(dias),
         "urgencias": [u for u in motor.urgencias(db, None)
@@ -340,7 +382,8 @@ def ver(persona_id: int, db: Session = Depends(get_db),
         "puede": puede,
         # Si ya se le puede dar su acceso: expediente listo o urgencia
         # autorizada de un servicio vivo (seccion 128).
-        "puede_acceso": motor.puede_tener_acceso(db, persona, fila["expediente"]),
+        "puede_acceso": (persona.es_freelance
+                         and motor.puede_tener_acceso(db, persona, fila["expediente"])),
         # Lo bancario: si tiene cuenta, y el numero solo a quien deposita
         # (decision 9).
         "cuenta": "tiene" if persona.clabe else "falta",
@@ -448,8 +491,14 @@ def acceso(persona_id: int, db: Session = Depends(get_db),
     usuario = motor.dar_acceso(db, actor, persona, ficha)
     db.commit()
     return {"usuario_id": usuario.id, "correo": usuario.correo,
-            "que_sigue": "La central le dicta su código de cuatro dígitos en "
-                         "Central → Código y él pone su contraseña en la app."}
+            # Al que vuelve con el acceso que ya tenia (seccion 132) le
+            # sirve su misma contrasena.
+            "que_sigue": ("Entra con su correo y la contraseña que ya tenía; "
+                          "si la olvidó, la central le dicta su código en "
+                          "Central → Código."
+                          if usuario.hash_contrasena else
+                          "La central le dicta su código de cuatro dígitos en "
+                          "Central → Código y él pone su contraseña en la app.")}
 
 
 @router.post("/{persona_id}/urgencias", status_code=201,
@@ -527,6 +576,20 @@ def reactivar(persona_id: int, db: Session = Depends(get_db),
     return {"resultado": "activo"}
 
 
+@router.post("/{persona_id}/a-planta", summary="Pasarlo a planta: Centauro lo "
+                                               "contrató y Odoo ya lo tiene")
+def a_planta(persona_id: int, db: Session = Depends(get_db),
+             actor: m.Usuario = Depends(VALIDA)):
+    """Lo pide Recursos Humanos cuando Odoo ya lo tiene dado de alta con
+    su mismo correo (seccion 132, decision 6). La ficha se cierra como
+    historia; la persona sigue, ya de planta, y la siguiente lectura de
+    personal la reconoce por su correo."""
+    persona, ficha = motor.ficha_de(db, persona_id)
+    salida = motor.a_planta(db, actor, persona, ficha)
+    db.commit()
+    return salida
+
+
 # ===================================================== el expediente
 
 def _doc(d: m.DocumentoFreelance | None, ve_cuenta: bool,
@@ -559,7 +622,8 @@ def _doc(d: m.DocumentoFreelance | None, ve_cuenta: bool,
                                                 "requisito")
 def ver_expediente(persona_id: int, db: Session = Depends(get_db),
                    actor: m.Usuario = Depends(EXPEDIENTE)):
-    persona, ficha = motor.ficha_de(db, persona_id)
+    # El del que paso a planta se sigue leyendo: es su historia.
+    persona, ficha = motor.ficha_de(db, persona_id, solo_vivo=False)
     hoy = motor._hoy(db, persona)
     pais_id = persona.plaza.pais_id if persona.plaza else None
     requisitos = motor.requisitos_de(db, pais_id)
@@ -598,8 +662,11 @@ def ver_expediente(persona_id: int, db: Session = Depends(get_db),
             "resumen": motor.expediente(db, persona, ficha, hoy, requisitos,
                                         suyos),
             "requisitos": renglones,
-            "puede_validar": auth.puede_el_usuario(db, actor,
-                                                   "freelance.validar"),
+            "puede_validar": (persona.es_freelance
+                              and auth.puede_el_usuario(db, actor,
+                                                        "freelance.validar")),
+            # Al que paso a planta ya no se le carga nada: es historia.
+            "puede_cargar": persona.es_freelance,
             "ve_cuenta": ve_cuenta,
             "limite_mb": motor.LIMITE_ARCHIVO // (1024 * 1024)}
 

@@ -214,11 +214,19 @@ def _anotar(db: Session, actor: m.Usuario, persona: m.Persona, accion: str,
                    antes=antes, despues=despues, detalle=detalle)
 
 
-def ficha_de(db: Session, persona_id: int) -> tuple[m.Persona, m.Freelance]:
+def ficha_de(db: Session, persona_id: int,
+             solo_vivo: bool = True) -> tuple[m.Persona, m.Freelance]:
+    """La persona y su ficha de freelance. Con `solo_vivo` en falso se
+    abre tambien la del que ya paso a planta (seccion 132, decision 6):
+    su ficha se quedo como historia y se lee, no se opera."""
     persona = db.get(m.Persona, persona_id)
-    if not persona or not persona.es_freelance:
+    if not persona:
         raise HTTPException(404, f"No existe el freelance {persona_id}")
     ficha = db.query(m.Freelance).filter_by(persona_id=persona.id).first()
+    if not persona.es_freelance:
+        if solo_vivo or ficha is None or ficha.planta_en is None:
+            raise HTTPException(404, f"No existe el freelance {persona_id}")
+        return persona, ficha
     if ficha is None:
         # Un freelance de antes de la seccion 111 que la migracion no
         # alcanzo (dado de alta por la API vieja entre la migracion y el
@@ -1046,20 +1054,26 @@ def para_asignar(db: Session, persona: m.Persona, servicio: m.Servicio,
                             f"{_razon(info)}.")
         return resp
     # El de emergencia que repite (decision 5): con este, su segundo
-    # servicio. El plazo cuenta desde el ultimo que tuvo.
+    # servicio. El plazo cuenta desde el ultimo dia del servicio que se
+    # le asigna (seccion 132, decision 7 de Salvador): quince dias a
+    # partir de ahi, y RH se entera en ese momento. Antes contaba desde
+    # el ultimo servicio que tuvo, y al que volvia meses despues le salia
+    # ya vencido antes de empezar.
     if ficha.tipo == EMERGENCIA and ficha.plazo_programado is None:
-        otros = _otros_servicios(db, persona.id, servicio.id)
-        if otros:
-            plazo = otros[-1][1] + timedelta(days=DIAS_DEL_PLAZO)
+        if _otros_servicios(db, persona.id, servicio.id):
+            ultimo = _ultimo_dia(db, servicio) or hoy
+            plazo = max(ultimo, hoy) + timedelta(days=DIAS_DEL_PLAZO)
             resp["plazo_nuevo"] = plazo.isoformat()
-            if hoy > plazo and info.get("para_programado", {}).get("faltan"):
-                resp.update(asignable=False, motivo="plazo_vencido",
-                            mensaje=f"{persona.nombre} no se asigna: es su "
-                                    "segundo servicio y el último fue el "
-                                    f"{otros[-1][1]:%d/%m/%Y}; el plazo de "
-                                    f"{DIAS_DEL_PLAZO} días para completar lo "
-                                    "de programado ya venció.")
     return resp
+
+
+def _ultimo_dia(db: Session, servicio: m.Servicio) -> date | None:
+    """El ultimo dia del servicio sin contar los cancelados; si todavia
+    no tiene dias, ninguno."""
+    return (db.query(func.max(m.Jornada.fecha))
+            .join(m.Equipo, m.Equipo.id == m.Jornada.equipo_id)
+            .filter(m.Equipo.servicio_id == servicio.id,
+                    m.Jornada.estatus != m.EstatusJornada.CANCELADA).scalar())
 
 
 def _modalidad_texto(codigo: str) -> str:
@@ -1286,6 +1300,10 @@ def urgencias(db: Session, estado: str | None = "pedida") -> list[dict]:
         if (a.estado == "pedida" and servicio is not None
                 and servicio.estatus in YA_NO_SE_ARMA):
             continue
+        # Ni la del que ya paso a planta (seccion 132): ya no necesita
+        # autorizacion para ir a un servicio.
+        if a.estado == "pedida" and persona is not None and not persona.es_freelance:
+            continue
         pidio = db.get(m.Persona, a.pedida_por_id) if a.pedida_por_id else None
         resolvio = (db.get(m.Persona, a.resuelta_por_id)
                     if a.resuelta_por_id else None)
@@ -1341,7 +1359,8 @@ def dar_acceso(db: Session, actor: m.Usuario, persona: m.Persona,
     """
     if not persona.activo:
         raise HTTPException(409, f"{persona.nombre} está dado de baja.")
-    if db.query(m.Usuario).filter_by(persona_id=persona.id).first():
+    suyo = db.query(m.Usuario).filter_by(persona_id=persona.id).first()
+    if suyo is not None and suyo.activo:
         raise HTTPException(409, f"{persona.nombre} ya tiene acceso a la app.")
     info = expediente(db, persona, ficha)
     urgencia = urgencia_viva(db, persona.id)
@@ -1353,10 +1372,25 @@ def dar_acceso(db: Session, actor: m.Usuario, persona: m.Persona,
                          "lo autoriza y entonces se le puede dar."})
     llave = (persona.correo or "").strip().lower()
     otro = (db.query(m.Usuario)
-            .filter(func.lower(func.trim(m.Usuario.correo)) == llave).first())
+            .filter(func.lower(func.trim(m.Usuario.correo)) == llave,
+                    m.Usuario.persona_id != persona.id).first())
     if otro is not None:
         raise HTTPException(409, "Su correo ya es el acceso de otra persona: "
                                  "corrígelo en su ficha.")
+    if suyo is not None:
+        # El que vuelve de Odoo como freelance (seccion 132, decision 6)
+        # trae el acceso que se le cerro con su baja: se le vuelve a
+        # abrir, con su mismo codigo y su misma contrasena.
+        suyo.activo = True
+        suyo.correo = persona.correo
+        suyo.rol = m.Rol.PERSONAL_SEGURIDAD
+        db.flush()
+        accesos.anotar(db, actor, "acceso reactivado", "usuario", suyo.id,
+                       antes="desactivado", despues="activo",
+                       detalle="vuelve como freelance")
+        _anotar(db, actor, persona, "acceso a la app",
+                detalle=f"{persona.correo} (se reabrió el que tenía)")
+        return suyo
     usuario = m.Usuario(persona_id=persona.id, correo=persona.correo,
                         rol=m.Rol.PERSONAL_SEGURIDAD, activo=True)
     db.add(usuario)
@@ -1365,6 +1399,105 @@ def dar_acceso(db: Session, actor: m.Usuario, persona: m.Persona,
                    despues=usuario.rol.value, detalle=usuario.correo)
     _anotar(db, actor, persona, "acceso a la app", detalle=persona.correo)
     return usuario
+
+
+# ======================================================= freelance y planta
+
+def a_planta(db: Session, actor: m.Usuario, persona: m.Persona,
+             ficha: m.Freelance) -> dict:
+    """Recursos Humanos lo pasa a planta (seccion 132, decision 6 de
+    Salvador): Centauro lo contrato y Odoo ya lo tiene dado de alta con
+    su mismo correo.
+
+    La ficha se cierra como historia --cuando y quien--, y la persona
+    sigue siendo la misma: sus dias asignados, su expediente, su acceso a
+    la app y sus horas en Centauro se quedan. Deja de ofrecerse como
+    freelance y, en la siguiente lectura de personal, Odoo lo reconoce
+    por su correo y lo toma como de planta. Los dias de antes de hoy se
+    le pagan con su tarifa de freelance; desde hoy, con el tabulador de
+    su puesto (`cobra_como_freelance`).
+    """
+    if not persona.es_freelance:
+        raise HTTPException(409, f"{persona.nombre} ya es de planta.")
+    if not persona.activo:
+        raise HTTPException(409, {
+            "mensaje": f"{persona.nombre} está dado de baja como freelance.",
+            "que_hacer": "Primero «Volver a dar de alta» y luego pásalo a planta."})
+    persona.es_freelance = False
+    ficha.planta_en = _ahora()
+    ficha.planta_por_id = actor.persona_id
+    db.flush()
+    _anotar(db, actor, persona, "pasa a planta", antes="freelance",
+            despues="de planta", detalle=persona.nombre)
+    return {"resultado": "de planta", "persona_id": persona.id,
+            "nombre": persona.nombre,
+            "que_sigue": "En la siguiente lectura de personal, Odoo lo toma "
+                         "como de planta con este mismo correo. Los días de "
+                         "antes de hoy se le pagan con su tarifa de freelance; "
+                         "desde hoy, con el tabulador de su puesto."}
+
+
+def cobra_como_freelance(db: Session, persona: m.Persona, fecha: date) -> bool:
+    """Si ese dia se le paga con su tarifa de freelance o con el tabulador
+    de planta. El que paso a planta (seccion 132, decision 6) cobra como
+    freelance los dias de antes del cambio y como de planta desde el dia
+    del cambio: su tarifa se queda para la historia, no para lo nuevo."""
+    if persona.es_freelance:
+        return True
+    corte = (db.query(m.Freelance.planta_en)
+             .filter(m.Freelance.persona_id == persona.id).scalar())
+    if corte is None:
+        return False
+    return fecha < _hoy(db, persona, corte)
+
+
+def volver_de_odoo(db: Session, actor: m.Usuario, persona: m.Persona,
+                   tipo: str, nombre: str, apellidos: str, plaza: m.Plaza,
+                   telefono: str) -> m.Freelance:
+    """El alta de freelance de quien ya estuvo en Centauro y se dio de
+    baja en Odoo (seccion 132, decision 6): con su mismo correo sigue
+    siendo la misma persona --sus horas, sus servicios, su expediente de
+    antes y su acceso cerrado se quedan-- y vuelve como freelance.
+
+    Se le suelta el empleado de Odoo que fue, para que la lectura de
+    personal no lo vuelva a dar de baja por estar archivado alla; el
+    numero queda en la ficha como historia. Si Odoo lo contrata de nuevo,
+    la lectura lo deja pendiente y RH lo pasa a planta."""
+    if persona.activo:
+        raise HTTPException(409, f"{persona.nombre} está activo.")
+    ficha = db.query(m.Freelance).filter_by(persona_id=persona.id).first()
+    de_odoo = persona.odoo_id
+    persona.activo = True
+    persona.es_freelance = True
+    persona.oficina = False
+    persona.nombre = nombre_completo(nombre, apellidos)
+    persona.plaza_id = plaza.id
+    persona.telefono = telefono
+    persona.odoo_id = None
+    persona.odoo_sincronizado_en = None
+    persona.baja_odoo_en = None
+    persona.puesto_odoo = None
+    persona.area_odoo = None
+    if ficha is None:
+        ficha = m.Freelance(persona_id=persona.id)
+        db.add(ficha)
+    ficha.tipo = tipo
+    ficha.nombre = nombre.strip()
+    ficha.apellidos = apellidos.strip()
+    ficha.alta_por_id = actor.persona_id
+    ficha.alta_en = _ahora()
+    ficha.planta_en = None
+    ficha.planta_por_id = None
+    ficha.plazo_programado = None
+    ficha.plazo_puesto_en = None
+    ficha.plazo_avisado_en = None
+    if de_odoo is not None:
+        ficha.odoo_id_anterior = de_odoo
+    db.flush()
+    _anotar(db, actor, persona, "alta", despues=tipo,
+            detalle=f"{persona.nombre} · {plaza.nombre} · vuelve de Odoo"
+                    + (f" (empleado {de_odoo})" if de_odoo is not None else ""))
+    return ficha
 
 
 # =============================================================== los avisos

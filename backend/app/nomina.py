@@ -35,8 +35,8 @@ from fastapi import HTTPException
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session, contains_eager, joinedload
 
+from app import freelance, reloj
 from app import models as m
-from app import reloj
 from app.cierre import _horas_extra, factor_festivo, limite_vigente
 
 registro = logging.getLogger("centauro.nomina")
@@ -96,7 +96,8 @@ def que_falta_de_tarifa(db: Session, asignacion: m.AsignacionPersonal,
     extra", o nada. La hora extra solo hace falta si el dia la tuvo
     (seccion 98)."""
     persona = asignacion.persona
-    if persona.es_freelance:
+    dia = (jornada or asignacion.jornada).fecha
+    if freelance.cobra_como_freelance(db, persona, dia):
         tarifa = (db.query(m.TarifaFreelance)
                   .filter_by(persona_id=persona.id,
                              modalidad_id=modalidad_id).first())
@@ -126,10 +127,11 @@ def pago_de_jornada(db: Session, jornada: m.Jornada,
 
     El freelance cobra su tarifa personalizada; el de planta, el
     tabulador de comisiones del rol con el que fue ese dia. En dia
-    festivo ambos van con factor.
+    festivo ambos van con factor. El que paso de freelance a planta
+    (seccion 132) cobra como freelance los dias de antes del cambio.
     """
     persona = asignacion.persona
-    if persona.es_freelance:
+    if freelance.cobra_como_freelance(db, persona, jornada.fecha):
         tarifa = (db.query(m.TarifaFreelance)
                   .filter_by(persona_id=persona.id,
                              modalidad_id=jornada.modalidad_id).first())
@@ -294,7 +296,8 @@ def _sin_tarifa(db: Session, pais_id: int,
                 "fecha": jornada.fecha.isoformat(),
                 "modalidad": jornada.modalidad.codigo.value,
                 "rol": a.rol.nombre if a.rol else None,
-                "tipo": "freelance" if a.persona.es_freelance else "de planta",
+                "tipo": ("freelance" if freelance.cobra_como_freelance(
+                    db, a.persona, jornada.fecha) else "de planta"),
                 # Que es lo que falta: la tarifa del dia, o solo la hora
                 # extra de un dia que las tuvo.
                 "falta": falta})

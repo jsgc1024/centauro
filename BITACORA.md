@@ -10314,6 +10314,105 @@ con «Justificar», «el de la cotización» en los renglones, las tres
 tarjetas del panel, «Eliminar» en el implantado y los filtros de
 Accesos. Migración: `c3d7e9f2a1b4` (el adjunto del aviso).
 
+## 132. La revisión 360 de lo nuevo, ola 4c: el freelance, la huella y la unidad
+
+La tercera entrega de las decisiones del 2 de octubre (sección 130):
+las 6, 7, 8, 17 y 18. Las maquetas de la ola 4 ya estaban aprobadas
+(«adelante»), así que fue directo a construir. La decisión 14 («sin
+IVA» a la prefactura) sigue esperando a Ari y al facturista.
+
+- **Decisión 6, el freelance que pasa a planta.** En `Freelance`,
+  `planta_en`, `planta_por_id` y `odoo_id_anterior` (migración
+  `d4e8f0a3b2c5`). `freelance.a_planta`: solo el freelance vivo;
+  `persona.es_freelance` se apaga, la ficha guarda cuándo y quién, y
+  queda «pasa a planta» (freelance → de planta) en su historial. Lo que
+  no se toca: sus días asignados, su expediente, su acceso a la app,
+  sus horas y sus tarifas. `POST /freelance/{id}/a-planta`
+  (`freelance.validar`: Recursos Humanos). `ficha_de(…, solo_vivo=False)`
+  abre la ficha del que ya pasó a planta como historia: `GET
+  /freelance/{id}` y su expediente la devuelven con `planta_en`,
+  `planta_por`, `puede` todo en falso salvo ver el expediente y la
+  cuenta (`_puede(db, u, persona)`), `puede_acceso` falso y
+  `puede_cargar` falso; corregir, costos, acceso, urgencia, baja y
+  cargar documentos contestan 404. La lista con `incluir_bajas` trae
+  también a los que pasaron a planta (`outerjoin` con la ficha), con
+  `planta_en` en cada renglón; `urgencias` ya no lista la pedida de
+  quien dejó de ser freelance. La lectura de personal de Odoo, que
+  desde la 128 dejaba al freelance pendiente («en Centauro es
+  freelance; en Odoo ya es de planta: pasarlo a mano»), lo liga por su
+  correo en cuanto deja de serlo (`vinculos`), sin cambiar nada de esa
+  lectura. **La nómina:** `freelance.cobra_como_freelance(db, persona,
+  fecha)` —freelance, o con `planta_en` y la fecha anterior al día
+  (del país) en que pasó— decide en `nomina.que_falta_de_tarifa`,
+  `pago_de_jornada` y `_sin_tarifa`: los días de antes del cambio se
+  pagan con su tarifa de freelance y desde ese día con el tabulador
+  de su puesto. **El alta que vuelve:** `_correo_libre(…,
+  o_quien_vuelve=True)` acepta el correo de quien está dado de baja sin
+  ser freelance (se fue de Odoo) y `freelance.volver_de_odoo` lo trae
+  de vuelta como la misma persona: activo, freelance, sin oficina,
+  con el nombre, la ciudad y el teléfono del formulario; se le suelta
+  el empleado de Odoo (`odoo_id`, `odoo_sincronizado_en`,
+  `baja_odoo_en`, puesto y área en blanco) para que la lectura no lo
+  vuelva a dar de baja por estar archivado allá, y el número queda en
+  `odoo_id_anterior`; su ficha se rehace (tipo, nombre, alta, sin
+  plazo ni `planta_en`) y queda «alta … · vuelve de Odoo (empleado N)».
+  El correo del freelance dado de baja sigue contestando 409, ahora
+  diciendo que se reactiva desde la lista con el filtro «De baja».
+  `dar_acceso` reabre el acceso cerrado que ya tenía (`activo`, correo
+  y rol de personal de seguridad; «acceso reactivado · vuelve como
+  freelance») en vez de contestar que ya tiene acceso. Si Odoo lo
+  contrata de nuevo con otro empleado y el mismo correo, la lectura lo
+  deja pendiente y RH lo pasa a planta: se liga al nuevo. En
+  `freelance.js`: la tarjeta «Pasa a planta» arriba de «Baja» (solo
+  `puede.a_planta`, con confirmación), el aviso «Pasó a planta el … ·
+  lo pidió …» arriba de la ficha con el enlace a Personal de seguridad,
+  la etiqueta en la lista y el filtro «Pasaron a planta», «Dar acceso»
+  también con el acceso cerrado, el expediente sin «Cargar», y el
+  mensaje del alta que vuelve.
+- **Decisión 7, el plazo del de emergencia.** `para_asignar`: al
+  repetir, el plazo es el último día no cancelado del servicio que se
+  le asigna (`_ultimo_dia`), o hoy si ya pasó, más los quince días.
+  Antes contaba desde el último servicio que tuvo y, al que volvía
+  meses después, le salía vencido antes de empezar (`plazo_vencido` al
+  asignar), que se quitó. `al_asignar` sigue igual: pone el plazo y
+  avisa a RH en ese momento.
+- **Decisión 8, la huella en computadoras compartidas.**
+  `huella.esTelefono()` (`userAgentData.mobile`, el agente de usuario,
+  y el iPad que se presenta como Mac con pantalla táctil);
+  `convieneOfrecer` no ofrece nada fuera de un teléfono. En el menú
+  («Entrar con huella o cara»), en una computadora, la advertencia
+  `hue_solo_tuyo` antes del formulario de activar. El saludo de la
+  entrada, en la consola y en la app, dice solo el nombre de pila
+  (`huella.primerNombre`) y ya no el nombre completo ni el correo. La
+  llave que viaja con la cuenta del teléfono se queda como estaba.
+- **Decisión 17, quién responde por la unidad y la hora.**
+  `entregas._quien_responde` pregunta primero a `viaticos.al_volante`
+  (el conductor a bordo; si nadie va de conductor, quien vaya en ella),
+  la misma regla que la gasolina y la central; antes, con una sola
+  unidad, caía en quien marcó el fin, que suele ser el agente. La
+  entrega pendiente, su aviso al teléfono y el de las 24 horas van al
+  que maneja. `push.avisar_cambio_de_hora(…, salvo=)`: a quien propuso
+  la hora no se le quita la confirmación ni le llega «cambió tu hora»;
+  lo pasan `routers/central.confirmar_hora` y
+  `operacion.confirmar_propuestas_vencidas` (sus filas traen
+  `propuso_id`).
+- **Decisión 18, el gerente de administración y Odoo.** Nada cambia
+  en el puesto. Las novedades §108 (es/pt), el comentario de
+  `puestos_base` y el de su prueba ya no dicen «no toca Odoo»: no
+  administra la conexión —la lectura es de sistema y calidad—, pero
+  como parte de firmar el dinero lee las listas de precios de Odoo,
+  confirma productos y tipo de cambio y vuelve a mandar prefacturas
+  (`cierre.facturar`).
+
+Pruebas en `tests/test_revision_132.py` (12); la de la 111 del plazo
+se ajustó a la regla nueva y la de la 131 de la migración cabeza
+reconoce a la 132. Manual: el freelance y accesos (la huella), en
+español y portugués; novedades §132. Lo que cambia de pantalla: «Pasa
+a planta» y la ficha como historia, el filtro «Pasaron a planta», el
+alta que vuelve, la advertencia de la huella en computadoras y el
+saludo con el nombre de pila. Migración: `d4e8f0a3b2c5` (el freelance
+que pasa a planta).
+
 ## 14. Lo que falta
 
 ### Abierto

@@ -1169,19 +1169,22 @@ def confirmar_propuestas_vencidas(db: Session,
         confirmadas.append({"jornada_id": j.id, "fecha": j.fecha.isoformat(),
                             "hora": hecho["hora"],
                             "antes": hecho["antes"].isoformat(),
-                            "movida": hecho["movida"]})
+                            "movida": hecho["movida"],
+                            "propuso_id": hecho["propuso_id"]})
     db.commit()
 
     # "Cambio tu hora" a quien ya habia confirmado, con el mismo aviso
     # que manda la central al confirmar. Despues de guardar, y sin que
-    # un telefono que no contesta tumbe la vuelta.
+    # un telefono que no contesta tumbe la vuelta. Al que propuso la
+    # hora no (seccion 132, decision 17): esa hora la pidio el.
     from app import push
     for fila in confirmadas:
         if not fila["movida"]:
             continue
         try:
             push.avisar_cambio_de_hora(db, db.get(m.Jornada, fila["jornada_id"]),
-                                       datetime.fromisoformat(fila["antes"]))
+                                       datetime.fromisoformat(fila["antes"]),
+                                       salvo=fila.get("propuso_id"))
             db.commit()
         except Exception:                     # noqa: BLE001
             registro.exception("no se pudo avisar el cambio de hora de la "

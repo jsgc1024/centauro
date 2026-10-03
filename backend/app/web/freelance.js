@@ -95,13 +95,17 @@ let filtroEstado = "";
 let busqueda = "";
 
 const FILTROS = ["listo", "por_revisar", "faltan", "vencido", "por_vencer",
-                 "plazo", "de_baja"];
+                 "plazo", "de_baja", "a_planta"];
 
 function pasaFiltro(f) {
   const x = f.expediente;
   /* El dado de baja solo sale con su filtro (seccion 129, hallazgo
      r6-07): antes no se listaba en ninguno y «Reactivar» vivia en una
-     ficha a la que solo se llegaba tecleando el numero. */
+     ficha a la que solo se llegaba tecleando el numero. El que paso a
+     planta (seccion 132), igual: con el suyo. */
+  if (filtroEstado === "a_planta") return !!f.planta_en
+    && (!busqueda.trim() || coincide(busqueda, f.nombre, f.plaza, f.correo));
+  if (f.planta_en) return false;
   if (filtroEstado === "de_baja") return !f.activo
     && (!busqueda.trim() || coincide(busqueda, f.nombre, f.plaza, f.correo));
   if (!f.activo) return false;
@@ -159,7 +163,7 @@ export async function pestanaFreelance(zona, paises, paisId, alCambiarPais,
     } catch (err) {
       return tabla.replaceChildren(aviso(err.message, "grave"));
     }
-    contar(filas.filter(f => f.activo).length);
+    contar(filas.filter(f => f.activo && !f.planta_en).length);
     dibujar();
   };
 
@@ -208,7 +212,8 @@ function renglon(f) {
         h("div", {},
           h("a", { href: `#/freelance/${f.persona_id}` }, h("b", {}, f.nombre)),
           h("div", { clase: "gris chico" }, [f.plaza, f.correo].filter(Boolean).join(" · ")),
-          f.activo ? "" : etiqueta(t("fre_de_baja"), "grave")))),
+          f.planta_en ? etiqueta(t("fre_de_planta"), "info")
+            : f.activo ? "" : etiqueta(t("fre_de_baja"), "grave")))),
     h("td", {}, etiquetaTipo(f.tipo)),
     h("td", {}, etiqueta(est.texto, est.tono),
       est.detalle ? h("div", { clase: "chico gris" }, est.detalle) : ""),
@@ -278,7 +283,16 @@ async function pintarFicha(zona, id) {
                      .replace("{q}", f.alta_por)
           : ""),
       " ", etiqueta(est.texto, est.tono),
-      f.activo ? "" : " ", f.activo ? "" : etiqueta(t("fre_de_baja"), "grave")),
+      f.planta_en ? [" ", etiqueta(t("fre_de_planta"), "info")]
+        : f.activo ? "" : [" ", etiqueta(t("fre_de_baja"), "grave")]),
+    /* El que paso a planta (seccion 132, decision 6): su ficha es
+       historia, y lo dice arriba de todo. */
+    f.planta_en
+      ? aviso([t("fre_paso_a_planta").replace("{f}", fechaCorta(f.planta_en))
+                 .replace("{q}", f.planta_por || "—") + ". ",
+               t("fre_paso_a_planta_pie"), " ",
+               h("a", { href: `#/equipo/${f.persona_id}` }, t("fre_ver_en_personal"))], "")
+      : "",
     pestanas, cuerpo);
   pintarPestanas();
   await pintarCuerpo();
@@ -349,7 +363,9 @@ async function alta(main) {
     boton.disabled = true;
     try {
       const r = await api.post("/freelance", v);
-      mensaje(t("fre_alta_hecha").replace("{n}", r.nombre));
+      /* El correo de quien se dio de baja en Odoo lo trae de vuelta como
+         freelance (seccion 132, decision 6): se dice. */
+      mensaje(t(r.vuelve ? "fre_alta_vuelve" : "fre_alta_hecha").replace("{n}", r.nombre));
       location.hash = `#/freelance/${r.persona_id}`;
     } catch (err) {
       mensaje(err.message, "grave");
@@ -458,7 +474,9 @@ function datosYCostos(f, recargar) {
      (`puede_acceso`, seccion 128), con la misma regla que al darlo. */
   const acc = f.acceso;
   let accion = "";
-  if (!acc && puede.editar) {
+  /* Sin acceso, o con el acceso cerrado de cuando se fue de Odoo
+     (seccion 132): el mismo boton lo abre o lo vuelve a abrir. */
+  if ((!acc || !acc.activo) && puede.editar) {
     accion = h("button", { type: "button",
       disabled: (f.puede_acceso ?? f.expediente.asignable) ? null : "disabled",
       onclick: async (e) => {
@@ -480,6 +498,25 @@ function datosYCostos(f, recargar) {
                  : t("fre_acceso_cerrado"))
             : (f.puede_acceso && !f.expediente.asignable
                  ? t("fre_acceso_urgencia") : t("fre_acceso_pie"))))));
+
+  /* Pasa a planta (seccion 132, decision 6 de Salvador): lo pide RH
+     cuando Centauro lo contrato y Odoo ya lo tiene con su mismo correo.
+     La ficha se cierra como historia y la siguiente lectura lo toma. */
+  if (puede.a_planta && f.activo && !f.planta_en) {
+    bloques.push(h("div", { clase: "tarjeta lisa" },
+      h("h3", {}, t("fre_planta_titulo")),
+      h("div", { clase: "acciones" },
+        h("button", { type: "button", onclick: async (e) => {
+          if (!confirm(t("fre_planta_pregunta").replace("{n}", f.nombre))) return;
+          e.target.disabled = true;
+          try {
+            const r = await api.post(`/freelance/${f.persona_id}/a-planta`);
+            mensaje(t("fre_planta_hecha").replace("{n}", r.nombre));
+            recargar();
+          } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
+        } }, t("fre_pasar_a_planta")),
+        h("span", { clase: "chico gris" }, t("fre_planta_pie")))));
+  }
 
   /* La baja: deja de ofrecerse y se le cierra el acceso; el expediente
      se queda (decision 7). */
@@ -654,8 +691,10 @@ function renglonRequisito(q, numero, e, f, recargar) {
     : q.estado === "rechazado" ? t("fre_corregir")
     : q.vigencia === "servicio" ? t("fre_registrar")
     : t("fre_subir_nuevo");
-  botones.push(h("button", { type: "button", clase: "claro chico", onclick: () =>
-    abrirCarga(forma, q, e, f, recargar) }, textoCargar));
+  if (e.puede_cargar !== false) {
+    botones.push(h("button", { type: "button", clase: "claro chico", onclick: () =>
+      abrirCarga(forma, q, e, f, recargar) }, textoCargar));
+  }
 
   const estado = q.estado === "caseta" ? t("fre_doc_caseta") : t(`fre_doc_${q.estado}`);
   const nota = q.estado === "rechazado" && q.pendiente

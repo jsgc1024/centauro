@@ -70,7 +70,10 @@ def confirmar_hora(jornada_id: int, db: Session = Depends(get_db),
 
     avisados = None
     if hecho["movida"]:
-        avisados = push.avisar_cambio_de_hora(db, jornada, hecho["antes"])
+        # Al que propuso la hora no se le pide reconfirmar ni se le avisa
+        # (seccion 132, decision 17): esa hora la pidio el.
+        avisados = push.avisar_cambio_de_hora(db, jornada, hecho["antes"],
+                                              salvo=hecho["propuso_id"])
         db.commit()
     return {"resultado": "confirmada",
             "jornada_id": jornada.id,

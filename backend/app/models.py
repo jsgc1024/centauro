@@ -757,6 +757,18 @@ class Freelance(Base):
         DateTime(timezone=True), nullable=True)
     # El aviso a Recursos Humanos del dia que vence el plazo: uno solo.
     plazo_avisado_en: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # El freelance que Centauro contrata de planta (seccion 132, decision
+    # 6 de Salvador): RH lo pasa a planta y la ficha se cierra como
+    # historia --cuando y quien--; la persona sigue, ya sin la marca de
+    # freelance, y la lectura de Odoo la toma por su correo.
+    planta_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    planta_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    # Al reves: quien se fue de Odoo y vuelve como freelance con su mismo
+    # correo sigue con su misma persona; aqui queda el empleado de Odoo
+    # que fue, para que la historia no se pierda.
+    odoo_id_anterior: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     persona: Mapped["Persona"] = relationship(foreign_keys=[persona_id])
 

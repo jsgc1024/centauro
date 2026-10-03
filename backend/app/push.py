@@ -819,12 +819,17 @@ def avisar_hora_rechazada(db: Session, jornada, persona_id: int) -> dict:
         etiqueta="cambio-hora", urgente=True)
 
 
-def avisar_cambio_de_hora(db: Session, jornada, antes) -> dict:
+def avisar_cambio_de_hora(db: Session, jornada, antes,
+                          salvo: int | None = None) -> dict:
     """Confirmo para las cinco y la hora se movio.
 
     La confirmacion de la vispera se hace sobre una hora; si esa hora
     cambia despues y nadie avisa, la confirmacion queda apuntando a algo
     que ya no es cierto.
+
+    `salvo`: quien propuso esa hora (seccion 132, decision 17 de
+    Salvador). A el no le llega el aviso ni se le pide reconfirmar: ya
+    sabe a que hora es, porque la pidio.
     """
     if jornada.estatus in (m.EstatusJornada.CANCELADA,
                            m.EstatusJornada.TERMINADA):
@@ -847,6 +852,8 @@ def avisar_cambio_de_hora(db: Session, jornada, antes) -> dict:
     lengua_central = (getattr(pais, "idioma", None) or "es").lower()
     lengua_central = lengua_central if lengua_central in TEXTOS_PUSH else "es"
     for a in jornada.personal:
+        if a.persona_id == salvo:
+            continue
         if a.confirmado and a.relevado_en is None:
             a.confirmado = False
             a.confirmado_en = None
@@ -859,6 +866,8 @@ def avisar_cambio_de_hora(db: Session, jornada, antes) -> dict:
             reconfirman += 1
     avisados = []
     for persona_id in _asignados(db, [jornada]):
+        if persona_id == salvo:
+            continue
         lengua = idioma_de(db, persona_id)
         r = avisar(db, persona_id,
                    titulo=tx(lengua, "cambio_fecha_titulo" if cambio_de_fecha

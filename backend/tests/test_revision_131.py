@@ -694,7 +694,9 @@ def test_la_migracion_del_adjunto_es_la_cabeza():
                  / "versions")
     nueva = (versiones / "c3d7e9f2a1b4_adjunto_del_aviso.py").read_text()
     assert 'down_revision = "b7d3e9a1c5f2"' in nueva
-    assert sum(1 for p in versiones.glob("*.py")
-               if 'down_revision = "c3d7e9f2a1b4"' in p.read_text()) == 0
+    # Fue la cabeza hasta la seccion 132, que cuelga de ella.
+    assert [p.name for p in versiones.glob("*.py")
+            if 'down_revision = "c3d7e9f2a1b4"' in p.read_text()] == [
+        "d4e8f0a3b2c5_freelance_a_planta.py"]
     with SessionLocal() as db:
         assert db.query(m.Notificacion.adjunto_id).limit(1).all() is not None
