@@ -31,19 +31,24 @@ TEMAS = (
 
 # (nombre, RSS, estados que cubre; vacio = nacional)
 MEDIOS = (
-    ("Animal Político", "https://animalpolitico.com/feed/", ()),
-    ("Aristegui Noticias", "https://aristeguinoticias.com/feed/", ()),
     ("Infobae México",
      "https://www.infobae.com/arc/outboundfeeds/rss/category/mexico/", ()),
     ("El Universal",
      "https://www.eluniversal.com.mx/arc/outboundfeeds/rss/?outputType=xml",
      ()),
-    ("Pie de Página", "https://piedepagina.mx/feed/", ()),
-    ("Ríodoce", "https://riodoce.mx/feed/", ("Sinaloa",)),
     ("Zeta Tijuana", "https://zetatijuana.com/feed/", ("Baja California",)),
-    ("Quadratín Michoacán", "https://www.quadratin.com.mx/feed/",
-     ("Michoacán",)),
     ("El Sur de Acapulco", "https://suracapulco.mx/feed/", ("Guerrero",)),
+)
+
+# Los medios cuyo RSS no deja leer al servidor (lo cambiaron, lo cierran
+# o contesta con error, seccion 144) se leen por Google Noticias con
+# «site:»: trae lo suyo del ultimo dia y pasa por el mismo filtro.
+POR_GOOGLE = (
+    ("Animal Político", "site:animalpolitico.com", ()),
+    ("Aristegui Noticias", "site:aristeguinoticias.com", ()),
+    ("Pie de Página", "site:piedepagina.mx", ()),
+    ("Ríodoce", "site:riodoce.mx", ("Sinaloa",)),
+    ("Quadratín Michoacán", "site:quadratin.com.mx", ("Michoacán",)),
 )
 
 
@@ -58,4 +63,8 @@ def iniciales() -> list[dict]:
     for nombre, rss, estados in MEDIOS:
         salida.append({"tipo": "medio", "nombre": nombre, "direccion": rss,
                        "regiones": list(estados), "cada_min": 15})
+    for nombre, sitio, estados in POR_GOOGLE:
+        salida.append({"tipo": "busqueda", "nombre": nombre,
+                       "direccion": sitio, "regiones": list(estados),
+                       "cada_min": 15})
     return salida

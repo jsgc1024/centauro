@@ -2,6 +2,9 @@
 
 Lo nuevo de cada actualización, escrito para quien usa el sistema. La más nueva va arriba.
 
+## 144 · 2026-10-03 · Los medios que no dejan leer, por Google Noticias
+Animal Político, Aristegui, Pie de Página, Ríodoce y Quadratín Michoacán no dejaban que el servidor leyera su página de noticias (unos contestaban con error y otros no daban ninguna nota). Ahora el lector los lee por **Google Noticias**, con lo que cada uno publicó en el último día; en «Ver lo que lee» salen como Búsqueda, con su mismo nombre. Ver [el mapa de riesgo](#/riesgo).
+
 ## 143 · 2026-10-03 · Lo que Connect publica solo
 Algunas cosas ya salen al cliente **sin pasar por el analista**: lo de nivel 1 o 2 que dice una **fuente oficial**, lo de nivel 1 o 2 que dicen **3 o más medios distintos**, y todo lo de **nivel 1** (informativo). Sale al momento con el texto que escribe Claude, y en Mapa y eventos queda marcado **«Lo publicó Connect»**, con el porqué; el analista lo corrige o lo cierra como cualquier otro, y queda en la bitácora. Siempre van al analista: lo de nivel 3 o 4, lo que pasó hace más de 6 horas, lo que Connect no sabe ubicar, lo que parece el mismo hecho que un evento que ya existe y lo que no trae texto para el cliente. Las reglas se encienden o apagan en Lector → «Ver lo que lee», donde también se ve cuántos publicó solo hoy. Además, el evento que crea el analista desde el lector ya trae escrito el texto para el cliente. Ver [el mapa de riesgo](#/riesgo).
 

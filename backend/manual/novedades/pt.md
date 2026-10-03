@@ -2,6 +2,9 @@
 
 O que há de novo em cada atualização, escrito para quem usa o sistema. A mais nova fica em cima.
 
+## 144 · 2026-10-03 · Os veículos que não deixam ler, pelo Google Notícias
+Animal Político, Aristegui, Pie de Página, Ríodoce e Quadratín Michoacán não deixavam o servidor ler sua página de notícias (uns respondiam com erro e outros não davam nenhuma notícia). Agora o leitor os lê pelo **Google Notícias**, com o que cada um publicou no último dia; em «Ver o que lê» aparecem como Busca, com o mesmo nome. Ver [o mapa de risco](#/riesgo).
+
 ## 143 · 2026-10-03 · O que o Connect publica sozinho
 Algumas coisas já chegam ao cliente **sem passar pelo analista**: o de nível 1 ou 2 que diz uma **fonte oficial**, o de nível 1 ou 2 que dizem **3 ou mais veículos diferentes**, e tudo do **nível 1** (informativo). Sai na hora com o texto que o Claude escreve, e em Mapa e eventos fica marcado **«Publicado pelo Connect»**, com o porquê; o analista corrige ou encerra como qualquer outro, e fica no registro. Sempre vão ao analista: nível 3 ou 4, o que aconteceu há mais de 6 horas, o que o Connect não sabe situar, o que parece o mesmo fato que um evento existente e o que não traz texto para o cliente. As regras se ligam ou desligam em Leitor → «Ver o que lê», onde também se vê quantos publicou sozinho hoje. Além disso, o evento que o analista cria a partir do leitor já traz escrito o texto para o cliente. Ver [o mapa de risco](#/riesgo).
 

@@ -10820,6 +10820,17 @@ analista lo corrija o lo cierre despues. Boceto aprobado el 3 oct.
 
 Pruebas: `tests/test_lector.py` (21).
 
+## 144. Los medios que no dejan leer su RSS, por Google Noticias
+
+En la primera vuelta en el servidor: Animal Politico contesto 404,
+Riodoce 500, Quadratin no dio RSS, y Aristegui y Pie de Pagina no
+trajeron ninguna nota. En vez de perseguir cada RSS, se leen con una
+busqueda de Google Noticias «site:» (lo del ultimo dia de ese medio, por
+el mismo filtro). `lector_catalogo.POR_GOOGLE`; la migracion
+`f4b6d8f0a2c3` cambia solo las fuentes que siguen con su direccion de
+origen. Se quedan por su RSS los que si leyeron: Infobae, El Universal,
+Zeta Tijuana y El Sur.
+
 ## 14. Lo que falta
 
 ### Abierto

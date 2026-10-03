@@ -370,6 +370,13 @@ def test_las_fuentes_iniciales():
     from app import lector_catalogo
     iniciales = lector_catalogo.iniciales()
     assert len([f for f in iniciales if f["cada_min"] == 60]) == 32
+    # Los medios que no dejan leer su RSS van por Google con «site:».
+    sitios = {f["nombre"]: f for f in iniciales
+              if f["direccion"].startswith("site:")}
+    assert sitios["Ríodoce"]["tipo"] == "busqueda"
+    assert sitios["Ríodoce"]["regiones"] == ["Sinaloa"]
+    assert "site%3Ariodoce.mx" in lector.direccion_de(
+        m.FuenteLector(tipo="busqueda", direccion="site:riodoce.mx"))
     assert all(f["tipo"] in lector.TIPOS for f in iniciales)
     assert json.dumps(iniciales)          # se pueden guardar tal cual
 
