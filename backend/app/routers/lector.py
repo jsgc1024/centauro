@@ -58,6 +58,8 @@ class ParametrosIn(BaseModel):
     solo_oficial: bool | None = None
     solo_confirmado: bool | None = None
     solo_informativo: bool | None = None
+    solo_alto: bool | None = None
+    solo_critico: bool | None = None
 
 
 def _mexico(db: Session) -> m.Pais:
@@ -160,7 +162,7 @@ def cambiar_parametros(datos: ParametrosIn, db: Session = Depends(get_db),
     if datos.pausado is not None:
         par.pausado = datos.pausado
     for regla in ("solo_activo", "solo_oficial", "solo_confirmado",
-                  "solo_informativo"):
+                  "solo_informativo", "solo_alto", "solo_critico"):
         if getattr(datos, regla) is not None:
             setattr(par, regla, getattr(datos, regla))
     db.commit()

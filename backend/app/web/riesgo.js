@@ -274,7 +274,8 @@ async function pintarCola(zona, ficha) {
 /* Lo que publico Connect solo (seccion 143): por que regla, a que hora,
    y que el analista lo puede corregir o cerrar. */
 function avisoDeConnect(e) {
-  const regla = ["oficial", "confirmado", "informativo"].includes(e.auto_regla) ? e.auto_regla : "informativo";
+  const regla = ["oficial", "confirmado", "informativo", "alto", "critico"].includes(e.auto_regla)
+    ? e.auto_regla : "informativo";
   const porQue = t(`rsg_auto_${regla}`).replace("{dato}", e.auto_dato || "").replace("{nivel}", e.nivel);
   const hora = (e.publicado_en || "").slice(11, 16);
   return h("div", { clase: "aviso rsg-auto-aviso" },

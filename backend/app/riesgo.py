@@ -357,7 +357,11 @@ def editar(db: Session, usuario: m.Usuario, evento: m.EventoRiesgo,
 
 def publicar(db: Session, usuario: m.Usuario | None,
              evento: m.EventoRiesgo, ahora: datetime | None = None,
-             detalle: str | None = None) -> m.EventoRiesgo:
+             detalle: str | None = None,
+             sin_segunda_firma: bool = False) -> m.EventoRiesgo:
+    """`sin_segunda_firma` solo lo usa el lector (seccion 147): un nivel 4
+    muy confirmado sale como 4 sin esperar al jefe de turno, decision de
+    Salvador del 3 oct. Lo que publica una persona siempre espera."""
     ahora = _ahora(ahora)
     if evento.estado != E.PROPUESTO:
         raise HTTPException(409, f"El evento {evento.folio} está "
@@ -371,7 +375,7 @@ def publicar(db: Session, usuario: m.Usuario | None,
     if evento.vigente_hasta <= ahora:
         raise HTTPException(400, "Su vigencia ya pasó: no hay nada que "
                                  "publicar")
-    if evento.nivel == 4:
+    if evento.nivel == 4 and not (sin_segunda_firma and usuario is None):
         evento.estado = E.POR_CONFIRMAR
         evento.critico_pedido_por_id = usuario.id
         evento.actualizado_en = ahora

@@ -16,7 +16,7 @@ from app import lector
 from app import models as m
 from app.config import settings
 from app.db import SessionLocal
-from tests.test_riesgo_clientes import cat  # noqa: F401
+from tests.test_riesgo_clientes import cat, publicar  # noqa: F401
 
 AHORA = datetime.now(timezone.utc)
 
@@ -705,3 +705,52 @@ def test_lo_violento_nunca_es_informativo_y_la_detencion_no_sale_sola():
     finally:
         db.close()
 
+
+
+def test_lo_de_3_y_4_muy_confirmado_sale_al_momento():
+    """Seccion 147: si esta muy confirmado, no espera a que el analista
+    llegue; el 4 sale como 4 sin el jefe de turno."""
+    tres = (("Bloqueo en la México-Puebla, km 72", "Milenio",
+             "https://milenio.com/x", _fecha(1)),
+            ("Bloqueo en la autopista México-Puebla", "El Sol",
+             "https://elsol.com/y", _fecha(1)),
+            ("Bloquean la México-Puebla en Texmelucan", "Excélsior",
+             "https://excelsior.com/z", _fecha(1)))
+    # Otras notas (cada nota se lee una vez: con los mismos enlaces no
+    # entrarian).
+    cuatro = tuple((t, medio, url + "4", f) for t, medio, url, f in tres) + (
+        ("Bloqueo total en la México-Puebla", "Proceso",
+         "https://proceso.com/w", _fecha(1)),)
+    solo_una = _para_solo(nivel=3, oficial=True)              # 1 fuente
+    alto = _para_solo(nivel=3, oficial=True, notas=tres)      # oficial + 2
+    critico = _para_solo(nivel=4, notas=cuatro)               # 4 medios
+    assert _publicar_solos() == 2
+    db = SessionLocal()
+    try:
+        assert db.get(m.HallazgoLector, solo_una).estado == "por_revisar"
+        e3 = db.get(m.EventoRiesgo, db.get(m.HallazgoLector, alto).evento_id)
+        assert e3.estado == m.EstadoEvento.PUBLICADO and e3.nivel == 3
+        assert (e3.auto_regla, e3.auto_dato) == ("alto", "3")
+        e4 = db.get(m.EventoRiesgo,
+                    db.get(m.HallazgoLector, critico).evento_id)
+        assert e4.estado == m.EstadoEvento.PUBLICADO and e4.nivel == 4
+        assert e4.auto_regla == "critico" and e4.publicado_por_id is None
+        nota = db.query(m.CambioEvento).filter_by(
+            evento_id=e4.id, accion="publico").one()
+        assert "sin el jefe de turno" in nota.detalle
+        # Apagadas, el 3 y el 4 esperan al analista.
+        par = lector.parametros(db)
+        par.solo_alto = par.solo_critico = False
+        db.commit()
+    finally:
+        db.close()
+    _para_solo(nivel=4, notas=tuple((t, medio, url + "b", f)
+                                    for t, medio, url, f in cuatro))
+    assert _publicar_solos() == 0
+
+
+def test_lo_que_publica_una_persona_en_4_sigue_esperando(
+        cliente, sesion, publicar):  # noqa: F811
+    """La segunda firma del 4 solo se salta en lo que publica el lector."""
+    e = publicar(nivel=4)
+    assert e["estado"] == "por_confirmar"

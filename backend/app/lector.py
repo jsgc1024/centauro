@@ -1100,7 +1100,13 @@ VIGENCIA_HORAS = {"Bloqueo carretero": 8, "Manifestación": 6,
 VENTANA_SOLO = timedelta(hours=6)
 MEDIOS_PARA_CONFIRMAR = 3
 MAX_SOLOS_POR_VUELTA = 10
-REGLAS_SOLO = ("oficial", "confirmado", "informativo")
+REGLAS_SOLO = ("oficial", "confirmado", "informativo", "alto", "critico")
+# Seccion 147 (Salvador, 3 oct: «que pasa si esta super confirmado y el
+# analista se demora y nos gana la noticia?»): lo de nivel 3 y 4 tambien
+# sale solo, al momento, si esta muy confirmado: una fuente oficial y dos
+# medios mas, o cuatro medios distintos. El 4 sale como 4, sin el jefe de
+# turno (su decision); queda marcado para que lo revise.
+MEDIOS_MUY_CONFIRMADO = 4
 
 
 def _cuando(h: m.HallazgoLector):
@@ -1116,7 +1122,7 @@ def regla_para_publicar_solo(h: m.HallazgoLector, par: m.ParametrosLector,
     al analista."""
     if not par.solo_activo or h.estado != "por_revisar" or h.evento_id:
         return None
-    if h.nivel not in (1, 2) or not h.con_ia:
+    if h.nivel not in (1, 2, 3, 4) or not h.con_ia:
         return None
     if not (h.tipo_id and h.region_id and h.municipio_id):
         return None
@@ -1128,9 +1134,19 @@ def regla_para_publicar_solo(h: m.HallazgoLector, par: m.ParametrosLector,
     if cuando is None or cuando < ahora - VENTANA_SOLO:
         return None
     oficiales = [n.fuente.nombre for n in h.notas if n.fuente.oficial]
+    medios = {(n.medio or n.fuente.nombre).strip().lower() for n in h.notas}
+    if h.nivel in (3, 4):
+        muy = ((oficiales and len(medios) >= 3)
+               or len(medios) >= MEDIOS_MUY_CONFIRMADO)
+        if not muy:
+            return None
+        if h.nivel == 3 and par.solo_alto:
+            return "alto", str(len(medios))
+        if h.nivel == 4 and par.solo_critico:
+            return "critico", str(len(medios))
+        return None
     if par.solo_oficial and oficiales:
         return "oficial", oficiales[0][:120]
-    medios = {(n.medio or n.fuente.nombre).strip().lower() for n in h.notas}
     if par.solo_confirmado and len(medios) >= MEDIOS_PARA_CONFIRMAR:
         return "confirmado", str(len(medios))
     if par.solo_informativo and h.nivel == 1:
@@ -1145,6 +1161,11 @@ def _por_que(regla: tuple[str, str], nivel: int) -> str:
         motivo = f"fuente oficial ({dato})"
     elif clave == "confirmado":
         motivo = f"lo dicen {dato} medios distintos"
+    elif clave == "alto":
+        motivo = f"muy confirmado, {dato} fuentes distintas"
+    elif clave == "critico":
+        motivo = (f"muy confirmado, {dato} fuentes distintas; salió como 4 "
+                  "sin el jefe de turno")
     else:
         motivo = "informativo"
     return f"Lo publicó solo: {motivo}, nivel {nivel}"
@@ -1165,7 +1186,7 @@ def publicar_solos(db: Session, ahora: datetime | None = None) -> int:
                            .selectinload(m.NotaLector.fuente))
                   .filter(m.HallazgoLector.estado == "por_revisar",
                           m.HallazgoLector.evento_id.is_(None),
-                          m.HallazgoLector.nivel.in_([1, 2]),
+                          m.HallazgoLector.nivel.in_([1, 2, 3, 4]),
                           m.HallazgoLector.actualizado_en
                           >= ahora - VENTANA_SOLO)
                   .order_by(m.HallazgoLector.nivel.desc(),
@@ -1183,7 +1204,8 @@ def publicar_solos(db: Session, ahora: datetime | None = None) -> int:
                 evento = crear_evento(db, None, h, {})
                 evento.auto_regla, evento.auto_dato = regla
                 riesgo.publicar(db, None, evento, ahora,
-                                detalle=_por_que(regla, evento.nivel))
+                                detalle=_por_que(regla, evento.nivel),
+                                sin_segunda_firma=regla[0] == "critico")
             publicados += 1
         except Exception as e:                           # noqa: BLE001
             log.warning("No se pudo publicar solo el hallazgo H%s: %s",
@@ -1206,6 +1228,7 @@ def vista_solos(db: Session, pais: m.Pais, ahora: datetime) -> dict:
     return {"activo": par.solo_activo, "oficial": par.solo_oficial,
             "confirmado": par.solo_confirmado,
             "informativo": par.solo_informativo,
+            "alto": par.solo_alto, "critico": par.solo_critico,
             "hoy": {"total": len(filas),
                     **{r: sum(1 for x, _ in filas if x == r)
                        for r in REGLAS_SOLO},

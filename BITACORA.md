@@ -10917,6 +10917,27 @@ huracan, y un «hombre muere en ataque armado» que Claude dejo en nivel
 
 Pruebas: `tests/test_lector.py` (22).
 
+## 147. Lo de nivel 3 y 4 muy confirmado sale al momento
+
+Salvador, 3 oct: «que pasa si esta super confirmado el evento y el
+analista se demora y nos gana la noticia?». Decidio publicarlo al
+momento, y lo de nivel 4 como 4, sin esperar al jefe de turno.
+
+- **Muy confirmado** (`lector.MEDIOS_MUY_CONFIRMADO`): una fuente
+  oficial y 2 medios mas (3 en total), o 4 o mas medios distintos. Dos reglas nuevas en `ParametrosLector`: `solo_alto`
+  (nivel 3) y `solo_critico` (nivel 4), encendidas al subir. Se apagan
+  en Lector → «Ver lo que lee».
+- **Nivel 4 sin segunda firma**: `riesgo.publicar(...,
+  sin_segunda_firma=True)` solo lo usa el lector y solo cuando publica
+  sin persona (`usuario=None`). Lo que publica una persona en 4 sigue
+  esperando al jefe de turno.
+- Los candados de siempre siguen: mas de 6 horas, sin tipo o sin
+  lugar, parecido a un evento que ya existe, detencion, sin texto para
+  el cliente, y 10 por vuelta.
+
+Migracion `b7d9f1a3c5e8` (despues de `a5c7e9b1d3f6`). Pruebas:
+`tests/test_lector.py` (24).
+
 ## 14. Lo que falta
 
 ### Abierto

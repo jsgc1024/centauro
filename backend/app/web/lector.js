@@ -413,13 +413,17 @@ async function pintarFuentes(cuerpo, ctx, alVolver) {
   const [cOficial, lOficial] = casilla("oficial", t("lec_solo_oficial"), true);
   const [cConfirmado, lConfirmado] = casilla("confirmado", t("lec_solo_confirmado"), true);
   const [cInformativo, lInformativo] = casilla("informativo", t("lec_solo_informativo"), true);
+  /* Seccion 147: lo de nivel 3 y 4 muy confirmado, al momento. */
+  const [cAlto, lAlto] = casilla("alto", t("lec_solo_alto"), true);
+  const [cCritico, lCritico] = casilla("critico", t("lec_solo_critico"), true);
   const guardarSolos = h("button", { type: "button", clase: "claro" }, t("lec_solo_guardar"));
   guardarSolos.onclick = async () => {
     guardarSolos.disabled = true;
     try {
       await api.put("/riesgo/lector/parametros", {
         solo_activo: cActivo.checked, solo_oficial: cOficial.checked,
-        solo_confirmado: cConfirmado.checked, solo_informativo: cInformativo.checked });
+        solo_confirmado: cConfirmado.checked, solo_informativo: cInformativo.checked,
+        solo_alto: cAlto.checked, solo_critico: cCritico.checked });
       mensaje(t("lec_solo_guardado"));
       await pintarFuentes(cuerpo, ctx, alVolver);
     } catch (e) {
@@ -431,13 +435,14 @@ async function pintarFuentes(cuerpo, ctx, alVolver) {
   const bloqueSolos = [
     h("h3", {}, t("lec_solo_titulo")),
     h("p", { clase: "chico gris" }, t("lec_solo_sub")),
-    h("div", { clase: "lec-solo-reglas" }, lActivo, lOficial, lConfirmado, lInformativo,
+    h("div", { clase: "lec-solo-reglas" }, lActivo, lOficial, lConfirmado, lInformativo, lAlto, lCritico,
       ctx.puedeFuentes ? h("div", {}, guardarSolos) : null),
     h("p", { clase: "chico gris" }, t("lec_solo_siempre")),
     h("div", { clase: "chico" }, h("b", {}, t("lec_solo_hoy").replace("{total}", hoySolos.total)),
       hoySolos.total ? h("span", { clase: "gris" }, " · ", t("lec_solo_hoy_detalle")
         .replace("{oficial}", hoySolos.oficial).replace("{confirmado}", hoySolos.confirmado)
-        .replace("{informativo}", hoySolos.informativo).replace("{cerrados}", hoySolos.cerrados)) : null),
+        .replace("{informativo}", hoySolos.informativo).replace("{cerrados}", hoySolos.cerrados)
+        .replace("{alto}", hoySolos.alto).replace("{critico}", hoySolos.critico)) : null),
   ];
 
   const tipo = lista("tipo", Object.keys(NOMBRE_TIPO).map((k) => ({ valor: k, texto: t(`${NOMBRE_TIPO[k]}_largo`) })));

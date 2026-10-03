@@ -2,6 +2,9 @@
 
 O que há de novo em cada atualização, escrito para quem usa o sistema. A mais nova fica em cima.
 
+## 147 · 2026-10-03 · O grave e muito confirmado sai na hora
+O de **nível 3 (alto)** e **nível 4 (crítico)** já sai sozinho quando está **muito confirmado**: diz uma fonte oficial e mais 2 veículos, ou dizem 4 ou mais veículos distintos. Sai na hora, com o aviso ao cliente, e o de nível 4 sai como 4 **sem esperar o chefe de turno**. Fica marcado «Publicado pelo Connect», com o porquê; o analista o corrige ou o fecha como qualquer outro. O de nível 3 ou 4 que não esteja muito confirmado continua indo ao analista, e o que uma pessoa publica em nível 4 continua esperando a segunda assinatura. As duas regras se desligam em Leitor → «Ver o que lê». Ver [o mapa de risco](#/riesgo).
+
 ## 146 · 2026-10-03 · O que o Connect publica sozinho: sem detenções
 As **detenções** já não se publicam sozinhas: vão ao analista, porque são notícia e não risco para quem passa. E o violento —um ataque armado, uma execução, um confronto, um sequestro, um explosivo— nunca fica como nível 1 (informativo): é pelo menos nível 2. Ver [o mapa de risco](#/riesgo).
 

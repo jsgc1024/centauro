@@ -6290,7 +6290,8 @@ class NivelLugar(Base):
 #
 # Connect lee medios, busquedas de Google Noticias y una lista de X cada
 # pocos minutos. Lo que parece de seguridad lo entiende Claude y lo junta
-# por hecho; el analista decide si es un evento. Nada se publica solo.
+# por hecho; el analista decide si es un evento, salvo lo que cumple las
+# reglas de `ParametrosLector` (secciones 143 y 147), que se publica solo.
 
 class FuenteLector(Base):
     """Algo que el lector lee: un medio (su RSS), una busqueda de Google
@@ -6436,3 +6437,9 @@ class ParametrosLector(Base):
                                                   server_default="true")
     solo_informativo: Mapped[bool] = mapped_column(Boolean, default=True,
                                                    server_default="true")
+    # Seccion 147: lo de nivel 3 y 4 muy confirmado (una oficial y dos
+    # medios mas, o cuatro medios), al momento.
+    solo_alto: Mapped[bool] = mapped_column(Boolean, default=True,
+                                            server_default="true")
+    solo_critico: Mapped[bool] = mapped_column(Boolean, default=True,
+                                               server_default="true")
