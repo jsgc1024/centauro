@@ -5727,8 +5727,6 @@ class FuenteLector(Base):
                                          server_default="true")
     leida_en: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True)
-    # Lo ultimo que se leyo de X: desde ahi pide lo nuevo.
-    desde_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     error: Mapped[str | None] = mapped_column(String(300), nullable=True)
     error_en: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True)
@@ -5745,7 +5743,7 @@ class HallazgoLector(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     pais_id: Mapped[int] = mapped_column(ForeignKey("pais.id"))
-    # por_revisar | evento | sumado | descartado
+    # por_revisar | evento | sumado | descartado | vencido
     estado: Mapped[str] = mapped_column(String(20), index=True,
                                         server_default="por_revisar")
     titulo: Mapped[str] = mapped_column(String(300))
@@ -5805,7 +5803,8 @@ class NotaLector(Base):
     leida_en: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True)
     # nueva | sin_filtro | analizada | no_es | error
-    estado: Mapped[str] = mapped_column(String(20), server_default="nueva")
+    estado: Mapped[str] = mapped_column(String(20), server_default="nueva",
+                                        index=True)
     hallazgo_id: Mapped[int | None] = mapped_column(
         ForeignKey("hallazgo_lector.id", ondelete="SET NULL"), nullable=True,
         index=True)
@@ -5825,3 +5824,8 @@ class ParametrosLector(Base):
                                             server_default="1500")
     pausado: Mapped[bool] = mapped_column(Boolean, default=False,
                                           server_default="false")
+    # Lo que X entrego en su dia (UTC): todas las publicaciones de cada
+    # llamada, nuevas o repetidas.
+    x_dia: Mapped[date | None] = mapped_column(Date, nullable=True)
+    x_leidas: Mapped[int] = mapped_column(Integer, default=0,
+                                          server_default="0")

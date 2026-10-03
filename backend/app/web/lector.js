@@ -35,6 +35,12 @@ function hace(iso) {
   return t("lec_hace_d").replace("{n}", Math.round(min / 1440));
 }
 
+/* Solo enlaces http(s): lo demas no se pica. El servidor ya los limpia;
+   esto es la segunda puerta. */
+function seguro(url) {
+  return /^https?:\/\//i.test(url || "") ? url : null;
+}
+
 function horaDe(iso) {
   return iso ? iso.slice(11, 16) : "";
 }
@@ -237,7 +243,7 @@ async function ficha(x, ctx, alTerminar) {
         `${primera.medio} · ${horaDe(primera.publicada_en)} · ${hace(primera.publicada_en)}`) : null),
     h("h2", { clase: "lec-titular" }, x.titulo),
     h("p", { clase: "chico lec-resumen" }, x.resumen || x.texto || (primera ? primera.titulo : ""), " ",
-      primera && primera.url ? h("a", { clase: "enlace", href: primera.url, target: "_blank", rel: "noopener" },
+      primera && seguro(primera.url) ? h("a", { clase: "enlace", href: seguro(primera.url), target: "_blank", rel: "noopener" },
         t("lec_leer_nota")) : null),
     x.evento_folio ? aviso(t("lec_parece").replace("{folio}", x.evento_folio), "alerta") : null,
     h("h3", {}, x.con_ia ? t("lec_entendio") : t("lec_que_dice")),
@@ -247,8 +253,8 @@ async function ficha(x, ctx, alTerminar) {
       h("h3", {}, t("lec_otras").replace("{n}", otras.length)),
       h("table", { clase: "fondo-tabla" }, h("tbody", {}, otras.map((n) => h("tr", {},
         h("td", {}, n.medio, n.oficial ? h("span", { clase: "chico gris" }, ` (${t("lec_oficial")})`) : null),
-        h("td", { clase: "chico" }, n.url
-          ? h("a", { href: n.url, target: "_blank", rel: "noopener" }, n.titulo) : n.titulo),
+        h("td", { clase: "chico" }, seguro(n.url)
+          ? h("a", { href: seguro(n.url), target: "_blank", rel: "noopener" }, n.titulo) : n.titulo),
         h("td", { clase: "chico gris" }, hace(n.publicada_en))))))] : null,
     puede ? aviso(t("lec_al_crear")) : aviso(t("lec_solo_ver")),
     acciones,

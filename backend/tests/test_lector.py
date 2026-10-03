@@ -291,9 +291,10 @@ def test_las_fuentes_y_el_tope_de_x(cliente, sesion):
         "tipo": "lista_x", "nombre": "Lista de la Central",
         "direccion": "https://x.com/i/lists/1234567890"})
     assert r.status_code == 200, r.text
-    r = cliente.post("/riesgo/lector/fuentes", headers=h, json={
-        "tipo": "medio", "direccion": "https://riodoce.mx/feed/",
-        "regiones": ["Sinaloa"]})
+    with mock.patch.object(lector, "_direccion_publica", lambda url: None):
+        r = cliente.post("/riesgo/lector/fuentes", headers=h, json={
+            "tipo": "medio", "direccion": "https://riodoce.mx/feed/",
+            "regiones": ["Sinaloa"]})
     assert r.status_code == 200, r.text
     fuentes = {f["nombre"]: f for f in r.json()["fuentes"]}
     assert fuentes["https://riodoce.mx/feed/"]["regiones"] == ["Sinaloa"]
@@ -356,3 +357,78 @@ def test_las_fuentes_iniciales():
     assert len([f for f in iniciales if f["cada_min"] == 60]) == 32
     assert all(f["tipo"] in lector.TIPOS for f in iniciales)
     assert json.dumps(iniciales)          # se pueden guardar tal cual
+
+
+def test_los_enlaces_raros_no_pasan():
+    rss = (b"<rss><channel><item><title>Asalto en la autopista</title>"
+           b"<link>javascript:alert(1)</link></item><item><title>Bloqueo en "
+           b"la caseta</title><link>/nota/9</link></item></channel></rss>")
+    notas = lector.leer_rss(rss, "https://medio.mx/rss")
+    assert notas[0]["url"] is None
+    assert notas[1]["url"] == "https://medio.mx/nota/9"
+
+
+def test_no_lee_direcciones_internas():
+    for ip in ("127.0.0.1", "10.0.0.5", "169.254.169.254", "192.168.1.9"):
+        with mock.patch("socket.getaddrinfo",
+                        return_value=[(2, 1, 6, "", (ip, 443))]):
+            with pytest.raises(Exception) as e:
+                lector._direccion_publica("https://medio.mx/rss")
+            assert "pública" in str(e.value.detail)
+    with mock.patch("socket.getaddrinfo",
+                    return_value=[(2, 1, 6, "", ("93.184.216.34", 443))]):
+        lector._direccion_publica("https://medio.mx/rss")
+    with pytest.raises(Exception):
+        lector._direccion_publica("file:///etc/passwd")
+
+
+def test_lo_que_claude_no_contesta_no_se_paga_dos_veces():
+    fid = _fuente()
+    db = SessionLocal()
+    try:
+        lector.leer_fuente(db, db.get(m.FuenteLector, fid),
+                           _Cliente(_Respuesta(_rss(NOTAS[0], NOTAS[2]))),
+                           AHORA)
+        # Contesta solo la segunda, y con el numero como texto.
+        a, b = _con_claude([[{"n": "2", "es_hecho": True,
+                              "tipo": "Bloqueo carretero",
+                              "estado": "Sinaloa", "mismo_que": 7}]])
+        with a, b:
+            lector.entender(db, AHORA)
+        estados = sorted(n.estado for n in db.query(m.NotaLector))
+        assert estados == ["analizada", "error"]
+        # Nada queda como nueva: la siguiente vuelta no las vuelve a pagar.
+        a, b = _con_claude([])
+        with a, b:
+            assert lector.entender(db, AHORA) == {"notas": 0, "hallazgos": 0}
+    finally:
+        db.close()
+
+
+def test_lo_nuevo_de_un_hecho_que_ya_es_evento_va_a_su_evento(cliente,
+                                                               sesion):
+    hid = _hallazgo()
+    evento = cliente.post(f"/riesgo/lector/hallazgos/{hid}/evento", json={},
+                          headers=sesion("central")).json()
+    db = SessionLocal()
+    try:
+        oficial = _fuente(tipo="medio", direccion="https://gn/rss",
+                          oficial=True)
+        lector.leer_fuente(db, db.get(m.FuenteLector, oficial), _Cliente(
+            _Respuesta(_rss(("Fiscalía confirma dos heridos en Culiacán",
+                             "Fiscalía de Sinaloa", "https://fge/1",
+                             _fecha(0))))), AHORA)
+        a, b = _con_claude([[{"n": 1, "es_hecho": True,
+                              "mismo_que": f"H{hid}"}]])
+        with a, b:
+            lector.entender(db, AHORA)
+        nuevo = (db.query(m.HallazgoLector)
+                 .filter_by(estado="por_revisar").one())
+        # Se le propone a ese evento, para sumarlo; y lo que no dijo
+        # Claude no borra lo que se sabia.
+        assert nuevo.evento_id == evento["id"]
+    finally:
+        db.close()
+    ficha = cliente.get(f"/riesgo/lector/hallazgos/{nuevo.id}",
+                        headers=sesion("central")).json()
+    assert ficha["evento_folio"] == evento["folio"]

@@ -83,7 +83,7 @@ def hallazgo(hallazgo_id: int, db: Session = Depends(get_db), _=Depends(VER)):
 def crear_evento(hallazgo_id: int, datos: CrearIn,
                  db: Session = Depends(get_db),
                  usuario: m.Usuario = Depends(PUBLICAR)):
-    h = motor.hallazgo_de(db, hallazgo_id)
+    h = motor.hallazgo_de(db, hallazgo_id, bloquear=True)
     evento = motor.crear_evento(db, usuario, h,
                                 datos.model_dump(exclude_none=True))
     db.commit()
@@ -94,7 +94,8 @@ def crear_evento(hallazgo_id: int, datos: CrearIn,
              summary="Sumar sus notas a un evento que ya existe")
 def sumar(hallazgo_id: int, datos: SumarIn, db: Session = Depends(get_db),
           usuario: m.Usuario = Depends(PUBLICAR)):
-    evento = motor.sumar(db, usuario, motor.hallazgo_de(db, hallazgo_id),
+    evento = motor.sumar(db, usuario,
+                         motor.hallazgo_de(db, hallazgo_id, bloquear=True),
                          datos.evento_id)
     db.commit()
     return riesgo.vista(evento)
@@ -105,7 +106,8 @@ def sumar(hallazgo_id: int, datos: SumarIn, db: Session = Depends(get_db),
 def descartar(hallazgo_id: int, datos: DescartarIn,
               db: Session = Depends(get_db),
               usuario: m.Usuario = Depends(PUBLICAR)):
-    motor.descartar(db, usuario, motor.hallazgo_de(db, hallazgo_id),
+    motor.descartar(db, usuario,
+                    motor.hallazgo_de(db, hallazgo_id, bloquear=True),
                     datos.motivo)
     db.commit()
     return {"resultado": "descartado"}

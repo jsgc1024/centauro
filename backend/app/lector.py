@@ -40,6 +40,9 @@ GUARDAR_DIAS = 14              # las notas sin hallazgo se borran despues
 POR_LOTE = 12                  # notas por consulta a Claude
 MAX_POR_VUELTA = 120           # notas que se le pasan a Claude por vuelta
 X_POR_LLAMADA = 50
+MAXIMO_RSS = 5 * 1024 * 1024    # lo mas que pesa un RSS de verdad
+VIGENCIA_DEL_HALLAZGO = 48      # horas que espera revision antes de vencer
+EN_LA_PANTALLA = 200
 MODELO = "claude-haiku-4-5-20251001"
 GOOGLE = ("https://news.google.com/rss/search?q={q}&hl=es-419&gl=MX"
           "&ceid=MX:es-419")
@@ -61,6 +64,7 @@ PALABRAS = re.compile(r"\b(" + "|".join([
     r"operativo\w*", r"guardia nacional", r"sedena", r"militares",
     r"emboscad\w+", r"persecuci\w+", r"carretera\w*", r"autopista\w*",
     r"violencia", r"armad[oa]s", r"sicari\w+", r"c[aá]rtel\w*",
+    r"herid[oa]s?", r"lesionad[oa]s?", r"muert[oa]s?",
 ]) + r")\b", re.I)
 
 
@@ -83,20 +87,35 @@ def parece_de_seguridad(titulo: str, texto: str = "") -> bool:
 
 # ============================================================ leer fuentes
 
-def _fecha(valor: str | None) -> datetime | None:
-    if not valor:
+def _fecha(valor, zona=None) -> datetime | None:
+    """Una fecha de RSS (RFC 822) o ISO. Sin zona se entiende en la del
+    pais (lo que diga Claude) o en UTC (lo que diga un feed)."""
+    if not valor or not isinstance(valor, str):
         return None
     try:
         d = parsedate_to_datetime(valor)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, IndexError):
         try:
-            d = datetime.fromisoformat(valor.replace("Z", "+00:00"))
+            d = datetime.fromisoformat(valor.strip().replace("Z", "+00:00"))
         except ValueError:
             return None
-    return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=zona or timezone.utc)
+    return d
 
 
-def leer_rss(contenido: bytes) -> list[dict]:
+def _enlace(url: str | None, base: str | None) -> str | None:
+    """Solo enlaces http(s), completos: un «javascript:» o una ruta suelta
+    no llegan a la pantalla ni a las fuentes del evento."""
+    from urllib.parse import urljoin, urlparse
+    if not url:
+        return None
+    completo = urljoin(base or "", url.strip())
+    return completo[:600] if urlparse(completo).scheme in ("http",
+                                                            "https") else None
+
+
+def leer_rss(contenido: bytes, base: str | None = None) -> list[dict]:
     """Las notas de un RSS 2.0 o un Atom. En Google Noticias el medio
     viene en <source> y al final del titulo («... - Milenio»)."""
     try:
@@ -107,31 +126,28 @@ def leer_rss(contenido: bytes) -> list[dict]:
     atom = "{http://www.w3.org/2005/Atom}"
     items = raiz.findall(".//item") or raiz.findall(f".//{atom}entry")
     for it in items:
-        def de(etiqueta):
-            nodo = it.find(etiqueta)
-            if nodo is None:
-                nodo = it.find(atom + etiqueta)
-            return nodo
-        titulo = _limpio(de("title").text if de("title") is not None else "",
-                         400)
+        def de(*etiquetas):
+            for etiqueta in etiquetas:
+                for nombre in (etiqueta, atom + etiqueta):
+                    nodo = it.find(nombre)
+                    if nodo is not None:
+                        return nodo
+            return None
+        nodo = de("title")
+        titulo = _limpio(nodo.text if nodo is not None else "", 400)
         enlace = de("link")
         url = None
         if enlace is not None:
             url = (enlace.text or enlace.get("href") or "").strip() or None
-        guid = de("guid")
+        url = _enlace(url, base)
+        guid = de("guid", "id")
         medio_n = it.find("source")
-        medio = medio_n.text.strip() if medio_n is not None and medio_n.text \
-            else None
+        medio = (medio_n.text.strip()[:120]
+                 if medio_n is not None and medio_n.text else None)
         if medio and titulo.endswith(f" - {medio}"):
             titulo = titulo[: -len(medio) - 3].strip()
-        texto = de("description")
-        if texto is None:
-            texto = de("summary")
-        fecha = de("pubDate")
-        if fecha is None:
-            fecha = de("published")
-        if fecha is None:
-            fecha = de("updated")
+        texto = de("description", "summary")
+        fecha = de("pubDate", "published", "updated")
         if not titulo:
             continue
         salida.append({
@@ -171,15 +187,18 @@ def leer_lista_x(cliente, lista_id: str) -> list[dict]:
     if r.status_code == 429:
         raise HTTPException(400, "X pide esperar: demasiadas lecturas")
     r.raise_for_status()
-    datos = r.json()
-    gente = {u["id"]: u for u in datos.get("includes", {}).get("users", [])}
+    datos = r.json() or {}
+    gente = {u.get("id"): u for u in
+             (datos.get("includes") or {}).get("users", []) or []}
     salida = []
-    for p in datos.get("data", []):
+    for p in datos.get("data") or []:
+        if not isinstance(p, dict) or not p.get("id"):
+            continue
         u = gente.get(p.get("author_id"), {})
-        usuario = u.get("username", "")
+        usuario = re.sub(r"[^A-Za-z0-9_]", "", u.get("username") or "")
         salida.append({
             "id": f"x:{p['id']}", "titulo": _limpio(p.get("text"), 400),
-            "texto": "", "medio": f"@{usuario}" if usuario else "X",
+            "texto": "", "medio": (f"@{usuario}" if usuario else "X")[:120],
             "url": (f"https://x.com/{usuario}/status/{p['id']}"
                     if usuario else None),
             "publicada_en": _fecha(p.get("created_at")),
@@ -188,7 +207,7 @@ def leer_lista_x(cliente, lista_id: str) -> list[dict]:
 
 
 def parametros(db: Session) -> m.ParametrosLector:
-    par = db.query(m.ParametrosLector).first()
+    par = db.query(m.ParametrosLector).order_by(m.ParametrosLector.id).first()
     if not par:
         par = m.ParametrosLector()
         db.add(par)
@@ -196,22 +215,32 @@ def parametros(db: Session) -> m.ParametrosLector:
     return par
 
 
-def _inicio_del_dia(ahora: datetime) -> datetime:
+def _dia_de_x(ahora: datetime):
     # El dia de X es el de UTC: asi cuenta lo que cobra.
-    return ahora.replace(hour=0, minute=0, second=0, microsecond=0)
+    return ahora.astimezone(timezone.utc).date()
 
 
 def x_leidas_hoy(db: Session, ahora: datetime | None = None) -> int:
-    desde = _inicio_del_dia(_ahora(ahora).astimezone(timezone.utc))
-    return (db.query(func.count(m.NotaLector.id))
-            .join(m.FuenteLector, m.FuenteLector.id == m.NotaLector.fuente_id)
-            .filter(m.FuenteLector.tipo == "lista_x",
-                    m.NotaLector.leida_en >= desde).scalar() or 0)
+    """Las publicaciones que X entrego hoy: todas las que vinieron en cada
+    llamada, nuevas o repetidas. Es lo que se compara contra el tope."""
+    par = parametros(db)
+    return par.x_leidas if par.x_dia == _dia_de_x(_ahora(ahora)) else 0
+
+
+def _contar_x(db: Session, cuantas: int, ahora: datetime) -> None:
+    par = parametros(db)
+    dia = _dia_de_x(ahora)
+    if par.x_dia != dia:
+        par.x_dia, par.x_leidas = dia, 0
+    par.x_leidas += cuantas
 
 
 def _toca(fuente: m.FuenteLector, ahora: datetime) -> bool:
+    # Un minuto de holgura: la tarea no cae siempre en el mismo segundo,
+    # y sin esto una fuente de cada 5 minutos se leia cada 10.
     return (fuente.leida_en is None
-            or fuente.leida_en + timedelta(minutes=fuente.cada_min) <= ahora)
+            or fuente.leida_en + timedelta(minutes=fuente.cada_min - 1)
+            <= ahora)
 
 
 def leer_fuente(db: Session, fuente: m.FuenteLector, cliente,
@@ -224,17 +253,22 @@ def leer_fuente(db: Session, fuente: m.FuenteLector, cliente,
             if not settings.x_bearer_token:
                 raise HTTPException(400, "Falta la llave de X")
             par = parametros(db)
-            if x_leidas_hoy(db, ahora) >= par.tope_x_dia:
+            if x_leidas_hoy(db, ahora) + X_POR_LLAMADA > par.tope_x_dia:
                 raise HTTPException(400, "Llegó al tope de X de hoy")
             lista = id_de_lista(fuente.direccion)
             if not lista:
                 raise HTTPException(400, "La dirección no es de una lista")
             notas = leer_lista_x(cliente, lista)
+            _contar_x(db, len(notas), ahora)
         else:
-            r = cliente.get(direccion_de(fuente))
+            direccion = direccion_de(fuente)
+            r = cliente.get(direccion)
             if r.status_code >= 400:
                 raise HTTPException(400, f"La página contestó {r.status_code}")
-            notas = leer_rss(r.content)
+            if len(r.content) > MAXIMO_RSS:
+                raise HTTPException(400, "La página pesa demasiado para "
+                                         "ser un RSS")
+            notas = leer_rss(r.content, direccion)
     except HTTPException as e:
         fuente.error, fuente.error_en = str(e.detail)[:300], ahora
         fuente.leida_en = ahora
@@ -246,16 +280,19 @@ def leer_fuente(db: Session, fuente: m.FuenteLector, cliente,
         return 0
     fuente.error = None
     fuente.leida_en = ahora
-    nuevas = 0
-    vistas = set()
+    porhuella = {}
     for n in notas:
         # La misma nota sale en varias busquedas: se guarda una vez.
-        h = huella(n["url"] or n["id"]) if fuente.tipo != "lista_x" \
-            else huella(n["id"])
-        if h in vistas:
-            continue
-        vistas.add(h)
-        if db.query(m.NotaLector.id).filter_by(huella=h).first():
+        h = huella(n["id"] if fuente.tipo == "lista_x"
+                   else (n["url"] or n["id"]))
+        porhuella.setdefault(h, n)
+    if not porhuella:
+        return 0
+    ya = {x for (x,) in db.query(m.NotaLector.huella)
+          .filter(m.NotaLector.huella.in_(list(porhuella)))}
+    nuevas = 0
+    for h, n in porhuella.items():
+        if h in ya:
             continue
         # Lo de hace mas de dos dias ya no es noticia para la Central.
         if n["publicada_en"] and n["publicada_en"] < ahora - timedelta(days=2):
@@ -263,8 +300,9 @@ def leer_fuente(db: Session, fuente: m.FuenteLector, cliente,
         estado = ("nueva" if parece_de_seguridad(n["titulo"], n["texto"])
                   else "sin_filtro")
         db.add(m.NotaLector(
-            fuente_id=fuente.id, huella=h, url=(n["url"] or "")[:600] or None,
-            titulo=n["titulo"][:400], texto=n["texto"], medio=n["medio"],
+            fuente_id=fuente.id, huella=h, url=n["url"],
+            titulo=n["titulo"][:400], texto=n["texto"],
+            medio=(n["medio"] or None) and n["medio"][:120],
             publicada_en=n["publicada_en"], leida_en=ahora, estado=estado))
         nuevas += 1
     db.flush()
@@ -374,21 +412,28 @@ NIVELES = ("1 Informativo: algo que conviene saber, sin riesgo directo. "
 def _consulta(db: Session, pais: m.Pais, notas: list[m.NotaLector],
               abiertos: list, eventos: list, descartes: list) -> list[dict]:
     """Una consulta a Claude con un lote de notas. Devuelve lo que dijo
-    de cada una."""
+    de cada una, ya revisado que tenga forma de lista de objetos."""
     import httpx
     tipos = db.query(m.TipoEvento).filter_by(pais_id=pais.id,
                                               activo=True).all()
     estados = [r.nombre for r in db.query(m.Region).filter_by(
         pais_id=pais.id, activo=True)]
+
+    def etiqueta(h):
+        if h.estado == "por_revisar":
+            return ""
+        if h.evento_id:
+            return " (ya es evento)"
+        return " (la Central lo descartó)"
     contexto = [
         "Eres analista de la Central de Inteligencia de Centauro, empresa de "
         "seguridad en Mexico. Clasifica cada nota.",
         "Tipos de evento:\n" + "\n".join(
             f"- {t.nombre}: {t.definicion[:200]}" for t in tipos),
         "Niveles: " + NIVELES,
-        "Hallazgos abiertos (para juntar el mismo hecho):\n" + ("\n".join(
+        "Hallazgos recientes (para juntar el mismo hecho):\n" + ("\n".join(
             f"H{h.id}: {h.titulo} ({h.region.nombre if h.region else '?'})"
-            for h in abiertos) or "ninguno"),
+            f"{etiqueta(h)}" for h in abiertos) or "ninguno"),
         "Eventos ya en el mapa:\n" + ("\n".join(
             f"{e.folio}: {e.titulo} ({e.region.nombre})" for e in eventos)
             or "ninguno"),
@@ -402,7 +447,7 @@ def _consulta(db: Session, pais: m.Pais, notas: list[m.NotaLector],
         f"{n.titulo}. {n.texto[:500]}"
         for i, n in enumerate(notas))
     r = httpx.post(
-        "https://api.anthropic.com/v1/messages", timeout=90,
+        "https://api.anthropic.com/v1/messages", timeout=60,
         headers={"x-api-key": settings.anthropic_api_key,
                  "anthropic-version": "2023-06-01",
                  "content-type": "application/json"},
@@ -414,11 +459,22 @@ def _consulta(db: Session, pais: m.Pais, notas: list[m.NotaLector],
     r.raise_for_status()
     for bloque in r.json().get("content", []):
         if bloque.get("type") == "tool_use":
-            return bloque["input"].get("notas", [])
+            notas_dichas = (bloque.get("input") or {}).get("notas")
+            if isinstance(notas_dichas, str):
+                try:
+                    notas_dichas = json.loads(notas_dichas)
+                except ValueError:
+                    notas_dichas = []
+            if not isinstance(notas_dichas, list):
+                return []
+            return [x for x in notas_dichas if isinstance(x, dict)]
     return []
 
 
 def _abiertos(db: Session, pais: m.Pais, ahora: datetime) -> list:
+    """Los hallazgos de las ultimas 36 horas, tambien los ya revisados:
+    asi una nota nueva de un hecho que ya es evento va a ese evento, y la
+    de uno descartado no vuelve a salir."""
     return (db.query(m.HallazgoLector)
             .filter(m.HallazgoLector.pais_id == pais.id,
                     m.HallazgoLector.creado_en >= ahora - timedelta(hours=36))
@@ -454,39 +510,100 @@ def _nuevo_hallazgo(db: Session, pais: m.Pais, nota: m.NotaLector,
     return h
 
 
+def _texto(dijo: dict, clave: str) -> str:
+    valor = dijo.get(clave)
+    return valor.strip() if isinstance(valor, str) else ""
+
+
 def _aplicar_lo_que_dijo(db: Session, pais: m.Pais, h: m.HallazgoLector,
                          dijo: dict, ahora: datetime) -> None:
+    """Pone lo que dijo Claude. Solo lo que dijo: lo que no trae no borra
+    lo que ya se sabia."""
+    from app import reloj
     h.con_ia = True
-    if dijo.get("titulo"):
-        h.titulo = dijo["titulo"][:300]
-    if dijo.get("resumen"):
-        h.resumen = dijo["resumen"][:1000]
+    if _texto(dijo, "titulo"):
+        h.titulo = _texto(dijo, "titulo")[:300]
+    if _texto(dijo, "resumen"):
+        h.resumen = _texto(dijo, "resumen")[:1000]
     tipo = (db.query(m.TipoEvento)
-            .filter_by(pais_id=pais.id, nombre=dijo.get("tipo")).first())
-    h.tipo_id = tipo.id if tipo else None
+            .filter_by(pais_id=pais.id, nombre=_texto(dijo, "tipo")).first())
+    if tipo:
+        h.tipo_id = tipo.id
     region = (db.query(m.Region)
-              .filter_by(pais_id=pais.id, nombre=dijo.get("estado")).first())
-    h.region_id = region.id if region else None
-    mun = _municipio(db, h.region_id, dijo.get("municipio"))
-    h.municipio_id = mun.id if mun else None
-    h.lugar = (dijo.get("lugar") or "")[:300] or None
+              .filter_by(pais_id=pais.id, nombre=_texto(dijo, "estado"))
+              .first())
+    if region:
+        h.region_id = region.id
+    mun = _municipio(db, h.region_id, _texto(dijo, "municipio"))
     if mun:
+        h.municipio_id = mun.id
         punto = centro_municipio(mun)
         if punto:
             h.lat, h.lon = round(punto[0], 6), round(punto[1], 6)
+    if _texto(dijo, "lugar"):
+        h.lugar = _texto(dijo, "lugar")[:300]
     if dijo.get("nivel") in (1, 2, 3, 4):
         h.nivel = dijo["nivel"]
-    h.razon = (dijo.get("razon") or "")[:300] or None
-    ocurrio = _fecha(dijo.get("ocurrio")) if dijo.get("ocurrio") else None
+    if _texto(dijo, "razon"):
+        h.razon = _texto(dijo, "razon")[:300]
+    ocurrio = _fecha(_texto(dijo, "ocurrio"),
+                     reloj.zona(pais.zona_horaria))
     if ocurrio and ahora - timedelta(days=3) < ocurrio < ahora + timedelta(
             days=3):
         h.ocurrio_en = ocurrio
-    h.sigue = dijo.get("sigue")
+    if isinstance(dijo.get("sigue"), bool):
+        h.sigue = dijo["sigue"]
+
+
+def _numero(valor) -> int | None:
+    try:
+        return int(valor)
+    except (TypeError, ValueError):
+        return None
+
+
+def _destino(db: Session, pais: m.Pais, nota: m.NotaLector, dijo: dict,
+             del_lote: dict, ahora: datetime) -> tuple:
+    """A que hallazgo va la nota: (hallazgo, es_nuevo)."""
+    mismo = _texto(dijo, "mismo_que").upper()
+    destino = None
+    if mismo.startswith("H"):
+        num = _numero(mismo[1:])
+        if num and num < 2 ** 31:
+            destino = db.get(m.HallazgoLector, num)
+    elif mismo.startswith("CI-"):
+        evento = db.query(m.EventoRiesgo).filter_by(folio=mismo).first()
+        if evento:
+            return _del_evento(db, pais, nota, dijo, evento, ahora)
+    elif mismo.startswith("N"):
+        destino = del_lote.get(_numero(mismo[1:]))
+    if destino is not None and destino.estado != "por_revisar" \
+            and destino.evento_id:
+        # Ya es un evento: la nota nueva se le propone a ese evento.
+        evento = db.get(m.EventoRiesgo, destino.evento_id)
+        if evento:
+            return _del_evento(db, pais, nota, dijo, evento, ahora)
+    if destino is None:
+        return _nuevo_hallazgo(db, pais, nota, dijo, ahora), True
+    return destino, False
+
+
+def _del_evento(db, pais, nota, dijo, evento, ahora) -> tuple:
+    """El hallazgo por revisar de un evento que ya existe: lo que llegue de
+    ese hecho se le propone para sumarlo."""
+    abierto = (db.query(m.HallazgoLector)
+               .filter_by(evento_id=evento.id, estado="por_revisar").first())
+    if abierto:
+        return abierto, False
+    nuevo = _nuevo_hallazgo(db, pais, nota, dijo, ahora)
+    nuevo.evento_id = evento.id
+    return nuevo, True
 
 
 def entender(db: Session, ahora: datetime | None = None) -> dict:
     """Las notas nuevas que pasaron el filtro: a Claude por lotes, y cada
-    una a su hallazgo (nuevo o el del mismo hecho)."""
+    una a su hallazgo (nuevo o el del mismo hecho). Cada lote se guarda al
+    terminar: si uno falla, lo pagado antes no se pierde."""
     ahora = _ahora(ahora)
     pais = db.query(m.Pais).filter_by(codigo="MX").first()
     if not pais:
@@ -507,75 +624,114 @@ def entender(db: Session, ahora: datetime | None = None) -> dict:
                 igual = _nuevo_hallazgo(db, pais, nota, None, ahora)
                 nuevos += 1
             nota.hallazgo_id, nota.estado = igual.id, "analizada"
-        db.flush()
+        db.commit()
         return {"notas": len(pendientes), "hallazgos": nuevos, "con_ia": False}
 
     for i in range(0, len(pendientes), POR_LOTE):
         lote = pendientes[i:i + POR_LOTE]
-        abiertos = _abiertos(db, pais, ahora)
-        eventos = _eventos_vivos(db, pais, ahora)
         try:
-            respuestas = _consulta(db, pais, lote, abiertos, eventos,
+            respuestas = _consulta(db, pais, lote, _abiertos(db, pais, ahora),
+                                   _eventos_vivos(db, pais, ahora),
                                    _descartes(db))
         except Exception:                                # noqa: BLE001
             # Claude no contesto: se quedan como nuevas para la que sigue.
+            db.rollback()
             break
-        por_n = {r.get("n"): r for r in respuestas}
+        por_n = {}
+        for r in respuestas:
+            n = _numero(r.get("n"))
+            if n is not None:
+                por_n[n] = r
         del_lote: dict[int, m.HallazgoLector] = {}
         for k, nota in enumerate(lote, start=1):
             dijo = por_n.get(k)
             if not dijo:
+                # Claude no la contesto (se corto o la salto): no se le
+                # vuelve a pagar; queda como error y no sale.
+                nota.estado = "error"
                 continue
-            if not dijo.get("es_hecho"):
+            if dijo.get("es_hecho") is not True:
                 nota.estado = "no_es"
                 continue
-            destino = None
-            mismo = (dijo.get("mismo_que") or "").strip().upper()
-            if mismo.startswith("H") and mismo[1:].isdigit():
-                destino = db.get(m.HallazgoLector, int(mismo[1:]))
-            elif mismo.startswith("CI-"):
-                evento = (db.query(m.EventoRiesgo)
-                          .filter_by(folio=mismo).first())
-                if evento:
-                    destino = (db.query(m.HallazgoLector)
-                               .filter_by(evento_id=evento.id,
-                                          estado="por_revisar").first())
-                    if not destino:
-                        destino = _nuevo_hallazgo(db, pais, nota, dijo, ahora)
-                        destino.evento_id = evento.id
-                        nuevos += 1
-            elif mismo.startswith("N") and mismo[1:].isdigit():
-                destino = del_lote.get(int(mismo[1:]))
-            if destino is None:
-                destino = _nuevo_hallazgo(db, pais, nota, dijo, ahora)
-                nuevos += 1
-            elif destino.estado == "por_revisar":
-                destino.actualizado_en = ahora
-                # Una oficial manda: su version del titulo y del nivel.
-                if nota.fuente.oficial:
-                    _aplicar_lo_que_dijo(db, pais, destino, dijo, ahora)
-            del_lote[k] = destino
-            nota.hallazgo_id, nota.estado = destino.id, "analizada"
-        db.flush()
+            try:
+                with db.begin_nested():
+                    destino, es_nuevo = _destino(db, pais, nota, dijo,
+                                                 del_lote, ahora)
+                    nuevos += int(es_nuevo)
+                    if not es_nuevo and destino.estado == "por_revisar":
+                        destino.actualizado_en = ahora
+                        # Una oficial manda: su version de lo que paso.
+                        if nota.fuente.oficial:
+                            _aplicar_lo_que_dijo(db, pais, destino, dijo,
+                                                 ahora)
+                    del_lote[k] = destino
+                    nota.hallazgo_id, nota.estado = destino.id, "analizada"
+            except Exception:                            # noqa: BLE001
+                nota.estado = "error"
+        db.commit()
     return {"notas": len(pendientes), "hallazgos": nuevos, "con_ia": True}
+
+
+def cliente_seguro():
+    """El cliente con el que se leen las fuentes: nunca va a una direccion
+    interna (ni el primer pedido ni una redireccion), y no baja mas de lo
+    que pesa un RSS."""
+    import httpx
+
+    def revisar(pedido):
+        _direccion_publica(str(pedido.url))
+    return httpx.Client(
+        timeout=20, follow_redirects=True, max_redirects=3,
+        event_hooks={"request": [revisar]},
+        headers={"User-Agent": "Mozilla/5.0 (Centauro Connect; lector)"})
+
+
+def _direccion_publica(url: str) -> None:
+    """Rechaza lo que apunta adentro: localhost, la red privada, la de la
+    nube (169.254...), Redis o la base por su nombre."""
+    import ipaddress
+    import socket
+    from urllib.parse import urlparse
+    partes = urlparse(url)
+    if partes.scheme not in ("http", "https") or not partes.hostname:
+        raise HTTPException(400, "La dirección empieza con https://")
+    try:
+        direcciones = {x[4][0] for x in socket.getaddrinfo(
+            partes.hostname, partes.port or 443)}
+    except OSError:
+        raise HTTPException(400, "No existe esa dirección")
+    for d in direcciones:
+        ip = ipaddress.ip_address(d.split("%")[0])
+        if (ip.is_private or ip.is_loopback or ip.is_link_local
+                or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+            raise HTTPException(400, "Esa dirección no es pública")
 
 
 def vuelta(db: Session, cliente=None, ahora: datetime | None = None) -> dict:
     """Lo que corre la tarea: leer lo que toca y entender lo nuevo."""
-    import httpx
     ahora = _ahora(ahora)
     par = parametros(db)
+    db.commit()
     if par.pausado:
         return {"pausado": True}
     propio = cliente is None
-    cliente = cliente or httpx.Client(
-        timeout=30, follow_redirects=True,
-        headers={"User-Agent": "Mozilla/5.0 (Centauro Connect; lector)"})
+    cliente = cliente or cliente_seguro()
     leidas = 0
     try:
-        for f in db.query(m.FuenteLector).filter_by(activa=True):
-            if _toca(f, ahora):
+        for fid in [f.id for f in db.query(m.FuenteLector)
+                    .filter_by(activa=True)]:
+            f = db.get(m.FuenteLector, fid)
+            if not _toca(f, ahora):
+                continue
+            try:
                 leidas += leer_fuente(db, f, cliente, ahora)
+                db.commit()
+            except Exception as e:                       # noqa: BLE001
+                # Una fuente rara no frena a las demas.
+                db.rollback()
+                f = db.get(m.FuenteLector, fid)
+                f.error = f"No se pudo guardar: {type(e).__name__}"[:300]
+                f.error_en = f.leida_en = ahora
                 db.commit()
     finally:
         if propio:
@@ -588,8 +744,15 @@ def vuelta(db: Session, cliente=None, ahora: datetime | None = None) -> dict:
 
 def podar(db: Session, ahora: datetime | None = None) -> int:
     """Las notas que no llegaron a ningun hallazgo se borran a las dos
-    semanas. Su huella ya no hace falta: a esa edad no salen en el RSS."""
-    limite = _ahora(ahora) - timedelta(days=GUARDAR_DIAS)
+    semanas (su huella ya no hace falta: a esa edad no salen en el RSS), y
+    lo que nadie reviso en dos dias deja de esperar: ya no es noticia."""
+    ahora = _ahora(ahora)
+    (db.query(m.HallazgoLector)
+     .filter(m.HallazgoLector.estado == "por_revisar",
+             m.HallazgoLector.actualizado_en < ahora - timedelta(
+                 hours=VIGENCIA_DEL_HALLAZGO))
+     .update({"estado": "vencido"}, synchronize_session=False))
+    limite = ahora - timedelta(days=GUARDAR_DIAS)
     return (db.query(m.NotaLector)
             .filter(m.NotaLector.hallazgo_id.is_(None),
                     m.NotaLector.leida_en < limite)
@@ -678,13 +841,25 @@ def cerca(db: Session, h: m.HallazgoLector) -> dict:
 
 def por_revisar(db: Session, pais: m.Pais, ahora: datetime | None = None
                 ) -> dict:
+    from sqlalchemy.orm import selectinload
+
+    from app import reloj
     ahora = _ahora(ahora)
     lista = (db.query(m.HallazgoLector)
-             .filter_by(pais_id=pais.id, estado="por_revisar").all())
+             .options(selectinload(m.HallazgoLector.notas)
+                      .selectinload(m.NotaLector.fuente),
+                      selectinload(m.HallazgoLector.tipo),
+                      selectinload(m.HallazgoLector.region),
+                      selectinload(m.HallazgoLector.municipio))
+             .filter(m.HallazgoLector.pais_id == pais.id,
+                     m.HallazgoLector.estado == "por_revisar",
+                     m.HallazgoLector.actualizado_en
+                     >= ahora - timedelta(hours=VIGENCIA_DEL_HALLAZGO))
+             .all())
     # Lo mas grave primero, y en cada nivel lo mas reciente.
     lista.sort(key=lambda h: (-(h.nivel or 0),
                               -(h.actualizado_en or h.creado_en).timestamp()))
-    from app import reloj
+    lista = lista[:EN_LA_PANTALLA]
     hoy = ahora.astimezone(reloj.zona(pais.zona_horaria)).replace(
         hour=0, minute=0, second=0, microsecond=0)
     leidas = (db.query(func.count(m.NotaLector.id))
@@ -693,17 +868,18 @@ def por_revisar(db: Session, pais: m.Pais, ahora: datetime | None = None
                  .filter(m.NotaLector.leida_en >= hoy,
                          m.NotaLector.estado.in_(["nueva", "analizada",
                                                   "no_es"])).scalar() or 0)
-    def contar(estado):
+
+    def contar(*estados):
         return (db.query(func.count(m.HallazgoLector.id))
                 .filter(m.HallazgoLector.pais_id == pais.id,
-                        m.HallazgoLector.estado == estado,
+                        m.HallazgoLector.estado.in_(estados),
                         m.HallazgoLector.revisado_en >= hoy).scalar() or 0)
     return {
         "hallazgos": [vista_hallazgo(db, h) for h in lista],
         "hoy": {"leidas": leidas, "parecian": filtradas,
                 "fuentes": db.query(func.count(m.FuenteLector.id))
                 .filter_by(activa=True).scalar() or 0,
-                "eventos": contar("evento") + contar("sumado"),
+                "eventos": contar("evento", "sumado"),
                 "descartados": contar("descartado")},
         "llaves": {"ia": bool(settings.anthropic_api_key),
                    "x": bool(settings.x_bearer_token)},
@@ -713,8 +889,14 @@ def por_revisar(db: Session, pais: m.Pais, ahora: datetime | None = None
 
 # ============================================================ lo que hace el analista
 
-def hallazgo_de(db: Session, hallazgo_id: int) -> m.HallazgoLector:
-    h = db.get(m.HallazgoLector, hallazgo_id)
+def hallazgo_de(db: Session, hallazgo_id: int,
+                bloquear: bool = False) -> m.HallazgoLector:
+    """El hallazgo. Con `bloquear`, de uno en uno: dos analistas que pican
+    «Crear el evento» a la vez no hacen dos eventos."""
+    q = db.query(m.HallazgoLector).filter_by(id=hallazgo_id)
+    if bloquear:
+        q = q.with_for_update()
+    h = q.first()
     if not h:
         raise HTTPException(404, "No existe ese hallazgo")
     return h
@@ -853,10 +1035,11 @@ def agregar_fuente(db: Session, usuario: m.Usuario, pais: m.Pais,
     if tipo not in TIPOS:
         raise HTTPException(400, "El tipo es medio, búsqueda o lista de X")
     direccion = (datos.get("direccion") or "").strip()
-    if tipo == "medio" and not direccion.lower().startswith(("http://",
-                                                            "https://")):
-        raise HTTPException(400, "Un medio se agrega con la dirección de su "
-                                 "RSS (empieza con https://)")
+    if tipo == "medio":
+        if not direccion.lower().startswith(("http://", "https://")):
+            raise HTTPException(400, "Un medio se agrega con la dirección de "
+                                     "su RSS (empieza con https://)")
+        _direccion_publica(direccion)
     if tipo == "lista_x" and not id_de_lista(direccion):
         raise HTTPException(400, {
             "mensaje": "Esa no es la dirección de una lista de X",

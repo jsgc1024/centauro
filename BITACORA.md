@@ -10736,7 +10736,21 @@ como recomiendas», y X desde el principio). Bocetos aprobados el 3 oct.
   (`ParametrosLector`, 1,500 de entrada) que mueve quien lleva el
   catalogo de riesgo; tambien puede pausar el lector.
 
-Pruebas: `tests/test_lector.py` (10).
+La revision independiente encontro, y se corrigio antes de publicar:
+una nota que Claude no contestaba se le volvia a mandar cada vuelta
+(ahora queda como error, una sola vez); un lote malo tiraba los ya
+pagados (ahora cada lote se guarda y cada nota va en su propio intento);
+lo nuevo de un hecho que ya era evento se iba al hallazgo cerrado (ahora
+se le propone a ese evento); el tope de X contaba solo lo nuevo (ahora
+cuenta todo lo que X entrega, que es lo que cobra); dos vueltas podian
+correr juntas (candado en Redis); un enlace `javascript:` o relativo de
+un RSS llegaba a la pantalla (solo http(s), resuelto contra el RSS); una
+fuente agregada a mano podia apuntar a la red interna (se revisa la
+direccion y cada redireccion); lo que nadie revisa vence a las 48 h; una
+hora sin zona de Claude es de Mexico; lo que Claude no dice no borra lo
+que ya se sabia.
+
+Pruebas: `tests/test_lector.py` (14).
 
 ## 14. Lo que falta
 

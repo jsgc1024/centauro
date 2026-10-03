@@ -33,7 +33,6 @@ def upgrade() -> None:
         sa.Column("activa", sa.Boolean(), server_default="true",
                   nullable=False),
         sa.Column("leida_en", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("desde_id", sa.String(40), nullable=True),
         sa.Column("error", sa.String(300), nullable=True),
         sa.Column("error_en", sa.DateTime(timezone=True), nullable=True),
         sa.Column("creada_por_id", sa.Integer(),
@@ -104,6 +103,7 @@ def upgrade() -> None:
                   nullable=True),
     )
     op.create_index("ix_nota_lector_fuente_id", "nota_lector", ["fuente_id"])
+    op.create_index("ix_nota_lector_estado", "nota_lector", ["estado"])
     op.create_index("ix_nota_lector_leida_en", "nota_lector", ["leida_en"])
     op.create_index("ix_nota_lector_hallazgo_id", "nota_lector",
                     ["hallazgo_id"])
@@ -114,7 +114,13 @@ def upgrade() -> None:
                   nullable=False),
         sa.Column("pausado", sa.Boolean(), server_default="false",
                   nullable=False),
+        sa.Column("x_dia", sa.Date(), nullable=True),
+        sa.Column("x_leidas", sa.Integer(), server_default="0",
+                  nullable=False),
     )
+    # La unica fila, desde el principio: si naciera con la primera
+    # visita, la consola y la tarea podrian crear dos.
+    op.execute("INSERT INTO parametros_lector (tope_x_dia) VALUES (1500)")
 
     # La primera lista de fuentes, para que la Central la revise.
     from app import lector_catalogo
@@ -138,6 +144,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table("parametros_lector")
     op.drop_index("ix_nota_lector_hallazgo_id", table_name="nota_lector")
+    op.drop_index("ix_nota_lector_estado", table_name="nota_lector")
     op.drop_index("ix_nota_lector_leida_en", table_name="nota_lector")
     op.drop_index("ix_nota_lector_fuente_id", table_name="nota_lector")
     op.drop_table("nota_lector")

@@ -459,14 +459,21 @@ def recordar_secretariado():
 @celery.task(name="riesgo.lector")
 def lector_vuelta():
     """Lee las fuentes del lector y entiende lo nuevo (seccion 140)."""
-    from app import lector
+    from app import intentos, lector
     from app.db import SessionLocal
 
+    # Una vuelta a la vez: si la anterior sigue (fuentes lentas, Claude
+    # pensando), esta no empieza. Dos juntas pagarian dos veces lo mismo.
+    candado = intentos._redis()
+    if candado and not candado.set("lector:vuelta", "1", nx=True, ex=900):
+        return {"ocupado": True}
     db = SessionLocal()
     try:
         return lector.vuelta(db)
     finally:
         db.close()
+        if candado:
+            candado.delete("lector:vuelta")
 
 
 @celery.task(name="riesgo.lector_podar")
