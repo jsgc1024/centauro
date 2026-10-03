@@ -96,7 +96,10 @@ HORAS_DE_VIDA = 24
 # cola al encender aunque su enlace siguiera vigente (seccion 100). La
 # decision del 20 sep fue sobre los avisos operativos, no sobre estos.
 CON_VIDA_PROPIA = {"acceso_invitacion", "acceso_recuperacion",
-                   "encuesta", "encuesta_recordatorio"}
+                   "encuesta", "encuesta_recordatorio",
+                   # El acceso a la app del cliente de la Central
+                   # (seccion 133): vive lo que vive su enlace.
+                   "ci_invitacion", "ci_recuperacion"}
 
 
 # Microsoft Graph: de donde sale el permiso y a donde se entrega.
@@ -375,6 +378,11 @@ def versiones(db: Session, aviso: m.Notificacion) -> tuple:
         # del pais de quien lo recibe (ver `acceso_por_correo`).
         from app import acceso_por_correo
         return acceso_por_correo.versiones(db, aviso)
+
+    if aviso.plantilla in ("ci_invitacion", "ci_recuperacion"):
+        # El acceso a la app del cliente de la Central (seccion 133).
+        from app import cliente_ci
+        return cliente_ci.versiones(db, aviso)
 
     if aviso.plantilla in ("encuesta", "encuesta_recordatorio"):
         encuesta = _encuesta_de(db, aviso)

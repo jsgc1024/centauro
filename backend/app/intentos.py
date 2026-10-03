@@ -62,7 +62,11 @@ def _redis():
 # direccion: la oficina entera detras de su proxy, quince minutos. El
 # carril viene en el nombre ("recuperar:...", "codigo:..."); lo demas
 # es entrar (seccion 100).
-CARRILES = ("recuperar", "codigo")
+# La app del cliente de la Central (seccion 133) cuenta en los suyos:
+# "ci" para entrar y "ci-recuperar" para el olvido. En el de "entrar",
+# un gerente que entra bien borraba el tope por IP de la consola, y
+# cuarenta "olvide" de la app la dejaban sin entrar.
+CARRILES = ("recuperar", "codigo", "ci", "ci-recuperar")
 
 
 def _carril(correo: str) -> str:

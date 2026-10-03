@@ -67,3 +67,6 @@ backend/odoo_flota_ultimo.json
 # El reporte del reconocimiento de Pegasus (el GPS de las unidades):
 # campos, conteos y eventos, sin coordenadas ni placas completas.
 backend/reconocimiento_pegasus*.txt
+
+# La copia de Redis que deja el servidor de pruebas local.
+dump.rdb

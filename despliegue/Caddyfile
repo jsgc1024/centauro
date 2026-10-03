@@ -10,6 +10,10 @@
 # consola (mycentauro.lat) y DOMINIO_CAMPO la de la app del personal de
 # seguridad (appep.mycentauro.lat). Sin DOMINIO_CAMPO todo vive en
 # DOMINIO, como antes.
+#
+# DOMINIO_CI (seccion 133) es la de la app del cliente de la Central de
+# Inteligencia (ci.mycentauro.lat). Sin ella, la app vive en
+# DOMINIO/ci/.
 
 {
 	# A donde escribe Let's Encrypt si un certificado esta por vencer y
@@ -24,7 +28,7 @@ www.{$DOMINIO} {
 	redir https://{$DOMINIO}{uri} 302
 }
 
-{$DOMINIO} {$DOMINIO_CAMPO} {
+{$DOMINIO} {$DOMINIO_CAMPO} {$DOMINIO_CI} {
 	encode zstd gzip
 
 	# Lo mas que pesa una peticion. Las fotos ya se recortan a 3 o 4 MB
@@ -43,6 +47,33 @@ www.{$DOMINIO} {
 	# instalada en el telefono no se mezclen. Las dos hablan con la misma
 	# API, cada una desde su direccion. 302 y no 301 en todos los saltos:
 	# uno permanente se queda guardado en cada navegador para siempre.
+
+	# En la del cliente de la Central (seccion 133), la raiz abre su app.
+	# Va antes que la de campo: las dos son "no es la consola".
+	# Con `expression` y no con `host`: sin DOMINIO_CI, `host` se queda
+	# sin valor y Caddy no arranca.
+	@ci_raiz {
+		path /
+		expression `"{$DOMINIO_CI}" != "" && {host} == "{$DOMINIO_CI}"`
+	}
+	redir @ci_raiz /ci/ 302
+
+	# Y la pagina de la app de campo, desde la del cliente, a la suya.
+	# Solo la pagina: la app del cliente carga de /app/ su hoja de
+	# estilo, que es la misma.
+	@ci_campo {
+		path /app /app/ /app/index.html
+		expression `"{$DOMINIO_CI}" != "" && "{$DOMINIO_CAMPO}" != "" && {host} == "{$DOMINIO_CI}"`
+	}
+	redir @ci_campo https://{$DOMINIO_CAMPO}{uri} 302
+
+	# La app del cliente, desde la consola o la de campo, a la suya: su
+	# sesion, su app instalada y sus avisos son de esa direccion.
+	@fuera_ci {
+		path /ci /ci/ /ci/index.html
+		expression `"{$DOMINIO_CI}" != "" && {host} != "{$DOMINIO_CI}"`
+	}
+	redir @fuera_ci https://{$DOMINIO_CI}{uri} 302
 
 	# En la de la app, la raiz abre la app.
 	@campo_raiz {
@@ -96,7 +127,7 @@ www.{$DOMINIO} {
 	# ampliarle el alcance; esta linea solo evita que un cache
 	# intermedio se quede con una version vieja del trabajador, que es
 	# como una app se queda congelada sin que nadie entienda por que.
-	@sw path /app/sw.js
+	@sw path /app/sw.js /ci/sw.js
 	header @sw Cache-Control "no-cache"
 
 	# El disparador de Pegasus lleva su secreto en la ruta (seccion 101):

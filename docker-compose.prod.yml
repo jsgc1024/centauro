@@ -141,6 +141,9 @@ services:
       # La direccion de la app del personal de seguridad (seccion 71);
       # DOMINIO es la de la consola. Vacia, todo vive en DOMINIO.
       DOMINIO_CAMPO: ${DOMINIO_CAMPO:-}
+      # La app del cliente de la Central de Inteligencia (seccion 133).
+      # Vacia, vive en DOMINIO/ci/.
+      DOMINIO_CI: ${DOMINIO_CI:-}
     ports:
       - "80:80"
       - "443:443"

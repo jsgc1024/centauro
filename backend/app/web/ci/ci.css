@@ -1,0 +1,36 @@
+/* Lo que la app del cliente de la Central agrega a la hoja de la app de
+   campo (/app/estilo.css). Todo lo demas es de alla: la misma cara que
+   Connect. */
+
+.sello-ci { background: var(--centauro); color: #fff; border-radius: 6px;
+            letter-spacing: .5px; }
+
+/* El nivel, con su color de la consola. Siempre con su numero y su
+   nombre: a pleno sol el ambar y el naranja son el mismo color. */
+.nivel { display: inline-block; color: #fff; border-radius: 999px;
+         padding: 3px 10px; font-size: 12px; font-weight: 700; }
+
+.evento { display: block; text-decoration: none; color: inherit; }
+.evento h3 { margin: 6px 0 2px; font-size: 16px; color: var(--texto); }
+
+.mapa { height: 300px; border-radius: 12px; overflow: hidden;
+        border: 1px solid var(--linea); margin-bottom: 14px;
+        background: #e9eef1; }
+.leyenda { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px;
+           color: var(--gris); margin: -6px 0 14px; }
+.leyenda i { display: inline-block; width: 10px; height: 10px;
+             border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+
+/* El aviso que espera su «Enterado». */
+.pide { border-left: 4px solid var(--grave); }
+
+.barra a { position: relative; }
+.contador { display: inline-block; min-width: 18px; height: 18px;
+            border-radius: 9px; background: var(--grave); color: #fff;
+            font-size: 11px; line-height: 18px; padding: 0 5px;
+            margin-left: 2px; vertical-align: 1px; }
+
+.dato .clave { font-size: 12px; color: var(--gris); text-transform: uppercase;
+               letter-spacing: .4px; font-weight: 650; }
+.atras { display: inline-block; margin: 0 0 10px; font-weight: 650;
+         text-decoration: none; }

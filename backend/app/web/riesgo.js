@@ -15,7 +15,7 @@
    direcciones del sistema. Sin llave la pantalla sigue sirviendo: el
    punto se escribe a mano y lo vigente se lee en la lista. */
 import { api, sesion } from "./api.js";
-import { aviso, campo, entrada, h, lista, mensaje } from "./util.js";
+import { aviso, campo, entrada, fecha, fechaLocal, h, hora, lista, mensaje } from "./util.js";
 import { t } from "./idioma.js";
 import { tiene } from "./menu.js";
 
@@ -655,7 +655,20 @@ function fichaCliente(c, maneja, cuerpo) {
     h("td", {}, `${g.nombre} ${g.apellidos}`), h("td", {}, g.correo), h("td", {}, g.telefono || "—"),
     h("td", {}, g.activo ? (g.con_contrasena ? h("span", { clase: "etiqueta ok" }, t("rsg_entra"))
                                              : h("span", { clase: "etiqueta alerta" }, t("rsg_sin_contrasena")))
-                         : h("span", { clase: "etiqueta" }, t("rsg_cerrado_acceso"))),
+                         : h("span", { clase: "etiqueta" }, t("rsg_cerrado_acceso")),
+      /* Seccion 133: su invitacion, mientras no ponga su contrasena. */
+      g.activo && !g.con_contrasena
+        ? h("div", { clase: "chico gris" }, g.invitacion_vence
+          ? t("rsg_invitacion_vence").replace("{cuando}",
+              [fecha(fechaLocal(new Date(g.invitacion_vence))), hora(g.invitacion_vence)].join(" "))
+          : t("rsg_invitacion_vencida"))
+        : null),
+    h("td", {}, maneja && g.activo ? h("button", { type: "button", clase: "claro chico", onclick: async () => {
+      try {
+        await api.post(`/riesgo/clientes/${c.id}/gente/${g.id}/invitacion`, {});
+        await recargar();
+      } catch (e) { salida.replaceChildren(mensaje(e.message, "grave")); }
+    } }, t("rsg_reenviar_invitacion")) : null),
     h("td", {}, maneja ? h("button", { type: "button", clase: "claro chico", onclick: async () => {
       try {
         await api.patch(`/riesgo/clientes/${c.id}/gente/${g.id}`, { activo: !g.activo });

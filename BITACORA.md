@@ -10137,6 +10137,52 @@ pantalla en las categorías que ya existían. Textos en es/en/pt
 (`rsg_*`), su parte en «Cada pantalla, para qué es» y las novedades de
 las secciones 130 a 132.
 
+## 133. La app del cliente de la Central
+
+La gente del cliente entra a su propia app, `ci.mycentauro.lat`
+(`app/web/ci/`, servida en `/ci/`), con la cara de la app de campo: la
+misma hoja `/app/estilo.css` y encima `ci.css` con lo suyo. Las seis
+pantallas se aprobaron en bocetos antes de programarse (2 oct): entrar,
+la bienvenida con el enlace, el mapa, los avisos, el evento y «Yo».
+
+**Su sesion no es la de Connect** (`app/cliente_ci.py`). El token lleva
+`tipo: cliente_ci` y dura 30 dias; `auth._es_sesion` rechaza todo token
+con `tipo`, asi que no abre nada de Centauro, y `gente_actual` solo
+acepta los suyos. Cerrar su acceso, cambiar su correo o su contrasena
+tira las sesiones (`sesiones_desde`). Entrar tiene tope de intentos en
+su propio carril (`ci:<correo>`).
+
+**El acceso, por enlace** (`EnlaceCliente`, migracion `f2d8a4c6e0b3`):
+la invitacion sale sola al dar de alta a alguien (72 h) y se puede
+reenviar desde la consola (`POST /riesgo/clientes/{id}/gente/{id}/
+invitacion`); el «olvide mi contrasena» vale 2 h y contesta igual exista
+o no la cuenta. Del token solo se guarda su sha256; un enlace nuevo mata
+a los anteriores y a su correo pendiente. El correo es de plantilla
+`ci_invitacion` / `ci_recuperacion`, con su boton y la hora en que vence,
+y vive lo que vive el enlace (`CON_VIDA_PROPIA`).
+
+**Lo que ve** (`/ci-api/...`): lo publicado y vigente en sus estados, sus
+avisos de los ultimos 60 dias (primero los que esperan «Enterado») y el
+evento, solo si es de sus estados y ya se publico, o si le llego. Nunca
+fuentes, motivo ni bitacora. «Enterado» marca el acuse, queda en la
+bitacora del evento y quita la llamada del nivel 4. Sus telefonos se
+suscriben aparte (`SuscripcionPushCliente`) y su trabajador de fondo es
+`/ci/sw.js`.
+
+Los enlaces de los avisos y de la invitacion salen de
+`cliente_ci.raiz_app()`: `URL_CI` + `/ci`, o `URL_PUBLICA/ci`.
+
+**El proxy** (`Caddyfile`, `DOMINIO_CI`): la raiz de la direccion del
+cliente abre `/ci/`; su `/consola/` y su `/app/` mandan a las suyas, y
+`/ci/` desde la consola o la de campo manda a la del cliente. Los
+archivos (la hoja, `idioma.js`, `firma.js`) se sirven en cualquiera. Con
+`expression` y no `host`: sin `DOMINIO_CI`, `host` vacio no deja
+arrancar a Caddy. Probado con Caddy 2.8 con y sin cada direccion.
+
+Los textos van en `idioma.js` con la marca `ci_`. En la consola, la
+gente del cliente dice hasta cuando vale su invitacion y tiene
+«Reenviar invitacion». Pruebas: `tests/test_cliente_ci.py` (12).
+
 ## 14. Lo que falta
 
 ### Abierto

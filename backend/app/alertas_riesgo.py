@@ -28,7 +28,6 @@ from app import correo_html
 from app import models as m
 from app import push
 from app import reloj
-from app.config import settings
 
 MINUTOS_PARA_LLAMAR = 15
 HORA_DEL_RESUMEN = 20         # hora local del pais del cliente
@@ -86,11 +85,10 @@ def _ahora(ahora: datetime | None) -> datetime:
 
 def enlace_del_evento(evento_id: int) -> str | None:
     """A donde lleva el aviso: el evento dentro de la app del cliente."""
-    raiz = (settings.url_ci or "").rstrip("/")
-    if not raiz:
-        publica = (settings.url_publica or "").rstrip("/")
-        raiz = f"{publica}/ci" if publica else ""
-    return f"{raiz}/#/evento/{evento_id}" if raiz else None
+    from app import cliente_ci
+    raiz = cliente_ci.raiz_app()
+    # Sin direccion publica no hay a donde llevar a nadie desde un correo.
+    return f"{raiz}/#/evento/{evento_id}" if raiz.startswith("http") else None
 
 
 def destinatarios(db: Session, evento: m.EventoRiesgo) -> list[m.UsuarioCliente]:

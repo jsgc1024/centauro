@@ -30,6 +30,9 @@ def plantilla(pg: str, rd: str, sk: str) -> str:
 DOMINIO=mycentauro.lat
 DOMINIO_CAMPO=appep.mycentauro.lat
 URL_PUBLICA=https://mycentauro.lat
+# La app del cliente de la Central de Inteligencia (seccion 133).
+DOMINIO_CI=ci.mycentauro.lat
+URL_CI=https://ci.mycentauro.lat
 
 # Lo del servidor. Se genero aqui mismo y nadie tiene que saberlo.
 APP_ENV=produccion
@@ -42,6 +45,10 @@ TELEFONO_CENTRAL=+525550221022
 
 # Google Maps: la llave nueva, del proyecto de Centauro.
 GOOGLE_MAPS_KEY=
+# La del navegador, para el mapa interactivo (seccion 132): otra llave,
+# limitada a mycentauro.lat/* y ci.mycentauro.lat/* y solo con «Maps
+# JavaScript API».
+GOOGLE_MAPS_KEY_NAVEGADOR=
 
 # Avisos al telefono. Las dos llaves las escribe generar_llaves_push.py.
 VAPID_CONTACTO=mailto:operaciones@centauro.lat

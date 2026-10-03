@@ -138,7 +138,8 @@ def test_nivel_3_manda_correo_y_pide_acuse(cliente, sesion, cliente_ci,
     db = SessionLocal()
     try:
         aviso = (db.query(m.Notificacion)
-                 .filter_by(destinatario=m.Destinatario.CLIENTE_CI).one())
+                 .filter_by(destinatario=m.Destinatario.CLIENTE_CI,
+                            plantilla=None).one())
         assert aviso.correo == "andres.saucedo@cliente.com"
         assert aviso.asunto.startswith("[Nivel 3 · Alto]")
         assert "km 40" in aviso.cuerpo
@@ -273,7 +274,8 @@ def test_el_resumen_del_dia_junta_el_nivel_2(cliente, sesion, cliente_ci,
         db.commit()
         assert alertas_riesgo.resumen_del_dia(db, ocho) == {"resumenes": 0}
         aviso = (db.query(m.Notificacion)
-                 .filter_by(destinatario=m.Destinatario.CLIENTE_CI).one())
+                 .filter_by(destinatario=m.Destinatario.CLIENTE_CI,
+                            plantilla=None).one())
         assert aviso.asunto == "Resumen de riesgo del día · 2 evento(s)"
         assert "Manifestación" in aviso.datos
     finally:

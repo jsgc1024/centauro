@@ -5464,3 +5464,32 @@ class AlertaCliente(Base):
 
     evento: Mapped[EventoRiesgo] = relationship()
     usuario_cliente: Mapped[UsuarioCliente] = relationship()
+
+
+class EnlaceCliente(Base):
+    """El enlace para poner la contrasena de la app del cliente (seccion
+    133): la invitacion al darlo de alta, o el de «olvide mi contrasena».
+
+    Del token solo se guarda su huella (sha256): quien lea la base no
+    tiene con que entrar. Un enlace nuevo mata a los anteriores y usarlo
+    los mata a todos, igual que del lado de Centauro.
+    """
+    __tablename__ = "enlace_cliente"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    usuario_cliente_id: Mapped[int] = mapped_column(
+        ForeignKey("usuario_cliente.id", ondelete="CASCADE"), index=True)
+    # "invitacion" o "recuperacion".
+    tipo: Mapped[str] = mapped_column(String(12))
+    huella: Mapped[str] = mapped_column(String(64), unique=True)
+    creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+                                                server_default=func.now())
+    expira_en: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    usado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    anulado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    correo_id: Mapped[int | None] = mapped_column(
+        ForeignKey("notificacion.id", ondelete="SET NULL"), nullable=True)
+
+    usuario_cliente: Mapped[UsuarioCliente] = relationship()

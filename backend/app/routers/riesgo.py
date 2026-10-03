@@ -1,11 +1,11 @@
 """El mapa de riesgo de la Central de Inteligencia (seccion 130)."""
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app import auth
+from app import acceso_por_correo, auth, cliente_ci
 from app import models as m
 from app import riesgo as motor
 from app.db import get_db
@@ -289,6 +289,18 @@ def _cliente_central(db: Session, cc_id: int) -> m.ClienteCentral:
     return cc
 
 
+def _invitacion_vence(db: Session, g: m.UsuarioCliente) -> str | None:
+    """Hasta cuando sirve su enlace vivo, si tiene uno."""
+    from datetime import timezone
+    enlace = (db.query(m.EnlaceCliente)
+              .filter(m.EnlaceCliente.usuario_cliente_id == g.id,
+                      m.EnlaceCliente.usado_en.is_(None),
+                      m.EnlaceCliente.anulado_en.is_(None),
+                      m.EnlaceCliente.expira_en > datetime.now(timezone.utc))
+              .order_by(m.EnlaceCliente.id.desc()).first())
+    return enlace.expira_en.isoformat() if enlace else None
+
+
 def _vista_cliente(db: Session, cc: m.ClienteCentral) -> dict:
     gente = (db.query(m.UsuarioCliente).filter_by(cliente_central_id=cc.id)
              .order_by(m.UsuarioCliente.nombre).all())
@@ -303,6 +315,7 @@ def _vista_cliente(db: Session, cc: m.ClienteCentral) -> dict:
                    "perfil": g.perfil.value, "idioma": g.idioma,
                    "activo": g.activo,
                    "con_contrasena": g.hash_contrasena is not None,
+                   "invitacion_vence": _invitacion_vence(db, g),
                    "ultimo_acceso": (g.ultimo_acceso.isoformat()
                                      if g.ultimo_acceso else None)}
                   for g in gente],
@@ -407,7 +420,8 @@ def _datos_de_gente(datos: Gente, nueva: bool) -> dict:
 
 @router.post("/clientes/{cc_id}/gente",
              summary="Dar de alta a alguien del cliente en su app")
-def alta_gente(cc_id: int, datos: Gente, db: Session = Depends(get_db),
+def alta_gente(cc_id: int, datos: Gente, tareas: BackgroundTasks,
+               db: Session = Depends(get_db),
                usuario: m.Usuario = Depends(CLIENTES)):
     cc = _cliente_central(db, cc_id)
     campos = _datos_de_gente(datos, nueva=True)
@@ -418,14 +432,38 @@ def alta_gente(cc_id: int, datos: Gente, db: Session = Depends(get_db),
     gente = m.UsuarioCliente(cliente_central_id=cc.id,
                              alta_por_usuario_id=usuario.id, **campos)
     db.add(gente)
+    db.flush()
+    # Su invitacion sale sola (seccion 133): un correo con el enlace para
+    # poner su contrasena, que vale 72 horas.
+    _, aviso = cliente_ci.nuevo_enlace(db, gente, cliente_ci.INVITACION)
     db.commit()
+    acceso_por_correo.despachar_despues(tareas, aviso)
+    return _vista_cliente(db, cc)
+
+
+@router.post("/clientes/{cc_id}/gente/{gente_id}/invitacion",
+             summary="Mandarle otra vez su invitacion")
+def reinvitar_gente(cc_id: int, gente_id: int, tareas: BackgroundTasks,
+                    db: Session = Depends(get_db),
+                    usuario: m.Usuario = Depends(CLIENTES)):
+    """Un enlace nuevo, que mata al anterior. Si ya puso su contrasena,
+    le sirve igual para poner otra."""
+    cc = _cliente_central(db, cc_id)
+    gente = db.get(m.UsuarioCliente, gente_id)
+    if not gente or gente.cliente_central_id != cc.id:
+        raise HTTPException(404, "Esa persona no es de este cliente")
+    if not gente.activo or not cc.activo:
+        raise HTTPException(409, "Su acceso está cerrado: ábrelo primero")
+    _, aviso = cliente_ci.nuevo_enlace(db, gente, cliente_ci.INVITACION)
+    db.commit()
+    acceso_por_correo.despachar_despues(tareas, aviso)
     return _vista_cliente(db, cc)
 
 
 @router.patch("/clientes/{cc_id}/gente/{gente_id}",
               summary="Corregir o cerrar el acceso de alguien del cliente")
 def editar_gente(cc_id: int, gente_id: int, datos: Gente,
-                 db: Session = Depends(get_db),
+                 tareas: BackgroundTasks, db: Session = Depends(get_db),
                  usuario: m.Usuario = Depends(CLIENTES)):
     cc = _cliente_central(db, cc_id)
     gente = db.get(m.UsuarioCliente, gente_id)
@@ -437,12 +475,22 @@ def editar_gente(cc_id: int, gente_id: int, datos: Gente,
                 correo=campos["correo"]).first():
             raise HTTPException(409, "Ese correo ya entra a la app de la "
                                      "Central")
+    cambia_correo = "correo" in campos and campos["correo"] != gente.correo
+    if cambia_correo or campos.get("activo") is False:
+        # El enlace que salio al correo de antes ya no sirve, ni sale su
+        # correo pendiente: se anula con el correo viejo todavia puesto.
+        cliente_ci._anular_pendientes(db, gente)
     for clave, valor in campos.items():
         setattr(gente, clave, valor)
     if campos.get("activo") is False or "correo" in campos:
         # Cerrar el acceso o cambiar el correo tira las sesiones abiertas.
         gente.sesiones_desde = datetime.now().astimezone()
+    aviso = None
+    if cambia_correo and gente.activo and not gente.hash_contrasena:
+        # Su invitacion, al correo bueno.
+        _, aviso = cliente_ci.nuevo_enlace(db, gente, cliente_ci.INVITACION)
     db.commit()
+    acceso_por_correo.despachar_despues(tareas, aviso)
     return _vista_cliente(db, cc)
 
 
