@@ -2,6 +2,9 @@
 
 Lo nuevo de cada actualización, escrito para quien usa el sistema. La más nueva va arriba.
 
+## 134 · 2026-10-02 · El riesgo cerca del servicio, en la app de campo
+En la app de campo, arriba del servicio del día, sale **«Riesgo cerca de tu servicio»** con lo que la Central de Inteligencia publicó de nivel 2 o más a 25 km o menos del punto de encuentro: su nivel, hace cuánto pasó, a cuántos kilómetros está y hasta cuándo afecta. Al tocarlo se abre el detalle, con el texto del analista y un botón para abrirlo en el mapa. Los de nivel 3 y 4 además le llegan al teléfono en cuanto se publican o suben de nivel, una sola vez por nivel, y la bitácora del evento dice a cuántas personas les llegó. Se mide desde el punto de encuentro: un día sin punto capturado, o un evento sin punto en el mapa, no entra. Ver [el mapa de riesgo](#/riesgo).
+
 ## 133 · 2026-10-02 · La app del cliente de la Central de Inteligencia
 Los clientes de la Central ya tienen su app, en **ci.mycentauro.lat**, con la misma cara que la app de campo. Al dar de alta a su gerente en Mapa de riesgo → Clientes de la Central, le llega solo un correo con un enlace para poner su contraseña; vale 72 horas, y desde ahí mismo se le puede **reenviar la invitación** (la tabla dice hasta cuándo vale la que tiene). En su app ve el **mapa** de los estados que sigue con lo vigente, sus **avisos** —arriba los de nivel 3 y 4 con el botón **«Enterado»**, que queda en la bitácora del evento y quita la llamada del nivel 4—, el detalle de cada evento, y en «Yo» activa los avisos en su teléfono, cambia su idioma o su contraseña. Solo ve lo que el analista escribió para él: nunca las fuentes ni la bitácora. Su acceso no abre nada de Connect. Si olvida su contraseña, la recupera por correo. Ver [el mapa de riesgo](#/riesgo).
 

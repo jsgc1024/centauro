@@ -5493,3 +5493,27 @@ class EnlaceCliente(Base):
         ForeignKey("notificacion.id", ondelete="SET NULL"), nullable=True)
 
     usuario_cliente: Mapped[UsuarioCliente] = relationship()
+
+
+class AvisoRiesgoCampo(Base):
+    """Un evento de riesgo que se le aviso al telefono de alguien del
+    personal de seguridad porque cae cerca de su servicio de hoy
+    (seccion 134). Uno por evento, persona y nivel: si sube de 3 a 4 se
+    vuelve a avisar; si se corrige sin subir, no."""
+    __tablename__ = "aviso_riesgo_campo"
+    __table_args__ = (UniqueConstraint("evento_id", "persona_id", "nivel",
+                                       name="uq_aviso_riesgo_campo"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    evento_id: Mapped[int] = mapped_column(
+        ForeignKey("evento_riesgo.id", ondelete="CASCADE"), index=True)
+    persona_id: Mapped[int] = mapped_column(
+        ForeignKey("persona.id", ondelete="CASCADE"), index=True)
+    jornada_id: Mapped[int | None] = mapped_column(
+        ForeignKey("jornada.id", ondelete="SET NULL"), nullable=True)
+    nivel: Mapped[int] = mapped_column(Integer)
+    km: Mapped[float] = mapped_column(Numeric(6, 1))
+    telefonos: Mapped[int] = mapped_column(Integer, default=0,
+                                           server_default="0")
+    creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+                                                server_default=func.now())

@@ -4,7 +4,7 @@
    sin senal. Los datos nunca salen del cache: un mapa viejo servido
    como nuevo es peor que un error. */
 
-const CACHE = "centauro-ci-v1";
+const CACHE = "centauro-ci-v2";
 const ARMAZON = [
   "/ci/", "/ci/index.html", "/ci/app.js", "/ci/ci.css", "/consola/idioma.js",
   "/ci/manifiesto.json", "/app/estilo.css", "/consola/firma.js",

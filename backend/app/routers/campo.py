@@ -32,6 +32,7 @@ from app import devoluciones as devoluciones_motor
 from app import entregas
 from app import operacion
 from app import push
+from app import riesgo_campo
 from app import viaticos as viaticos_motor
 from app.config import settings
 from app.db import get_db
@@ -422,6 +423,8 @@ def mi_dia(db: Session = Depends(get_db), ahora: datetime | None = None,
                       key=lambda j: j.inicio_programado)
 
     fichas = [_ficha(db, j, usuario.persona_id, ahora) for j in jornadas]
+    # Los dias de hoy, para medir el riesgo cerca (seccion 134).
+    de_hoy = _de_hoy(jornadas, hoy)
 
     # Lo que viene despues de manana, en corto: pediste sus servicios
     # pendientes y dos dias no alcanzan para que alguien planee su vida.
@@ -454,6 +457,9 @@ def mi_dia(db: Session = Depends(get_db), ahora: datetime | None = None,
         # todo porque es lo unico que queda por hacer del dia cerrado.
         "entregas_pendientes": entregas.pendientes_de(
             db, usuario.persona_id, ahora),
+        # Lo que la Central de Inteligencia publico cerca de su punto de
+        # encuentro de hoy (seccion 134): nivel 2 o mas, a 25 km o menos.
+        "riesgo_cerca": riesgo_campo.cerca_de(db, de_hoy),
         "proximos": [{
             "jornada_id": j.id,
             "fecha": j.fecha.isoformat(),
@@ -476,6 +482,28 @@ def mi_dia(db: Session = Depends(get_db), ahora: datetime | None = None,
         # numero es no decir nada.
         "central": _central(db),
     }
+
+
+def _de_hoy(jornadas: list[m.Jornada], hoy: date) -> list[m.Jornada]:
+    """Los dias que cuentan como hoy: los de la fecha y los que siguen en
+    la calle, sin los ya cerrados."""
+    return [j for j in jornadas
+            if (j.fecha == hoy or j.estatus in m.ARRANCADAS)
+            and j.estatus != m.EstatusJornada.TERMINADA]
+
+
+@router.get("/riesgo/{evento_id}", summary="Un evento de riesgo cerca")
+def riesgo_cerca(evento_id: int, db: Session = Depends(get_db),
+                 ahora: datetime | None = None,
+                 usuario: m.Usuario = Depends(CAMPO)):
+    """Solo si le toca: cerca de su servicio de hoy, o ya le llego."""
+    ahora = reloj.ahora_de_la_persona(db, usuario.persona,
+                                      reloj.de_prueba(ahora))
+    hoy = ahora.date()
+    jornadas = (_jornadas_de(db, usuario.persona_id, hoy, hoy)
+                + _arrancadas_de(db, usuario.persona_id, hoy))
+    return riesgo_campo.del_dia(db, usuario.persona_id, evento_id,
+                                _de_hoy(jornadas, hoy))
 
 
 def _central(db: Session) -> dict | None:

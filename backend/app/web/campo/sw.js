@@ -22,7 +22,7 @@
 // v14: el icono de Android con su filo dorado, dentro de la zona que
 //      ningun telefono recorta (seccion 97).
 // v22: entrar con huella (30 sep), y /consola/huella.js en el armazon.
-const CACHE = "centauro-campo-v22";
+const CACHE = "centauro-campo-v23";
 const ARMAZON = [
   "/app/",
   "/app/index.html",

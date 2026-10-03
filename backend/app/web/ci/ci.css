@@ -5,10 +5,7 @@
 .sello-ci { background: var(--centauro); color: #fff; border-radius: 6px;
             letter-spacing: .5px; }
 
-/* El nivel, con su color de la consola. Siempre con su numero y su
-   nombre: a pleno sol el ambar y el naranja son el mismo color. */
-.nivel { display: inline-block; color: #fff; border-radius: 999px;
-         padding: 3px 10px; font-size: 12px; font-weight: 700; }
+/* El nivel (.nivel) y el regreso (.atras) vienen de la hoja de campo. */
 
 .evento { display: block; text-decoration: none; color: inherit; }
 .evento h3 { margin: 6px 0 2px; font-size: 16px; color: var(--texto); }
@@ -32,5 +29,3 @@
 
 .dato .clave { font-size: 12px; color: var(--gris); text-transform: uppercase;
                letter-spacing: .4px; font-weight: 650; }
-.atras { display: inline-block; margin: 0 0 10px; font-weight: 650;
-         text-decoration: none; }

@@ -510,7 +510,9 @@ def quitar_fuente(db: Session, usuario: m.Usuario, evento: m.EventoRiesgo,
 
 
 def _avisar(db: Session, evento: m.EventoRiesgo, motivo: str) -> None:
-    from app import alertas_riesgo
+    from app import alertas_riesgo, riesgo_campo
     alertas_riesgo.al_publicar(db, evento, motivo)
+    # Y al personal de seguridad que trabaja hoy cerca (seccion 134).
+    riesgo_campo.al_publicar(db, evento, motivo)
     for funcion in AL_PUBLICAR:
         funcion(db, evento, motivo)

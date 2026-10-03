@@ -10183,6 +10183,34 @@ Los textos van en `idioma.js` con la marca `ci_`. En la consola, la
 gente del cliente dice hasta cuando vale su invitacion y tiene
 «Reenviar invitacion». Pruebas: `tests/test_cliente_ci.py` (12).
 
+## 134. El riesgo cerca del servicio, en la app de campo
+
+Lo que publica la Central de Inteligencia le llega tambien al equipo en
+la calle (`app/riesgo_campo.py`). La regla la aprobo Salvador sobre los
+bocetos (2 oct):
+
+- **Tarjeta en Hoy** (`/campo/mi-dia` → `riesgo_cerca`): lo publicado y
+  vigente de nivel 2 o mas a 25 km o menos del punto de encuentro de sus
+  dias de hoy (y de los de ayer que siguen en la calle). Cada evento una
+  vez, con su dia mas cercano; lo mas grave primero y luego lo mas cerca.
+- **Al telefono**: el 3 y el 4, al publicarse o subir de nivel
+  (`riesgo._avisar` llama a `riesgo_campo.al_publicar`), urgentes, con
+  `url=/app/#/riesgo/{id}`. Uno por evento, persona y nivel
+  (`AvisoRiesgoCampo`, migracion `a8c3e1f5d7b2`); la bitacora del evento
+  anota a cuantas personas y telefonos.
+- **Detalle** (`GET /campo/riesgo/{id}`): solo si el evento esta cerca de
+  su servicio de hoy o ya le llego al telefono; sin senal, la app lo
+  toma de lo que ya traia el dia. Nunca fuentes ni bitacora.
+
+La distancia es haversine del punto de encuentro a la orilla del circulo
+del evento. Connect no guarda el destino del servicio, asi que solo se
+mide desde el punto (el boceto decia «del destino»: no hay dato). Un dia
+sin punto o un evento sin punto no entran.
+
+La hoja de campo trae ahora `.nivel`, `.riesgo` y `.atras`, que la app
+del cliente toma de ahi. Caches: `centauro-campo-v23`, `centauro-ci-v2`.
+Pruebas: `tests/test_riesgo_campo.py` (5).
+
 ## 14. Lo que falta
 
 ### Abierto

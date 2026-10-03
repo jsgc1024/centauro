@@ -375,3 +375,19 @@ a.botonazo {
                           object-position: left center; }
 .logo-entrada { max-width: 78%; max-height: 64px; display: block;
                 margin: 0 auto; object-fit: contain; }
+
+/* El riesgo cerca del servicio (seccion 134). El nivel con el color de
+   la consola, siempre con su numero y su nombre. La app del cliente de
+   la Central (/ci/) usa esta misma hoja y estas mismas piezas. */
+.nivel { display: inline-block; color: #fff; border-radius: 999px;
+         padding: 3px 10px; font-size: 12px; font-weight: 700; }
+.riesgo { border-left: 4px solid var(--grave); }
+.riesgo-titulo { color: var(--centauro); font-size: 16px; }
+.riesgo .renglon { display: block; padding: 10px 0; color: inherit;
+                   text-decoration: none; border-top: 1px solid var(--linea); }
+.riesgo .renglon:first-of-type { border-top: 0; padding-top: 4px; }
+.riesgo h3 { margin: 6px 0 2px; font-size: 15px; }
+.atras { display: inline-block; margin: 0 0 10px; font-weight: 650;
+         text-decoration: none; }
+a.botonazo.claro { background: #fff; color: var(--centauro);
+                   border: 1px solid var(--linea); margin-top: 12px; }

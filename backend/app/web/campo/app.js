@@ -203,6 +203,7 @@ async function pintar() {
   if (vista === "yo") return pantallaYo();
   if (vista === "falla") return pantallaFalla();
   if (vista.startsWith("revision/")) return pantallaRevision();
+  if (vista.startsWith("riesgo/")) return pantallaRiesgo();
   return pantallaHoy();
 }
 
@@ -626,6 +627,12 @@ async function pantallaHoy() {
   const entregas = datos.entregas_pendientes || [];
   for (const e of entregas) cuerpo.push(tarjetaEntrega(e));
 
+  /* Lo que la Central de Inteligencia publico cerca de su punto de
+     encuentro de hoy (seccion 134): arriba del servicio, porque cambia
+     como se llega a el. */
+  const riesgo = tarjetaRiesgo(datos.riesgo_cerca || []);
+  if (riesgo) cuerpo.push(riesgo);
+
   if (!hoy.length && !manana.length) {
     /* Cerrar el dia lo saca de aqui. Si el hueco dijera "no tienes
        servicios", quien acaba de trabajar doce horas leeria que su dia
@@ -692,6 +699,94 @@ function tarjetaEntrega(e) {
       h("div", { style: "margin-top:8px;text-align:center" }, reloj.pie),
       h("div", { clase: "chico gris", style: "margin-top:6px;text-align:center" },
         t("cmp_ent_pie"))));
+}
+
+/* ================================================================
+   El riesgo cerca del servicio (seccion 134)
+
+   Lo publica la Central de Inteligencia y aqui solo se lee: nivel 2 o
+   mas a 25 km o menos del punto de encuentro de hoy. El nivel va con su
+   numero y su nombre, no solo con su color: a pleno sol el ambar y el
+   naranja son el mismo.
+   ================================================================ */
+
+const COLOR_RIESGO = { 1: "#5f7187", 2: "#c99a06", 3: "#e07000", 4: "#c62828" };
+
+function nivelRiesgo(n) {
+  return h("span", { clase: "nivel", style: `background:${COLOR_RIESGO[n]}` },
+    t("cmp_rsg_nivel").replace("{n}", n).replace("{nombre}", t(`cmp_rsg_nivel_${n}`)));
+}
+
+/* "hoy 23:00", "mañana 04:58" o la fecha: a la hora del telefono, que
+   es la del lugar donde esta el equipo. */
+function diaYHora(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  const dia = (x) => x.toDateString();
+  const hoy = new Date();
+  const manana = new Date(Date.now() + 86400000);
+  const cual = dia(d) === dia(hoy) ? t("cmp_rsg_hoy")
+    : dia(d) === dia(manana) ? t("cmp_rsg_manana")
+    : d.toLocaleDateString(local(), { day: "numeric", month: "short" });
+  return [cual, hora(iso)].join(" ");
+}
+
+function tarjetaRiesgo(eventos) {
+  if (!eventos.length) return null;
+  return h("div", { clase: "caja riesgo" },
+    h("b", { clase: "riesgo-titulo" }, t("cmp_rsg_titulo")),
+    h("div", { clase: "chico gris", style: "margin-bottom:8px" }, t("cmp_rsg_pie")),
+    ...eventos.map((e) => h("a", { clase: "renglon", href: `#/riesgo/${e.id}` },
+      nivelRiesgo(e.nivel), " ", h("span", { clase: "chico gris" }, `· ${hace(e.ocurrio_en)}`),
+      h("h3", {}, e.titulo),
+      h("div", { clase: "chico gris" },
+        [t("cmp_rsg_km_punto").replace("{km}", Math.round(e.km)),
+         t("cmp_rsg_afecta").replace("{cuando}", diaYHora(e.vigente_hasta))].join(" · ")))));
+}
+
+async function pantallaRiesgo() {
+  cargando();
+  const id = Number(vista.split("/")[1]);
+  let e = null;
+  let falla = null;
+  try { e = await api.get(`/campo/riesgo/${id}`); }
+  catch (err) {
+    falla = err;
+    /* Sin senal, lo que ya venia en el dia: es lo mismo que se leyo. */
+    if (!err.codigo) {
+      const guardado = recordar("mi-dia");
+      e = (((guardado && guardado.datos) || {}).riesgo_cerca || [])
+        .find((x) => x.id === id) || null;
+    }
+  }
+  const atras = h("a", { clase: "atras", href: "#/hoy" }, t("cmp_rsg_atras"));
+  if (!e) {
+    return conBarra(atras, aviso(falla && falla.codigo === 404
+      ? t("cmp_rsg_no_esta") : motivo(falla), "alerta"));
+  }
+  const dato = (clave, valor) => h("div", { clase: "dato" },
+    h("span", { clase: "clave" }, clave), valor || "—");
+  const confirmado = e.verificacion !== "sin_confirmar";
+  conBarra(atras,
+    h("div", { clase: "caja principal" },
+      nivelRiesgo(e.nivel), " ",
+      h("span", { clase: confirmado ? "marca ok" : "marca" },
+        t(`cmp_rsg_verif_${e.verificacion}`)),
+      h("h1", { style: "margin:10px 0 4px" }, e.titulo),
+      h("div", { clase: "chico gris" },
+        [e.tipo, e.municipio ? [e.municipio, e.region].join(", ") : e.region].join(" · ")),
+      e.texto ? h("p", { style: "margin:12px 0" }, e.texto) : null,
+      h("div", { clase: "rejilla" },
+        dato(t("cmp_rsg_cuando"), diaYHora(e.ocurrio_en)),
+        dato(t("cmp_rsg_hasta"), e.vigente ? diaYHora(e.vigente_hasta) : t("cmp_rsg_termino")),
+        dato(t("cmp_rsg_cerca"), t("cmp_rsg_km").replace("{km}", Math.round(e.km))),
+        dato(t("cmp_rsg_servicio"), e.servicio)),
+      e.lat !== null && e.lat !== undefined
+        ? h("a", { clase: "botonazo claro", target: "_blank",
+                   href: `https://www.google.com/maps?q=${e.lat},${e.lon}` },
+            t("cmp_rsg_mapa"))
+        : null),
+    h("p", { clase: "chico gris" }, t("cmp_rsg_nota")));
 }
 
 function sinLinea(en) {
