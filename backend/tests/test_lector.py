@@ -304,6 +304,9 @@ def test_las_fuentes_y_el_tope_de_x(cliente, sesion):
                               "direccion": "robo"}).status_code == 403
 
     lista = fuentes["Lista de la Central"]["id"]
+    from app import intentos
+    if intentos._redis():
+        intentos._redis().delete(f"lector:x:{AHORA.date().isoformat()}")
     tuits = {"data": [{"id": str(100 + i), "text": f"Bloqueo en el km {i}",
                        "author_id": "9", "created_at": AHORA.isoformat()}
                       for i in range(3)],
@@ -321,6 +324,18 @@ def test_las_fuentes_y_el_tope_de_x(cliente, sesion):
             nota = db.query(m.NotaLector).filter_by(fuente_id=lista).first()
             assert nota.url.startswith("https://x.com/monitorNL/status/")
             assert lector.x_leidas_hoy(db, AHORA) == 3
+            # X no cobra dos veces la misma en su dia: la vuelta que trae
+            # las mismas tres no suma; la de manana si.
+            assert lector.leer_fuente(db, f, cliente_x, AHORA) == 0
+            assert lector.x_leidas_hoy(db, AHORA) == 3
+            manana = AHORA + timedelta(days=1)
+            if intentos._redis():
+                intentos._redis().delete(
+                    f"lector:x:{manana.date().isoformat()}")
+                lector.leer_fuente(db, f, cliente_x, manana)
+                assert lector.x_leidas_hoy(db, manana) == 3
+                lector.parametros(db).x_dia = AHORA.date()
+                lector.parametros(db).x_leidas = 3
             lector.parametros(db).tope_x_dia = 3
             assert lector.leer_fuente(db, f, cliente_x, AHORA) == 0
             assert f.error == "Llegó al tope de X de hoy"

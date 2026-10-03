@@ -2,6 +2,9 @@
 
 Lo nuevo de cada actualización, escrito para quien usa el sistema. La más nueva va arriba.
 
+## 142 · 2026-10-03 · El tope de X cuenta lo que X cobra
+X cobra cada publicación **una sola vez al día**, aunque el lector la vuelva a ver en varias vueltas. Antes Connect contaba cada repetida y llegaba al tope a media tarde sin haber gastado tanto; ahora cuenta solo las publicaciones distintas del día, que es lo que cobra X, y en «Ver lo que lee» lo dice así. Ver [el mapa de riesgo](#/riesgo).
+
 ## 141 · 2026-10-03 · El lector avisa cuando Claude no contesta
 Si Claude deja de contestar —una llave que ya no sirve, el saldo que se acabó, o que esté saturado—, la pestaña **Lector** ya no se queda callada: arriba a la izquierda sale un aviso con lo que pasó, desde hace cuánto, cuántas notas están esperando y qué hacer, y en «Hoy» se ve cuántas esperan a Claude. Sale también en «Ver lo que lee». Las fuentes se siguen leyendo y nada se pierde: en cuanto Claude vuelve a contestar, las notas se revisan solas y el aviso se quita. Lo pasajero sale en amarillo; lo que necesita que alguien haga algo, en rojo. Ver [el mapa de riesgo](#/riesgo).
 

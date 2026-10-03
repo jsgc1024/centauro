@@ -10776,6 +10776,21 @@ aprobado por Salvador el 3 oct.
 
 Pruebas: `tests/test_lector.py` (16).
 
+## 142. El tope de X cuenta lo que X cobra
+
+En su primera hora y media el lector llevaba 772 de 1,500: la lista de X
+no deja pedir solo lo nuevo (`/2/lists/{id}/tweets` no acepta
+`since_id` ni `start_time`), asi que cada vuelta trae las ultimas 50 de
+cada lista, casi todas ya leidas, y la seccion 140 las contaba todas.
+Pero X no cobra dos veces la misma publicacion en su dia (UTC). Ahora
+`_cobradas_hoy` apunta en Redis (`lector:x:AAAA-MM-DD`, vence a los dos
+dias) las ya vistas en el dia y solo suma las nuevas; sin Redis cuenta
+todas, que es lo seguro. Salvador, 3 oct: «de acuerdo». El texto de
+«X: lo que se gasta» lo dice asi.
+
+Pruebas: `tests/test_lector.py` (16; la del tope cubre la repetida y el
+dia siguiente).
+
 ## 14. Lo que falta
 
 ### Abierto

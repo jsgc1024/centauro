@@ -2,6 +2,9 @@
 
 O que há de novo em cada atualização, escrito para quem usa o sistema. A mais nova fica em cima.
 
+## 142 · 2026-10-03 · O limite do X conta o que o X cobra
+O X cobra cada publicação **uma só vez por dia**, mesmo que o leitor a veja de novo em várias rodadas. Antes o Connect contava cada repetida e chegava ao limite no meio da tarde sem ter gastado tanto; agora conta só as publicações distintas do dia, que é o que o X cobra, e em «Ver o que lê» diz isso. Ver [o mapa de risco](#/riesgo).
+
 ## 141 · 2026-10-03 · O leitor avisa quando o Claude não responde
 Se o Claude deixar de responder —uma chave que já não serve, o saldo que acabou, ou sobrecarga—, a aba **Leitor** não fica mais calada: no alto, à esquerda, aparece um aviso com o que aconteceu, há quanto tempo, quantas notícias estão esperando e o que fazer, e em «Hoje» se vê quantas esperam o Claude. Aparece também em «Ver o que lê». As fontes continuam sendo lidas e nada se perde: assim que o Claude volta a responder, as notícias são revisadas sozinhas e o aviso some. O passageiro aparece em amarelo; o que precisa que alguém faça algo, em vermelho. Ver [o mapa de risco](#/riesgo).
 

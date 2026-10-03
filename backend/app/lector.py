@@ -225,10 +225,31 @@ def _dia_de_x(ahora: datetime):
 
 
 def x_leidas_hoy(db: Session, ahora: datetime | None = None) -> int:
-    """Las publicaciones que X entrego hoy: todas las que vinieron en cada
-    llamada, nuevas o repetidas. Es lo que se compara contra el tope."""
+    """Las publicaciones distintas que X entrego hoy (su dia, el de UTC):
+    lo que cobra. Es lo que se compara contra el tope."""
     par = parametros(db)
     return par.x_leidas if par.x_dia == _dia_de_x(_ahora(ahora)) else 0
+
+
+def _cobradas_hoy(ids: list[str], ahora: datetime) -> int:
+    """De lo que X acaba de entregar, cuanto cobra: X no cobra dos veces
+    la misma publicacion en su dia (UTC), y una lista no deja pedir solo
+    lo nuevo, asi que cada vuelta trae repetidas (seccion 142). Las ya
+    vistas hoy se apuntan en Redis; sin Redis se cuentan todas, que es
+    lo seguro (de mas, nunca de menos)."""
+    from app import intentos
+    if not ids:
+        return 0
+    r = intentos._redis()
+    if not r:
+        return len(ids)
+    llave = f"lector:x:{_dia_de_x(ahora).isoformat()}"
+    try:
+        nuevas = r.sadd(llave, *ids)
+        r.expire(llave, 2 * 86400)
+        return int(nuevas)
+    except Exception:                                    # noqa: BLE001
+        return len(ids)
 
 
 def _contar_x(db: Session, cuantas: int, ahora: datetime) -> None:
@@ -263,7 +284,8 @@ def leer_fuente(db: Session, fuente: m.FuenteLector, cliente,
             if not lista:
                 raise HTTPException(400, "La dirección no es de una lista")
             notas = leer_lista_x(cliente, lista)
-            _contar_x(db, len(notas), ahora)
+            _contar_x(db, _cobradas_hoy(
+                sorted({n["id"] for n in notas}), ahora), ahora)
         else:
             direccion = direccion_de(fuente)
             r = cliente.get(direccion)
