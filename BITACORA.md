@@ -10665,6 +10665,40 @@ texto crudo. Ahora se lee como lo ve el navegador (`html.unescape`).
 
 Pruebas: `tests/test_nivel_centauro.py` (14).
 
+## 139. El archivo del Secretariado se sube a mano, y Connect lo recuerda
+
+El primer dia en el servidor (3 oct) «Buscar ahora» decia que la pagina
+no traia el enlace. La primera sospecha --los acentos como entidades--
+era cierta pero no era todo: desde el servidor, gob.mx contesta 200 con
+una pagina de 1,879 bytes titulada «Challenge Validation», una
+verificacion contra robots. Esa proteccion es de ellos y no se brinca.
+Decision de Salvador (3 oct, sobre los bocetos): el archivo lo baja una
+persona y Connect se lo recuerda.
+
+- **Que mes falta** (`fuentes_riesgo.falta_secretariado`): desde el 18
+  ya debe estar el mes pasado; antes, el antepasado. Falta si la ultima
+  carga del Secretariado es anterior.
+- **El correo** (`recordar_secretariado`, tarea `riesgo-secretariado`
+  a las 9:10): el 18 del mes que sigue al que falta y cada tres dias, a
+  quien trae `riesgo.publicar` (sin direccion general ni administracion,
+  que lo pueden todo por herencia). Una vez al dia por persona
+  (`plantilla=riesgo_secretariado`, `enviada_en` del dia). Boton
+  «Abrir la pagina del Secretariado»; el nombre del archivo va siempre
+  en espanol, como en gob.mx.
+- **La consola**: `GET /riesgo/nivel` trae `falta_secretariado` y
+  `pagina_secretariado`. Arriba de Riesgo de fondo, el aviso con los tres
+  pasos; en «De donde salio», FALTA SEPTIEMBRE; «Buscar ahora» cambia
+  por «Abrir la pagina del Secretariado».
+- Se fueron `bajar_sesnsp`, la busqueda del enlace, el endpoint
+  `/fuentes/sesnsp/bajar` y la tarea `riesgo.bajar_secretariado`.
+
+Y los correos de la Central de Inteligencia llevan su placa: `AI/CI` y
+el pie «Centauro · Central de Inteligencia» (Salvador, 3 oct). `armar`,
+`plano` y `marca` reciben `linea`; `correo.linea_de` la decide: a un
+cliente de la Central (`CLIENTE_CI`) o con plantilla `ci_` o `riesgo_`.
+
+Pruebas: `tests/test_nivel_centauro.py` (15).
+
 ## 14. Lo que falta
 
 ### Abierto

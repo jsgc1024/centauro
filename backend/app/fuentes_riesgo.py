@@ -18,7 +18,6 @@ el nombre; la que no se reconoce se dice, no se adivina.
 """
 import csv
 import io
-from html import unescape
 import json
 import re
 import unicodedata
@@ -26,7 +25,7 @@ import zipfile
 from datetime import date, datetime, timezone
 
 from fastapi import HTTPException
-from sqlalchemy import delete, insert
+from sqlalchemy import delete, func, insert
 from sqlalchemy.orm import Session
 
 from app import models as m
@@ -35,11 +34,6 @@ from app import nivel_catalogo as nc
 FUENTE_SESNSP = "sesnsp"
 PAGINA_SESNSP = ("https://www.gob.mx/sesnsp/acciones-y-programas/"
                  "datos-abiertos-de-incidencia-delictiva")
-# El texto del enlace que se busca en esa pagina (metodologia 2026).
-TEXTO_DEL_ENLACE = re.compile(
-    r"Fuero com[uú]n\s*[-–—]\s*V[ií]ctimas\)\.?\s*"
-    r"Incidencia delictiva municipal",
-    re.I)
 MESES = ("Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio",
          "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre")
 COLUMNAS = ("Año", "Clave_Ent", "Cve. Municipio", "Tipo de delito",
@@ -205,60 +199,106 @@ def guardar_sesnsp(db: Session, datos: dict, origen: str,
     return carga
 
 
-def enlace_en_la_pagina(html: str) -> str | None:
-    """El primer enlace de la pagina cuyo texto es el del archivo de
-    victimas municipal: la pagina pone primero la metodologia vigente."""
-    # La pagina escribe los acentos como entidades («com&uacute;n») y
-    # los espacios como &nbsp;: se leen como los ve el navegador.
-    for _, href, texto in re.findall(
-            r"""<a[^>]+href=(["'])(.+?)\1[^>]*>(.*?)</a>""", html,
-            re.S | re.I):
-        limpio = unescape(re.sub(r"<[^>]+>", " ", texto))
-        limpio = re.sub(r"\s+", " ", limpio)
-        if TEXTO_DEL_ENLACE.search(limpio):
-            return unescape(href)
-    return None
+# ================================================== el recordatorio del mes
+#
+# Hasta el 3 de octubre Connect bajaba solo el archivo de la pagina del
+# Secretariado. El primer dia en el servidor se vio que gob.mx no le
+# ensena la pagina a un servidor: le pone una verificacion contra robots
+# («Challenge Validation»). Esa proteccion es de ellos y no se brinca:
+# el archivo lo baja una persona y lo sube en Riesgo de fondo, y Connect
+# se lo recuerda a la Central (Salvador, 3 oct).
+
+# El Secretariado publica a mediados de mes lo del mes pasado.
+DIA_DE_PUBLICACION = 18
+CADA_CUANTOS_DIAS = 3
+PLANTILLA_RECORDATORIO = "riesgo_secretariado"
 
 
-def con_descarga(enlace: str) -> str:
-    """Un enlace para compartir de OneDrive baja el archivo con
-    download=1; sin eso entrega la pagina del visor."""
-    return enlace + ("&" if "?" in enlace else "?") + "download=1"
+def _meses_atras(d: date, n: int) -> date:
+    total = d.year * 12 + d.month - 1 - n
+    return date(total // 12, total % 12 + 1, 1)
 
 
-def bajar_sesnsp(db: Session, cliente=None) -> dict:
-    """Busca el archivo del mes en la pagina del Secretariado y, si es
-    nuevo, lo guarda. Lo llama la tarea diaria; nunca revienta: lo que
-    falla queda dicho en el resultado y en la consola."""
-    import httpx
-    propio = cliente is None
-    cliente = cliente or httpx.Client(
-        timeout=120, follow_redirects=True,
-        headers={"User-Agent": "Mozilla/5.0 (Centauro Connect)"})
-    try:
-        pagina = cliente.get(PAGINA_SESNSP)
-        pagina.raise_for_status()
-        enlace = enlace_en_la_pagina(pagina.text)
-        if not enlace:
-            return {"resultado": "sin_enlace"}
-        archivo = cliente.get(con_descarga(enlace))
-        archivo.raise_for_status()
-        datos = leer_sesnsp(archivo.content)
-        anterior = (db.query(m.CargaFuente).filter_by(fuente=FUENTE_SESNSP)
-                    .order_by(m.CargaFuente.id.desc()).first())
-        hasta = date(datos["anio"], datos["ultimo_mes"], 1)
-        if anterior and anterior.periodo >= hasta:
-            return {"resultado": "sin_cambios", "periodo": hasta.isoformat()}
-        carga = guardar_sesnsp(db, datos, "automatica", None, None)
-        return {"resultado": "nuevo", "periodo": carga.periodo.isoformat(),
-                "carga_id": carga.id}
-    except HTTPException as e:
-        return {"resultado": "archivo_raro", "detalle": str(e.detail)[:300]}
-    except Exception as e:                               # noqa: BLE001
-        return {"resultado": "sin_conexion", "detalle": str(e)[:300]}
-    finally:
-        if propio:
-            cliente.close()
+def mes_esperado(hoy: date) -> date:
+    """El ultimo mes que el Secretariado ya debe tener publicado: desde
+    el 18, el mes pasado; antes, el antepasado."""
+    return _meses_atras(hoy, 1 if hoy.day >= DIA_DE_PUBLICACION else 2)
+
+
+def falta_secretariado(db: Session, hoy: date) -> date | None:
+    """El mes del Secretariado que ya deberia estar y nadie ha subido."""
+    esperado = mes_esperado(hoy)
+    ultimo = (db.query(func.max(m.CargaFuente.periodo))
+              .filter(m.CargaFuente.fuente == FUENTE_SESNSP).scalar())
+    return esperado if ultimo is None or ultimo < esperado else None
+
+
+def _toca_recordar(hoy: date, falta: date) -> bool:
+    """El 18 del mes que sigue al que falta, y cada tres dias despues."""
+    inicio = _meses_atras(falta, -1).replace(day=DIA_DE_PUBLICACION)
+    dias = (hoy - inicio).days
+    return dias >= 0 and dias % CADA_CUANTOS_DIAS == 0
+
+
+def _quienes_publican(db: Session) -> list[m.Usuario]:
+    """La gente de la Central que publica en el mapa. Sin direccion
+    general ni administracion, que lo pueden todo por herencia y no son
+    quienes suben el archivo."""
+    from app import auth
+    salida = []
+    for u in db.query(m.Usuario).filter(m.Usuario.activo.is_(True)):
+        if u.rol in (m.Rol.ADMIN, m.Rol.DIRECTOR_GENERAL) \
+                and not u.categoria_id:
+            continue
+        if auth.puede_el_usuario(db, u, "riesgo.publicar"):
+            salida.append(u)
+    return salida
+
+
+def recordar_secretariado(db: Session, ahora: datetime | None = None
+                          ) -> dict:
+    """Lo llama la tarea de cada manana: si falta el archivo y hoy toca,
+    un correo a cada quien publica en el mapa. Una vez al dia."""
+    from app import correo_html, push, reloj
+    from app import textos_aviso as ta
+
+    pais = db.query(m.Pais).filter_by(codigo="MX").first()
+    if not pais:
+        return {"falta": None}
+    ahora = ahora or datetime.now(timezone.utc)
+    hoy = ahora.astimezone(reloj.zona(pais.zona_horaria)).date()
+    falta = falta_secretariado(db, hoy)
+    if not falta or not _toca_recordar(hoy, falta):
+        return {"falta": falta.isoformat() if falta else None, "correos": 0}
+
+    desde = datetime.combine(hoy, datetime.min.time(),
+                             reloj.zona(pais.zona_horaria))
+    ya = {c for (c,) in db.query(m.Notificacion.correo).filter(
+        m.Notificacion.plantilla == PLANTILLA_RECORDATORIO,
+        m.Notificacion.enviada_en >= desde)}
+    correos = 0
+    for u in _quienes_publican(db):
+        if not u.correo or u.correo in ya:
+            continue
+        lengua = push.idioma_de(db, u.persona_id) or "es"
+        mes = (ta.MESES.get(lengua) or ta.MESES["es"])[falta.month - 1]
+        db.add(m.Notificacion(
+            destinatario=m.Destinatario.COLABORADOR, canal=m.Canal.CORREO,
+            correo=u.correo, idioma=lengua, plantilla=PLANTILLA_RECORDATORIO,
+            asunto=ta.t(lengua, "sesnsp_falta_asunto", mes=mes)[:200],
+            cuerpo=ta.t(lengua, "sesnsp_falta_cuerpo", mes=mes)[:2000],
+            datos=correo_html.guardar_datos([
+                (ta.t(lengua, "sesnsp_paso_1"), ta.t(lengua, "sesnsp_pagina")),
+                (ta.t(lengua, "sesnsp_paso_2"),
+                 # El nombre del archivo es el de gob.mx, en espanol.
+                 ta.t(lengua, "sesnsp_archivo",
+                      mes=ta.MESES["es"][falta.month - 1],
+                      anio=falta.year)),
+                (ta.t(lengua, "sesnsp_paso_3"), ta.t(lengua, "sesnsp_donde"))]),
+            enlace_seguimiento=PAGINA_SESNSP, enviada_en=ahora))
+        correos += 1
+    db.flush()
+    return {"falta": falta.isoformat(), "correos": correos}
 
 
 # ================================================================ las encuestas

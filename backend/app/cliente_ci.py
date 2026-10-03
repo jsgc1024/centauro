@@ -294,9 +294,9 @@ def versiones(db: Session, aviso: m.Notificacion) -> tuple:
         nota = t["nota"].format(cuando=cuando)
     pares = correo_html.leer_datos(aviso.datos)
     return (correo_html.plano(aviso.asunto, aviso.cuerpo, pares=pares,
-                              boton=boton, nota=nota),
+                              boton=boton, nota=nota, linea="ci"),
             correo_html.armar(aviso.asunto, aviso.cuerpo, pares=pares,
-                              boton=boton, nota=nota))
+                              boton=boton, nota=nota, linea="ci"))
 
 
 def _enlace(db: Session, token: str) -> m.EnlaceCliente | None:

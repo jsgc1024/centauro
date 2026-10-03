@@ -41,6 +41,11 @@ SUAVE = "#f0f3f5"
 GRIS = "#78828c"
 LINEA = "AI/EP"
 PIE = "Centauro · Protección ejecutiva"
+# La segunda linea de negocio (seccion 133). Lo que sale de la Central de
+# Inteligencia --a sus clientes y a su propia gente-- lleva su placa y su
+# pie, como su app (Salvador, 3 oct: «debería decir AI/CI»).
+LINEAS = {"ep": (LINEA, PIE),
+          "ci": ("AI/CI", "Centauro · Central de Inteligencia")}
 
 # La firma de la consola (secciones 72 y 76): CONNECT y debajo el lema,
 # del mismo largo, en el dorado de la puerta de entrada. Es un nombre y
@@ -127,7 +132,7 @@ def firma() -> str:
     return _repartido(NOMBRE, 13, 700, 16) + _repartido(LEMA, 8, 600, 11)
 
 
-def marca(alto: int = 46) -> str:
+def marca(alto: int = 46, linea: str = "ep") -> str:
     """El logo, la placa de la linea y la firma: la cabecera de la consola.
 
     El logo ya trae su bajada --"Advanced Security Consulting"-- asi que
@@ -152,7 +157,7 @@ def marca(alto: int = 46) -> str:
     placa = (f'<span style="display:inline-block;font-weight:700;'
              f'font-size:11px;letter-spacing:.5px;color:#fff;'
              f'background:{CENTAURO};padding:2px 8px;border-radius:4px">'
-             f'{LINEA}</span>')
+             f'{LINEAS.get(linea, LINEAS["ep"])[0]}</span>')
     lado = ('<table role="presentation" cellpadding="0" cellspacing="0" '
             'border="0"><tr>'
             f'<td style="vertical-align:middle">{placa}</td>'
@@ -214,7 +219,7 @@ def _ficha(pares) -> str:
 
 def armar(titulo: str, cuerpo: str, folio: str | None = None,
           pares=None, boton: tuple | None = None,
-          nota: str | None = None) -> str:
+          nota: str | None = None, linea: str = "ep") -> str:
     """El correo completo.
 
     `boton` es (texto, enlace) y solo se pinta si hay enlace de verdad.
@@ -222,7 +227,9 @@ def armar(titulo: str, cuerpo: str, folio: str | None = None,
     que caduca-- que en un correo importa decir antes de que alguien lo
     guarde creyendo que sirve manana.
     """
-    partes = [f'<tr><td style="padding:22px 26px 10px">{marca()}</td></tr>']
+    pie = LINEAS.get(linea, LINEAS["ep"])[1]
+    partes = [f'<tr><td style="padding:22px 26px 10px">'
+              f'{marca(linea=linea)}</td></tr>']
     if folio:
         partes.append(f'<tr><td style="padding:0 26px 4px;font-size:12px;'
                       f'color:{GRIS}">{_esc(folio)}</td></tr>')
@@ -245,7 +252,7 @@ def armar(titulo: str, cuerpo: str, folio: str | None = None,
                       f'color:{GRIS}">{_esc(nota)}</td></tr>')
     partes.append(f'<tr><td style="padding:16px 26px 24px;margin-top:16px;'
                   f'font-size:11.5px;color:{GRIS};'
-                  f'border-top:1px solid #eef0f2">{PIE}</td></tr>')
+                  f'border-top:1px solid #eef0f2">{pie}</td></tr>')
 
     return f"""<!doctype html>
 <html><head><meta charset="utf-8">
@@ -266,7 +273,7 @@ def armar(titulo: str, cuerpo: str, folio: str | None = None,
 
 def plano(titulo: str, cuerpo: str, folio: str | None = None,
           pares=None, boton: tuple | None = None,
-          nota: str | None = None) -> str:
+          nota: str | None = None, linea: str = "ep") -> str:
     """El mismo correo en texto, para el buzon que no pinta HTML.
 
     No es un respaldo de adorno: se manda siempre, en el mismo mensaje.
@@ -290,5 +297,5 @@ def plano(titulo: str, cuerpo: str, folio: str | None = None,
         lineas += [f"{boton[0]}: {boton[1]}", ""]
     if nota:
         lineas += [nota, ""]
-    lineas.append(PIE)
+    lineas.append(LINEAS.get(linea, LINEAS["ep"])[1])
     return "\n".join(lineas)

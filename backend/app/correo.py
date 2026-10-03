@@ -332,6 +332,8 @@ def cuerpo_con_enlace(aviso: m.Notificacion) -> str:
 BOTONES = (
     ("/seguimiento/", "boton_seguir"),
     ("/encuestas/", "boton_encuesta"),
+    # El recordatorio del archivo del mes (seccion 139).
+    ("gob.mx/sesnsp/", "boton_secretariado"),
 )
 
 
@@ -370,6 +372,17 @@ def _encuesta_de(db: Session, aviso: m.Notificacion):
         return None
     token = aviso.enlace_seguimiento.rstrip("/").rsplit("/", 1)[-1]
     return db.query(m.Encuesta).filter_by(token=token).first()
+
+
+def linea_de(aviso: m.Notificacion) -> str:
+    """De que linea es el correo: lo de la Central de Inteligencia --a
+    sus clientes o el recordatorio del Secretariado a su gente-- va con
+    AI/CI; lo demas, con AI/EP."""
+    if aviso.destinatario == m.Destinatario.CLIENTE_CI:
+        return "ci"
+    if (aviso.plantilla or "").startswith(("ci_", "riesgo_")):
+        return "ci"
+    return "ep"
 
 
 def versiones(db: Session, aviso: m.Notificacion) -> tuple:
@@ -411,10 +424,13 @@ def versiones(db: Session, aviso: m.Notificacion) -> tuple:
     folio = _folio_de(db, aviso)
     boton = _boton_de(aviso.enlace_seguimiento, aviso.idioma)
     nota = _nota_de(aviso)
+    linea = linea_de(aviso)
     texto = correo_html.plano(aviso.asunto, aviso.cuerpo, folio=folio,
-                              pares=pares, boton=boton, nota=nota)
+                              pares=pares, boton=boton, nota=nota,
+                              linea=linea)
     html = correo_html.armar(aviso.asunto, aviso.cuerpo, folio=folio,
-                             pares=pares, boton=boton, nota=nota)
+                             pares=pares, boton=boton, nota=nota,
+                             linea=linea)
     return texto, html
 
 

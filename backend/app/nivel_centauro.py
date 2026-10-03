@@ -551,6 +551,10 @@ def cargas(db: Session) -> dict:
     return salida
 
 
+def hoy_en(pais: m.Pais, ahora: datetime | None = None) -> date:
+    return (ahora or _ahora()).astimezone(reloj.zona(pais.zona_horaria)).date()
+
+
 def mes_a_calcular(pais: m.Pais, ahora: datetime | None = None) -> date:
     """El mes que toca: el anterior al de hoy en el pais (el Secretariado
     publica a mediados de mes lo del mes pasado)."""

@@ -228,16 +228,18 @@ TAREAS = {
                "Que o e-mail esteja ligado e que o gerente tenha zonas."),
     },
     "riesgo-secretariado": {
-        "es": ("Nivel Centauro: del 15 al fin de mes, a las 7:20, busca el "
-               "archivo nuevo del Secretariado; si llegó, lo guarda y rehace "
-               "el borrador del mes para que el analista lo revise.",
-               "Si a fin de mes no hay borrador, que el servidor llegue a "
-               "gob.mx; si no, el analista sube el archivo en Riesgo de fondo."),
-        "pt": ("Nível Centauro: do dia 15 ao fim do mês, às 7:20, procura o "
-               "arquivo novo do Secretariado; se chegou, guarda e refaz o "
-               "rascunho do mês para o analista revisar.",
-               "Se no fim do mês não há rascunho, que o servidor alcance "
-               "gob.mx; se não, o analista sobe o arquivo em Risco de fundo."),
+        "es": ("Nivel Centauro: cada mañana a las 9:10 revisa si ya debió "
+               "subirse el archivo del mes del Secretariado (desde el 18); "
+               "si falta, ese día y cada tres días le escribe a quien "
+               "publica en el mapa de riesgo para que lo baje y lo suba.",
+               "Si nadie lo sube, la Central lo baja de gob.mx y lo sube en "
+               "Riesgo de fondo; el aviso de arriba dice cuál falta."),
+        "pt": ("Nível Centauro: toda manhã às 9:10 verifica se o arquivo do "
+               "mês do Secretariado já devia ter sido enviado (desde o dia "
+               "18); se falta, nesse dia e a cada três dias escreve a quem "
+               "publica no mapa de risco para baixá-lo e enviá-lo.",
+               "Se ninguém envia, a Central baixa de gob.mx e envia em Risco "
+               "de fundo; o aviso no alto diz qual falta."),
     },
     "riesgo-vencer": {
         "es": ("Mapa de riesgo: cierra los eventos publicados cuya vigencia "

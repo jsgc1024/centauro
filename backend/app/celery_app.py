@@ -78,12 +78,13 @@ celery.conf.update(
             "task": "riesgo.resumen_del_dia",
             "schedule": crontab(minute=7),
         },
-        # El Nivel Centauro (seccion 138): del 15 al fin de mes, cada
-        # manana, se busca el archivo nuevo del Secretariado. Si llego, se
-        # guarda y se rehace el borrador del mes, que espera al analista.
+        # El Nivel Centauro (seccion 139): el archivo del Secretariado lo
+        # sube una persona --gob.mx no le ensena la pagina a un servidor--
+        # y cada manana se revisa si ya debio estar: el 18 y cada tres
+        # dias se le recuerda por correo a quien publica en el mapa.
         "riesgo-secretariado": {
-            "task": "riesgo.bajar_secretariado",
-            "schedule": crontab(hour=7, minute=20, day_of_month="15-31"),
+            "task": "riesgo.recordar_secretariado",
+            "schedule": crontab(hour=9, minute=10),
         },
         # El camino al meet and greet. Cada cinco minutos manda los
         # toques que tocan y cobra los silencios: reponer a alguien toma
@@ -427,26 +428,16 @@ def resumen_de_riesgo():
         db.close()
 
 
-@celery.task(name="riesgo.bajar_secretariado")
-def bajar_secretariado():
-    """El archivo del mes del Secretariado y el borrador del Nivel
-    Centauro (seccion 138)."""
-    from datetime import date
-
-    from app import fuentes_riesgo, nivel_centauro
-    from app import models as m
+@celery.task(name="riesgo.recordar_secretariado")
+def recordar_secretariado():
+    """El correo a la Central cuando falta el archivo del mes del
+    Secretariado (seccion 139)."""
+    from app import fuentes_riesgo
     from app.db import SessionLocal
 
     db = SessionLocal()
     try:
-        salida = fuentes_riesgo.bajar_sesnsp(db)
-        if salida.get("resultado") == "nuevo":
-            pais = db.query(m.Pais).filter_by(codigo="MX").one()
-            periodo = date.fromisoformat(salida["periodo"])
-            previo = db.query(m.NivelMes).filter_by(
-                pais_id=pais.id, periodo=periodo).first()
-            if not previo or previo.estado != "publicado":
-                nivel_centauro.calcular(db, pais, periodo)
+        salida = fuentes_riesgo.recordar_secretariado(db)
         db.commit()
         return salida
     finally:
