@@ -229,6 +229,7 @@ TEXTOS = {
         "rol_finanzas": "Finance",
         "rol_recursos_humanos": "Human Resources",
         "rol_sistema_calidad": "Systems and quality",
+        "rol_logistica": "Logistics",
         "rol_admin": "Administration (master key)",
         # --- el cierre: los dos plazos del consultor, por correo (seccion 101)
         "cie_vb_asunto": "{de_que}: you have 24 h for the sign-off",
@@ -569,6 +570,7 @@ TEXTOS = {
         "rol_finanzas": "Finanzas",
         "rol_recursos_humanos": "Recursos Humanos",
         "rol_sistema_calidad": "Sistema y calidad",
+        "rol_logistica": "Logística",
         "rol_admin": "Administración (llave maestra)",
         "cie_vb_asunto": "{de_que}: tienes 24 h para el visto bueno",
         "cie_vb_cuerpo": ("La comprobación de viáticos del personal de {de_que} "
@@ -864,6 +866,7 @@ TEXTOS = {
         "rol_finanzas": "Finanças",
         "rol_recursos_humanos": "Recursos Humanos",
         "rol_sistema_calidad": "Sistema e qualidade",
+        "rol_logistica": "Logística",
         "rol_admin": "Administração (chave mestra)",
         "cie_vb_asunto": "{de_que}: você tem 24 h para o visto",
         "cie_vb_cuerpo": ("A comprovação de despesas da equipe de {de_que} "

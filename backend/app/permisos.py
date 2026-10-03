@@ -513,6 +513,29 @@ ACTIVIDADES: dict[str, dict] = {
                        "expediente incompleto para un servicio",
         "roles": {R.DIRECTOR_OPERACIONES},
     },
+
+    # ------------------------------ Logistica, AI/LG (seccion 150)
+    #
+    # Decision de Salvador, 3 oct: lo que en sus catalogos decide dinero
+    # lo fija la gerencia de Logistica; los tipos de unidad y los patios
+    # los lleva sistema y calidad, que ve lo demas con su candado.
+    # Direccion general lo alcanza todo por lo que hereda.
+    "lg.catalogos.ver": {
+        "descripcion": "Ver los catalogos de Logistica, su bitacora y "
+                       "probar el tabulador",
+        "roles": {R.LOGISTICA, R.SISTEMA_CALIDAD, R.ADMIN},
+    },
+    "lg.catalogos.dinero": {
+        "descripcion": "Fijar lo que en Logistica decide dinero: el "
+                       "tabulador de comisiones, el diesel, los alimentos, "
+                       "el margen minimo, los costos, el bono y la garantia",
+        "roles": {R.LOGISTICA, R.ADMIN},
+    },
+    "lg.catalogos.editar": {
+        "descripcion": "Mantener los tipos de unidad y los patios de "
+                       "Logistica",
+        "roles": {R.SISTEMA_CALIDAD, R.ADMIN},
+    },
     "panorama.ver": {
         "descripcion": "Todo lo que esta pasando ahora, y las marcas que no "
                        "cuadran",
@@ -663,6 +686,7 @@ ACTIVIDADES: dict[str, dict] = {
 # `cotizaciones.ver`.
 PANTALLAS = ("panorama", "cotizaciones", "servicios", "implantados",
              "equipo", "unidades", "bonos", "encuestas", "calidad",
+             "lg_catalogos",
              "central", "codigo", "finanzas", "facturacion", "nomina",
              "accesos", "odoo", "catalogos", "manual", "direccion",
              "riesgo")

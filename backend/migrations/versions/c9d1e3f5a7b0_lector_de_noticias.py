@@ -4,7 +4,7 @@ Sus fuentes, las notas que lee, los hallazgos que arma para el analista
 y el tope de X. Siembra la primera lista de fuentes.
 
 Revision ID: c9d1e3f5a7b0
-Revises: b5e7c9a1d3f2
+Revises: c6f1a3e5b7d9
 """
 import json
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "c9d1e3f5a7b0"
-down_revision = "b5e7c9a1d3f2"
+down_revision = "c6f1a3e5b7d9"
 branch_labels = None
 depends_on = None
 

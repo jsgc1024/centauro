@@ -698,6 +698,8 @@ AREAS = {
     "archivo": {"es": "Archivo de comprobantes",
                 "pt": "Arquivo de comprovantes"},
     "freelance": {"es": "Freelance", "pt": "Freelance"},
+    # Centauro Logistica (seccion 150).
+    "logistica": {"es": "Logística (AI/LG)", "pt": "Logística (AI/LG)"},
     "gps": {"es": "GPS y unidades", "pt": "GPS e unidades"},
     "riesgo": {"es": "Mapa de riesgo (AI/CI)",
                "pt": "Mapa de risco (AI/CI)"},
@@ -763,6 +765,8 @@ AREA_DE_ARCHIVO = {
     "routers/archivo.py": "archivo",
     # El freelance: su alta, su expediente y la urgencia (seccion 111).
     "freelance.py": "freelance", "routers/freelance.py": "freelance",
+    # Los catalogos de Logistica (seccion 150).
+    "lg_catalogos.py": "logistica", "routers/lg_catalogos.py": "logistica",
     "implantado_precios.py": "implantados",
     "gps.py": "gps",
     "main.py": "sistema",
@@ -917,7 +921,12 @@ def novedades(idioma: str) -> tuple:
         if actual is not None and linea.strip():
             texto.append(linea.strip())
     cerrar()
-    return tuple(sorted(salida, key=lambda n: -n["seccion"]))
+    # La mas nueva por fecha y, el mismo dia, por seccion. Por numero solo
+    # ya no alcanza (seccion 150): Logistica lleva sus secciones desde la
+    # 150 mientras la Central sigue en las 130, y una 139 de manana es mas
+    # nueva que la 150 de hoy.
+    return tuple(sorted(salida, key=lambda n: (n["fecha_iso"], n["seccion"]),
+                        reverse=True))
 
 
 def version(idioma: str) -> dict:

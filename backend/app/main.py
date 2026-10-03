@@ -25,6 +25,8 @@ from app.routers import (acceso, archivo, bitacora_admin, bonos, calidad,
                          profesionalismo, servicios, solicitantes,
                          tarifarios, tasksheet, viaticos)
 from app.routers import llaves as llaves_router
+# Centauro Logistica, AI/LG (seccion 150), en su propio renglon.
+from app.routers import lg_catalogos as lg_catalogos_router
 from app.routers import cotizaciones as cotizaciones_router
 from app.routers import propuestas as propuestas_router
 from app.routers import riesgo as riesgo_router
@@ -153,6 +155,8 @@ app.include_router(manual.router)
 app.include_router(direccion.router)
 # El freelance: su alta, sus costos y su expediente (seccion 111).
 app.include_router(freelance.router)
+# Centauro Logistica, AI/LG: sus catalogos con vigencia (seccion 150).
+app.include_router(lg_catalogos_router.router)
 # Cotizaciones: la del eventual que se arma en Connect, su PDF y el
 # servicio que nace al autorizarla (seccion 114).
 app.include_router(cotizaciones_router.router)

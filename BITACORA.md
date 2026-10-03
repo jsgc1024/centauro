@@ -11016,3 +11016,130 @@ busca, está en las secciones 15 y 16.*
   cotización en otra moneda sin tipo de cambio no se autoriza. El costo
   sigue sin necesitar conversión: los viáticos y la nómina son de la
   moneda del país.
+
+
+# Centauro Logística, AI/LG
+
+Las secciones de Logística van desde la 150 (decisión de Salvador, 3 de
+octubre): la Central de Inteligencia sigue en las 130 con otro
+desarrollador trabajando al mismo tiempo, y cada línea lleva su propia
+numeración para que las actualizaciones no se muerdan. Por lo mismo
+viven aquí, al final, y su novedad va al final de `manual/novedades`:
+el manual las ordena por fecha, no por el lugar en el archivo.
+
+## 150. Logística, bloque 1: los catálogos con vigencia por fecha
+
+El primer bloque de la especificación «Centauro Logística AI/LG»: lo que
+el margen, el anticipo y la nómina de cada viaje van a usar, capturado
+una vez y con su fecha. Propuesta con maquetas sobre la consola de hoy
+(«Logistica_bloque_1_catalogos_propuesta.pdf») y tres decisiones de
+Salvador: lo que decide dinero lo fija **Karla Ríos**, la gerencia de
+Logística; los tipos de unidad y los patios los lleva **sistema y
+calidad**; y arranca **solo con los cuatro tipos y Base Cuautitlán**,
+sin ningún monto. «Adelante» el 3 de octubre.
+
+- **El modelo** (`models.py`, sección LOGISTICA, tablas con prefijo
+  `lg_`). `LgTipoUnidad` (nombre, capacidad en toneladas, cómo se decía
+  en Tango, orden, activo), `LgPatio` (nombre, dirección, punto
+  opcional, geocerca de 300 m, activo) y `LgValor`: un valor de un
+  catálogo con su `clave`, su tipo de unidad si es de uno, `valor` (un
+  número) o `datos` (JSON de texto), `vigente_desde`, `motivo`, quién y
+  cuándo lo capturó, y las marcas `reemplazado_en`/`reemplazado_por_id`
+  y `quitado_en`/`quitado_por_id`. Un renglón nunca se borra: un viaje
+  cerrado podrá apuntar a él. Rol nuevo **`Rol.LOGISTICA`**, para que a
+  la gerencia no le lleguen los avisos de Protección Ejecutiva, que van
+  por rol.
+- **Las reglas de la vigencia** (`app/lg_catalogos.py`). `vigente(db,
+  clave, fecha, tipo)` es el vivo con la fecha más reciente que no la
+  pasa. Capturar desde una fecha donde ya hay uno vivo lo reemplaza: si
+  aquel ya regía pide el porqué, si estaba programado no. Con fecha
+  pasada pide el porqué. Lo que ya rige no se edita ni se quita; lo
+  programado se corrige (`editar_programado`, otro renglón y el de antes
+  marcado) o se quita (`quitar_programado`) mientras no llega su día.
+  Fechas entre 2020 y dos años adelante. «Hoy» es el de la Ciudad de
+  México: Logística solo opera en México.
+- **Los cálculos**, sobre los datos de un renglón para que los bloques
+  que siguen calculen con el que guardaron: `comision_con` (el monto de
+  los primeros km cargados más cada km adicional, a centavos),
+  `costo_operador_con` (al mes entre los días laborables),
+  `costo_unidad_con` (depreciación, seguro, mantenimiento, llantas y GPS
+  con verificación y tenencia, cada uno a centavos y el total su suma) y
+  `bono_con` (el tramo más alto al que ya llegó). Y sus versiones con
+  la fecha: `comision`, `costo_operador`, `costo_unidad`, `bono_pct` y
+  `numero` (diésel, holgura, tolerancia, alimentos, margen), que
+  levantan `FaltaValor` cuando no hay valor que rija. La revisión de lo
+  capturado no acepta comas (en medio mundo son el punto decimal) y tiene
+  topes de dedazo: un diésel arriba de $100 por litro no entra.
+- **La API** (`routers/lg_catalogos.py`, `/lg/catalogos`): la pantalla
+  entera de una vez (tipos, patios, cada valor con su estado —vigente,
+  programado, anterior, reemplazado, quitado—, lo que rige hoy, lo que
+  falta y lo que puede quien mira), `POST/PUT/DELETE /valores`,
+  `GET /comision` para probar el tabulador, `GET /bitacora` y el alta,
+  cambio, quitar y reactivar de tipos y patios.
+- **Quién puede qué.** `lg.catalogos.ver` (logística, sistema y
+  calidad, administración), `lg.catalogos.dinero` (logística,
+  administración) y `lg.catalogos.editar` (sistema y calidad,
+  administración); dirección general alcanza todo por lo que hereda.
+  Puesto nuevo **«Gerente de Logística»** (área Logística, orden 15):
+  ver y fijar el dinero, con la pantalla de catálogos de Logística. El
+  de sistema y calidad gana ver y editar, y la pantalla. La migración
+  crea el puesto en producción y le agrega lo suyo al de sistema y
+  calidad; a Karla se le da acceso con ese puesto en Accesos.
+- **La pantalla** (`web/lg_catalogos.js`, `#/lg/catalogos`): la lista de
+  la izquierda en dos grupos —deciden dinero; los lleva sistema y
+  calidad— con lo que rige y lo que falta de cada uno y de quién; una
+  tarjeta por catálogo con su «?», sus valores con su estado, la forma
+  que avisa antes de guardar si la fecha ya pasó, si reemplaza lo que
+  rige o si queda programado, y su historial; «Probar el tabulador»; el
+  desglose del costo por tipo; la búsqueda del patio en Google, que no
+  le pisa el nombre; y la pestaña Bitácora con filtro por catálogo. Los
+  números calculados los da el servidor. En el menú va en su propio
+  grupo, «Operaciones LG», entre EP y CI; mientras sea una sola
+  pantalla la barra la enseña suelta como «Catálogos LG», como a todo
+  grupo de uno. La gerencia entra directo a ella.
+- **El encabezado.** Salvador lo pidió el mismo día: la clave de la
+  consola dice **AI/INT** en vez de AI/EP —en Connect ya viven también la
+  Central y Logística— y, dentro de las pantallas de Logística,
+  **AI/LG**. El task sheet, la hoja del implantado y los correos siguen
+  con AI/EP: son documentos de Protección Ejecutiva.
+- **La bitácora.** Cada cambio deja su renglón en la de administración
+  con objeto `lg_<catálogo>`; `lg_catalogos.que_cambio` lo cuenta en el
+  idioma de quien lee, leyendo el valor de su renglón (que nunca se
+  borra): «Programó Precio del diésel: $24.51 por litro, desde el 5 oct
+  2026», «Reemplazó …: $42.34 → $24.34 …: «motivo»». Entra al grupo
+  Catálogos de la bitácora general.
+- **El manual.** Capítulo «Logística: los catálogos con su fecha» y su
+  renglón en «Cada pantalla», en español y portugués; los mensajes de
+  Logística tienen su área. Y las novedades se ordenan ahora por fecha
+  y, el mismo día, por sección: por número solo, la 150 de hoy taparía
+  a la 139 de mañana. `version()` es la más nueva por fecha.
+
+Pruebas en `tests/test_lg_catalogos.py` (54): la comisión de los nueve
+viajes del boceto, el mapa operativo de 1,450 km, el viaje corto, el
+costo del operador ($11,700 ÷ 26 = $450), el desglose del 1.5 ton
+($900), el bono por antigüedad, cómo arranca, la semilla contra la
+migración, cada regla de la vigencia, lo que no se guarda, quién puede
+qué, el puesto, la bitácora en tres idiomas y el menú con el sello. La
+del puesto de sistema y calidad ahora espera la pantalla de Logística y
+la del manual la versión por fecha. Migración: `c6f1a3e5b7d9` (cuelga
+de `b5e7c9a1d3f2`, la última de la Central): el valor `LOGISTICA` del
+enum `rol` se agrega fuera de la transacción porque el puesto entra con
+él en la misma migración.
+
+**Para no morderse con la Central.** Lo de Logística vive en archivos
+propios (`lg_catalogos.py`, su router, su pantalla, su prueba, su
+capítulo); en los compartidos se tocó lo mínimo y lejos de donde agrega
+la Central: el rol, la sección LOGISTICA de `models.py` antes de
+COTIZACION, sus actividades antes de `panorama.ver`, su pantalla en
+`PANTALLAS` después de `calidad`, el menú antes de `/central`, la ruta
+después de la de catálogos, sus textos al final de cada bloque de
+`idioma.js`, y esta sección y su novedad al final de sus archivos. Si
+la Central sube otra migración que cuelgue también de `b5e7c9a1d3f2`,
+al juntar habrá dos cabezas: la que llegue después se cuelga de la
+otra (`revisar.py` y la prueba de migraciones lo dicen).
+
+Lo que falta para usarlos: los montos. El tabulador, el diésel, la
+holgura, la tolerancia, los alimentos y el margen los captura Karla;
+el costo del operador, los rangos del bono y la garantía los da
+Recursos Humanos; el rendimiento y los costos por tipo, Flota; y la
+ubicación de Base Cuautitlán, sistema y calidad.

@@ -42,6 +42,11 @@ El mes en cifras: lo que dijo el cliente, la calle, el cierre, la gente y los da
 ### Dirección de operaciones {#direccion}
 Lo que espera la firma del director de operaciones —las incidencias por autorizar, el freelance que alguien pide por urgencia, los precios especiales de las propuestas, los cobros al cancelar y los plazos vencidos del cierre—, las tres que viven en otras pantallas —las comisiones del mes por firmar, que abren Nóminas → Comisiones en ese país y ese mes; las malas calificaciones por revisar, que abren Clientes; y los cierres por firmar que siguen en plazo, con cuánto les queda, que abren la tarjeta del cierre— y las cuentas de hoy por país: servicios hoy y mañana, en curso, con alerta, cambios por contingencia e incidencias del mes. Cada número se abre para ver cuáles servicios son. La ven el director de operaciones y la dirección general.
 
+## Operaciones LG
+
+### Catálogos LG {#lg_catalogos}
+Centauro Logística (AI/LG): lo que el margen, el anticipo y la nómina de cada viaje van a usar, cada valor con la fecha desde la que rige. Lo que decide dinero —el tabulador de comisiones, el diésel con su holgura y su tolerancia, los alimentos, el margen mínimo, el costo del operador, el rendimiento y el costo por tipo de unidad, el bono y la garantía— lo fija la gerencia de Logística; los tipos de unidad y los patios los lleva sistema y calidad. La lista de la izquierda dice qué falta y quién lo da, y la pestaña Bitácora cuenta cada cambio. Dentro de estas pantallas el encabezado dice AI/LG. Ver [Logística](#/manual/leer/logistica).
+
 ## Operaciones CI
 
 ### Monitoreo {#central}

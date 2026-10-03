@@ -83,6 +83,11 @@ export const MANUAL = ["admin", "director_general", "sistema_calidad"];
    autorizaciones y el tablero de hoy. La ve el y direccion general;
    nadie mas, porque lo que hay adentro son firmas. */
 export const DIRECCION = ["director_operaciones", "director_general", "admin"];
+/* Los catalogos de Logistica (seccion 150): la gerencia de Logistica fija
+   lo que decide dinero y sistema y calidad lleva los tipos de unidad y
+   los patios; direccion general, por lo que hereda. */
+export const LG_CATALOGOS = ["logistica", "director_general", "sistema_calidad",
+                             "admin"];
 
 /* El menu de arriba, en una sola lista.
 
@@ -125,6 +130,14 @@ export const MENU = [
   { ruta: "/implantados", clave: "implantados", necesita: "implantado.ver", texto: "nav_implantados", grupo: "nav_operaciones_ep",
     tambien: ["/implantado/"],
     cuenta: "rec_implantados", quienes: CONSULTA },
+  /* Centauro Logistica, AI/LG (seccion 150): su propio grupo, entre
+     Operaciones EP y Operaciones CI, como en los bocetos. Los bloques que
+     siguen le agregan sus pantallas --flota, viajes, nomina de
+     operadores--; mientras sea una sola, la barra la ensena suelta, como
+     a cualquier grupo de uno. */
+  { ruta: "/lg/catalogos", clave: "lg_catalogos", necesita: "lg.catalogos.ver",
+    texto: "nav_lg_catalogos", grupo: "nav_operaciones_lg",
+    cuenta: "rec_lg_catalogos", quienes: LG_CATALOGOS, nueva: "2026-10-31" },
   /* Central de Inteligencia: el tablero de lo que esta corriendo y el
      codigo que se le dicta al personal de campo. Los dos son la misma
      mesa a las 5:40 de la manana. */
@@ -230,7 +243,7 @@ const PRIMERO = ["central", "servicios", "finanzas", "facturacion", "nomina",
                  "bonos", "equipo", "accesos", "panorama"];
 const POR_ROL = { central: "central", consultor: "servicios",
                   finanzas: "finanzas", recursos_humanos: "bonos",
-                  sistema_calidad: "calidad" };
+                  sistema_calidad: "calidad", logistica: "lg_catalogos" };
 
 export function destinoDe(usuario) {
   const suyas = new Set(menuDe(usuario).map(x => x.clave));

@@ -139,7 +139,8 @@ def test_entra_con_su_rol_su_menu_y_lo_suyo(cliente, sesion, aridiai):
     # en el orden de `permisos.PANTALLAS`: asi se guardan al crear el puesto.
     assert yo["pantallas"] == ["panorama", "cotizaciones", "servicios",
                                "implantados", "equipo", "unidades", "bonos",
-                               "encuestas", "calidad", "accesos", "odoo",
+                               "encuestas", "calidad", "lg_catalogos",
+                               "accesos", "odoo",
                                "catalogos", "manual", "riesgo"]
     assert "cotizaciones.ver" in yo["actividades"]
     assert "cotizaciones.armar" not in yo["actividades"]

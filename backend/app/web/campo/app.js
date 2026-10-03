@@ -2671,6 +2671,7 @@ const nombreRol = () => ({
   director_general: t("cmp_rol_dir_general"), admin: t("cmp_rol_admin"),
   recursos_humanos: t("cmp_rol_rrhh"),
   sistema_calidad: t("rol_sistema_calidad"),
+  logistica: t("rol_logistica"),
 });
 
 function otraCuenta() {
