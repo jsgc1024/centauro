@@ -18,6 +18,7 @@ el nombre; la que no se reconoce se dice, no se adivina.
 """
 import csv
 import io
+from html import unescape
 import json
 import re
 import unicodedata
@@ -36,7 +37,8 @@ PAGINA_SESNSP = ("https://www.gob.mx/sesnsp/acciones-y-programas/"
                  "datos-abiertos-de-incidencia-delictiva")
 # El texto del enlace que se busca en esa pagina (metodologia 2026).
 TEXTO_DEL_ENLACE = re.compile(
-    r"Fuero com[uú]n\s*-\s*V[ií]ctimas\)\.?\s*Incidencia delictiva municipal",
+    r"Fuero com[uú]n\s*[-–—]\s*V[ií]ctimas\)\.?\s*"
+    r"Incidencia delictiva municipal",
     re.I)
 MESES = ("Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio",
          "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre")
@@ -206,12 +208,15 @@ def guardar_sesnsp(db: Session, datos: dict, origen: str,
 def enlace_en_la_pagina(html: str) -> str | None:
     """El primer enlace de la pagina cuyo texto es el del archivo de
     victimas municipal: la pagina pone primero la metodologia vigente."""
-    for href, texto in re.findall(r'<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>',
-                                  html, re.S | re.I):
-        limpio = re.sub(r"<[^>]+>", " ", texto)
+    # La pagina escribe los acentos como entidades («com&uacute;n») y
+    # los espacios como &nbsp;: se leen como los ve el navegador.
+    for _, href, texto in re.findall(
+            r"""<a[^>]+href=(["'])(.+?)\1[^>]*>(.*?)</a>""", html,
+            re.S | re.I):
+        limpio = unescape(re.sub(r"<[^>]+>", " ", texto))
         limpio = re.sub(r"\s+", " ", limpio)
         if TEXTO_DEL_ENLACE.search(limpio):
-            return href.replace("&amp;", "&")
+            return unescape(href)
     return None
 
 

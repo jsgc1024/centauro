@@ -305,6 +305,15 @@ def test_buscar_el_enlace_en_la_pagina():
     enlace = fuentes.enlace_en_la_pagina(html)
     assert enlace == "https://x/b?e=2&z=3"
     assert fuentes.con_descarga(enlace) == "https://x/b?e=2&z=3&download=1"
+    # Como la escribe de verdad gob.mx (3 oct): acentos y espacios como
+    # entidades, y antes el tablero dinamico, que no es el archivo.
+    real = ("<a href='https://x/tablero'>Enero - agosto&nbsp;2026 (Fuero "
+            "com&uacute;n - V&iacute;ctimas).&nbsp;Tablero din&aacute;mico de "
+            "Registro Nacional de Incidencia Delictiva municipal</a>"
+            '<a href="https://x/zip?e=4">Enero - agosto&nbsp;2026 (Fuero '
+            "com&uacute;n - V&iacute;ctimas). Incidencia delictiva "
+            "municipal</a>")
+    assert fuentes.enlace_en_la_pagina(real) == "https://x/zip?e=4"
 
 
 def test_bajar_sin_conexion_no_revienta():

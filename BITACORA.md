@@ -10658,6 +10658,11 @@ dia de los avisos de riesgo de campo (`AvisoRiesgoCampo.jornada_id` a
 nulo, seccion 137), que la prueba de la limpieza pedia; la del puesto de
 sistema de calidad ya cuenta la pantalla de riesgo (seccion 135).
 
+El primer dia en el servidor (3 oct) «Buscar ahora» dijo que la pagina
+no traia el enlace: gob.mx escribe los acentos como entidades
+(«com&uacute;n», «V&iacute;ctimas») y la busqueda comparaba contra el
+texto crudo. Ahora se lee como lo ve el navegador (`html.unescape`).
+
 Pruebas: `tests/test_nivel_centauro.py` (14).
 
 ## 14. Lo que falta
