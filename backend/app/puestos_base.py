@@ -41,7 +41,9 @@ NO_JR = {"viaticos.asignar", "viaticos.cerrar", "implantado.viaticos",
          "encuestas.clasificar"}
 
 # El monitorista atiende la alerta; corregir un hito es del supervisor.
-NO_MONITORISTA = {"operacion.corregir"}
+# Validar la marca de un operador de Logistica fuera del patio es
+# corregir una marca (seccion 151): tampoco.
+NO_MONITORISTA = {"operacion.corregir", "lg.jornada.validar"}
 
 # El jefe de finanzas marca pagado lo que arma nomina, y el tabulador lo
 # fija direccion de operaciones.
@@ -89,9 +91,34 @@ PUESTOS: list[dict] = [
                        "comisiones, el diésel, los alimentos, el margen "
                        "mínimo y los costos— y autoriza lo que pide su "
                        "firma.",
-        "pantallas": ["lg_catalogos"],
-        "actividades": {"lg.catalogos.ver", "lg.catalogos.dinero"},
-        "puestos_odoo": "Gerente de Logística, Gerente de Logistica",
+        # Seccion 151: ve la flota y la jornada, da el codigo de LG Connect,
+        # captura la licencia y marca el «en viaje» mientras siga Tango.
+        "pantallas": ["lg_catalogos", "lg_flota", "lg_jornada"],
+        "actividades": {"lg.catalogos.ver", "lg.catalogos.dinero", "lg.flota.ver",
+                        "lg.jornada.ver", "lg.operadores.editar",
+                        "lg.en_viaje.marcar"},
+        # Seccion 151: y como se llama en Odoo, «Jefatura Logística».
+        "puestos_odoo": ("Gerente de Logística, Gerente de Logistica, "
+                         "Jefatura Logística, Jefatura Logistica"),
+    },
+    # Seccion 151. Decision de Salvador, 3 oct: quien lleva la flota edita
+    # unidades, documentos y servicios. Entra con el rol de Logistica, para
+    # que no le lleguen los avisos de Proteccion Ejecutiva. En produccion lo
+    # crea la migracion e2a4c6b8d0f1, con lo mismo que dice aqui.
+    {
+        "nombre": "Responsable de flota LG",
+        "area": "Logística",
+        "rol": R.LOGISTICA,
+        "orden": 16,
+        "descripcion": "Lleva la flota de Centauro Logística: cada unidad con "
+                       "su expediente, su odómetro, su plan preventivo, sus "
+                       "servicios y sus llantas, y el acceso de los operadores "
+                       "a LG Connect.",
+        "pantallas": ["lg_catalogos", "lg_flota", "lg_jornada"],
+        "actividades": {"lg.catalogos.ver", "lg.flota.ver", "lg.flota.editar",
+                        "lg.jornada.ver", "lg.operadores.editar",
+                        "lg.en_viaje.marcar"},
+        "puestos_odoo": "Responsable de Flota, Responsable de Flotillas",
     },
     # Seccion 145. Decision de Salvador, 3 oct: el area de Respuesta a
     # emergencias, de guardia 24/7, atiende los panicos en su panel. Rol
@@ -145,7 +172,8 @@ PUESTOS: list[dict] = [
         "descripcion": "Monitoreo, código y correcciones con su motivo. "
                        "Confirma el nivel 4 del mapa de riesgo.",
         "pantallas": ["panorama", "servicios", "implantados", "equipo",
-                      "unidades", "bonos", "central", "codigo", "riesgo"],
+                      "unidades", "bonos", "central", "codigo", "riesgo",
+                      "lg_jornada"],
         # El jefe de turno de la central (seccion 133): confirma lo que
         # sale como nivel 4 en el mapa de riesgo.
         "actividades": _de(R.CENTRAL) | {"riesgo.confirmar"},
@@ -160,7 +188,7 @@ PUESTOS: list[dict] = [
         "orden": 31,
         "descripcion": "Monitoreo y código; no corrige hitos.",
         "pantallas": ["panorama", "servicios", "implantados", "unidades",
-                      "central", "codigo", "riesgo"],
+                      "central", "codigo", "riesgo", "lg_jornada"],
         "actividades": _de(R.CENTRAL) - NO_MONITORISTA,
         "puestos_odoo": "Monitorista, Asistente CI, Analista de Monitoreo",
     },
@@ -315,7 +343,7 @@ PUESTOS: list[dict] = [
         # Cotizaciones (seccion 114): las consulta, como la operacion.
         # Logistica (seccion 150): lleva sus tipos de unidad y sus patios.
         "pantallas": ["panorama", "cotizaciones", "servicios", "implantados",
-                      "lg_catalogos",
+                      "lg_catalogos", "lg_flota", "lg_jornada",
                       "equipo", "unidades", "bonos", "encuestas", "accesos",
                       "odoo", "catalogos", "calidad", "manual", "riesgo"],
         "actividades": _de(R.SISTEMA_CALIDAD),

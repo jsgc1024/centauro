@@ -266,6 +266,25 @@ celery.conf.update(
     },
 )
 
+# Logistica, bloque 2 (seccion 151): la lectura de sus unidades y sus
+# operadores de Odoo cada hora (despues de la primera a mano), la mudanza
+# de sus archivos y la de cada manana --los avisos de vencimiento y el
+# costo por dia del mes--. Aparte, para no mezclarse con lo de arriba.
+celery.conf.beat_schedule.update({
+    "lg-leer-odoo": {
+        "task": "lg.sincronizar_odoo",
+        "schedule": crontab(minute=51),
+    },
+    "lg-mudar-archivos": {
+        "task": "lg.mudar_archivos",
+        "schedule": crontab(minute=29),
+    },
+    "lg-diaria": {
+        "task": "lg.diaria",
+        "schedule": crontab(hour=7, minute=40),
+    },
+})
+
 # Las diarias que no pueden perderse: a que hora de Mexico tocan y, si
 # es de un solo dia del mes, cual. El calendario de arriba las dispara;
 # `reponer_diarias` repone la que no termino desde esa hora. Las siete
@@ -282,6 +301,9 @@ DIARIAS = {
     "capacitaciones.revisar_vencimientos": (7, 30, None),
     "freelance.revisar_vencimientos": (7, 35, None),
     "encuestas.pasar_lista": (8, 0, None),
+    # Seccion 151: el aviso avisado no se avisa otra vez y el costo del mes
+    # que ya esta no se repite.
+    "lg.diaria": (7, 40, None),
 }
 # Cuanto se le espera a la programada antes de reponerla, y cuanto dura
 # como mucho una que esta corriendo.
@@ -837,5 +859,47 @@ def archivar_comprobantes():
     db = SessionLocal()
     try:
         return archivo.archivar(db)
+    finally:
+        db.close()
+
+
+# ------------------------------------------- Logistica (seccion 151)
+
+@celery.task(name="lg.sincronizar_odoo")
+def lg_sincronizar_odoo():
+    """Las unidades y los operadores de Centauro Logistic, de Odoo."""
+    from app.db import SessionLocal
+    from app import odoo_lg
+
+    db = SessionLocal()
+    try:
+        return odoo_lg.sincronizar_si_toca(db)
+    finally:
+        db.close()
+
+
+@celery.task(name="lg.mudar_archivos")
+def lg_mudar_archivos():
+    """Los archivos de la flota que se quedaron en la base, al deposito."""
+    from app.db import SessionLocal
+    from app import lg_flota
+
+    db = SessionLocal()
+    try:
+        return lg_flota.mudar_pendientes(db)
+    finally:
+        db.close()
+
+
+@celery.task(name="lg.diaria")
+def lg_diaria():
+    """Los avisos de vencimiento de la flota y las licencias, y el costo
+    por dia del mes de cada unidad."""
+    from app.db import SessionLocal
+    from app import lg_flota
+
+    db = SessionLocal()
+    try:
+        return lg_flota.diaria(db)
     finally:
         db.close()

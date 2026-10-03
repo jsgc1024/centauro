@@ -144,6 +144,9 @@ services:
       # La app del cliente de la Central de Inteligencia (seccion 136).
       # Vacia, vive en DOMINIO/ci/.
       DOMINIO_CI: ${DOMINIO_CI:-}
+      # LG Connect, la app de los operadores de Logistica (seccion 151).
+      # Vacia, vive en DOMINIO/lgapp/.
+      DOMINIO_LG: ${DOMINIO_LG:-}
     ports:
       - "80:80"
       - "443:443"

@@ -88,6 +88,13 @@ export const DIRECCION = ["director_operaciones", "director_general", "admin"];
    los patios; direccion general, por lo que hereda. */
 export const LG_CATALOGOS = ["logistica", "director_general", "sistema_calidad",
                              "admin"];
+/* La flota de Logistica (seccion 151): la lleva quien tiene el puesto de
+   flota; la gerencia de Logistica y sistema y calidad la ven. */
+export const LG_FLOTA = ["logistica", "director_general", "sistema_calidad", "admin"];
+/* La jornada de los operadores (seccion 151): ademas, la Central, que
+   valida las marcas hechas fuera del patio. */
+export const LG_JORNADA = ["logistica", "central", "director_general", "sistema_calidad",
+                           "admin"];
 /* Respuesta a emergencias (seccion 145): el panel de los panicos. Lo abre
    el area de guardia y, como su respaldo, direccion de operaciones;
    direccion general, por lo que hereda. */
@@ -137,12 +144,17 @@ export const MENU = [
     cuenta: "rec_implantados", quienes: CONSULTA },
   /* Centauro Logistica, AI/LG (seccion 150): su propio grupo, entre
      Operaciones EP y Operaciones CI, como en los bocetos. Los bloques que
-     siguen le agregan sus pantallas --flota, viajes, nomina de
-     operadores--; mientras sea una sola, la barra la ensena suelta, como
-     a cualquier grupo de uno. */
+     siguen le agregan sus pantallas: la flota y la jornada de los
+     operadores (seccion 151), despues los viajes y la nomina. */
   { ruta: "/lg/catalogos", clave: "lg_catalogos", necesita: "lg.catalogos.ver",
     texto: "nav_lg_catalogos", grupo: "nav_operaciones_lg",
     cuenta: "rec_lg_catalogos", quienes: LG_CATALOGOS, nueva: "2026-10-31" },
+  { ruta: "/lg/flota", clave: "lg_flota", necesita: "lg.flota.ver",
+    texto: "nav_lg_flota", grupo: "nav_operaciones_lg",
+    cuenta: "rec_lg_flota", quienes: LG_FLOTA, nueva: "2026-11-15" },
+  { ruta: "/lg/jornada", clave: "lg_jornada", necesita: "lg.jornada.ver",
+    texto: "nav_lg_jornada", grupo: "nav_operaciones_lg",
+    cuenta: "rec_lg_jornada", quienes: LG_JORNADA, nueva: "2026-11-15" },
   /* Central de Inteligencia: el tablero de lo que esta corriendo y el
      codigo que se le dicta al personal de campo. Los dos son la misma
      mesa a las 5:40 de la manana. */
@@ -255,7 +267,7 @@ const PRIMERO = ["central", "servicios", "finanzas", "facturacion", "nomina",
                  "bonos", "equipo", "accesos", "panorama"];
 const POR_ROL = { central: "central", consultor: "servicios",
                   finanzas: "finanzas", recursos_humanos: "bonos",
-                  sistema_calidad: "calidad", logistica: "lg_catalogos",
+                  sistema_calidad: "calidad", logistica: "lg_flota",
                   respuesta_emergencias: "emergencias" };
 
 export function destinoDe(usuario) {

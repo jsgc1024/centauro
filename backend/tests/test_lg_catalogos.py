@@ -34,6 +34,9 @@ CALIDAD = "central2@centauro.lat"     # y la que hace de sistema y calidad
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MIGRACION = os.path.join(RAIZ, "migrations", "versions",
                          "c6f1a3e5b7d9_logistica_catalogos.py")
+# La del bloque 2 (seccion 151) le agrega al puesto la flota y la jornada.
+MIGRACION_151 = os.path.join(RAIZ, "migrations", "versions",
+                             "e2a4c6b8d0f1_logistica_flota_y_jornada.py")
 
 # El tabulador propuesto en la especificacion: primeros 100 km y cada km
 # cargado adicional, por tipo.
@@ -200,18 +203,28 @@ def test_arranca_solo_con_los_tipos_y_base_cuautitlan(cliente, karla):
     assert d["puede"] == {"dinero": True, "editar": False, "buscar": False}
 
 
+def _cargar(ruta, nombre):
+    spec = importlib.util.spec_from_file_location(nombre, ruta)
+    modulo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modulo)
+    return modulo
+
+
 def test_la_semilla_y_la_migracion_dicen_lo_mismo():
-    spec = importlib.util.spec_from_file_location("migracion_lg", MIGRACION)
-    migracion = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(migracion)
+    migracion = _cargar(MIGRACION, "migracion_lg")
+    bloque2 = _cargar(MIGRACION_151, "migracion_lg_151")
     assert [tuple(t) for t in migracion.TIPOS] == [tuple(t) for t in lg.TIPOS_DE_ARRANQUE]
     assert (migracion.PATIO, migracion.GEOCERCA) == lg.PATIO_DE_ARRANQUE
     puesto = next(p for p in puestos_base.PUESTOS if p["nombre"] == migracion.NOMBRE)
     assert puesto["rol"] == m.Rol.LOGISTICA
     assert puesto["descripcion"] == migracion.DESCRIPCION
-    assert puesto["pantallas"] == migracion.PANTALLAS.split(",")
-    assert puesto["actividades"] == set(migracion.ACTIVIDADES)
-    assert puesto["puestos_odoo"] == migracion.PUESTOS_ODOO
+    # Lo de la 150 y lo que le agrego la 151, en ese orden.
+    assert puesto["pantallas"] == migracion.PANTALLAS.split(",") + ["lg_flota", "lg_jornada"]
+    assert bloque2.GERENCIA == migracion.NOMBRE
+    assert puesto["actividades"] == set(migracion.ACTIVIDADES) | set(bloque2.A_GERENCIA)
+    # La 151 le agrega como se llama en Odoo, si nadie lo habia cambiado.
+    assert bloque2.PUESTOS_ODOO_GERENCIA_150 == migracion.PUESTOS_ODOO
+    assert puesto["puestos_odoo"] == bloque2.PUESTOS_ODOO_GERENCIA
     calidad = next(p for p in puestos_base.PUESTOS
                    if p["rol"] == m.Rol.SISTEMA_CALIDAD)
     assert set(migracion.A_SISTEMA) <= calidad["actividades"]
@@ -449,7 +462,11 @@ def test_un_tipo_nuevo_le_falta_al_tabulador(cliente, karla, calidad, db):
 
 def test_el_puesto_de_la_gerencia_de_logistica(cliente, sesion):
     p = next(x for x in puestos_base.PUESTOS if x["nombre"] == "Gerente de Logística")
-    assert p["actividades"] == {"lg.catalogos.ver", "lg.catalogos.dinero"}
+    # La 151 le agrego ver la flota y la jornada, dar el codigo de LG
+    # Connect con la licencia, y marcar a mano el «en viaje».
+    assert p["actividades"] == {"lg.catalogos.ver", "lg.catalogos.dinero", "lg.flota.ver",
+                                "lg.jornada.ver", "lg.operadores.editar",
+                                "lg.en_viaje.marcar"}
     for actividad in p["actividades"]:
         assert actividad in permisos.ACTIVIDADES
     h = sesion("dirgeneral")
@@ -464,9 +481,11 @@ def test_el_puesto_de_la_gerencia_de_logistica(cliente, sesion):
     yo = cliente.get("/auth/yo", headers=_entrar(cliente, KARLA)).json()
     assert yo["rol"] == "logistica"
     assert yo["puesto"] == "Gerente de Logística"
-    assert yo["pantallas"] == ["lg_catalogos"]
+    assert yo["pantallas"] == ["lg_catalogos", "lg_flota", "lg_jornada"]
     assert {"lg.catalogos.ver", "lg.catalogos.dinero"} <= set(yo["actividades"])
     assert "lg.catalogos.editar" not in yo["actividades"]
+    # La flota la ve; la edita quien la lleva (seccion 151).
+    assert "lg.flota.editar" not in yo["actividades"]
     # Ni un aviso de Proteccion Ejecutiva: nada de la operacion.
     assert not {"servicios.ver", "panorama.ver", "operacion.ver"} & set(yo["actividades"])
 
@@ -531,7 +550,8 @@ def test_el_menu_la_ruta_y_el_sello():
     assert 'clave: "lg_catalogos", necesita: "lg.catalogos.ver"' in menu
     # Su grupo va entre Operaciones EP y Operaciones CI.
     assert menu.index('grupo: "nav_operaciones_lg"') < menu.index('clave: "central"')
-    assert 'logistica: "lg_catalogos"' in menu
+    # Desde la seccion 151 la gerencia entra a su flota.
+    assert 'logistica: "lg_flota"' in menu
     app_js = _web("app.js")
     assert "pantallaLgCatalogos" in app_js and "lg\\/catalogos" in app_js
     # El encabezado: AI/INT en Connect y AI/LG dentro de Logistica.

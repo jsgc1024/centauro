@@ -12,13 +12,13 @@ deja usar un valor en la misma transaccion que lo agrego. Correrla dos
 veces no duplica nada.
 
 Revision ID: a5c7e9b1d3f6
-Revises: f4b6d8f0a2c3
+Revises: e2a4c6b8d0f1
 """
 import sqlalchemy as sa
 from alembic import op
 
 revision = "a5c7e9b1d3f6"
-down_revision = "f4b6d8f0a2c3"
+down_revision = "e2a4c6b8d0f1"
 branch_labels = None
 depends_on = None
 

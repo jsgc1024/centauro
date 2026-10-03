@@ -68,6 +68,11 @@ def _redis():
 # cuarenta "olvide" de la app la dejaban sin entrar.
 CARRILES = ("recuperar", "codigo", "ci", "ci-recuperar")
 
+# LG Connect, la app de los operadores de Logistica (seccion 151), en su
+# propio carril: los operadores de un patio comparten la salida a
+# internet, y sus fallas no deben frenar a la consola desde esa red.
+CARRILES += ("lg",)
+
 
 def _carril(correo: str) -> str:
     for nombre in CARRILES:

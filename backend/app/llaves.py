@@ -102,6 +102,10 @@ def origenes() -> list[str]:
         campo = (settings.dominio_campo or "").strip().lower()
         if campo:
             salida.append(f"https://{campo}")
+        # LG Connect (seccion 151), la app de los operadores de Logistica.
+        lg = (getattr(settings, "dominio_lg", "") or "").strip().lower()
+        if lg:
+            salida.append(f"https://{lg}")
     if base == "localhost" or es_desarrollo(settings):
         salida += ["http://localhost:8000", "http://127.0.0.1:8000",
                    "http://localhost"]

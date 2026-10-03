@@ -19,3 +19,5 @@ webauthn==3.0.1
 # El PDF de la cotizacion que se le manda al cliente (seccion 114): HTML a
 # PDF en el servidor, con su letra adentro (app/fuentes).
 weasyprint==66.0
+# La carga inicial de la flota de Logistica desde su Excel (seccion 151).
+openpyxl==3.1.5

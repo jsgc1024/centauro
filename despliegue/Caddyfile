@@ -14,6 +14,10 @@
 # DOMINIO_CI (seccion 136) es la de la app del cliente de la Central de
 # Inteligencia (ci.mycentauro.lat). Sin ella, la app vive en
 # DOMINIO/ci/.
+#
+# DOMINIO_LG (seccion 151) es la de LG Connect, la app de los operadores
+# de Logistica (applg.mycentauro.lat). Sin ella, la app vive en
+# DOMINIO/lgapp/.
 
 {
 	# A donde escribe Let's Encrypt si un certificado esta por vencer y
@@ -28,7 +32,7 @@ www.{$DOMINIO} {
 	redir https://{$DOMINIO}{uri} 302
 }
 
-{$DOMINIO} {$DOMINIO_CAMPO} {$DOMINIO_CI} {
+{$DOMINIO} {$DOMINIO_CAMPO} {$DOMINIO_CI} {$DOMINIO_LG} {
 	encode zstd gzip
 
 	# Lo mas que pesa una peticion. Las fotos ya se recortan a 3 o 4 MB
@@ -74,6 +78,30 @@ www.{$DOMINIO} {
 		expression `"{$DOMINIO_CI}" != "" && {host} != "{$DOMINIO_CI}"`
 	}
 	redir @fuera_ci https://{$DOMINIO_CI}{uri} 302
+
+	# En la de LG Connect (seccion 151), la raiz abre su app. Como la del
+	# cliente de la Central, va antes que la de campo.
+	@lg_raiz {
+		path /
+		expression `"{$DOMINIO_LG}" != "" && {host} == "{$DOMINIO_LG}"`
+	}
+	redir @lg_raiz /lgapp/ 302
+
+	# La pagina de la app de campo, desde la de los operadores, a la suya.
+	# Solo la pagina: LG Connect carga de /app/ su hoja de estilo.
+	@lg_campo {
+		path /app /app/ /app/index.html
+		expression `"{$DOMINIO_LG}" != "" && "{$DOMINIO_CAMPO}" != "" && {host} == "{$DOMINIO_LG}"`
+	}
+	redir @lg_campo https://{$DOMINIO_CAMPO}{uri} 302
+
+	# Y LG Connect, desde cualquier otra puerta, a la suya: su sesion y su
+	# app instalada son de esa direccion.
+	@fuera_lg {
+		path /lgapp /lgapp/ /lgapp/index.html
+		expression `"{$DOMINIO_LG}" != "" && {host} != "{$DOMINIO_LG}"`
+	}
+	redir @fuera_lg https://{$DOMINIO_LG}{uri} 302
 
 	# En la de la app, la raiz abre la app.
 	@campo_raiz {
@@ -127,7 +155,7 @@ www.{$DOMINIO} {
 	# ampliarle el alcance; esta linea solo evita que un cache
 	# intermedio se quede con una version vieja del trabajador, que es
 	# como una app se queda congelada sin que nadie entienda por que.
-	@sw path /app/sw.js /ci/sw.js
+	@sw path /app/sw.js /ci/sw.js /lgapp/sw.js
 	header @sw Cache-Control "no-cache"
 
 	# El disparador de Pegasus lleva su secreto en la ruta (seccion 101):

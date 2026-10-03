@@ -733,6 +733,14 @@ AYUDA_POR_PANTALLA = {
     # que dice para que sirve y que pasa si falta. La lista de la izquierda
     # y la bitacora no llevan: su renglon ya dice que falta y quien.
     "lg_catalogos.js": 8,
+    # La flota de Logistica (seccion 151): uno por tarjeta del detalle de
+    # la unidad --expediente, costo por dia, rendimiento, plan, servicios y
+    # llantas--. La lista y las formas no llevan: cada renglon y cada pie
+    # dicen lo suyo.
+    "lg_flota.js": 6,
+    # La jornada (seccion 151): el de los operadores, que dice de donde sale
+    # cada cosa. Hoy, Semana y Por validar llevan su explicacion al pie.
+    "lg_jornada.js": 1,
 
     # --- las que no, y por que
     "api.js": 0,        # habla con el servidor; no pinta nada
@@ -788,6 +796,10 @@ AYUDA_POR_PANTALLA = {
     # de campo.
     "ci/app.js": 0,
     "ci/sw.js": 0,
+    # LG Connect, la app de los operadores de Logistica (seccion 151): como
+    # la de campo, cada pantalla dice lo suyo en su tarjeta.
+    "lgapp/app.js": 0,
+    "lgapp/sw.js": 0,
 }
 
 

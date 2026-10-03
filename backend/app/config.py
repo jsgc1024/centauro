@@ -105,6 +105,9 @@ class Settings(BaseSettings):
     # La app del cliente de la Central de Inteligencia (seccion 134). Los
     # avisos de riesgo llevan a ella. Vacio: cuelga de url_publica, en /ci.
     url_ci: str = ""               # "https://ci.mycentauro.lat"
+    # LG Connect, la app de los operadores de Logistica (seccion 151): su
+    # huella solo vale si el sistema reconoce su direccion.
+    dominio_lg: str = ""           # "applg.mycentauro.lat"
 
     # Odoo, del lado de SALIDA: la factura del servicio aprobado.
     #

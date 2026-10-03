@@ -539,7 +539,7 @@ TEXTO = ("Balacera en la colonia Las Quintas de Culiacán. Evite la zona "
 
 
 def _para_solo(nivel=2, oficial=False, texto=TEXTO, notas=(NOTAS[2],),
-               ocurrio=None):
+               ocurrio=None, tipo="Ataque armado (arma de fuego)"):
     """Un hallazgo como lo deja Claude, listo para ver si sale solo."""
     fid = _fuente(oficial=oficial)
     db = SessionLocal()
@@ -548,7 +548,7 @@ def _para_solo(nivel=2, oficial=False, texto=TEXTO, notas=(NOTAS[2],),
                            _Cliente(_Respuesta(_rss(*notas))), AHORA)
         dijo = [{"n": 1, "es_hecho": True, "estado": "Sinaloa",
                  "municipio": "Culiacán", "nivel": nivel,
-                 "tipo": "Ataque armado (arma de fuego)",
+                 "tipo": tipo,
                  "titulo": "Balacera en Culiacán", "texto_cliente": texto}]
         if ocurrio:
             dijo[0]["ocurrio"] = ocurrio.isoformat()
@@ -626,7 +626,8 @@ def test_lo_confirmado_por_tres_medios_y_lo_informativo():
              ("Bloquean la México-Puebla a la altura de Texmelucan",
               "Excélsior", "https://excelsior.com/z", _fecha(1)))
     hid = _para_solo(notas=otros)
-    informativo = _para_solo(nivel=1, notas=(NOTAS[0],))
+    informativo = _para_solo(nivel=1, notas=(NOTAS[0],),
+                             tipo="Bloqueo carretero")
     db = SessionLocal()
     try:
         par = lector.parametros(db)
@@ -680,3 +681,27 @@ def test_el_texto_de_claude_llega_al_evento_que_crea_el_analista(cliente,
     assert r.status_code == 200, r.text
     assert r.json()["texto_cliente"] == TEXTO
     assert r.json()["estado"] == "propuesto" and r.json()["auto_regla"] is None
+
+
+def test_lo_violento_nunca_es_informativo_y_la_detencion_no_sale_sola():
+    """Seccion 146: el primer dia salio solo un «hombre muere en ataque
+    armado» como nivel 1, y cinco detenciones."""
+    ataque = _para_solo(nivel=1)
+    detencion = _para_solo(nivel=1, notas=(NOTAS[0],), tipo="Detención")
+    db = SessionLocal()
+    try:
+        assert db.get(m.HallazgoLector, ataque).nivel == 2
+        assert db.get(m.HallazgoLector, detencion).nivel == 1
+        par = lector.parametros(db)
+        par.solo_oficial = par.solo_confirmado = False   # solo informativo
+        db.commit()
+    finally:
+        db.close()
+    assert _publicar_solos() == 0
+    db = SessionLocal()
+    try:
+        assert db.get(m.HallazgoLector, detencion).estado == "por_revisar"
+        assert db.get(m.HallazgoLector, ataque).estado == "por_revisar"
+    finally:
+        db.close()
+

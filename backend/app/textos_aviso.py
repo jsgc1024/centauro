@@ -950,6 +950,44 @@ TEXTOS = {
 }
 
 
+# Logistica, bloque 2 (seccion 151): los avisos de vencimiento de la flota y
+# de las licencias de los operadores. Van aparte, al final, para no
+# mezclarse con lo de arriba.
+TEXTOS["en"].update({
+    "lg_por_vencer_asunto": "{quien}: {documento} expires on {fecha}",
+    "lg_por_vencer_cuerpo": ("{quien}'s {documento} expires on {fecha}. Renew it and upload "
+                             "the new one: once it expires, it can no longer go on a trip."),
+    "lg_vencido_asunto": "{quien}: {documento} expired",
+    "lg_vencido_cuerpo": ("{quien}'s {documento} expired on {fecha}. Until the new one is "
+                          "uploaded, it cannot go on a trip."),
+    "lg_quien": "Unit or driver",
+    "lg_documento": "Document",
+    "lg_vence": "Expires",
+})
+TEXTOS["es"].update({
+    "lg_por_vencer_asunto": "{quien}: {documento} vence el {fecha}",
+    "lg_por_vencer_cuerpo": ("Vence el {fecha}: {documento} de {quien}. Renuévalo y sube el "
+                             "nuevo en Connect: vencido, ya no puede salir a viaje."),
+    "lg_vencido_asunto": "{quien}: venció {documento}",
+    "lg_vencido_cuerpo": ("Venció el {fecha}: {documento} de {quien}. Mientras no se suba "
+                          "el nuevo en Connect, no puede salir a viaje."),
+    "lg_quien": "Unidad u operador",
+    "lg_documento": "Documento",
+    "lg_vence": "Vence",
+})
+TEXTOS["pt"].update({
+    "lg_por_vencer_asunto": "{quien}: {documento} vence em {fecha}",
+    "lg_por_vencer_cuerpo": ("Vence em {fecha}: {documento} de {quien}. Renove e envie o "
+                             "novo no Connect: vencido, já não pode sair em viagem."),
+    "lg_vencido_asunto": "{quien}: {documento} venceu",
+    "lg_vencido_cuerpo": ("Venceu em {fecha}: {documento} de {quien}. Enquanto o novo não "
+                          "for enviado no Connect, não pode sair em viagem."),
+    "lg_quien": "Unidade ou motorista",
+    "lg_documento": "Documento",
+    "lg_vence": "Vence",
+})
+
+
 def diccionario(idioma: str | None) -> dict:
     return TEXTOS.get((idioma or POR_DEFECTO).lower(), TEXTOS[POR_DEFECTO])
 

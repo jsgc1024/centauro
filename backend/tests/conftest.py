@@ -117,6 +117,20 @@ TABLAS_DE_OPERACION = [
 ]
 
 
+# Logistica, bloque 2 (seccion 151): la flota con su expediente, sus
+# servicios, sus llantas y su costo; los operadores, su acceso a LG
+# Connect y su jornada. Van aparte de la lista de arriba para no pisar lo
+# que agrega cada desarrollo al final de ella. Los tipos de unidad, los
+# patios y los valores con vigencia (seccion 150) son catalogo y no se
+# tocan aqui.
+TABLAS_DE_OPERACION += [
+    "lg_jornada", "lg_llave", "lg_codigo_acceso", "lg_viaje_manual", "lg_costo_dia",
+    "lg_llanta",
+    "lg_servicio", "lg_plan_servicio", "lg_documento", "lg_archivo",
+    "lg_lectura_odometro", "lg_unidad", "lg_operador",
+]
+
+
 def _crear_base_de_pruebas():
     """Rehace centauro_test desde cero.
 

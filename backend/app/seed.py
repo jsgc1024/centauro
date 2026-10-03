@@ -341,6 +341,9 @@ def sembrar() -> dict:
         # Cuautitlan. Ningun monto: los fija la gerencia de Logistica.
         from app import lg_catalogos
         lg_catalogos.sembrar(db)
+        # Y sus llantas (seccion 151).
+        from app import lg_flota
+        lg_flota.sembrar(db)
 
         # La Central de Inteligencia (seccion 133): los estados de cada
         # pais y los tipos de evento de la cifra negra.

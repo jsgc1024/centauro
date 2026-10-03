@@ -135,6 +135,9 @@ DOMINIO_CAMPO=appep.mycentauro.lat
 # La app del cliente de la Central de Inteligencia (seccion 136).
 DOMINIO_CI=ci.mycentauro.lat
 URL_CI=https://ci.mycentauro.lat
+# LG Connect, la app de los operadores de Logistica (seccion 151). Su
+# registro A va en Cloud DNS, a la misma IP, antes de levantar el proxy.
+DOMINIO_LG=applg.mycentauro.lat
 POSTGRES_PASSWORD=...
 REDIS_PASSWORD=...
 DATABASE_URL=postgresql+psycopg://centauro:LA_DE_ARRIBA@db:5432/centauro

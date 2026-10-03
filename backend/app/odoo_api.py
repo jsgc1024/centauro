@@ -26,6 +26,10 @@ LECTURA = frozenset({"search_read", "fields_get"})
 # Brasil. La flota se lee de la suya y la prefactura sale a la suya. El
 # usuario de la conexion tiene las dos entre sus companias permitidas.
 COMPANIAS = {"MX": 1, "BR": 5}
+# Centauro Logistic SA CV (seccion 151): su oficina entra a Connect como
+# la de Mexico; sus operadores van a LG Connect y sus unidades a la flota
+# de Logistica. No es un pais: por eso no va en COMPANIAS.
+COMPANIA_LOGISTIC = 3
 
 
 class SinConexion(Exception):

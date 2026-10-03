@@ -27,6 +27,10 @@ from app.routers import (acceso, archivo, bitacora_admin, bonos, calidad,
 from app.routers import llaves as llaves_router
 # Centauro Logistica, AI/LG (seccion 150), en su propio renglon.
 from app.routers import lg_catalogos as lg_catalogos_router
+# Y su bloque 2 (seccion 151): la flota, la jornada y LG Connect.
+from app.routers import lg_app as lg_app_router
+from app.routers import lg_flota as lg_flota_router
+from app.routers import lg_jornada as lg_jornada_router
 from app.routers import cotizaciones as cotizaciones_router
 from app.routers import propuestas as propuestas_router
 from app.routers import riesgo as riesgo_router
@@ -159,6 +163,10 @@ app.include_router(direccion.router)
 app.include_router(freelance.router)
 # Centauro Logistica, AI/LG: sus catalogos con vigencia (seccion 150).
 app.include_router(lg_catalogos_router.router)
+# La flota, la jornada de los operadores y su app, LG Connect (seccion 151).
+app.include_router(lg_flota_router.router)
+app.include_router(lg_jornada_router.router)
+app.include_router(lg_app_router.router)
 # Cotizaciones: la del eventual que se arma en Connect, su PDF y el
 # servicio que nace al autorizarla (seccion 114).
 app.include_router(cotizaciones_router.router)
@@ -483,6 +491,13 @@ if WEB.is_dir():
     CI = WEB / "ci"
     if CI.is_dir():
         app.mount("/ci", ConsolaSinCache(directory=CI, html=True), name="ci")
+
+    # LG Connect, la app de los operadores de Logistica (seccion 151). En
+    # produccion vive en applg.mycentauro.lat, que el proxy manda aqui:
+    # su propia direccion, su propia sesion y su propia app instalada.
+    LGAPP = WEB / "lgapp"
+    if LGAPP.is_dir():
+        app.mount("/lgapp", ConsolaSinCache(directory=LGAPP, html=True), name="lgapp")
 
     @app.get("/", include_in_schema=False)
     def raiz():

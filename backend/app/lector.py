@@ -438,7 +438,19 @@ NIVELES = ("1 Informativo: algo que conviene saber, sin riesgo directo. "
            "2 Precaucion: puede afectar un traslado o una zona; evitarla. "
            "3 Alto: riesgo para quien pase por ahi hoy; cambiar ruta o "
            "planes. 4 Critico: riesgo grave e inmediato para las personas; "
-           "requiere accion ya.")
+           "requiere accion ya. Un ataque armado, una ejecucion, un "
+           "enfrentamiento, un secuestro o un explosivo nunca es 1: con "
+           "heridos o muertos es al menos 2, y 3 si puede seguir.")
+
+# Seccion 146 (Salvador, 3 oct): lo violento nunca queda como informativo
+# aunque Claude lo diga --en su primer dia publico solo un «hombre muere
+# en ataque armado» como nivel 1--, y una detencion nunca sale sola: es
+# noticia, no riesgo para quien pasa.
+NIVEL_MINIMO = {"Ataque armado (arma de fuego)": 2,
+                "Ataque armado (arma blanca)": 2, "Ejecución": 2,
+                "Enfrentamiento armado": 2, "Persecución armada": 2,
+                "Secuestro": 2, "Artefacto explosivo": 2}
+NUNCA_SOLO = {"Detención"}
 
 
 def _consulta(db: Session, pais: m.Pais, notas: list[m.NotaLector],
@@ -578,6 +590,10 @@ def _aplicar_lo_que_dijo(db: Session, pais: m.Pais, h: m.HallazgoLector,
         h.lugar = _texto(dijo, "lugar")[:300]
     if dijo.get("nivel") in (1, 2, 3, 4):
         h.nivel = dijo["nivel"]
+    if h.tipo_id and h.nivel:
+        minimo = NIVEL_MINIMO.get(db.get(m.TipoEvento, h.tipo_id).nombre)
+        if minimo and h.nivel < minimo:
+            h.nivel = minimo
     if _texto(dijo, "razon"):
         h.razon = _texto(dijo, "razon")[:300]
     ocurrio = _fecha(_texto(dijo, "ocurrio"),
@@ -1103,6 +1119,8 @@ def regla_para_publicar_solo(h: m.HallazgoLector, par: m.ParametrosLector,
     if h.nivel not in (1, 2) or not h.con_ia:
         return None
     if not (h.tipo_id and h.region_id and h.municipio_id):
+        return None
+    if h.tipo and h.tipo.nombre in NUNCA_SOLO:
         return None
     if len((h.texto_cliente or "").strip()) < 20:
         return None
