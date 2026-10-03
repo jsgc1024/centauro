@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     # Es una linea fija, no el celular de quien este de turno, porque el
     # turno cambia y el numero al que se llama en una emergencia no.
     telefono_central: str = "+525550221022"
+    # La linea de Respuesta a emergencias (seccion 145), la que marca el
+    # cliente de la Central desde su panico. Vacia, marca la de la central.
+    telefono_emergencias: str = ""
 
     # Avisos al telefono del equipo de campo (Web Push). El par de
     # llaves se genera una vez con `python generar_llaves_push.py`; la

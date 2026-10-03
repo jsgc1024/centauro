@@ -362,6 +362,22 @@ ACTIVIDADES: dict[str, dict] = {
         "descripcion": "Tomar y cerrar una alerta que levanto el campo",
         "roles": {R.CENTRAL, R.DIRECTOR_OPERACIONES},
     },
+    # Respuesta a emergencias (seccion 145): el panel de los panicos --del
+    # cliente de la Central, de la app de campo y de los vehiculos--, con
+    # la ubicacion en vivo de quien pidio ayuda. Direccion de operaciones
+    # entra como respaldo; direccion general, por lo que hereda.
+    "emergencias.ver": {
+        "descripcion": "Ver el panel de Respuesta a emergencias: los "
+                       "panicos abiertos, donde esta quien pidio ayuda y "
+                       "su bitacora",
+        "roles": {R.RESPUESTA_EMERGENCIAS, R.DIRECTOR_OPERACIONES},
+    },
+    "emergencias.atender": {
+        "descripcion": "Tomar un panico, mandar al equipo de respuesta, "
+                       "anotar el aviso a las autoridades y cerrarlo con "
+                       "su resolucion",
+        "roles": {R.RESPUESTA_EMERGENCIAS, R.DIRECTOR_OPERACIONES},
+    },
     # El GPS de las unidades (seccion 60): la flota con su GPS y lo que
     # hay que arreglar. No ensena donde esta ninguna unidad.
     "unidades.ver": {
@@ -689,7 +705,7 @@ PANTALLAS = ("panorama", "cotizaciones", "servicios", "implantados",
              "lg_catalogos",
              "central", "codigo", "finanzas", "facturacion", "nomina",
              "accesos", "odoo", "catalogos", "manual", "direccion",
-             "riesgo")
+             "riesgo", "emergencias")
 
 
 def roles_de(actividad: str) -> set:

@@ -2372,6 +2372,11 @@ class Rol(str, enum.Enum):
     # negocio. Rol propio para que no le lleguen los avisos de la
     # operacion de Proteccion Ejecutiva, que van por rol.
     LOGISTICA = "logistica"
+    # Respuesta a emergencias (seccion 145): el area de guardia 24/7 que
+    # atiende los panicos --del cliente de la Central, de la app de campo
+    # y de los vehiculos--. Rol propio: solo su panel, y los avisos de
+    # emergencia le llegan a ella y a nadie mas por rol.
+    RESPUESTA_EMERGENCIAS = "respuesta_emergencias"
 
 
 class Usuario(Base):
@@ -4520,6 +4525,9 @@ class CanalAlerta(str, enum.Enum):
     BOTON_APP = "boton_app"            # boton de panico de la app
     BOTON_VEHICULO = "boton_vehiculo"  # boton fisico, llega por el GPS
     LLAMADA = "llamada"                # a la central o directo al consultor
+    # El cliente de la Central de Inteligencia, desde su app (seccion 145):
+    # no es de un servicio; lo atiende Respuesta a emergencias.
+    BOTON_CI = "boton_ci"
 
 
 class EstatusAlerta(str, enum.Enum):
@@ -4572,7 +4580,27 @@ class AlertaIncidencia(Base):
     cerrada_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     resolucion: Mapped[str | None] = mapped_column(String(600), nullable=True)
 
+    # Lo de Respuesta a emergencias (seccion 145). Quien la levanto desde
+    # la app del cliente de la Central (sin persona: es del cliente), la
+    # ultima ubicacion con su precision y su hora --el recorrido va en
+    # PuntoAlerta--, y lo que hizo el area: el equipo de respuesta y el
+    # aviso a las autoridades. Si quien la levanto dijo que fue un error,
+    # cuando: la alerta sigue abierta hasta que alguien lo confirma.
+    usuario_cliente_id: Mapped[int | None] = mapped_column(
+        ForeignKey("usuario_cliente.id", ondelete="SET NULL"),
+        nullable=True, index=True)
+    precision_m: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ubicacion_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    equipo_enviado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    autoridades_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    dijo_error_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
     jornada: Mapped["Jornada | None"] = relationship()
+    usuario_cliente: Mapped["UsuarioCliente | None"] = relationship()
     reporta: Mapped["Persona | None"] = relationship(
         foreign_keys=[reporta_persona_id])
     # Hay tres llaves a persona en esta tabla --quien reporta, quien toma
@@ -4581,6 +4609,40 @@ class AlertaIncidencia(Base):
         foreign_keys=[tomada_por_id])
     vehiculo: Mapped["Vehiculo | None"] = relationship(
         foreign_keys=[vehiculo_id])
+
+
+class PuntoAlerta(Base):
+    """Donde iba quien levanto la alerta, cada pocos segundos, mientras la
+    alerta esta abierta (seccion 145). Es lo unico de Connect que guarda
+    un recorrido, y solo de alguien que pidio ayuda."""
+    __tablename__ = "punto_alerta"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    alerta_id: Mapped[int] = mapped_column(
+        ForeignKey("alerta_incidencia.id", ondelete="CASCADE"), index=True)
+    lat: Mapped[float] = mapped_column(Numeric(10, 7))
+    lon: Mapped[float] = mapped_column(Numeric(10, 7))
+    precision_m: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    en: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+                                         server_default=func.now())
+
+
+class NotaAlerta(Base):
+    """La bitacora de una alerta (seccion 145): quien la tomo, que se hizo
+    y como se cerro, con su hora. La escriben el panel de Respuesta a
+    emergencias y la central."""
+    __tablename__ = "nota_alerta"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    alerta_id: Mapped[int] = mapped_column(
+        ForeignKey("alerta_incidencia.id", ondelete="CASCADE"), index=True)
+    en: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+                                         server_default=func.now())
+    usuario_id: Mapped[int | None] = mapped_column(
+        ForeignKey("usuario.id", ondelete="SET NULL"), nullable=True)
+    quien: Mapped[str] = mapped_column(String(160))
+    accion: Mapped[str] = mapped_column(String(30))
+    detalle: Mapped[str] = mapped_column(String(600), server_default="")
 
 
 class TipoRecurso(str, enum.Enum):
@@ -5474,6 +5536,12 @@ class ClienteCentral(Base):
                                               server_default=func.now())
     alta_por_id: Mapped[int | None] = mapped_column(
         ForeignKey("usuario.id", ondelete="SET NULL"), nullable=True)
+    # A quien llama Respuesta a emergencias del lado del cliente cuando
+    # alguien suyo aprieta el panico (seccion 145).
+    contacto_emergencia: Mapped[str | None] = mapped_column(String(120),
+                                                           nullable=True)
+    telefono_emergencia: Mapped[str | None] = mapped_column(String(40),
+                                                           nullable=True)
 
     cliente: Mapped[Cliente] = relationship()
     zonas: Mapped[list["ZonaCliente"]] = relationship(

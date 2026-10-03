@@ -88,6 +88,11 @@ export const DIRECCION = ["director_operaciones", "director_general", "admin"];
    los patios; direccion general, por lo que hereda. */
 export const LG_CATALOGOS = ["logistica", "director_general", "sistema_calidad",
                              "admin"];
+/* Respuesta a emergencias (seccion 145): el panel de los panicos. Lo abre
+   el area de guardia y, como su respaldo, direccion de operaciones;
+   direccion general, por lo que hereda. */
+export const EMERGENCIAS = ["respuesta_emergencias", "director_operaciones",
+                            "director_general", "admin"];
 
 /* El menu de arriba, en una sola lista.
 
@@ -148,6 +153,13 @@ export const MENU = [
      central y direccion de operaciones. */
   { ruta: "/riesgo", clave: "riesgo", necesita: "riesgo.ver", texto: "nav_riesgo", grupo: "nav_operaciones_ci",
     cuenta: "rec_riesgo", quienes: RIESGO, nueva: "2026-11-15" },
+  /* Respuesta a emergencias (seccion 145): su propio grupo, porque es su
+     propia area, de guardia 24/7, y en la barra justo despues de
+     Operaciones CI. Los panicos del cliente de la Central, de la app de
+     campo y de los vehiculos, con la ubicacion en vivo. */
+  { ruta: "/emergencias", clave: "emergencias", necesita: "emergencias.ver",
+    texto: "nav_emergencias", grupo: "nav_respuesta",
+    cuenta: "rec_emergencias", quienes: EMERGENCIAS, nueva: "2026-11-15" },
   /* Gestion Administrativa: lo que se paga y quien puede que cosa.
      Dos bolsas distintas y dos pantallas: los gastos del servicio
      —viaticos y compras— y las nominas: la del personal de seguridad y
@@ -243,7 +255,8 @@ const PRIMERO = ["central", "servicios", "finanzas", "facturacion", "nomina",
                  "bonos", "equipo", "accesos", "panorama"];
 const POR_ROL = { central: "central", consultor: "servicios",
                   finanzas: "finanzas", recursos_humanos: "bonos",
-                  sistema_calidad: "calidad", logistica: "lg_catalogos" };
+                  sistema_calidad: "calidad", logistica: "lg_catalogos",
+                  respuesta_emergencias: "emergencias" };
 
 export function destinoDe(usuario) {
   const suyas = new Set(menuDe(usuario).map(x => x.clave));

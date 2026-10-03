@@ -1302,7 +1302,8 @@ function ubicacion() {
   return new Promise((listo) => {
     if (!navigator.geolocation) return listo(null);
     navigator.geolocation.getCurrentPosition(
-      (p) => listo({ lat: p.coords.latitude, lon: p.coords.longitude }),
+      (p) => listo({ lat: p.coords.latitude, lon: p.coords.longitude,
+                     precision: p.coords.accuracy }),
       () => listo(null),
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 });
   });
@@ -1720,11 +1721,12 @@ async function panico(f, central) {
   if (!confirm(t("cmp_confirmar_panico"))) return;
   const donde = await ubicacion();
   try {
-    await api.post("/contingencia/alertas", {
+    const alerta = await api.post("/contingencia/alertas", {
       canal: "boton_app",
       jornada_id: f ? f.jornada_id : null,
       ...(donde ? { lat: String(donde.lat), lon: String(donde.lon) } : {}),
     });
+    seguirPanico(alerta.id);
     alert(t("cmp_alerta_enviada"));
   } catch (err) {
     const tel = central && central.telefono
@@ -1734,6 +1736,29 @@ async function panico(f, central) {
       .replace("{tel}", tel));
     if (central && central.telefono) location.href = `tel:${central.telefono}`;
   }
+}
+
+/* Mientras la alerta siga abierta, la app manda donde va cada quince
+   segundos (seccion 145): Respuesta a emergencias la ve en vivo en su
+   panel. Se detiene cuando la cierran o a las dos horas; con el telefono
+   bloqueado el navegador no deja mandarla. */
+let siguiendoPanico = null;
+
+function seguirPanico(alertaId) {
+  if (!alertaId) return;
+  clearInterval(siguiendoPanico);
+  const hasta = Date.now() + 2 * 3600 * 1000;
+  siguiendoPanico = setInterval(async () => {
+    if (Date.now() > hasta) { clearInterval(siguiendoPanico); return; }
+    const donde = await ubicacion();
+    if (!donde) return;
+    try {
+      await api.post(`/contingencia/alertas/${alertaId}/ubicacion`,
+                     { lat: donde.lat, lon: donde.lon, precision: donde.precision ?? null });
+    } catch (err) {
+      if ([401, 403, 404, 409].includes(err.codigo)) clearInterval(siguiendoPanico);
+    }
+  }, 15000);
 }
 
 /* ----------------------------------------------------- mis viaticos */
@@ -2672,6 +2697,7 @@ const nombreRol = () => ({
   recursos_humanos: t("cmp_rol_rrhh"),
   sistema_calidad: t("rol_sistema_calidad"),
   logistica: t("rol_logistica"),
+  respuesta_emergencias: t("rol_respuesta_emergencias"),
 });
 
 function otraCuenta() {

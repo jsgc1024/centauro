@@ -70,6 +70,9 @@ TABLAS_DE_OPERACION = [
     # a que exista uno hecho a mano: sin vaciarlo, la prueba que revisa
     # esa espera encontraria el de la prueba anterior.
     "sincronizacion_odoo",
+    # Respuesta a emergencias (seccion 145): el recorrido y la bitacora de
+    # cada alerta.
+    "punto_alerta", "nota_alerta",
     "reemplazo_recurso", "alerta_incidencia",
     "concepto_nomina", "renglon_nomina", "ajuste_nomina", "nomina_semanal",
     "respuesta_encuesta", "encuesta",

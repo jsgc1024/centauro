@@ -183,7 +183,9 @@ async function prepararMapa(caja, ficha) {
   });
 }
 
-function cargarGoogle(llave) {
+/* La comparte el panel de Respuesta a emergencias (seccion 145): una
+   sola carga del script de Google por consola. */
+export function cargarGoogle(llave) {
   if (window.google && window.google.maps) return Promise.resolve();
   if (googleListo) return googleListo;
   googleListo = new Promise((resolver, rechazar) => {
@@ -693,6 +695,10 @@ function fichaCliente(c, maneja, cuerpo) {
   const correo = entrada("correo", { type: "email", maxlength: 160, placeholder: t("rsg_correo") });
   const tel = entrada("telefono", { maxlength: 40, placeholder: "+52 …" });
   const idioma = lista("idioma", ["es", "pt", "en"].map((x) => ({ valor: x, texto: t(`rsg_idioma_${x}`) })));
+  const contacto = entrada("contacto_emergencia", { maxlength: 120, placeholder: t("rsg_contacto_nombre"),
+                                                   value: c.contacto_emergencia || "" });
+  const telContacto = entrada("telefono_emergencia", { maxlength: 40, placeholder: "+52 …",
+                                                       value: c.telefono_emergencia || "" });
 
   const persona = (g) => h("tr", {},
     h("td", {}, `${g.nombre} ${g.apellidos}`), h("td", {}, g.correo), h("td", {}, g.telefono || "—"),
@@ -735,6 +741,20 @@ function fichaCliente(c, maneja, cuerpo) {
     h("h3", {}, t("rsg_gente"), ` · ${c.gente.length}`),
     c.gente.length ? h("table", { clase: "tabla" }, h("tbody", {}, ...c.gente.map(persona)))
                    : h("p", { clase: "chico gris" }, t("rsg_sin_gente")),
+    /* A quien llama Respuesta a emergencias del lado del cliente cuando
+       alguien suyo aprieta el panico (seccion 145). */
+    h("h3", {}, t("rsg_contacto_emergencia")),
+    h("p", { clase: "chico gris" }, t("rsg_contacto_emergencia_pie")),
+    maneja ? h("div", { clase: "rsg-linea" }, contacto, telContacto,
+      h("button", { type: "button", clase: "claro", onclick: async () => {
+        try {
+          await api.put(`/riesgo/clientes/${c.id}/emergencia`, {
+            contacto: contacto.value, telefono: telContacto.value });
+          await recargar();
+        } catch (e) { salida.replaceChildren(mensaje(e.message, "grave")); }
+      } }, t("rsg_guardar_contacto")))
+      : h("p", {}, [c.contacto_emergencia, c.telefono_emergencia].filter(Boolean).join(" · ")
+          || t("rsg_sin_contacto_emergencia")),
     maneja ? h("div", { clase: "rsg-linea" }, nombre, apellidos, correo, tel, idioma,
       h("button", { type: "button", onclick: async () => {
         try {

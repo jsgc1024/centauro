@@ -1836,6 +1836,11 @@ input.pro-mes { width: 132px; margin: 0; text-align: right;
 .lec-solo-regla { margin-left: 22px; }
 .rsg-auto { margin-left: 6px; }
 .rsg-auto-aviso { margin: 8px 0 12px; }
+/* Respuesta a emergencias (seccion 145). */
+.em-elegida { border: 2px solid var(--centauro); }
+.em-mapa { border-radius: 10px; overflow: hidden; border: 1px solid var(--linea); }
+.em-lienzo { height: 320px; }
+.em-ficha textarea { width: 100%; }
 .lec-ficha { border-top: 4px solid var(--centauro); }
 .lec-ficha h3 { margin: 14px 0 6px; font-size: 15px; }
 .lec-titular { margin: 4px 0 6px; font-size: 20px; line-height: 1.3; }

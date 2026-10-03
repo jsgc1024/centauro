@@ -65,10 +65,12 @@ PUESTOS: list[dict] = [
         # ve todas; el puesto que ya existe la toma con e3a5c7b9d1f4. El
         # precio especial de la propuesta del implantado (seccion 115) lo
         # autoriza el; el puesto que ya existe lo toma con b8e1d4f6a9c3.
+        # Respuesta a emergencias (seccion 145): su respaldo; el puesto que
+        # ya existe lo toma con a5c7e9b1d3f6.
         "pantallas": ["panorama", "cotizaciones", "servicios", "implantados",
                       "equipo", "unidades", "bonos", "encuestas", "central",
                       "finanzas", "facturacion", "nomina", "catalogos",
-                      "calidad", "direccion", "riesgo"],
+                      "calidad", "direccion", "riesgo", "emergencias"],
         "actividades": _de(R.DIRECTOR_OPERACIONES),
         "puestos_odoo": "Director de Operaciones, Director Operativo",
     },
@@ -90,6 +92,24 @@ PUESTOS: list[dict] = [
         "pantallas": ["lg_catalogos"],
         "actividades": {"lg.catalogos.ver", "lg.catalogos.dinero"},
         "puestos_odoo": "Gerente de Logística, Gerente de Logistica",
+    },
+    # Seccion 145. Decision de Salvador, 3 oct: el area de Respuesta a
+    # emergencias, de guardia 24/7, atiende los panicos en su panel. Rol
+    # propio: solo su panel, y los avisos de emergencia le llegan a ella.
+    # En produccion lo crea la migracion a5c7e9b1d3f6, con lo mismo.
+    {
+        "nombre": "Respuesta a emergencias",
+        "area": "Respuesta a emergencias",
+        "rol": R.RESPUESTA_EMERGENCIAS,
+        "orden": 35,
+        "descripcion": "La guardia 24/7 que atiende los pánicos —del "
+                       "cliente de la Central, de la app de campo y de los "
+                       "vehículos—: los toma, manda al equipo de respuesta "
+                       "y los cierra con su resolución.",
+        "pantallas": ["emergencias"],
+        "actividades": {"emergencias.ver", "emergencias.atender"},
+        "puestos_odoo": ("Respuesta a Emergencias, Operador de Respuesta a "
+                         "Emergencias, Operador de Emergencias"),
     },
     {
         "nombre": "Consultor de seguridad",

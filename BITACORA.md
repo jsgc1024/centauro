@@ -10831,6 +10831,73 @@ el mismo filtro). `lector_catalogo.POR_GOOGLE`; la migracion
 origen. Se quedan por su RSS los que si leyeron: Infobae, El Universal,
 Zeta Tijuana y El Sur.
 
+## 145. Respuesta a emergencias: el panel y el panico del cliente
+
+Salvador, 3 oct: «la central debera tener un panel de gestion de
+emergencias, ahi debera llegar el boton de panico. hay un area que se
+llama respuesta a emergencias. ellos lo atenderan, estan 24/7». Decidio:
+todos los panicos al panel nuevo (la central los sigue viendo), rol
+propio para el area, y el del cliente se activa manteniendo presionado
+3 segundos. Bocetos aprobados el 3 oct. Fase 1 de 3 (luego el trayecto
+compartido y el aviso al telefono de la guardia).
+
+- **Una sola alerta para los tres panicos** (`AlertaIncidencia`): el del
+  cliente de la Central es el canal nuevo `boton_ci`, con
+  `usuario_cliente_id`; el de la app de campo y el del vehiculo siguen
+  igual. Lo del area va en la alerta (`ubicacion_en`, `precision_m`,
+  `equipo_enviado_en`, `autoridades_en`, `dijo_error_en`), el recorrido
+  en `PuntoAlerta` (lecturas a 5 s o mas, hasta 2,000) y la bitacora en
+  `NotaAlerta`. Migracion `a5c7e9b1d3f6`.
+- **El rol y el puesto** «Respuesta a emergencias» (`RESPUESTA_EMERGENCIAS`,
+  actividades `emergencias.ver` y `emergencias.atender`, pantalla
+  `emergencias`). Direccion de operaciones es su respaldo: su puesto la
+  toma en la migracion.
+- **El panel** (`#/emergencias`, `emergencias.js`, `routers/emergencias.py`):
+  lo activo, primero lo sin tomar y lo mas viejo; la ficha con el mapa en
+  vivo y el recorrido, la direccion aproximada (geocodificador de
+  Google), quien es y su telefono, el riesgo publicado a 15 km, el
+  contacto de emergencia del cliente o el consultor del servicio, las
+  unidades con GPS a 150 km que reportaron en 30 min (solo placa y
+  distancia); tomarla (con candado: dos no la toman), equipo de
+  respuesta, autoridades, notas y cerrar con resolucion (10 letras o
+  mas). Suena con el navegador mientras haya una sin tomar (el boton
+  «Activar el sonido» porque el navegador lo pide). Se refresca cada 10 s.
+- **Continuidad con EP**: tomar o cerrar en la central escribe en la
+  misma bitacora; tomarla o cerrarla en el panel deja la misma auditoria
+  en el servicio. El panico del cliente no entra a la central, al
+  panorama ni a `/contingencia/alertas`, y nadie lo levanta por esa
+  puerta (400). La app de campo, tras el panico, manda su ubicacion cada
+  15 s (`POST /contingencia/alertas/{id}/ubicacion`, solo quien la
+  levanto, hasta que se cierra o dos horas).
+- **La app del cliente**: el boton de pánico (mantener 3 s, con la barra
+  que se llena) en Mapa y Avisos, en lugar de «Llamar a la Central»; la
+  pantalla `#/emergencia` con quien lo atiende, su ubicacion compartida
+  cada 15 s mientras este abierta, llamar y «fue un error» (que no la
+  cierra). Con una alerta abierta, la app abre en ella. Sin red, llama.
+- **El contacto de emergencia del cliente** en Mapa de riesgo → Clientes
+  de la Central (`PUT /riesgo/clientes/{id}/emergencia`).
+- `TELEFONO_EMERGENCIAS` en el `.env`: la linea del area; vacia, la de la
+  central.
+
+La revision independiente encontro, y se corrigio antes de publicar: la
+central podia pisar una alerta que el area ya habia tomado (y bajarle el
+«equipo enviado»): ahora toma con candado y contesta 409; la central
+podia tomar o cerrar por su id un panico del cliente (404); el panel no
+sonaba en el primer panico del turno (el sonido se activa con el primer
+toque o con su boton, aunque no haya nada); la pantalla de la alerta en
+la app del cliente rehacia el mapa de Google cada 10 s (ahora cambia sus
+textos y mueve el punto); el permiso de ubicacion, pedido a media
+presion, cancelaba el toque en iOS (ahora se pide al terminar); con una
+alerta abierta la app no dejaba ver el mapa (solo abre en ella al
+arrancar); la ficha se quedaba en una alerta cerrada; dos pedidos a la
+vez podian levantar dos alertas (candado en el cliente); una precision
+infinita tumbaba el pedido; el tope del recorrido guardaba los primeros
+puntos y no los ultimos; al cliente se le podia decir un correo interno
+como «quien te atiende»; el downgrade dejaba panicos que el codigo de
+antes no sabe leer.
+
+Pruebas: `tests/test_emergencias.py` (13). La bateria completa pasa.
+
 ## 14. Lo que falta
 
 ### Abierto

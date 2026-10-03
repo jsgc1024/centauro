@@ -7,7 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app import acceso_por_correo, intentos
+from app import acceso_por_correo, emergencias, intentos
 from app import cliente_ci as motor
 from app import models as m
 from app.config import settings
@@ -189,3 +189,49 @@ def probar(db: Session = Depends(get_db),
     salida = motor.probar(db, gente)
     db.commit()
     return salida
+
+
+# ------------------------------------- el panico del cliente (seccion 145)
+
+class PanicoIn(BaseModel):
+    lat: float | None = None
+    lon: float | None = None
+    precision: float | None = None
+
+
+@router.post("/emergencia", summary="Mantuve el boton de panico")
+def panico(datos: PanicoIn, db: Session = Depends(get_db),
+           gente: m.UsuarioCliente = Depends(GENTE)):
+    """Llega a Respuesta a emergencias con la ubicacion, si la hay: una
+    alerta sin ubicacion sigue sirviendo. Si ya tiene una abierta, es la
+    misma."""
+    alerta = emergencias.levantar_del_cliente(db, gente, datos.lat,
+                                              datos.lon, datos.precision)
+    db.commit()
+    return emergencias.vista_del_cliente(db, alerta)
+
+
+@router.get("/emergencia", summary="Como va mi alerta")
+def mi_emergencia(db: Session = Depends(get_db),
+                  gente: m.UsuarioCliente = Depends(GENTE)):
+    return emergencias.vista_del_cliente(db, emergencias.abierta_de(db, gente))
+
+
+@router.post("/emergencia/ubicacion",
+             summary="Donde voy, cada pocos segundos, con la alerta abierta")
+def ubicacion(datos: PanicoIn, db: Session = Depends(get_db),
+              gente: m.UsuarioCliente = Depends(GENTE)):
+    alerta = emergencias.abierta_de(db, gente)
+    if alerta is not None:
+        emergencias.poner_punto(db, alerta, datos.lat, datos.lon,
+                                datos.precision)
+        db.commit()
+    return emergencias.vista_del_cliente(db, alerta)
+
+
+@router.post("/emergencia/error", summary="Fue un error")
+def fue_error(db: Session = Depends(get_db),
+              gente: m.UsuarioCliente = Depends(GENTE)):
+    alerta = emergencias.dijo_error(db, gente)
+    db.commit()
+    return emergencias.vista_del_cliente(db, alerta)

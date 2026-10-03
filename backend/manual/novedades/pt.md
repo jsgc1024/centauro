@@ -2,6 +2,9 @@
 
 O que há de novo em cada atualização, escrito para quem usa o sistema. A mais nova fica em cima.
 
+## 145 · 2026-10-03 · Resposta a emergências
+Há uma área nova no Connect, **Resposta a emergências**, de plantão 24 horas, com seu próprio painel. Ali chegam os três pânicos: o do **cliente da Central** pelo seu app, o do **app de campo** e o do **botão da caminhonete**. Enquanto houver um sem assumir, o painel toca. A ficha diz onde está quem pediu ajuda —ao vivo, com o seu percurso—, quem é e seu telefone, que risco publicado há por perto, para quem mais ligar e que unidades com GPS há por perto; ali se assume, se anota se a equipe de resposta saiu ou se avisaram as autoridades, e se encerra com a resolução. O que se faz no painel ou em Monitoramento é o mesmo. No app do cliente, o botão de emergência se **mantém pressionado 3 segundos**; depois diz quem o atende e compartilha sua localização enquanto o alerta estiver aberto. O app de campo, depois de um pânico, também envia sua localização a cada 15 segundos. O contato de emergência de cada cliente é registrado em Mapa de risco → Clientes da Central. Ver [Resposta a emergências](#/emergencias).
+
 ## 144 · 2026-10-03 · Os veículos que não deixam ler, pelo Google Notícias
 Animal Político, Aristegui, Pie de Página, Ríodoce e Quadratín Michoacán não deixavam o servidor ler sua página de notícias (uns respondiam com erro e outros não davam nenhuma notícia). Agora o leitor os lê pelo **Google Notícias**, com o que cada um publicou no último dia; em «Ver o que lê» aparecem como Busca, com o mesmo nome. Ver [o mapa de risco](#/riesgo).
 

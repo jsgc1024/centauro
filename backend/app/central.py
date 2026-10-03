@@ -826,8 +826,11 @@ def roto(db: Session, ahora: datetime, manana_: dict, pulso_: dict) -> dict:
     Si esta vacio, la pantalla no lo pinta: una franja que siempre dice
     "todo bien" deja de leerse a la semana.
     """
+    # El panico del cliente de la Central (seccion 145) no es de la
+    # operacion de EP: lo atiende Respuesta a emergencias en su panel.
     panico = (db.query(m.AlertaIncidencia)
-              .filter(m.AlertaIncidencia.estatus != m.EstatusAlerta.CERRADA)
+              .filter(m.AlertaIncidencia.estatus != m.EstatusAlerta.CERRADA,
+                      m.AlertaIncidencia.canal != m.CanalAlerta.BOTON_CI)
               .order_by(m.AlertaIncidencia.reportada_en.desc()).all())
 
     callados = [f for f in pulso_["eventuales"] + pulso_["implantados"]

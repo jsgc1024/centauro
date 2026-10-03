@@ -54,3 +54,16 @@
 .riel { background: #eef0f8; border-radius: 4px; height: 8px; margin-top: 4px; }
 .riel .lleno { background: var(--centauro); border-radius: 4px; height: 8px; }
 .municipio-fondo { padding: 6px 0; }
+
+/* El panico del cliente (seccion 145): se mantiene presionado tres
+   segundos, y la barra de abajo del boton se llena mientras tanto. */
+.panico-sostener { position: relative; overflow: hidden; user-select: none;
+                   -webkit-user-select: none; touch-action: none;
+                   -webkit-touch-callout: none; }
+.avance-panico { position: absolute; left: 0; bottom: 0; height: 5px; width: 0;
+                 background: #fff; opacity: .75; }
+.panico-sostener.sosteniendo .avance-panico { width: 100%;
+                 transition: width 3s linear; }
+.alerta-enviada { background: var(--grave); color: #fff; border: none; }
+.alerta-enviada-titulo { font-size: 22px; font-weight: 800; }
+

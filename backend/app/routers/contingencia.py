@@ -7,9 +7,11 @@ import logging
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app import auditoria, auth, contingencia as motor
+from app import emergencias
 from app import reloj
 from app import models as m
 from app import operacion
@@ -61,6 +63,12 @@ def reportar(datos: s.AlertaIn, db: Session = Depends(get_db),
         datos.reporta_persona_id = usuario.persona_id
     elif not datos.reporta_persona_id:
         datos.reporta_persona_id = usuario.persona_id
+
+    # El panico del cliente de la Central solo nace en su app (seccion
+    # 145): por aqui seria una alerta de EP escondida de la central.
+    if datos.canal == m.CanalAlerta.BOTON_CI:
+        raise HTTPException(400, "Ese canal es de la app del cliente de la "
+                                 "Central")
 
     # El boton de panico pasa SIN servicio. Todo lo demas lo exige.
     #
@@ -115,6 +123,10 @@ def reportar(datos: s.AlertaIn, db: Session = Depends(get_db),
         alerta.servicio_id = db.get(m.Jornada, alerta.jornada_id).equipo.servicio_id
     db.add(alerta)
     db.flush()
+    # La primera lectura del recorrido que ve Respuesta a emergencias
+    # (seccion 145); las que siguen las manda la app cada 15 segundos.
+    if alerta.lat is not None and alerta.lon is not None:
+        emergencias.poner_punto(db, alerta, alerta.lat, alerta.lon)
 
     servicio = _servicio_de(db, alerta)
     if servicio:
@@ -133,7 +145,10 @@ def listar(abiertas: bool = True, servicio_id: int | None = None,
     """`servicio_id` es para la pantalla del servicio (seccion 101): el
     panel del cambio por contingencia busca la alerta abierta de ese
     servicio para ligarla al cambio."""
-    consulta = db.query(m.AlertaIncidencia)
+    # El panico del cliente de la Central (seccion 145) no sale aqui: no
+    # es de un servicio y lo atiende Respuesta a emergencias en su panel.
+    consulta = db.query(m.AlertaIncidencia).filter(
+        m.AlertaIncidencia.canal != m.CanalAlerta.BOTON_CI)
     if abiertas:
         consulta = consulta.filter(
             m.AlertaIncidencia.estatus != m.EstatusAlerta.CERRADA)
@@ -159,19 +174,39 @@ def listar(abiertas: bool = True, servicio_id: int | None = None,
              summary="La central toma la alerta")
 def tomar(alerta_id: int, datos: s.TomarAlertaIn, db: Session = Depends(get_db),
           usuario: m.Usuario = Depends(CENTRAL)):
-    alerta = db.get(m.AlertaIncidencia, alerta_id)
-    if not alerta:
+    # De una en una, y sin pisar a Respuesta a emergencias (seccion 145):
+    # la tarjeta de la central se refresca cada minuto y puede seguir
+    # ofreciendo «Tomar» sobre un panico que el area ya tomo.
+    alerta = (db.query(m.AlertaIncidencia).filter_by(id=alerta_id)
+              .with_for_update().first())
+    if not alerta or alerta.canal == m.CanalAlerta.BOTON_CI:
         raise HTTPException(404, f"No existe la alerta {alerta_id}")
     if alerta.estatus == m.EstatusAlerta.CERRADA:
         raise HTTPException(409, "Esa alerta ya esta cerrada")
+    if alerta.estatus == m.EstatusAlerta.EN_ATENCION \
+            and alerta.tomada_por_id != usuario.persona_id:
+        raise HTTPException(409, {
+            "mensaje": "Esa alerta ya la atiende "
+                       + (emergencias.atiende(db, alerta) or "alguien mas"),
+            "que_hacer": "Recarga el tablero."})
 
     alerta.estatus = m.EstatusAlerta.EN_ATENCION
     alerta.tomada_por_id = usuario.persona_id
     alerta.tomada_en = datetime.now()
-    alerta.equipo_respuesta_enviado = datos.equipo_respuesta_enviado
+    # Lo que ya se hizo no se deshace: si el area ya mando al equipo,
+    # tomarla otra vez no lo regresa.
+    alerta.equipo_respuesta_enviado = (bool(alerta.equipo_respuesta_enviado)
+                                       or datos.equipo_respuesta_enviado)
     if datos.nota:
         alerta.descripcion = " · ".join(filter(None, [alerta.descripcion,
                                                      datos.nota]))[:600]
+
+    # Y en la bitacora de la alerta, que lee Respuesta a emergencias
+    # (seccion 145): quien la tomo, aunque haya sido la central.
+    emergencias.anotar(db, alerta, usuario, "tomo",
+                       "Desde la central" + (" · con equipo de respuesta"
+                                             if datos.equipo_respuesta_enviado
+                                             else ""))
 
     servicio = _servicio_de(db, alerta)
     if servicio:
@@ -188,16 +223,21 @@ def tomar(alerta_id: int, datos: s.TomarAlertaIn, db: Session = Depends(get_db),
              summary="Cerrar la alerta con su resolucion")
 def cerrar(alerta_id: int, datos: s.CerrarAlertaIn, db: Session = Depends(get_db),
            usuario: m.Usuario = Depends(CENTRAL)):
-    alerta = db.get(m.AlertaIncidencia, alerta_id)
-    if not alerta:
+    alerta = (db.query(m.AlertaIncidencia).filter_by(id=alerta_id)
+              .with_for_update().first())
+    if not alerta or alerta.canal == m.CanalAlerta.BOTON_CI:
         raise HTTPException(404, f"No existe la alerta {alerta_id}")
     if alerta.estatus == m.EstatusAlerta.ABIERTA:
         raise HTTPException(409, "Primero hay que tomarla, luego cerrarla")
+    if alerta.estatus == m.EstatusAlerta.CERRADA:
+        raise HTTPException(409, "Esa alerta ya esta cerrada")
 
     alerta.estatus = m.EstatusAlerta.CERRADA
     alerta.resolucion = datos.resolucion
     alerta.cerrada_por_id = usuario.persona_id
     alerta.cerrada_en = datetime.now()
+    emergencias.anotar(db, alerta, usuario, "cerro",
+                       f"Desde la central · {datos.resolucion}")
 
     servicio = _servicio_de(db, alerta)
     if servicio:
@@ -207,6 +247,34 @@ def cerrar(alerta_id: int, datos: s.CerrarAlertaIn, db: Session = Depends(get_db
     db.commit()
     db.refresh(alerta)
     return alerta
+
+
+class UbicacionIn(BaseModel):
+    lat: float
+    lon: float
+    precision: float | None = None
+
+
+@router.post("/alertas/{alerta_id}/ubicacion",
+             summary="Donde va quien apreto el panico, cada pocos segundos")
+def ubicacion(alerta_id: int, datos: UbicacionIn,
+              db: Session = Depends(get_db),
+              usuario: m.Usuario = Depends(CAMPO)):
+    """La app de campo la manda mientras la alerta esta abierta (seccion
+    145). Solo quien la levanto; cerrada, contesta 409 y la app deja de
+    mandar."""
+    alerta = db.get(m.AlertaIncidencia, alerta_id)
+    if not alerta or usuario.persona_id is None \
+            or alerta.reporta_persona_id != usuario.persona_id \
+            or alerta.canal != m.CanalAlerta.BOTON_APP:
+        raise HTTPException(404, "No existe esa alerta")
+    if alerta.estatus == m.EstatusAlerta.CERRADA:
+        raise HTTPException(409, "La alerta ya se cerró")
+    emergencias.poner_punto(db, alerta, datos.lat, datos.lon,
+                            datos.precision)
+    db.commit()
+    return {"estatus": alerta.estatus.value,
+            "atiende": emergencias.atiende(db, alerta, para_quien_pidio=True)}
 
 
 # ------------------------------------------------------- cambio de recurso

@@ -701,6 +701,8 @@ AREAS = {
     # Centauro Logistica (seccion 150).
     "logistica": {"es": "Logística (AI/LG)", "pt": "Logística (AI/LG)"},
     "gps": {"es": "GPS y unidades", "pt": "GPS e unidades"},
+    "emergencias": {"es": "Respuesta a emergencias",
+                    "pt": "Resposta a emergências"},
     "riesgo": {"es": "Mapa de riesgo (AI/CI)",
                "pt": "Mapa de risco (AI/CI)"},
     "sistema": {"es": "Sistema", "pt": "Sistema"},
@@ -767,6 +769,8 @@ AREA_DE_ARCHIVO = {
     "freelance.py": "freelance", "routers/freelance.py": "freelance",
     # Los catalogos de Logistica (seccion 150).
     "lg_catalogos.py": "logistica", "routers/lg_catalogos.py": "logistica",
+    # Respuesta a emergencias (seccion 145).
+    "emergencias.py": "emergencias", "routers/emergencias.py": "emergencias",
     "implantado_precios.py": "implantados",
     "gps.py": "gps",
     "main.py": "sistema",

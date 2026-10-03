@@ -42,6 +42,8 @@ DATABASE_URL=postgresql+psycopg://centauro:{pg}@db:5432/centauro
 REDIS_URL=redis://:{rd}@redis:6379/0
 SECRET_KEY={sk}
 TELEFONO_CENTRAL=+525550221022
+# La linea de Respuesta a emergencias (seccion 145). Vacia: la central.
+TELEFONO_EMERGENCIAS=
 
 # Google Maps: la llave nueva, del proyecto de Centauro.
 GOOGLE_MAPS_KEY=

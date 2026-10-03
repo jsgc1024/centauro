@@ -58,6 +58,11 @@ O que acontece no país e a quem chega. Os analistas registram cada evento com o
 ### Código {#codigo}
 O código de quatro dígitos que se dita por telefone ao pessoal de campo que não consegue entrar no app. Vale 10 minutos.
 
+## Resposta a emergências
+
+### Resposta a emergências {#emergencias}
+O painel do plantão 24/7. Chegam os três pânicos —o do cliente da Central pelo seu app, o do app de campo e o do botão da caminhonete— e, enquanto houver um sem assumir, toca (o navegador pede tocar «Ativar o som» uma vez). A ficha diz onde está quem pediu ajuda, ao vivo e com o seu percurso, quem é, que risco publicado há por perto, para quem mais ligar —o contato de emergência do cliente ou o consultor do serviço— e que unidades com GPS há por perto. Assume-se o alerta, anota-se se a equipe de resposta saiu e se as autoridades foram avisadas, deixam-se notas e se encerra com a resolução; tudo fica no seu registro. Assumir ou encerrar aqui é o mesmo que em Monitoramento. O contato de emergência de cada cliente é registrado em Mapa de risco → Clientes da Central.
+
 ## Gestão Administrativa
 
 ### Despesas {#finanzas}

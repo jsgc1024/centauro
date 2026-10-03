@@ -424,6 +424,9 @@ def yo(db: Session, gente: m.UsuarioCliente) -> dict:
         "idioma": gente.idioma, "cliente": cc.cliente.nombre,
         "zonas": sorted(z.region.nombre for z in cc.zonas),
         "telefono_central": settings.telefono_central,
+        # La linea de Respuesta a emergencias (seccion 145).
+        "telefono_emergencias": (settings.telefono_emergencias
+                                 or settings.telefono_central),
         "por_confirmar": _por_confirmar(db, gente),
     }
 

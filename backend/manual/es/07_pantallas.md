@@ -58,6 +58,11 @@ Lo que pasa en el país y a quién le llega. Los analistas capturan cada evento 
 ### Código {#codigo}
 El código de cuatro dígitos que se le dicta por teléfono al personal de campo que no puede entrar a la app. Vale 10 minutos.
 
+## Respuesta a emergencias
+
+### Respuesta a emergencias {#emergencias}
+El panel de la guardia 24/7. Llegan los tres pánicos —el del cliente de la Central desde su app, el de la app de campo y el del botón de la camioneta— y, mientras haya uno sin tomar, suena (el navegador pide tocar «Activar el sonido» una vez). La ficha dice dónde está quien pidió ayuda, en vivo y con su recorrido, quién es, qué riesgo publicado hay cerca, a quién más llamar —el contacto de emergencia del cliente o el consultor del servicio— y qué unidades con GPS hay cerca. Se toma la alerta, se anota si salió el equipo de respuesta y si se avisó a las autoridades, se dejan notas y se cierra con su resolución; todo queda en su bitácora. Tomarla o cerrarla aquí es lo mismo que en Monitoreo. El contacto de emergencia de cada cliente se captura en Mapa de riesgo → Clientes de la Central.
+
 ## Gestión Administrativa
 
 ### Gastos {#finanzas}

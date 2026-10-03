@@ -404,16 +404,6 @@ function tarjetaEvento(e, desde, pie = null) {
     pie);
 }
 
-function llamarCentral() {
-  if (!yo || !yo.telefono_central) return null;
-  return h("div", { clase: "caja urgente" },
-    h("a", { href: `tel:${yo.telefono_central.replace(/\s/g, "")}`,
-             style: "text-decoration:none" },
-      h("button", { clase: "claro" }, t("ci_llamar_central", { tel: yo.telefono_central }))),
-    h("div", { clase: "chico gris", style: "margin-top:10px;text-align:center" },
-      t("ci_atiende")));
-}
-
 function listaDeZonas(zonas) {
   if (zonas.length <= 1) return zonas.join("");
   const y = { es: " y ", pt: " e ", en: " and " }[idioma()] || " y ";
@@ -450,7 +440,7 @@ async function pantallaMapa(mia = vuelta) {
       h("h2", {}, t("ci_vigente_ahora", { n: eventos.length })),
       eventos.length ? eventos.map((e) => tarjetaEvento(e))
                      : h("div", { clase: "vacio" }, t("ci_nada_vigente"))],
-    llamarCentral(),
+    cajaPanico(),
     barra("mapa"));
 }
 
@@ -622,6 +612,7 @@ async function pantallaAvisos(mia = vuelta) {
                                datos.anteriores.map(avisoAnterior)] : null,
     !pendientes.length && !datos.anteriores.length
       ? h("div", { clase: "vacio" }, t("ci_sin_avisos")) : null,
+    cajaPanico(),
     barra("avisos"));
 }
 
@@ -803,12 +794,216 @@ function pantallaContrasena() {
     barra("yo"));
 }
 
+/* ------------------------------------------------- el panico (seccion 145)
+
+   Se mantiene presionado tres segundos: en la bolsa o con la mano
+   temblando, un toque no basta para levantarlo por error, y tres
+   segundos si se pueden sostener. No pide confirmar. La alerta sale con
+   la ubicacion si llega pronto y, si no, sin ella; despues el telefono
+   la sigue mandando cada quince segundos mientras siga abierta.
+   Si no hay red, se llama a Respuesta a emergencias. */
+
+const SOSTENER_MS = 3000;
+let seguimiento = null;
+
+function telefonoEmergencias() {
+  return (yo && (yo.telefono_emergencias || yo.telefono_central)) || "";
+}
+
+function leerUbicacion(tiempo = 8000) {
+  return new Promise((resolver) => {
+    if (!navigator.geolocation) return resolver(null);
+    navigator.geolocation.getCurrentPosition(
+      (p) => resolver({ lat: p.coords.latitude, lon: p.coords.longitude,
+                        precision: p.coords.accuracy }),
+      () => resolver(null),
+      { enableHighAccuracy: true, timeout: tiempo, maximumAge: 10000 });
+  });
+}
+
+/* Mientras la alerta siga abierta, donde va. Se detiene sola cuando la
+   cierran (o cuando la app deja de estar abierta: el navegador no deja
+   que una pagina mande la ubicacion con el telefono bloqueado). */
+function seguirUbicacion(cada = 15) {
+  if (seguimiento) return;
+  const mandar = async () => {
+    const donde = await leerUbicacion(10000);
+    if (!donde) return;
+    try {
+      const r = await api("POST", "/emergencia/ubicacion", donde);
+      if (!r.abierta) { clearInterval(seguimiento); seguimiento = null; }
+    } catch (e) {
+      /* Sin sesion se detiene; sin red, la siguiente vuelta lo intenta. */
+      if (e.codigo === 401) { clearInterval(seguimiento); seguimiento = null; }
+    }
+  };
+  seguimiento = setInterval(mandar, cada * 1000);
+}
+
+function cajaPanico() {
+  const tel = telefonoEmergencias();
+  const avance = h("span", { clase: "avance-panico" });
+  const b = h("button", { clase: "panico panico-sostener", type: "button" },
+              t("ci_em_sostener"), avance);
+  let reloj = null;
+  const soltar = () => {
+    clearTimeout(reloj);
+    reloj = null;
+    b.classList.remove("sosteniendo");
+  };
+  const empezar = (ev) => {
+    ev.preventDefault();
+    if (reloj) return;
+    b.classList.add("sosteniendo");
+    reloj = setTimeout(async () => {
+      reloj = null;
+      b.classList.remove("sosteniendo");
+      if (navigator.vibrate) navigator.vibrate(250);
+      await levantar();
+    }, SOSTENER_MS);
+  };
+  b.addEventListener("pointerdown", empezar);
+  for (const fin of ["pointerup", "pointerleave", "pointercancel"]) {
+    b.addEventListener(fin, soltar);
+  }
+  b.addEventListener("contextmenu", (ev) => ev.preventDefault());
+  return h("div", { clase: "caja urgente" }, b,
+    h("div", { clase: "chico gris", style: "margin-top:8px;text-align:center" },
+      t("ci_em_sostener_pie")),
+    tel ? h("a", { href: `tel:${tel.replace(/\s/g, "")}`, style: "text-decoration:none" },
+            h("button", { clase: "claro", style: "margin-top:10px" },
+              t("ci_em_llamar", { tel }))) : null);
+}
+
+/* La ubicacion se pide al terminar de presionar, no al empezar: la
+   primera vez el telefono pregunta si la permite, y esa pregunta, a
+   media presion, cancelaba el toque (iOS). Si en dos segundos no llega,
+   la alerta sale sin ella y la ubicacion la sigue en cuanto la haya. */
+async function levantar() {
+  const pedida = leerUbicacion(15000);
+  const donde = await Promise.race([
+    pedida, new Promise((r) => setTimeout(() => r(null), 2000))]);
+  try {
+    const r = await api("POST", "/emergencia", donde || {});
+    seguirUbicacion(r.cada_segundos);
+    if (!donde) {
+      pedida.then((tarde) => tarde && api("POST", "/emergencia/ubicacion", tarde).catch(() => {}));
+    }
+    if (location.hash === "#/emergencia") route();
+    else location.hash = "#/emergencia";
+  } catch (e) {
+    const tel = telefonoEmergencias();
+    alert(t("ci_em_fallo", { error: e.message, tel }));
+    if (tel) location.href = `tel:${tel.replace(/\s/g, "")}`;
+  }
+}
+
+/* Lo que esta pintado de la alerta: cada diez segundos se cambian sus
+   textos y se mueve el punto, sin rehacer la pantalla ni pedirle a
+   Google un mapa nuevo. */
+let emPintada = null;
+
+function mapaDeMiAlerta(a) {
+  if (!a.llave_mapa || a.lat === null || a.lat === undefined) return null;
+  const lienzo = h("div", { clase: "mapa", style: "height:220px" });
+  cargarGoogle(a.llave_mapa).then(() => {
+    const punto = { lat: a.lat, lng: a.lon };
+    const mapa = new google.maps.Map(lienzo, {
+      center: punto, zoom: 15, disableDefaultUI: true, zoomControl: true,
+      gestureHandling: "greedy" });
+    if (emPintada) emPintada.marca = new google.maps.Marker({
+      map: mapa, position: punto,
+      icon: { path: google.maps.SymbolPath.CIRCLE, scale: 8,
+              fillColor: COLOR[4], fillOpacity: 1,
+              strokeColor: "#fff", strokeWeight: 3 } });
+  }).catch(() => { lienzo.remove(); });
+  return lienzo;
+}
+
+function textoAtiende(a) {
+  if (a.atiende) return t("ci_em_atiende", { quien: a.atiende });
+  return a.atendida ? t("ci_em_atendida") : t("ci_em_por_atender");
+}
+
+function textoUltima(a) {
+  return a.ubicacion_en
+    ? t("ci_em_ultima", { hace: hace(a.ubicacion_en),
+                          precision: a.precision_m === null ? "—" : a.precision_m })
+    : t("ci_em_sin_ubicacion");
+}
+
+async function actualizarEmergencia(mia) {
+  const a = await api("GET", "/emergencia");
+  if (mia !== vuelta) return;
+  const p = emPintada;
+  if (!p || !a.abierta || a.id !== p.id || a.dijo_error !== p.dijo_error
+      || (p.sinMapa && a.lat !== null)) {
+    await pantallaEmergencia(mia, a);
+    return;
+  }
+  p.atiende.textContent = textoAtiende(a);
+  p.ultima.textContent = textoUltima(a);
+  if (p.marca && a.lat !== null) p.marca.setPosition({ lat: a.lat, lng: a.lon });
+}
+
+async function pantallaEmergencia(mia = vuelta, datos = null) {
+  const a = datos || await api("GET", "/emergencia");
+  if (mia !== vuelta) return;
+  const tel = a.telefono || telefonoEmergencias();
+  const llamar = tel
+    ? h("a", { href: `tel:${tel.replace(/\s/g, "")}`, style: "text-decoration:none" },
+        h("button", {}, t("ci_em_llamar_respuesta")))
+    : null;
+  if (!a.abierta) {
+    emPintada = null;
+    clearInterval(seguimiento);
+    seguimiento = null;
+    pintar(encabezado(),
+      h("div", { clase: "caja" }, h("h2", { style: "margin-top:0" }, t("ci_em_cerrada")),
+        h("p", { clase: "gris" }, t("ci_em_cerrada_pie"))),
+      cajaPanico(), barra("mapa"));
+    return;
+  }
+  seguirUbicacion(a.cada_segundos);
+  const error = a.dijo_error
+    ? h("div", { clase: "chico gris", style: "margin:8px 0 18px;text-align:center" },
+        t("ci_em_error_dicho"))
+    : [boton(t("ci_em_fue_error"), async () => {
+        if (!confirm(t("ci_em_fue_error_confirmar"))) return;
+        await api("POST", "/emergencia/error");
+        route();
+      }, "claro"),
+       h("div", { clase: "chico gris", style: "margin:8px 0 18px;text-align:center" },
+         t("ci_em_fue_error_pie"))];
+  const atiende = h("div", { style: "margin-top:2px;font-weight:700" }, textoAtiende(a));
+  const ultima = h("div", { clase: "chico gris", style: "margin-top:4px" }, textoUltima(a));
+  emPintada = { id: a.id, dijo_error: a.dijo_error, atiende, ultima, marca: null,
+                sinMapa: a.lat === null };
+  pintar(encabezado(),
+    h("div", { clase: "caja alerta-enviada" },
+      h("div", { clase: "alerta-enviada-titulo" }, t("ci_em_enviada")),
+      h("div", { style: "margin-top:6px" }, t("ci_em_recibida", { hora: horaCorta(a.recibida_en) })),
+      atiende),
+    mapaDeMiAlerta(a),
+    h("div", { clase: "caja" },
+      h("div", { clase: "dato" }, h("span", { clase: "clave" }, t("ci_em_tu_ubicacion"))),
+      h("div", { style: "margin-top:4px" }, t("ci_em_se_comparte", { s: a.cada_segundos })),
+      ultima),
+    llamar, error, barra("mapa"));
+}
+
+function horaCorta(iso) {
+  const f = new Date(iso);
+  return `${String(f.getHours()).padStart(2, "0")}:${String(f.getMinutes()).padStart(2, "0")}`;
+}
+
 /* ------------------------------------------------------------ las rutas */
 
 /* Cada vuelta de route() lleva su numero: si mientras esperaba al
    servidor ya empezo otra (se pico otra pestana), esta no pinta ni deja
    su reloj andando. */
 let vuelta = 0;
+let alArrancar = true;
 
 async function route() {
   clearInterval(refresco);
@@ -829,6 +1024,29 @@ async function route() {
       ponerIdioma(yo.idioma);
     }
     if (mia !== vuelta) return;
+    /* Con una alerta abierta, la app abre en ella: quien la levanto no
+       tiene que buscarla (seccion 145). Solo al abrir la app: despues
+       puede ir a su mapa sin que lo regrese. */
+    if (alArrancar) {
+      alArrancar = false;
+      const abierta = await api("GET", "/emergencia").catch(() => null);
+      if (mia !== vuelta) return;
+      if (abierta && abierta.abierta && pantalla !== "emergencia") {
+        location.hash = "#/emergencia";
+        return;
+      }
+    }
+    if (pantalla === "emergencia") {
+      await pantallaEmergencia(mia);
+      if (mia !== vuelta) return;
+      /* Mientras siga abierta, quien la atiende y la ultima ubicacion se
+         ven sin recargar. */
+      clearInterval(refresco);
+      refresco = setInterval(() => {
+        if (document.visibilityState === "visible") actualizarEmergencia(mia).catch(() => {});
+      }, 10000);
+      return;
+    }
     if (pantalla === "avisos") await pantallaAvisos(mia);
     else if (pantalla === "evento" && arg) await pantallaEvento(Number(arg), mia);
     else if (pantalla === "fondo" && arg) await pantallaFondoEstado(Number(arg), mia);

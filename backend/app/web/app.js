@@ -14,6 +14,9 @@ import { carteraImplantados, nuevoImplantado,
          pantallaImplantado } from "./implantado.js";
 import { detenerPanorama, pantallaPanorama } from "./panorama.js";
 import { detenerRiesgo, pantallaRiesgo } from "./riesgo.js";
+/* Respuesta a emergencias (seccion 145). */
+import { detenerEmergencias, pantallaEmergencias } from "./emergencias.js";
+import { EMERGENCIAS } from "./menu.js";
 import { pantallaAccesos } from "./accesos.js";
 import { pantallaOdoo } from "./odoo.js";
 import { pantallaCatalogos } from "./catalogos_pantalla.js";
@@ -392,7 +395,7 @@ function quienSoy(rol) {
           pintar();        // la consola entera se vuelve a pintar
         } }, i.bandera))),
     h("button", { clase: "salir", type: "button", onclick: () => {
-      api.salir(); detener(); detenerPanorama(); detenerRiesgo();
+      api.salir(); detener(); detenerPanorama(); detenerRiesgo(); detenerEmergencias();
       location.hash = "#/entrar"; pintar();
     } }, t("salir")));
 
@@ -463,7 +466,7 @@ async function pantallaContrasena(main) {
       await api.post("/auth/mi-contrasena", { actual: actual.value, nueva: nueva.value });
       correoSugerido = sesion.usuario.correo;
       notaEntrada = t("cc_cambiada_vuelve");
-      api.salir(); detener(); detenerPanorama(); detenerRiesgo();
+      api.salir(); detener(); detenerPanorama(); detenerRiesgo(); detenerEmergencias();
       location.hash = "#/entrar"; pintar();
     } catch (err) {
       error.replaceChildren(aviso(err.message, "grave"));
@@ -505,6 +508,7 @@ const RUTAS = [
   [/^#\/central$/, tableroCentral, "central", MONITOREO],
   /* El mapa de riesgo de la Central de Inteligencia (seccion 135). */
   [/^#\/riesgo$/, pantallaRiesgo, "riesgo", RIESGO],
+  [/^#\/emergencias$/, pantallaEmergencias, "emergencias", EMERGENCIAS],
   [/^#\/equipo$/, pantallaPersonal, "equipo", CONSULTA],
   /* La ficha de una persona, abierta directo: desde Calidad (seccion 89),
      el certificado vencido lleva a quien lo trae. */
@@ -602,6 +606,6 @@ async function pintar() {
 }
 
 window.addEventListener("hashchange", () => {
-  detener(); detenerPanorama(); detenerRiesgo(); pintar();
+  detener(); detenerPanorama(); detenerRiesgo(); detenerEmergencias(); pintar();
 });
 pintar();

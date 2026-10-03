@@ -264,6 +264,11 @@ class EstadoCliente(BaseModel):
     activo: bool
 
 
+class EmergenciaCliente(BaseModel):
+    contacto: str | None = Field(None, max_length=120)
+    telefono: str | None = Field(None, max_length=40)
+
+
 class Zonas(BaseModel):
     region_ids: list[int]
 
@@ -308,6 +313,9 @@ def _vista_cliente(db: Session, cc: m.ClienteCentral) -> dict:
         "id": cc.id, "cliente_id": cc.cliente_id,
         "cliente": cc.cliente.nombre, "pais_id": cc.cliente.pais_id,
         "activo": cc.activo,
+        # A quien llama Respuesta a emergencias (seccion 145).
+        "contacto_emergencia": cc.contacto_emergencia,
+        "telefono_emergencia": cc.telefono_emergencia,
         "zonas": sorted(({"region_id": z.region_id, "nombre": z.region.nombre}
                          for z in cc.zonas), key=lambda z: z["nombre"]),
         "gente": [{"id": g.id, "nombre": g.nombre, "apellidos": g.apellidos,
@@ -352,6 +360,24 @@ def estado_cliente(cc_id: int, datos: EstadoCliente,
                    usuario: m.Usuario = Depends(CLIENTES)):
     cc = _cliente_central(db, cc_id)
     cc.activo = datos.activo
+    db.commit()
+    return _vista_cliente(db, cc)
+
+
+@router.put("/clientes/{cc_id}/emergencia",
+            summary="A quien llama Respuesta a emergencias del cliente")
+def emergencia_cliente(cc_id: int, datos: EmergenciaCliente,
+                       db: Session = Depends(get_db),
+                       usuario: m.Usuario = Depends(CLIENTES)):
+    """El contacto que sale en la ficha del panico de su gente (seccion
+    145). Vacio, se borra."""
+    cc = _cliente_central(db, cc_id)
+    cc.contacto_emergencia = (datos.contacto or "").strip() or None
+    telefono = (datos.telefono or "").strip()
+    if telefono and not re.fullmatch(r"\+?[0-9 ()-]{7,24}", telefono):
+        raise HTTPException(400, "El teléfono lleva solo números, con su "
+                                 "clave de país")
+    cc.telefono_emergencia = telefono or None
     db.commit()
     return _vista_cliente(db, cc)
 

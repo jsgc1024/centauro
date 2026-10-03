@@ -33,6 +33,8 @@ from app.routers import riesgo as riesgo_router
 from app.routers import cliente_ci as cliente_ci_router
 from app.routers import nivel as nivel_router
 from app.routers import lector as lector_router
+# Respuesta a emergencias (seccion 145).
+from app.routers import emergencias as emergencias_router
 from app.seed import (sembrar, sembrar_bonos, sembrar_festivos,
                       sembrar_lugares, sembrar_parametros, sembrar_recursos)
 
@@ -171,6 +173,8 @@ app.include_router(nivel_router.router)
 app.include_router(lector_router.router)
 # Y la app de su cliente (seccion 136), con su propia sesion.
 app.include_router(cliente_ci_router.router)
+# Respuesta a emergencias: el panel de los panicos (seccion 145).
+app.include_router(emergencias_router.router)
 
 
 @app.exception_handler(IntegrityError)

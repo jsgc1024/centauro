@@ -145,6 +145,8 @@ GOOGLE_MAPS_KEY=...
 # La del navegador, limitada a mycentauro.lat/* y ci.mycentauro.lat/*
 # (seccion 135).
 GOOGLE_MAPS_KEY_NAVEGADOR=...
+# Para la direccion aproximada del panel de Respuesta a emergencias
+# (seccion 145), esa misma llave lleva tambien «Geocoding API».
 # El lector de noticias y redes (seccion 140): la llave de Claude
 # (console.anthropic.com → API Keys) y el Bearer Token de X (portal de
 # desarrolladores de X, con la cuenta de la Central). Sin ellas el
@@ -152,6 +154,9 @@ GOOGLE_MAPS_KEY_NAVEGADOR=...
 ANTHROPIC_API_KEY=...
 X_BEARER_TOKEN=...
 TELEFONO_CENTRAL=+525550221022
+# La linea de Respuesta a emergencias (seccion 145), la que marca el
+# panico del cliente de la Central. Vacia, marca la de la central.
+TELEFONO_EMERGENCIAS=
 VAPID_CONTACTO=mailto:operaciones@centauro.lat
 
 # De donde cuelgan los enlaces que van en correos y task sheets. Es
