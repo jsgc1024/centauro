@@ -72,6 +72,25 @@ PUESTOS: list[dict] = [
         "actividades": _de(R.DIRECTOR_OPERACIONES),
         "puestos_odoo": "Director de Operaciones, Director Operativo",
     },
+    # Seccion 150. Decision de Salvador, 3 oct: la gerencia de Centauro
+    # Logistica --Karla Rios-- fija lo que en sus catalogos decide dinero.
+    # Entra con su propio rol para que no le lleguen los avisos de la
+    # operacion de Proteccion Ejecutiva. En produccion lo crea la
+    # migracion c6f1a3e5b7d9, con lo mismo que dice aqui.
+    {
+        "nombre": "Gerente de Logística",
+        "area": "Logística",
+        "rol": R.LOGISTICA,
+        "orden": 15,
+        "descripcion": "La gerencia de Centauro Logística: fija lo que "
+                       "decide el dinero de cada viaje —el tabulador de "
+                       "comisiones, el diésel, los alimentos, el margen "
+                       "mínimo y los costos— y autoriza lo que pide su "
+                       "firma.",
+        "pantallas": ["lg_catalogos"],
+        "actividades": {"lg.catalogos.ver", "lg.catalogos.dinero"},
+        "puestos_odoo": "Gerente de Logística, Gerente de Logistica",
+    },
     {
         "nombre": "Consultor de seguridad",
         "area": "Operaciones EP",
@@ -274,7 +293,9 @@ PUESTOS: list[dict] = [
         # El manual del sistema (seccion 90): lo que hay que saber para
         # que, si algo se atora, sepa resolverlo y ver la causa de fondo.
         # Cotizaciones (seccion 114): las consulta, como la operacion.
+        # Logistica (seccion 150): lleva sus tipos de unidad y sus patios.
         "pantallas": ["panorama", "cotizaciones", "servicios", "implantados",
+                      "lg_catalogos",
                       "equipo", "unidades", "bonos", "encuestas", "accesos",
                       "odoo", "catalogos", "calidad", "manual", "riesgo"],
         "actividades": _de(R.SISTEMA_CALIDAD),

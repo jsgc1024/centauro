@@ -224,7 +224,9 @@ def test_cada_seccion_nueva_trae_su_novedad():
     es = {n["seccion"]: n["fecha_iso"] for n in manual.novedades("es")}
     pt = {n["seccion"]: n["fecha_iso"] for n in manual.novedades("pt")}
     assert es == pt
-    assert manual.version("es")["seccion"] == max(es)
+    # La version es la novedad mas nueva por fecha --y por seccion el
+    # mismo dia--, no la de numero mas alto (seccion 150).
+    assert manual.version("es")["seccion"] == max(es, key=lambda s: (es[s], s))
     if not os.path.exists(BITACORA):
         pytest.skip("la bitacora no viaja en la imagen del servidor")
     secciones = {int(x) for x in re.findall(r"^## (\d+)\. ",

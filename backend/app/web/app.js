@@ -17,6 +17,9 @@ import { detenerRiesgo, pantallaRiesgo } from "./riesgo.js";
 import { pantallaAccesos } from "./accesos.js";
 import { pantallaOdoo } from "./odoo.js";
 import { pantallaCatalogos } from "./catalogos_pantalla.js";
+/* Centauro Logistica, AI/LG (seccion 150), en sus propios renglones. */
+import { pantallaLgCatalogos } from "./lg_catalogos.js";
+import { LG_CATALOGOS } from "./menu.js";
 import { pantallaCalidad } from "./calidad.js";
 import { pantallaManual } from "./manual.js";
 import { pantallaDireccion } from "./direccion.js";
@@ -74,19 +77,28 @@ async function traerLogo() {
   return logo;
 }
 
-/* Toda esta consola es de Proteccion Ejecutiva. Va dicho en el encabezado
-   porque vienen mas lineas de operacion y no se deben confundir: el mismo
-   prefijo que llevan los folios, AI/EP.
+/* La clave del encabezado. Decia AI/EP porque la consola era solo de
+   Proteccion Ejecutiva; desde que en Connect viven tambien la Central de
+   Inteligencia y Logistica, dice AI/INT (decision de Salvador, 3 oct,
+   seccion 150). Dentro de las pantallas de Logistica dice AI/LG, el
+   prefijo de sus folios, como en sus bocetos. Los documentos de
+   Proteccion Ejecutiva --task sheet, hoja del implantado, correos--
+   siguen con AI/EP: son de esa linea.
 
    Junto a la clave va el nombre de la consola, Connect, en el dorado de
    la puerta de entrada: la misma firma adentro y afuera. Decia
-   "Proteccion Ejecutiva", que la clave AI/EP ya dice (Salvador, 26 sep).
+   "Proteccion Ejecutiva", que la clave ya dice (Salvador, 26 sep).
    Es un nombre: no se traduce. */
-const LINEA = "AI/EP";
+const LINEA = "AI/INT";
+const LINEA_LG = "AI/LG";
+
+function lineaDeAqui() {
+  return location.hash.startsWith("#/lg/") ? LINEA_LG : LINEA;
+}
 
 function sello(conNombre = true) {
   return h("div", { clase: "linea" },
-    h("span", { clase: "clave" }, LINEA),
+    h("span", { clase: "clave" }, lineaDeAqui()),
     conNombre
       ? h("span", { clase: "nombre" }, firma(t("consola_sello"), t("lema")))
       : null);
@@ -515,6 +527,8 @@ const RUTAS = [
   [/^#\/accesos$/, pantallaAccesos, "accesos", ADMINISTRA],
   [/^#\/odoo$/, pantallaOdoo, "odoo", LEE_ODOO],
   [/^#\/catalogos$/, pantallaCatalogos, "catalogos", CATALOGOS],
+  /* Los catalogos de Logistica (seccion 150). */
+  [/^#\/lg\/catalogos$/, pantallaLgCatalogos, "lg_catalogos", LG_CATALOGOS],
   /* El manual y sus paginas: #/manual, #/manual/atorado,
      #/manual/leer/<capitulo>, y asi. La pantalla reparte el resto. */
   [/^#\/manual\b\/?(.*)$/, pantallaManual, "manual", MANUAL],

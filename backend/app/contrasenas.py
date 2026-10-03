@@ -38,7 +38,8 @@ HORAS_RECUPERACION = 2
 # correo le entrega la cuenta. Lo suyo va por su consultor.
 POR_CORREO = {m.Rol.CONSULTOR, m.Rol.CENTRAL, m.Rol.FINANZAS,
               m.Rol.DIRECTOR_OPERACIONES, m.Rol.DIRECTOR_GENERAL,
-              m.Rol.ADMIN, m.Rol.RECURSOS_HUMANOS, m.Rol.SISTEMA_CALIDAD}
+              m.Rol.ADMIN, m.Rol.RECURSOS_HUMANOS, m.Rol.SISTEMA_CALIDAD,
+              m.Rol.LOGISTICA}
 
 # Los que viajan como enlace. El codigo de campo tambien vive en la
 # tabla de invitaciones, pero guardado cifrado y con su propia puerta:

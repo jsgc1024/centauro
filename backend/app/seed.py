@@ -337,6 +337,10 @@ def sembrar() -> dict:
         # lleva sistema y calidad en Catalogos.
         from app import freelance as lista_del_freelance
         lista_del_freelance.sembrar_requisitos(db)
+        # Logistica (seccion 150): los cuatro tipos de unidad y Base
+        # Cuautitlan. Ningun monto: los fija la gerencia de Logistica.
+        from app import lg_catalogos
+        lg_catalogos.sembrar(db)
 
         # La Central de Inteligencia (seccion 133): los estados de cada
         # pais y los tipos de evento de la cifra negra.

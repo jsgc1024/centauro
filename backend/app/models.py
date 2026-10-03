@@ -2368,6 +2368,10 @@ class Rol(str, enum.Enum):
     # de la llave maestra. Rol propio para que no le lleguen los avisos de
     # recursos humanos ni los de la operacion.
     SISTEMA_CALIDAD = "sistema_calidad"
+    # Centauro Logistica, AI/LG (seccion 150): la gerencia de la unidad de
+    # negocio. Rol propio para que no le lleguen los avisos de la
+    # operacion de Proteccion Ejecutiva, que van por rol.
+    LOGISTICA = "logistica"
 
 
 class Usuario(Base):
@@ -2831,6 +2835,113 @@ class RegistroAdmin(Base):
         DateTime(timezone=True), server_default=func.now())
 
     persona: Mapped["Persona | None"] = relationship(foreign_keys=[persona_id])
+
+
+# ================================================================ LOGISTICA
+#
+# Centauro Logistica, AI/LG (seccion 150): mueve carga con unidades y
+# operadores propios. Solo Mexico --pesos, sin pais--. Sus tablas llevan
+# el prefijo `lg_` para que no se confundan con las de Proteccion
+# Ejecutiva, que tienen sus propios tabuladores y su propio combustible.
+
+class LgTipoUnidad(Base):
+    """Cada viaje pide un tipo de unidad y solo se le ofrecen unidades de
+    ese tipo: 1.5 ton, 4 ton, torton de 15 ton y tracto. No hay
+    refrigerado. Lo lleva sistema y calidad."""
+    __tablename__ = "lg_tipo_unidad"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nombre: Mapped[str] = mapped_column(String(60), unique=True)
+    capacidad_ton: Mapped[float | None] = mapped_column(Numeric(6, 2),
+                                                        nullable=True)
+    # Como se decia en Tango («TH» es el torton): para que nadie se
+    # confunda al pasar los viajes de alla.
+    nombre_tango: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    orden: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    activo: Mapped[bool] = mapped_column(Boolean, default=True,
+                                         server_default=true())
+    creado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class LgPatio(Base):
+    """De donde sale y a donde regresa cada viaje, y donde el operador
+    marca su inicio de jornada: la app solo lo deja marcar dentro de la
+    geocerca. Lo lleva sistema y calidad."""
+    __tablename__ = "lg_patio"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nombre: Mapped[str] = mapped_column(String(80), unique=True)
+    direccion: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # Sin punto todavia es valido --Base Cuautitlan arranca asi--; la
+    # pantalla lo dice. Sin el, el patio no sirve para marcar.
+    lat: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
+    lon: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
+    # 300 m y no los 500 de Proteccion Ejecutiva: aqui marca el operador
+    # su inicio de jornada, y cuenta para su bono.
+    geocerca_metros: Mapped[int] = mapped_column(Integer, default=300,
+                                                 server_default="300")
+    activo: Mapped[bool] = mapped_column(Boolean, default=True,
+                                         server_default=true())
+    creado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class LgValor(Base):
+    """Un valor de un catalogo de Logistica, con la fecha desde la que rige.
+
+    Montos y reglas viven aqui y no en el codigo: el precio del diesel,
+    la holgura del anticipo, la tolerancia del rendimiento, los alimentos
+    por dia, el margen minimo, el costo del operador, el tabulador de
+    comisiones, el rendimiento y el costo por dia de cada tipo de unidad,
+    el bono de movilidad y la garantia del tracto. `clave` dice cual
+    (`lg_catalogos.PARAMETROS`).
+
+    Un valor nuevo no borra el anterior: cada viaje toma el que regia en
+    su fecha. Lo que ya rige no se edita; un error se corrige capturando
+    el bueno desde la misma fecha, y el malo se queda marcado como
+    reemplazado, con quien y por que. Lo programado --con fecha que no
+    ha llegado-- si se cambia o se quita, y tambien queda marcado. Un
+    renglon nunca se borra: un viaje cerrado puede apuntar a el.
+    """
+    __tablename__ = "lg_valor"
+    __table_args__ = (
+        Index("ix_lg_valor_vigencia", "clave", "tipo_unidad_id",
+              "vigente_desde"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    clave: Mapped[str] = mapped_column(String(30))
+    # Solo los que son de un tipo de unidad: su rendimiento y su costo.
+    tipo_unidad_id: Mapped[int | None] = mapped_column(
+        ForeignKey("lg_tipo_unidad.id"), nullable=True)
+    # Los de un solo numero (el diesel, un porcentaje)...
+    valor: Mapped[float | None] = mapped_column(Numeric(14, 4), nullable=True)
+    # ...y los de varios, como JSON de texto: el tabulador con sus cuatro
+    # tipos, el costo del operador, los tramos del bono.
+    datos: Mapped[str | None] = mapped_column(Text, nullable=True)
+    vigente_desde: Mapped[date] = mapped_column(Date)
+    # Por que: obligatorio con fecha que ya paso o al reemplazar lo que
+    # ya regia.
+    motivo: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    capturado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    capturado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    reemplazado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    reemplazado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("lg_valor.id"), nullable=True)
+    quitado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    quitado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+
+    tipo_unidad: Mapped[LgTipoUnidad | None] = relationship()
+    capturado_por: Mapped["Persona | None"] = relationship(
+        foreign_keys=[capturado_por_id])
+    quitado_por: Mapped["Persona | None"] = relationship(
+        foreign_keys=[quitado_por_id])
 
 
 # ================================================================ COTIZACION

@@ -727,6 +727,10 @@ AYUDA_POR_PANTALLA = {
     # el de autorizarla y el de la propuesta autorizada dentro del
     # implantado.
     "propuesta.js": 9,
+    # Los catalogos de Logistica (seccion 150): uno por catalogo --ocho--,
+    # que dice para que sirve y que pasa si falta. La lista de la izquierda
+    # y la bitacora no llevan: su renglon ya dice que falta y quien.
+    "lg_catalogos.js": 8,
 
     # --- las que no, y por que
     "api.js": 0,        # habla con el servidor; no pinta nada

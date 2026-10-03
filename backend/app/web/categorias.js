@@ -21,7 +21,7 @@ import { MENU, PARA_PUESTOS, leFaltaPara, menuDe } from "./menu.js";
 
 export const ROLES = ["consultor", "central", "finanzas", "director_operaciones",
                       "director_general", "recursos_humanos", "sistema_calidad",
-                      "admin", "personal_seguridad"];
+                      "logistica", "admin", "personal_seguridad"];
 
 /* El nombre del puesto en el idioma del que lee. Mapa explícito y no la
    cadena cruda: el día que un rol se llame de otra forma, aquí se ve el
@@ -34,6 +34,7 @@ export function nombreDelRol(codigo) {
     director_general: "rol_director_general",
     recursos_humanos: "rol_recursos_humanos",
     sistema_calidad: "rol_sistema_calidad",
+    logistica: "rol_logistica",
   }[codigo];
   return clave ? t(clave) : codigo;
 }
@@ -160,7 +161,7 @@ function tablaDeCasillas(catalogo, marcadas, alCambiar, bloqueadas = new Set()) 
    esas dos entran con su rol, sin puesto (sección 73). */
 const ROLES_DE_PUESTO = ["consultor", "central", "finanzas",
                          "director_operaciones", "recursos_humanos",
-                         "sistema_calidad"];
+                         "sistema_calidad", "logistica"];
 
 export async function pestanaPuestos(zona) {
   const base = h("div");
