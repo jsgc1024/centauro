@@ -10752,6 +10752,30 @@ que ya se sabia.
 
 Pruebas: `tests/test_lector.py` (14).
 
+## 141. El lector avisa cuando Claude no contesta
+
+Al publicar el lector (3 oct), la llave de Claude era de organizacion y
+no de un espacio de trabajo: Claude contestaba 400 («not scoped to a
+workspace») y el lector se quedaba callado, con 641 notas esperando y
+la pantalla diciendo solo «Nada por revisar». Se encontro desde la
+terminal. Se cambio la llave por una del espacio Default. Boceto
+aprobado por Salvador el 3 oct.
+
+- **Lo que pasa queda dicho** (`ParametrosLector.ia_falla`,
+  `ia_detalle`, `ia_falla_en`; migracion `d2f4a6c8e0b1`):
+  `falla_de_claude` lo pone en una palabra --llave (401/403), espacio,
+  saldo, saturado (429/5xx/529), red, otro-- con lo que dijo Claude,
+  nunca con la llave. El «desde cuando» no se mueve mientras siga
+  fallando; en cuanto un lote contesta, se borra. Tambien va al log del
+  worker (`warning`).
+- **La consola lo muestra** en la pestana Lector (arriba a la
+  izquierda, y en «Hoy»: «641 esperan a Claude») y en «Ver lo que
+  lee»: que paso, hace cuanto, cuantas notas esperan y que hacer. Lo
+  pasajero (saturado, sin conexion) va en amarillo; lo que pide una
+  mano, en rojo.
+
+Pruebas: `tests/test_lector.py` (16).
+
 ## 14. Lo que falta
 
 ### Abierto

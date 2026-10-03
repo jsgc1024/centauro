@@ -1831,6 +1831,7 @@ input.pro-mes { width: 132px; margin: 0; text-align: right;
 .lec-arriba { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .lec-titulo { font-weight: 600; line-height: 1.3; }
 .lec-hoy { padding: 2px 4px 6px; }
+.lec-ia-sub { margin-top: 6px; }
 .lec-ficha { border-top: 4px solid var(--centauro); }
 .lec-ficha h3 { margin: 14px 0 6px; font-size: 15px; }
 .lec-titular { margin: 4px 0 6px; font-size: 20px; line-height: 1.3; }

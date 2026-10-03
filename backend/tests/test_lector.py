@@ -432,3 +432,79 @@ def test_lo_nuevo_de_un_hecho_que_ya_es_evento_va_a_su_evento(cliente,
     ficha = cliente.get(f"/riesgo/lector/hallazgos/{nuevo.id}",
                         headers=sesion("central")).json()
     assert ficha["evento_folio"] == evento["folio"]
+
+
+def _error_de_claude(codigo, tipo, mensaje):
+    import httpx
+    pedido = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    respuesta = httpx.Response(codigo, request=pedido, json={
+        "type": "error", "error": {"type": tipo, "message": mensaje}})
+    return httpx.HTTPStatusError("no", request=pedido, response=respuesta)
+
+
+def test_por_que_claude_no_contesto():
+    import httpx
+    casos = [
+        (_error_de_claude(401, "authentication_error", "invalid x-api-key"),
+         "llave"),
+        (_error_de_claude(400, "invalid_request_error",
+                          "This API key is not scoped to a workspace"),
+         "espacio"),
+        (_error_de_claude(400, "invalid_request_error",
+                          "Your credit balance is too low"), "saldo"),
+        (_error_de_claude(529, "overloaded_error", "Overloaded"), "saturado"),
+        (httpx.ConnectTimeout("lento"), "red"),
+        (_error_de_claude(404, "not_found_error", "model: x"), "otro"),
+    ]
+    for error, esperado in casos:
+        falla, detalle = lector.falla_de_claude(error)
+        assert falla == esperado, (error, falla)
+        assert "sk-" not in detalle
+    assert lector.falla_de_claude(_error_de_claude(
+        404, "not_found_error", "model: x"))[1].startswith("404")
+
+
+def test_si_claude_no_contesta_la_consola_lo_dice(cliente, sesion):
+    yo = sesion("central")
+    fid = _fuente()
+    db = SessionLocal()
+    try:
+        lector.leer_fuente(db, db.get(m.FuenteLector, fid),
+                           _Cliente(_Respuesta(_rss(NOTAS[0], NOTAS[2]))),
+                           AHORA)
+        db.commit()
+
+        def falla(*a, **k):
+            raise _error_de_claude(400, "invalid_request_error",
+                                   "This API key is not scoped to a workspace")
+        with mock.patch.object(lector, "_consulta", falla), \
+                mock.patch.object(settings, "anthropic_api_key", "sk-prueba"):
+            salida = lector.entender(db, AHORA)
+            assert salida["falla"] == "espacio"
+            # Las notas esperan: nada se perdio ni se marco como error.
+            assert {n.estado for n in db.query(m.NotaLector)} == {"nueva"}
+            # Una segunda falla no mueve el «desde cuando».
+            lector.entender(db, AHORA + timedelta(minutes=5))
+            par = lector.parametros(db)
+            assert par.ia_falla == "espacio"
+            assert par.ia_falla_en == AHORA
+
+            datos = cliente.get("/riesgo/lector", headers=yo).json()
+            assert datos["ia"]["falla"] == "espacio"
+            assert datos["ia"]["esperan"] == 2
+            assert "workspace" in datos["ia"]["detalle"]
+            fuentes = cliente.get("/riesgo/lector/fuentes",
+                                  headers=yo).json()
+            assert fuentes["ia"]["falla"] == "espacio"
+
+        # Vuelve a contestar: el aviso se va solo.
+        a, b = _con_claude([[{"n": 1, "es_hecho": False},
+                             {"n": 2, "es_hecho": False}]])
+        with a, b:
+            lector.entender(db, AHORA + timedelta(minutes=10))
+            db.expire_all()
+            assert lector.parametros(db).ia_falla is None
+            assert cliente.get("/riesgo/lector",
+                               headers=yo).json()["ia"] is None
+    finally:
+        db.close()

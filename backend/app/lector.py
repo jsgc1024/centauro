@@ -24,6 +24,8 @@ from email.utils import parsedate_to_datetime
 from html import unescape
 from types import SimpleNamespace
 
+import logging
+
 from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -31,6 +33,8 @@ from sqlalchemy.orm import Session
 from app import models as m
 from app.config import settings
 from app.fuentes_riesgo import normalizar
+
+log = logging.getLogger(__name__)
 
 TIPOS = ("medio", "busqueda", "lista_x")
 MOTIVOS = ("no_es_seguridad", "ya_paso", "repetida", "fuera_de_mexico",
@@ -600,6 +604,50 @@ def _del_evento(db, pais, nota, dijo, evento, ahora) -> tuple:
     return nuevo, True
 
 
+FALLAS_DE_CLAUDE = ("llave", "espacio", "saldo", "saturado", "red", "otro")
+
+
+def falla_de_claude(e: Exception) -> tuple[str, str]:
+    """Por que Claude no contesto, en una palabra que la consola sabe
+    decir, y lo que dijo tal cual (recortado). Nunca lleva la llave."""
+    import httpx
+    if isinstance(e, httpx.HTTPStatusError):
+        codigo = e.response.status_code
+        try:
+            error = e.response.json().get("error") or {}
+        except ValueError:
+            error = {}
+        dijo = str(error.get("message") or e.response.text or "")[:300]
+        texto = dijo.lower()
+        if codigo in (401, 403) or error.get("type") in (
+                "authentication_error", "permission_error"):
+            return "llave", dijo
+        if "workspace" in texto:
+            return "espacio", dijo
+        if "credit balance" in texto or "billing" in texto:
+            return "saldo", dijo
+        if codigo in (429, 500, 502, 503, 529) or error.get("type") in (
+                "rate_limit_error", "overloaded_error", "api_error"):
+            return "saturado", dijo
+        return "otro", f"{codigo} · {dijo}"[:300]
+    if isinstance(e, httpx.TransportError):
+        return "red", type(e).__name__
+    return "otro", type(e).__name__
+
+
+def _anotar_falla(db: Session, falla: tuple[str, str] | None,
+                  ahora: datetime) -> None:
+    """Deja dicho (o borra) que Claude no contesto. Quien ya estaba
+    fallando conserva desde cuando."""
+    par = parametros(db)
+    if falla is None:
+        par.ia_falla = par.ia_detalle = par.ia_falla_en = None
+        return
+    if par.ia_falla is None:
+        par.ia_falla_en = ahora
+    par.ia_falla, par.ia_detalle = falla
+
+
 def entender(db: Session, ahora: datetime | None = None) -> dict:
     """Las notas nuevas que pasaron el filtro: a Claude por lotes, y cada
     una a su hallazgo (nuevo o el del mismo hecho). Cada lote se guarda al
@@ -624,6 +672,7 @@ def entender(db: Session, ahora: datetime | None = None) -> dict:
                 igual = _nuevo_hallazgo(db, pais, nota, None, ahora)
                 nuevos += 1
             nota.hallazgo_id, nota.estado = igual.id, "analizada"
+        _anotar_falla(db, None, ahora)
         db.commit()
         return {"notas": len(pendientes), "hallazgos": nuevos, "con_ia": False}
 
@@ -633,10 +682,18 @@ def entender(db: Session, ahora: datetime | None = None) -> dict:
             respuestas = _consulta(db, pais, lote, _abiertos(db, pais, ahora),
                                    _eventos_vivos(db, pais, ahora),
                                    _descartes(db))
-        except Exception:                                # noqa: BLE001
-            # Claude no contesto: se quedan como nuevas para la que sigue.
+        except Exception as e:                           # noqa: BLE001
+            # Claude no contesto: se quedan como nuevas para la que sigue,
+            # y la consola lo dice (antes se quedaba callada).
             db.rollback()
-            break
+            falla = falla_de_claude(e)
+            log.warning("El lector no pudo consultar a Claude: %s (%s)",
+                        falla[0], falla[1])
+            _anotar_falla(db, falla, ahora)
+            db.commit()
+            return {"notas": i, "hallazgos": nuevos, "con_ia": True,
+                    "falla": falla[0]}
+        _anotar_falla(db, None, ahora)
         por_n = {}
         for r in respuestas:
             n = _numero(r.get("n"))
@@ -884,7 +941,20 @@ def por_revisar(db: Session, pais: m.Pais, ahora: datetime | None = None
         "llaves": {"ia": bool(settings.anthropic_api_key),
                    "x": bool(settings.x_bearer_token)},
         "pausado": parametros(db).pausado,
+        "ia": vista_falla(db),
     }
+
+
+def vista_falla(db: Session) -> dict | None:
+    """Si Claude no esta contestando: que paso, lo que dijo, desde cuando
+    y cuantas notas esperan. None si todo va bien."""
+    par = parametros(db)
+    if not par.ia_falla or not settings.anthropic_api_key:
+        return None
+    return {"falla": par.ia_falla, "detalle": par.ia_detalle,
+            "desde": par.ia_falla_en.isoformat() if par.ia_falla_en else None,
+            "esperan": db.query(func.count(m.NotaLector.id))
+            .filter_by(estado="nueva").scalar() or 0}
 
 
 # ============================================================ lo que hace el analista
@@ -1026,7 +1096,8 @@ def fuentes(db: Session, pais: m.Pais, ahora: datetime | None = None) -> dict:
             "tope_x_dia": par.tope_x_dia, "x_hoy": x_leidas_hoy(db, ahora),
             "pausado": par.pausado,
             "llaves": {"ia": bool(settings.anthropic_api_key),
-                       "x": bool(settings.x_bearer_token)}}
+                       "x": bool(settings.x_bearer_token)},
+            "ia": vista_falla(db)}
 
 
 def agregar_fuente(db: Session, usuario: m.Usuario, pais: m.Pais,

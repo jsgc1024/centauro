@@ -35,6 +35,26 @@ function hace(iso) {
   return t("lec_hace_d").replace("{n}", Math.round(min / 1440));
 }
 
+/* Cuando Claude no contesta, la consola lo dice (seccion 141): que paso,
+   desde cuando, cuantas notas esperan y que hacer. Lo pasajero (saturado,
+   sin conexion) va en amarillo; lo que pide una mano, en rojo. */
+const QUE_HACER = { llave: "lec_ia_hacer_llave", espacio: "lec_ia_hacer_llave",
+                    saldo: "lec_ia_hacer_saldo", saturado: "lec_ia_hacer_esperar",
+                    red: "lec_ia_hacer_esperar", otro: "lec_ia_hacer_otro" };
+
+function avisoDeClaude(ia) {
+  if (!ia) return null;
+  const falla = QUE_HACER[ia.falla] ? ia.falla : "otro";
+  const pasajero = falla === "saturado" || falla === "red";
+  return aviso([
+    h("div", {}, h("b", {}, t("lec_ia_titulo")), " ",
+      t("lec_ia_dijo").replace("{que}", t(`lec_ia_${falla}`)).replace("{hace}", hace(ia.desde))),
+    h("div", { clase: "chico lec-ia-sub" },
+      t("lec_ia_esperan").replace("{n}", ia.esperan.toLocaleString()), " ",
+      t(QUE_HACER[falla]).replace("{detalle}", ia.detalle || "")),
+  ], pasajero ? "alerta" : "grave");
+}
+
 /* Solo enlaces http(s): lo demas no se pica. El servidor ya los limpia;
    esto es la segunda puerta. */
 function seguro(url) {
@@ -56,7 +76,7 @@ export async function mesaDelLector(cuerpo, ctx) {
     cuerpo.replaceChildren(aviso(t("lec_solo_mx"), "alerta"));
     return;
   }
-  const estado = { abierto: null, vista: "revisar", cuantos: EN_LA_LISTA };
+  const estado = { abierto: null, vista: "revisar", cuantos: EN_LA_LISTA, ia: null };
   const izquierda = h("div", { clase: "rsg-cola lec-cola" });
   const derecha = h("div");
   const mesa = h("div", { clase: "rsg-mesa" }, izquierda, derecha);
@@ -75,6 +95,7 @@ export async function mesaDelLector(cuerpo, ctx) {
       return;
     }
     ctx.contar(datos.hallazgos.length);
+    estado.ia = datos.ia;
     pintarCola(izquierda, datos, estado, (id) => abrir(id), () => {
       estado.vista = "fuentes";
       pintar();
@@ -95,7 +116,7 @@ export async function mesaDelLector(cuerpo, ctx) {
   const pintarFicha = async () => {
     if (!estado.abierto) {
       derecha.replaceChildren(h("div", { clase: "tarjeta lec-ficha" },
-        h("p", { clase: "gris" }, t("lec_nada"))));
+        h("p", { clase: "gris" }, t(estado.ia ? "lec_nada_sin_ia" : "lec_nada"))));
       return;
     }
     let hallazgo;
@@ -146,7 +167,7 @@ function pintarCola(izquierda, datos, estado, alAbrir, alFuentes) {
         t("lec_ver_los").replace("{n}", datos.hallazgos.length))
     : null;
   const hoy = datos.hoy;
-  const avisos = [];
+  const avisos = [avisoDeClaude(datos.ia)];
   if (!datos.llaves.ia) avisos.push(aviso(t("lec_sin_ia"), "alerta"));
   if (datos.pausado) avisos.push(aviso(t("lec_pausado"), "alerta"));
   izquierda.replaceChildren(...[
@@ -159,7 +180,9 @@ function pintarCola(izquierda, datos, estado, alAbrir, alFuentes) {
     h("div", { clase: "chico gris lec-hoy" }, t("lec_hoy_cuenta")
       .replace("{leidas}", hoy.leidas.toLocaleString()).replace("{fuentes}", hoy.fuentes)
       .replace("{parecian}", hoy.parecian).replace("{revisar}", datos.hallazgos.length)
-      .replace("{eventos}", hoy.eventos).replace("{descartados}", hoy.descartados)),
+      .replace("{eventos}", hoy.eventos).replace("{descartados}", hoy.descartados),
+      ...(datos.ia ? [" · ", h("b", { clase: "rojo" },
+        t("lec_hoy_esperan").replace("{n}", datos.ia.esperan.toLocaleString()))] : [])),
     h("button", { type: "button", clase: "claro chico", onclick: alFuentes }, t("lec_ver_fuentes")),
   ].filter(Boolean));
 }
@@ -358,7 +381,7 @@ async function pintarFuentes(cuerpo, ctx, alVolver) {
         t("lec_ver_las").replace("{n}", filas.length))
     : null;
 
-  const llaves = [];
+  const llaves = [avisoDeClaude(datos.ia)].filter(Boolean);
   if (!datos.llaves.ia) llaves.push(aviso(t("lec_sin_ia"), "alerta"));
   if (!datos.llaves.x) llaves.push(aviso(t("lec_sin_x"), "alerta"));
 

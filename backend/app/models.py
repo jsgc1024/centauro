@@ -5940,3 +5940,11 @@ class ParametrosLector(Base):
     x_dia: Mapped[date | None] = mapped_column(Date, nullable=True)
     x_leidas: Mapped[int] = mapped_column(Integer, default=0,
                                           server_default="0")
+    # Si Claude dejo de contestar (seccion 141): que paso, en palabras de
+    # la consola (llave, espacio, saldo, saturado, red, otro), lo que dijo
+    # y desde cuando. Se borra en cuanto vuelve a contestar.
+    ia_falla: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    ia_detalle: Mapped[str | None] = mapped_column(String(300),
+                                                   nullable=True)
+    ia_falla_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
