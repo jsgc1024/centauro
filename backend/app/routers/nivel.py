@@ -1,4 +1,4 @@
-"""El riesgo de fondo en la consola: el Nivel Centauro (seccion 135).
+"""El riesgo de fondo en la consola: el Nivel Centauro (seccion 138).
 
 Quien ve el mapa de riesgo lo ve; el analista (quien publica eventos)
 sube fuentes, recalcula y ajusta; el jefe de turno (quien confirma el

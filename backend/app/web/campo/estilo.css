@@ -376,7 +376,7 @@ a.botonazo {
 .logo-entrada { max-width: 78%; max-height: 64px; display: block;
                 margin: 0 auto; object-fit: contain; }
 
-/* El riesgo cerca del servicio (seccion 134). El nivel con el color de
+/* El riesgo cerca del servicio (seccion 137). El nivel con el color de
    la consola, siempre con su numero y su nombre. La app del cliente de
    la Central (/ci/) usa esta misma hoja y estas mismas piezas. */
 .nivel { display: inline-block; color: #fff; border-radius: 999px;

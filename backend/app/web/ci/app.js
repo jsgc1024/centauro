@@ -1,4 +1,4 @@
-/* La app del cliente de la Central de Inteligencia (seccion 133).
+/* La app del cliente de la Central de Inteligencia (seccion 136).
 
    Misma cara que la app de campo --su hoja de estilo, su encabezado, su
    barra de abajo (Salvador, 2 oct: "el diseño debe estar igual al que
@@ -420,7 +420,7 @@ function listaDeZonas(zonas) {
   return `${zonas.slice(0, -1).join(", ")}${y}${zonas[zonas.length - 1]}`;
 }
 
-/* Dos vistas del mismo mapa (seccion 135): lo que pasa hoy y el riesgo
+/* Dos vistas del mismo mapa (seccion 138): lo que pasa hoy y el riesgo
    de fondo del mes. Se queda la que eligio la ultima vez. */
 const LLAVE_VISTA = "centauro_ci_vista";
 

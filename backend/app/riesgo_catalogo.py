@@ -1,4 +1,4 @@
-"""Los catalogos de arranque de la Central de Inteligencia (seccion 130).
+"""Los catalogos de arranque de la Central de Inteligencia (seccion 133).
 
 Una sola copia, que leen la migracion (para el servidor) y la semilla
 (para las pruebas): si estuvieran escritas dos veces, la base de pruebas

@@ -37,7 +37,7 @@ export const NOMINAS = [...DINERO, "consultor"];
    consultor porque conoce a su gente por la voz, que es lo unico que
    protege este camino. Direccion de operaciones no entra. */
 export const CODIGO = ["consultor", "central", "director_general", "admin"];
-/* El mapa de riesgo de la Central de Inteligencia (seccion 132). */
+/* El mapa de riesgo de la Central de Inteligencia (seccion 135). */
 export const RIESGO = ["central", "director_operaciones", "director_general",
                        "sistema_calidad", "admin"];
 /* Quien reparte permisos. Direccion general quedo como super
@@ -130,7 +130,7 @@ export const MENU = [
      mesa a las 5:40 de la manana. */
   { ruta: "/central", clave: "central", necesita: "operacion.ver", texto: "nav_central", grupo: "nav_operaciones_ci",
     cuenta: "rec_central", quienes: MONITOREO },
-  /* El mapa de riesgo (seccion 132): los eventos que publica la central y
+  /* El mapa de riesgo (seccion 135): los eventos que publica la central y
      a quien le llegan. Lo abre quien trae `riesgo.ver`; sin puesto, la
      central y direccion de operaciones. */
   { ruta: "/riesgo", clave: "riesgo", necesita: "riesgo.ver", texto: "nav_riesgo", grupo: "nav_operaciones_ci",

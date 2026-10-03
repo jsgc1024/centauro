@@ -135,7 +135,7 @@ def test_entra_con_su_rol_su_menu_y_lo_suyo(cliente, sesion, aridiai):
     assert yo["es_direccion"] is False
     # Catalogos llego con la seccion 86, Calidad con la 89, el manual del
     # sistema con la 90, Cotizaciones --para consultarla-- con la 114 y el
-    # Mapa de riesgo --sus clientes y sus tipos de evento-- con la 132. Van
+    # Mapa de riesgo --sus clientes y sus tipos de evento-- con la 135. Van
     # en el orden de `permisos.PANTALLAS`: asi se guardan al crear el puesto.
     assert yo["pantallas"] == ["panorama", "cotizaciones", "servicios",
                                "implantados", "equipo", "unidades", "bonos",

@@ -778,7 +778,7 @@ AYUDA_POR_PANTALLA = {
     "campo/foto.js": 0,
     "campo/memoria.js": 0,
     "campo/sw.js": 0,
-    # La app del cliente de la Central (seccion 133): sin ayuda, como la
+    # La app del cliente de la Central (seccion 136): sin ayuda, como la
     # de campo.
     "ci/app.js": 0,
     "ci/sw.js": 0,

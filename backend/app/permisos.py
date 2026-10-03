@@ -586,7 +586,7 @@ ACTIVIDADES: dict[str, dict] = {
         "roles": {R.ADMIN, R.SISTEMA_CALIDAD},
     },
 
-    # La Central de Inteligencia (seccion 130). Quien captura y publica
+    # La Central de Inteligencia (seccion 133). Quien captura y publica
     # es la central; el nivel 4 lo confirma el jefe de turno (decision de
     # Salvador, 2 oct), que no es un rol sino un puesto: de fabrica la
     # trae direccion de operaciones, y a la persona del turno se le da en
@@ -607,7 +607,7 @@ ACTIVIDADES: dict[str, dict] = {
         "roles": {R.DIRECTOR_OPERACIONES},
     },
     # Quien da el servicio de la Central a un cliente, sus zonas y su
-    # gente (seccion 131). Es una decision comercial, no de turno.
+    # gente (seccion 134). Es una decision comercial, no de turno.
     "riesgo.clientes": {
         "descripcion": "Dar el servicio de la Central a un cliente, sus "
                        "zonas y quien entra a su app",

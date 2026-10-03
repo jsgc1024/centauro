@@ -1,4 +1,4 @@
-"""Lo fijo del Nivel Centauro (seccion 135): los municipios con su
+"""Lo fijo del Nivel Centauro (seccion 138): los municipios con su
 poblacion, los componentes, los pesos y los cortes de arranque, y que
 delitos del Secretariado entran en cada componente.
 

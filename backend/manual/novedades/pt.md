@@ -2,22 +2,22 @@
 
 O que há de novo em cada atualização, escrito para quem usa o sistema. A mais nova fica em cima.
 
-## 135 · 2026-10-03 · O risco de fundo: o Nível Centauro
+## 138 · 2026-10-03 · O risco de fundo: o Nível Centauro
 Em Mapa de risco há uma aba nova, **Risco de fundo**: o Nível Centauro de cada estado e de cada município, de 0 a 100, com as cores do painel da Central (Baixo, Médio baixo, Médio, Médio alto e Alto). Sai todo mês de seis coisas: a violência letal, os crimes com violência e o crime organizado do Secretariado Executivo, o medo da ENSU, o que não se denuncia da ENVIPE e a cifra oculta que a Central publica no mapa (40 %). O Connect procura sozinho o arquivo do Secretariado do dia 15 ao fim do mês e calcula o **rascunho**; o analista vê de onde saiu cada dado, revisa o que se moveu mais de 10 pontos, mudou de faixa ou não teve relatório, **ajusta** com o motivo se precisar, e o **chefe de turno publica**. As pesquisas do INEGI são enviadas à mão na mesma aba. Ao publicar, o cliente vê no app: no mapa, **«Eventos | Risco de fundo»**, os seus estados com o nível e, ao tocar um, como se compõe e os municípios mais altos. Ver [o mapa de risco](#/riesgo).
 
-## 134 · 2026-10-02 · O risco perto do serviço, no app de campo
+## 137 · 2026-10-02 · O risco perto do serviço, no app de campo
 No app de campo, acima do serviço do dia, aparece **«Risco perto do seu serviço»** com o que a Central de Inteligência publicou de nível 2 ou mais a 25 km ou menos do ponto de encontro: o nível, há quanto tempo aconteceu, a quantos quilômetros está e até quando afeta. Ao tocar, abre o detalhe, com o texto do analista e um botão para abrir no mapa. Os de nível 3 e 4 também chegam ao telefone assim que são publicados ou sobem de nível, uma só vez por nível, e o histórico do evento diz a quantas pessoas chegou. Mede-se a partir do ponto de encontro: um dia sem ponto cadastrado, ou um evento sem ponto no mapa, não entra. Ver [o mapa de risco](#/riesgo).
 
-## 133 · 2026-10-02 · O app do cliente da Central de Inteligência
+## 136 · 2026-10-02 · O app do cliente da Central de Inteligência
 Os clientes da Central já têm o seu app, em **ci.mycentauro.lat**, com a mesma cara do app de campo. Ao cadastrar o gerente em Mapa de risco → Clientes da Central, chega sozinho um e-mail com um link para criar a senha; vale 72 horas, e dali mesmo se pode **reenviar o convite** (a tabela diz até quando vale o que ele tem). No app ele vê o **mapa** dos estados que acompanha com o que está vigente, os seus **avisos** —no alto os de nível 3 e 4 com o botão **«Ciente»**, que fica no histórico do evento e tira a ligação do nível 4—, o detalhe de cada evento, e em «Eu» ativa os avisos no telefone, troca o idioma ou a senha. Só vê o que o analista escreveu para ele: nunca as fontes nem o histórico. O acesso dele não abre nada do Connect. Se esquecer a senha, recupera por e-mail. Ver [o mapa de risco](#/riesgo).
 
-## 132 · 2026-10-02 · O mapa de risco da Central de Inteligência
+## 135 · 2026-10-02 · O mapa de risco da Central de Inteligência
 Em Operações CI há uma tela nova, **Mapa de risco**. À esquerda, o que espera uma ação, primeiro o mais urgente: os avisos de nível 4 sem confirmação que é preciso ligar, os críticos que esperam o chefe de turno, os eventos por publicar e os vigentes no mapa. À direita, o mapa com cada evento pintado pelo seu nível e a ficha do evento: tipo com a sua definição, estado, município, nível de 1 a 4, título, o texto que o cliente lê, quando aconteceu, até quando afeta (com +2 h, +6 h e +24 h), tendência, ponto e raio. A ficha traz as suas fontes —uma: sem confirmar; duas ou mais: confirmado; uma oficial: oficial—, a quem chegou o aviso, por onde e se deu confirmação, e o histórico de quem fez o quê. Nada chega ao cliente sem ser publicado, e um nível 4 espera o chefe de turno confirmar ou devolver com o seu motivo. A aba **Clientes da Central** dá o serviço a um cliente do Odoo, marca os estados que ele acompanha e cadastra o seu gerente. Enquanto a chave do Google do mapa não estiver, o ponto se escreve à mão. Ver [o mapa de risco](#/riesgo).
 
-## 131 · 2026-10-02 · Os avisos de risco aos clientes
+## 134 · 2026-10-02 · Os avisos de risco aos clientes
 Ao publicar um evento, o aviso chega ao gerente de cada cliente com serviço que acompanha esse estado: o **nível 2** no seu telefone e num resumo do dia às 20:00; o **nível 3** no seu telefone e por e-mail na hora, com um botão para confirmar; o **nível 4** igual, e se em 15 minutos não houver confirmação, a Central o vê no alto para ligar e anota a ligação. Cada pessoa recebe cada evento uma só vez por nível.
 
-## 130 · 2026-10-02 · Os eventos de risco
+## 133 · 2026-10-02 · Os eventos de risco
 O Connect guarda os eventos de risco da Central de Inteligência, cada um com o seu folio (CI-0001), tipo —os da cifra negra mais bloqueio de estrada, manifestação e fenômeno natural—, estado, nível de 1 a 4, ponto, até quando afeta (30 dias no máximo) e as suas fontes. Passam de proposto a publicado e daí a fechado ou descartado, e o que já venceu se fecha sozinho a cada cinco minutos.
 
 ## 129 · 2026-10-02 · Revisão do que é novo, terceira leva: os detalhes

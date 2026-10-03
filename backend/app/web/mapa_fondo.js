@@ -1,5 +1,5 @@
 /* El fondo del mapa de riesgo: el Nivel Centauro pintado por estado o por
-   municipio (seccion 135). Lo usan la consola y la app del cliente.
+   municipio (seccion 138). Lo usan la consola y la app del cliente.
 
    Los colores son los del tablero de Power BI de la Central (Salvador,
    2 oct: "los colores de riesgo como estan los del power bi"): verde,

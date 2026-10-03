@@ -1,4 +1,4 @@
-"""A quien le llega cada evento, y por donde (seccion 131).
+"""A quien le llega cada evento, y por donde (seccion 134).
 
 La regla de reparto es corta a proposito: **un evento publicado le llega
 al gerente de cada cliente que sigue ese estado.** El analista no escoge

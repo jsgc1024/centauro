@@ -628,7 +628,7 @@ async function pantallaHoy() {
   for (const e of entregas) cuerpo.push(tarjetaEntrega(e));
 
   /* Lo que la Central de Inteligencia publico cerca de su punto de
-     encuentro de hoy (seccion 134): arriba del servicio, porque cambia
+     encuentro de hoy (seccion 137): arriba del servicio, porque cambia
      como se llega a el. */
   const riesgo = tarjetaRiesgo(datos.riesgo_cerca || []);
   if (riesgo) cuerpo.push(riesgo);
@@ -702,7 +702,7 @@ function tarjetaEntrega(e) {
 }
 
 /* ================================================================
-   El riesgo cerca del servicio (seccion 134)
+   El riesgo cerca del servicio (seccion 137)
 
    Lo publica la Central de Inteligencia y aqui solo se lee: nivel 2 o
    mas a 25 km o menos del punto de encuentro de hoy. El nivel va con su

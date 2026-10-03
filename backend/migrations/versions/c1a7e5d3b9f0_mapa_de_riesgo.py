@@ -1,4 +1,4 @@
-"""El mapa de riesgo de la Central de Inteligencia (seccion 130)
+"""El mapa de riesgo de la Central de Inteligencia (seccion 133)
 
 La segunda linea de operacion de Connect, AI/CI. Su pieza es el evento
 de riesgo: algo que paso en un lugar y a una hora, con su nivel (1 a 4),

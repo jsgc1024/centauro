@@ -1,5 +1,5 @@
 /* El trabajador de fondo de la app del cliente de la Central (seccion
-   133). Lo mismo que el de la app de campo, en corto: entrega los
+   136). Lo mismo que el de la app de campo, en corto: entrega los
    avisos aunque la app este cerrada, y guarda el armazon para que abra
    sin senal. Los datos nunca salen del cache: un mapa viejo servido
    como nuevo es peor que un error. */

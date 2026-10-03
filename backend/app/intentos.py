@@ -62,7 +62,7 @@ def _redis():
 # direccion: la oficina entera detras de su proxy, quince minutos. El
 # carril viene en el nombre ("recuperar:...", "codigo:..."); lo demas
 # es entrar (seccion 100).
-# La app del cliente de la Central (seccion 133) cuenta en los suyos:
+# La app del cliente de la Central (seccion 136) cuenta en los suyos:
 # "ci" para entrar y "ci-recuperar" para el olvido. En el de "entrar",
 # un gerente que entra bien borraba el tope por IP de la consola, y
 # cuarenta "olvide" de la app la dejaban sin entrar.

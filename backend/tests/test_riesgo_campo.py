@@ -1,4 +1,4 @@
-"""El riesgo cerca del servicio, en la app de campo (seccion 134).
+"""El riesgo cerca del servicio, en la app de campo (seccion 137).
 
 Lo que se cuida: en la tarjeta de Hoy solo lo vigente de nivel 2 o mas a
 25 km o menos del punto de encuentro; al telefono solo el 3 y el 4, una

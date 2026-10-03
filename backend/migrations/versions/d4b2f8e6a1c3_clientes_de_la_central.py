@@ -1,4 +1,4 @@
-"""Los clientes de la Central y sus alertas (seccion 131)
+"""Los clientes de la Central y sus alertas (seccion 134)
 
 El cliente de la Central es el de Odoo: aqui se marca que tiene el
 servicio, que estados sigue y quien de su gente entra a su app. Su gente

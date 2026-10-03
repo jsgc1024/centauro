@@ -51,7 +51,7 @@ def sembrar_riesgo(db: Session) -> None:
 
 def sembrar_municipios(db: Session) -> None:
     """Los municipios de Mexico con su poblacion del CONAPO, y los pesos
-    de arranque del Nivel Centauro (seccion 135). Solo si no estan."""
+    de arranque del Nivel Centauro (seccion 138). Solo si no estan."""
     import json
     from app import nivel_catalogo as nc
 
@@ -338,7 +338,7 @@ def sembrar() -> dict:
         from app import freelance as lista_del_freelance
         lista_del_freelance.sembrar_requisitos(db)
 
-        # La Central de Inteligencia (seccion 130): los estados de cada
+        # La Central de Inteligencia (seccion 133): los estados de cada
         # pais y los tipos de evento de la cifra negra.
         sembrar_riesgo(db)
 

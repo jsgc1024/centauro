@@ -63,7 +63,7 @@ celery.conf.update(
             "task": "correo.despachar",
             "schedule": crontab(minute="*/5"),
         },
-        # La Central de Inteligencia (seccion 130): lo publicado cuya
+        # La Central de Inteligencia (seccion 133): lo publicado cuya
         # vigencia ya paso se cierra solo, y lo propuesto que nadie
         # publico a tiempo se descarta. Cada cinco minutos: un evento
         # vencido que sigue en el mapa cinco minutos de mas no le cuesta
@@ -72,13 +72,13 @@ celery.conf.update(
             "task": "riesgo.vencer",
             "schedule": crontab(minute="*/5"),
         },
-        # El resumen del dia del nivel 2 (seccion 131): cada hora, y la
+        # El resumen del dia del nivel 2 (seccion 134): cada hora, y la
         # tarea decide en que pais ya son las 20:00.
         "riesgo-resumen": {
             "task": "riesgo.resumen_del_dia",
             "schedule": crontab(minute=7),
         },
-        # El Nivel Centauro (seccion 135): del 15 al fin de mes, cada
+        # El Nivel Centauro (seccion 138): del 15 al fin de mes, cada
         # manana, se busca el archivo nuevo del Secretariado. Si llego, se
         # guarda y se rehace el borrador del mes, que espera al analista.
         "riesgo-secretariado": {
@@ -414,7 +414,7 @@ def nomina_del_lunes():
 @celery.task(name="riesgo.resumen_del_dia")
 def resumen_de_riesgo():
     """El correo del nivel 2 al gerente del cliente, a las 20:00 de su
-    pais (seccion 131)."""
+    pais (seccion 134)."""
     from app import alertas_riesgo
     from app.db import SessionLocal
 
@@ -430,7 +430,7 @@ def resumen_de_riesgo():
 @celery.task(name="riesgo.bajar_secretariado")
 def bajar_secretariado():
     """El archivo del mes del Secretariado y el borrador del Nivel
-    Centauro (seccion 135)."""
+    Centauro (seccion 138)."""
     from datetime import date
 
     from app import fuentes_riesgo, nivel_centauro
@@ -455,7 +455,7 @@ def bajar_secretariado():
 
 @celery.task(name="riesgo.vencer")
 def vencer_eventos():
-    """Cierra los eventos de riesgo cuya vigencia ya paso (seccion 130)."""
+    """Cierra los eventos de riesgo cuya vigencia ya paso (seccion 133)."""
     from app import riesgo
     from app.db import SessionLocal
 

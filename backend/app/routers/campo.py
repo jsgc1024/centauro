@@ -423,7 +423,7 @@ def mi_dia(db: Session = Depends(get_db), ahora: datetime | None = None,
                       key=lambda j: j.inicio_programado)
 
     fichas = [_ficha(db, j, usuario.persona_id, ahora) for j in jornadas]
-    # Los dias de hoy, para medir el riesgo cerca (seccion 134).
+    # Los dias de hoy, para medir el riesgo cerca (seccion 137).
     de_hoy = _de_hoy(jornadas, hoy)
 
     # Lo que viene despues de manana, en corto: pediste sus servicios
@@ -458,7 +458,7 @@ def mi_dia(db: Session = Depends(get_db), ahora: datetime | None = None,
         "entregas_pendientes": entregas.pendientes_de(
             db, usuario.persona_id, ahora),
         # Lo que la Central de Inteligencia publico cerca de su punto de
-        # encuentro de hoy (seccion 134): nivel 2 o mas, a 25 km o menos.
+        # encuentro de hoy (seccion 137): nivel 2 o mas, a 25 km o menos.
         "riesgo_cerca": riesgo_campo.cerca_de(db, de_hoy),
         "proximos": [{
             "jornada_id": j.id,

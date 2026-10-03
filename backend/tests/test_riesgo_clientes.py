@@ -1,4 +1,4 @@
-"""Los clientes de la Central y sus alertas (seccion 131).
+"""Los clientes de la Central y sus alertas (seccion 134).
 
 Lo que se cuida: el evento le llega solo a quien sigue su estado; el
 nivel decide por donde; una alerta por evento, persona y nivel; el nivel

@@ -107,7 +107,7 @@ PUESTOS: list[dict] = [
                        "Confirma el nivel 4 del mapa de riesgo.",
         "pantallas": ["panorama", "servicios", "implantados", "equipo",
                       "unidades", "bonos", "central", "codigo", "riesgo"],
-        # El jefe de turno de la central (seccion 130): confirma lo que
+        # El jefe de turno de la central (seccion 133): confirma lo que
         # sale como nivel 4 en el mapa de riesgo.
         "actividades": _de(R.CENTRAL) | {"riesgo.confirmar"},
         "puestos_odoo": ("Supervisor Analisis, Supervisor Análisis, "

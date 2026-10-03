@@ -1,4 +1,4 @@
-"""Arma los mapas del riesgo de fondo (seccion 135): los contornos de los
+"""Arma los mapas del riesgo de fondo (seccion 138): los contornos de los
 estados y de los municipios de Mexico, simplificados para el navegador.
 
 Se corre a mano, una vez, y lo que sale se guarda en el repositorio

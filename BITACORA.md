@@ -10023,7 +10023,7 @@ aviso de los 20 MB y el precio sugerido de Brasil sin separador de
 miles.
 
 
-## 130. La Central de Inteligencia, AI/CI: el evento de riesgo
+## 133. La Central de Inteligencia, AI/CI: el evento de riesgo
 
 La segunda línea de operación de Connect. La propuesta completa, con
 las ocho decisiones de Salvador del 2 de octubre, está en el documento
@@ -10068,7 +10068,7 @@ los puestos que ya existen.
 API en `/riesgo` (`app/routers/riesgo.py`). Pruebas:
 `tests/test_riesgo.py` (22).
 
-## 131. Los clientes de la Central y sus alertas
+## 134. Los clientes de la Central y sus alertas
 
 El cliente de la Central es el de Odoo (decisión 2): `ClienteCentral`
 marca que tiene el servicio, `ZonaCliente` los estados que sigue y
@@ -10105,7 +10105,7 @@ siguen su estado. Nadie escoge a mano.
 calidad): dar el servicio, las zonas y la gente. Migración
 `d4b2f8e6a1c3`. Pruebas: `tests/test_riesgo_clientes.py` (14).
 
-## 132. La pantalla del mapa de riesgo
+## 135. La pantalla del mapa de riesgo
 
 Pantalla nueva `#/riesgo` en Operaciones CI (`app/web/riesgo.js`), para
 quien tiene `riesgo.ver`: dirección de operaciones, supervisor de
@@ -10135,9 +10135,9 @@ Sin llave la pantalla avisa y el punto se escribe a mano.
 Migración `e6c4a2f0b8d1`: `riesgo.ver` para sistema y calidad y la
 pantalla en las categorías que ya existían. Textos en es/en/pt
 (`rsg_*`), su parte en «Cada pantalla, para qué es» y las novedades de
-las secciones 130 a 132.
+las secciones 133 a 135.
 
-## 133. La app del cliente de la Central
+## 136. La app del cliente de la Central
 
 La gente del cliente entra a su propia app, `ci.mycentauro.lat`
 (`app/web/ci/`, servida en `/ci/`), con la cara de la app de campo: la
@@ -10183,7 +10183,7 @@ Los textos van en `idioma.js` con la marca `ci_`. En la consola, la
 gente del cliente dice hasta cuando vale su invitacion y tiene
 «Reenviar invitacion». Pruebas: `tests/test_cliente_ci.py` (12).
 
-## 134. El riesgo cerca del servicio, en la app de campo
+## 137. El riesgo cerca del servicio, en la app de campo
 
 Lo que publica la Central de Inteligencia le llega tambien al equipo en
 la calle (`app/riesgo_campo.py`). La regla la aprobo Salvador sobre los
@@ -10211,7 +10211,7 @@ La hoja de campo trae ahora `.nivel`, `.riesgo` y `.atras`, que la app
 del cliente toma de ahi. Caches: `centauro-campo-v23`, `centauro-ci-v2`.
 Pruebas: `tests/test_riesgo_campo.py` (5).
 
-## 135. El riesgo de fondo: el Nivel Centauro
+## 138. El riesgo de fondo: el Nivel Centauro
 
 El nivel de cada estado y municipio de Mexico, de 0 a 100, cada mes. La
 formula la dio Salvador (2 oct) y quedo escrita en el documento de la
@@ -10265,8 +10265,8 @@ motivo, nota de la llamada, fuente y su enlace) se ponian en Mayusculas
 Cada Palabra al salir del campo, y el enlace de una fuente quedaba
 «Https://...». Ahora van `data-crudo`. Y borrar un servicio suelta el
 dia de los avisos de riesgo de campo (`AvisoRiesgoCampo.jornada_id` a
-nulo, seccion 134), que la prueba de la limpieza pedia; la del puesto de
-sistema de calidad ya cuenta la pantalla de riesgo (seccion 132).
+nulo, seccion 137), que la prueba de la limpieza pedia; la del puesto de
+sistema de calidad ya cuenta la pantalla de riesgo (seccion 135).
 
 Pruebas: `tests/test_nivel_centauro.py` (14).
 

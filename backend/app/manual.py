@@ -683,7 +683,7 @@ AREAS = {
 AREA_DE_ARCHIVO = {
     "riesgo.py": "riesgo", "routers/riesgo.py": "riesgo",
     # La Central de Inteligencia: los clientes, su app, el campo y el
-    # Nivel Centauro (secciones 131 a 135).
+    # Nivel Centauro (secciones 134 a 138).
     "alertas_riesgo.py": "riesgo", "cliente_ci.py": "riesgo",
     "routers/cliente_ci.py": "riesgo", "riesgo_campo.py": "riesgo",
     "nivel_centauro.py": "riesgo", "fuentes_riesgo.py": "riesgo",

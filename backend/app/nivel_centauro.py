@@ -1,5 +1,5 @@
 """El Nivel Centauro: el riesgo de fondo de cada estado y municipio, de 0
-a 100, cada mes (seccion 135).
+a 100, cada mes (seccion 138).
 
 La formula la propuso Connect y la decidio Salvador el 2 de octubre de
 2026 (documento de la Central de Inteligencia, «El Nivel Centauro»):

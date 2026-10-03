@@ -159,11 +159,11 @@ app.include_router(cotizaciones_router.router)
 # implantado que nace al autorizarla (seccion 115).
 app.include_router(propuestas_router.router)
 # La Central de Inteligencia: el mapa de riesgo y sus eventos
-# (seccion 130).
+# (seccion 133).
 app.include_router(riesgo_router.router)
-# El riesgo de fondo: el Nivel Centauro (seccion 135).
+# El riesgo de fondo: el Nivel Centauro (seccion 138).
 app.include_router(nivel_router.router)
-# Y la app de su cliente (seccion 133), con su propia sesion.
+# Y la app de su cliente (seccion 136), con su propia sesion.
 app.include_router(cliente_ci_router.router)
 
 
@@ -467,7 +467,7 @@ if WEB.is_dir():
         app.mount("/app", ConsolaSinCache(directory=CAMPO, html=True),
                   name="app")
 
-    # La app del cliente de la Central de Inteligencia (seccion 133). En
+    # La app del cliente de la Central de Inteligencia (seccion 136). En
     # produccion vive en su propia direccion, ci.mycentauro.lat, que el
     # proxy manda aqui: otra direccion, otra sesion y otra app instalada.
     CI = WEB / "ci"

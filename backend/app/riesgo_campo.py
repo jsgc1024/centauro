@@ -1,4 +1,4 @@
-"""El riesgo cerca del servicio, en la app de campo (seccion 134).
+"""El riesgo cerca del servicio, en la app de campo (seccion 137).
 
 Lo que la Central de Inteligencia publica tambien le sirve al equipo que
 esta en la calle. La regla, aprobada por Salvador el 2 de octubre sobre

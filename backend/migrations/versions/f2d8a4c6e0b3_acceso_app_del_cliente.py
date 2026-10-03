@@ -1,4 +1,4 @@
-"""El acceso a la app del cliente de la Central (seccion 133)
+"""El acceso a la app del cliente de la Central (seccion 136)
 
 Los enlaces para poner la contrasena: la invitacion al darlo de alta y
 el de «olvide mi contrasena». Del token se guarda solo su huella.

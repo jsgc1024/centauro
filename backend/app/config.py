@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     # Google Maps Platform. La llave vive solo en el servidor: el navegador
     # nunca la ve, ni en el mapa ni en la busqueda.
     google_maps_key: str = ""
-    # La llave de Google para el mapa INTERACTIVO (seccion 132). Es otra,
+    # La llave de Google para el mapa INTERACTIVO (seccion 135). Es otra,
     # aparte de la de arriba, porque esta si sale al navegador: Google
     # Maps JavaScript no se puede servir desde el servidor. Por eso en
     # Google Cloud va limitada a las direcciones del sistema
@@ -92,7 +92,7 @@ class Settings(BaseSettings):
     # para el proxy; la huella (30 sep) la necesita porque una llave de
     # acceso solo vale en las direcciones que el sistema reconoce.
     dominio_campo: str = ""        # "appep.mycentauro.lat"
-    # La app del cliente de la Central de Inteligencia (seccion 131). Los
+    # La app del cliente de la Central de Inteligencia (seccion 134). Los
     # avisos de riesgo llevan a ella. Vacio: cuelga de url_publica, en /ci.
     url_ci: str = ""               # "https://ci.mycentauro.lat"
 

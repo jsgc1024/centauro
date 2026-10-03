@@ -1,4 +1,4 @@
-"""El Nivel Centauro (seccion 135).
+"""El Nivel Centauro (seccion 138).
 
 Lo que se cuida: el archivo del Secretariado se suma bien por componente
 (sin tentativas, «no especificado» al estado); el nivel sale de pesos y

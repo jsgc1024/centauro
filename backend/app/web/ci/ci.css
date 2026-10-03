@@ -30,7 +30,7 @@
 .dato .clave { font-size: 12px; color: var(--gris); text-transform: uppercase;
                letter-spacing: .4px; font-weight: 650; }
 
-/* El riesgo de fondo (seccion 135): el selector de vista, el mapa
+/* El riesgo de fondo (seccion 138): el selector de vista, el mapa
    pintado por estado y la ficha de cada uno de sus estados. */
 .seg { display: flex; gap: 6px; margin: 0 0 12px; }
 .seg button { min-height: 38px; padding: 8px 14px; font-size: 13px; width: auto; }

@@ -1,4 +1,4 @@
-"""El mapa de riesgo de la Central de Inteligencia (seccion 130)."""
+"""El mapa de riesgo de la Central de Inteligencia (seccion 133)."""
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -433,7 +433,7 @@ def alta_gente(cc_id: int, datos: Gente, tareas: BackgroundTasks,
                              alta_por_usuario_id=usuario.id, **campos)
     db.add(gente)
     db.flush()
-    # Su invitacion sale sola (seccion 133): un correo con el enlace para
+    # Su invitacion sale sola (seccion 136): un correo con el enlace para
     # poner su contrasena, que vale 72 horas.
     _, aviso = cliente_ci.nuevo_enlace(db, gente, cliente_ci.INVITACION)
     db.commit()

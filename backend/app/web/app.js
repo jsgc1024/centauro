@@ -491,7 +491,7 @@ const RUTAS = [
   [/^#\/implantado\/nuevo$/, nuevoImplantado, "implantados", CONSULTA],
   [/^#\/implantado\/(\d+)$/, pantallaImplantado, "implantados", CONSULTA],
   [/^#\/central$/, tableroCentral, "central", MONITOREO],
-  /* El mapa de riesgo de la Central de Inteligencia (seccion 132). */
+  /* El mapa de riesgo de la Central de Inteligencia (seccion 135). */
   [/^#\/riesgo$/, pantallaRiesgo, "riesgo", RIESGO],
   [/^#\/equipo$/, pantallaPersonal, "equipo", CONSULTA],
   /* La ficha de una persona, abierta directo: desde Calidad (seccion 89),

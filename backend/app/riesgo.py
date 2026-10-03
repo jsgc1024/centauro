@@ -1,4 +1,4 @@
-"""El evento de riesgo: la pieza de la Central de Inteligencia (seccion 130).
+"""El evento de riesgo: la pieza de la Central de Inteligencia (seccion 133).
 
 Un evento es algo que paso en un lugar y a una hora, y que cambia el
 riesgo de quien pase por ahi. Su vida tiene pocas puertas, y aqui se
@@ -27,7 +27,7 @@ La verificacion no la escoge el analista: sale de las fuentes. Una sola,
 sin confirmar; dos o mas, confirmado; una oficial, oficial. Asi el
 cliente puede creerle a la etiqueta.
 
-Quien recibe la alerta lo decide el modulo de alertas (seccion 131), que
+Quien recibe la alerta lo decide el modulo de alertas (seccion 134), que
 se cuelga de `AL_PUBLICAR`: aqui solo se dice cuando un evento empieza a
 ser publico o sube de nivel.
 """
@@ -512,7 +512,7 @@ def quitar_fuente(db: Session, usuario: m.Usuario, evento: m.EventoRiesgo,
 def _avisar(db: Session, evento: m.EventoRiesgo, motivo: str) -> None:
     from app import alertas_riesgo, riesgo_campo
     alertas_riesgo.al_publicar(db, evento, motivo)
-    # Y al personal de seguridad que trabaja hoy cerca (seccion 134).
+    # Y al personal de seguridad que trabaja hoy cerca (seccion 137).
     riesgo_campo.al_publicar(db, evento, motivo)
     for funcion in AL_PUBLICAR:
         funcion(db, evento, motivo)

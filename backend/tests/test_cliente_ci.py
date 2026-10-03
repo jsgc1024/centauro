@@ -1,4 +1,4 @@
-"""La app del cliente de la Central (seccion 133).
+"""La app del cliente de la Central (seccion 136).
 
 Lo que se cuida: entra solo con su enlace y su contrasena; su sesion no
 abre nada de Centauro ni la de Centauro abre la suya; ve solo lo

@@ -94,7 +94,7 @@ def entregar(db: Session, filas: list, carga: str,
 
     Sirve a los dos lados de la casa: al personal de campo
     (`SuscripcionPush`) y a la gente del cliente de la Central
-    (`SuscripcionPushCliente`, seccion 131). Lo unico que le importa de
+    (`SuscripcionPushCliente`, seccion 134). Lo unico que le importa de
     cada fila es su direccion, sus llaves y si sigue viva.
     """
     from pywebpush import WebPushException, webpush

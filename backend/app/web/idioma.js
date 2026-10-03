@@ -556,7 +556,7 @@ const TEXTOS = {
     rsg_invitacion_vence: "Invitación enviada · vence {cuando}",
     rsg_invitacion_vencida: "Su invitación venció: mándale otra",
     rsg_reenviar_invitacion: "Reenviar invitación",
-    // La app de campo: el riesgo cerca del servicio (seccion 134).
+    // La app de campo: el riesgo cerca del servicio (seccion 137).
     cmp_rsg_titulo: "Riesgo cerca de tu servicio",
     cmp_rsg_pie: "Lo publica la Central de Inteligencia",
     cmp_rsg_nivel: "{n} · {nombre}",
@@ -581,7 +581,7 @@ const TEXTOS = {
     cmp_rsg_verif_confirmado: "Confirmado",
     cmp_rsg_verif_oficial: "Oficial",
     cmp_rsg_no_esta: "Ese evento ya no está cerca de tu servicio.",
-    // La app del cliente de la Central (seccion 133).
+    // La app del cliente de la Central (seccion 136).
     ci_app_nombre: "Central de Inteligencia",
     ci_sello: "Connect App",
     ci_lema: "High Performance",
@@ -6130,7 +6130,7 @@ const TEXTOS = {
     rsg_invitacion_vence: "Invitation sent · expires {cuando}",
     rsg_invitacion_vencida: "The invitation expired: send another",
     rsg_reenviar_invitacion: "Resend invitation",
-    // La app de campo: el riesgo cerca del servicio (seccion 134).
+    // La app de campo: el riesgo cerca del servicio (seccion 137).
     cmp_rsg_titulo: "Risk near your service",
     cmp_rsg_pie: "Published by the Intelligence Center",
     cmp_rsg_nivel: "{n} · {nombre}",
@@ -6155,7 +6155,7 @@ const TEXTOS = {
     cmp_rsg_verif_confirmado: "Confirmed",
     cmp_rsg_verif_oficial: "Official",
     cmp_rsg_no_esta: "That event is no longer near your service.",
-    // La app del cliente de la Central (seccion 133).
+    // La app del cliente de la Central (seccion 136).
     ci_app_nombre: "Intelligence Center",
     ci_sello: "Connect App",
     ci_lema: "High Performance",
@@ -11698,7 +11698,7 @@ const TEXTOS = {
     rsg_invitacion_vence: "Convite enviado · vence {cuando}",
     rsg_invitacion_vencida: "O convite venceu: mande outro",
     rsg_reenviar_invitacion: "Reenviar convite",
-    // La app de campo: el riesgo cerca del servicio (seccion 134).
+    // La app de campo: el riesgo cerca del servicio (seccion 137).
     cmp_rsg_titulo: "Risco perto do seu serviço",
     cmp_rsg_pie: "Publicado pela Central de Inteligência",
     cmp_rsg_nivel: "{n} · {nombre}",
@@ -11723,7 +11723,7 @@ const TEXTOS = {
     cmp_rsg_verif_confirmado: "Confirmado",
     cmp_rsg_verif_oficial: "Oficial",
     cmp_rsg_no_esta: "Esse evento não está mais perto do seu serviço.",
-    // La app del cliente de la Central (seccion 133).
+    // La app del cliente de la Central (seccion 136).
     ci_app_nombre: "Central de Inteligência",
     ci_sello: "Connect App",
     ci_lema: "High Performance",

@@ -1,4 +1,4 @@
-/* El mapa de riesgo de la Central de Inteligencia (seccion 132).
+/* El mapa de riesgo de la Central de Inteligencia (seccion 135).
 
    Una pantalla, dos mesas. La del analista: a la izquierda lo que espera
    una mano --la llamada del nivel 4 sin acuse, lo que espera al jefe de
@@ -173,7 +173,7 @@ function cargarGoogle(llave) {
       + "&callback=__rsgMapaListo";
     s.async = true;
     /* El dominio, no la ruta: con eso Google reconoce la llave aunque la
-       pagina diga otra politica (seccion 132). */
+       pagina diga otra politica (seccion 135). */
     s.referrerPolicy = "strict-origin-when-cross-origin";
     s.onerror = () => { googleListo = null; rechazar(new Error("maps")); };
     document.head.append(s);
@@ -663,7 +663,7 @@ function fichaCliente(c, maneja, cuerpo) {
     h("td", {}, g.activo ? (g.con_contrasena ? h("span", { clase: "etiqueta ok" }, t("rsg_entra"))
                                              : h("span", { clase: "etiqueta alerta" }, t("rsg_sin_contrasena")))
                          : h("span", { clase: "etiqueta" }, t("rsg_cerrado_acceso")),
-      /* Seccion 133: su invitacion, mientras no ponga su contrasena. */
+      /* Seccion 136: su invitacion, mientras no ponga su contrasena. */
       g.activo && !g.con_contrasena
         ? h("div", { clase: "chico gris" }, g.invitacion_vence
           ? t("rsg_invitacion_vence").replace("{cuando}",

@@ -1,4 +1,4 @@
-"""Las puertas de la app del cliente de la Central (seccion 133).
+"""Las puertas de la app del cliente de la Central (seccion 136).
 
 Todas, menos las de entrar y las del enlace, piden la sesion del
 cliente (`cliente_ci.gente_actual`), que no abre nada mas del sistema.

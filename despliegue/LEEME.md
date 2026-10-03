@@ -132,7 +132,7 @@ renglones que puede llevar:
 # administrativo y los consultores-- y la app del personal de seguridad.
 DOMINIO=mycentauro.lat
 DOMINIO_CAMPO=appep.mycentauro.lat
-# La app del cliente de la Central de Inteligencia (seccion 133).
+# La app del cliente de la Central de Inteligencia (seccion 136).
 DOMINIO_CI=ci.mycentauro.lat
 URL_CI=https://ci.mycentauro.lat
 POSTGRES_PASSWORD=...
@@ -143,7 +143,7 @@ APP_ENV=produccion
 SECRET_KEY=...
 GOOGLE_MAPS_KEY=...
 # La del navegador, limitada a mycentauro.lat/* y ci.mycentauro.lat/*
-# (seccion 132).
+# (seccion 135).
 GOOGLE_MAPS_KEY_NAVEGADOR=...
 TELEFONO_CENTRAL=+525550221022
 VAPID_CONTACTO=mailto:operaciones@centauro.lat

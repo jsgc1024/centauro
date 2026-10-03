@@ -1,4 +1,4 @@
-"""El mapa de riesgo de la Central de Inteligencia (seccion 130).
+"""El mapa de riesgo de la Central de Inteligencia (seccion 133).
 
 Lo que se cuida: nada llega al cliente sin publicarse; el nivel 4 lo
 confirma otra persona; la verificacion sale de las fuentes; todo evento

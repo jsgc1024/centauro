@@ -1,4 +1,4 @@
-"""La pantalla del mapa de riesgo (seccion 132)
+"""La pantalla del mapa de riesgo (seccion 135)
 
 Los puestos de la central, direccion de operaciones y sistema y calidad
 toman la pantalla nueva en su menu. Sistema y calidad toma tambien

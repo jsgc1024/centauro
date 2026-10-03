@@ -1,4 +1,4 @@
-"""El riesgo cerca del servicio, en la app de campo (seccion 134)
+"""El riesgo cerca del servicio, en la app de campo (seccion 137)
 
 A quien del personal de seguridad se le aviso de un evento de riesgo por
 caer cerca de su servicio de hoy: uno por evento, persona y nivel.

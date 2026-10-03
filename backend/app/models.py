@@ -1914,7 +1914,7 @@ class Destinatario(str, enum.Enum):
     # aviso de administracion. Los cinco de arriba son papeles dentro de
     # un servicio; este es una persona a secas.
     COLABORADOR = "colaborador"
-    # Alguien del cliente de la Central de Inteligencia (seccion 131): su
+    # Alguien del cliente de la Central de Inteligencia (seccion 134): su
     # alerta de riesgo, su resumen del dia, su invitacion a la app.
     CLIENTE_CI = "cliente_ci"
 
@@ -5102,7 +5102,7 @@ class CasoResuelto(Base):
 
 # ------------------------------------------- Central de Inteligencia (AI/CI)
 #
-# La segunda linea de operacion de Connect (seccion 130). Su pieza es una
+# La segunda linea de operacion de Connect (seccion 133). Su pieza es una
 # sola: el evento de riesgo, algo que paso en un lugar y a una hora y que
 # cambia el riesgo de quien pase por ahi. El mapa son eventos; una alerta
 # es un evento que toca a un cliente; un trayecto es una ruta que los
@@ -5309,7 +5309,7 @@ class CambioEvento(Base):
 
 # --------------------------------- AI/CI: los clientes y sus alertas
 #
-# Seccion 131. El cliente de la Central es el mismo de Odoo (decision de
+# Seccion 134. El cliente de la Central es el mismo de Odoo (decision de
 # Salvador, 2 oct): aqui solo se marca que tiene el servicio, que estados
 # sigue y quien de su gente entra a la app del cliente. Su gente no es
 # personal de Centauro, asi que no es `Persona` ni `Usuario`: tiene su
@@ -5468,7 +5468,7 @@ class AlertaCliente(Base):
 
 class EnlaceCliente(Base):
     """El enlace para poner la contrasena de la app del cliente (seccion
-    133): la invitacion al darlo de alta, o el de «olvide mi contrasena».
+    136): la invitacion al darlo de alta, o el de «olvide mi contrasena».
 
     Del token solo se guarda su huella (sha256): quien lea la base no
     tiene con que entrar. Un enlace nuevo mata a los anteriores y usarlo
@@ -5498,7 +5498,7 @@ class EnlaceCliente(Base):
 class AvisoRiesgoCampo(Base):
     """Un evento de riesgo que se le aviso al telefono de alguien del
     personal de seguridad porque cae cerca de su servicio de hoy
-    (seccion 134). Uno por evento, persona y nivel: si sube de 3 a 4 se
+    (seccion 137). Uno por evento, persona y nivel: si sube de 3 a 4 se
     vuelve a avisar; si se corrige sin subir, no."""
     __tablename__ = "aviso_riesgo_campo"
     __table_args__ = (UniqueConstraint("evento_id", "persona_id", "nivel",
@@ -5520,7 +5520,7 @@ class AvisoRiesgoCampo(Base):
 
 
 # ==================================================================
-# El riesgo de fondo: el Nivel Centauro (seccion 135)
+# El riesgo de fondo: el Nivel Centauro (seccion 138)
 # ==================================================================
 
 class Municipio(Base):
@@ -5619,7 +5619,7 @@ class ParametrosNivel(Base):
     # JSON de texto: [20, 42, 60, 80].
     cortes: Mapped[str] = mapped_column(Text)
     # Con cuantos habitantes un municipio pesa la mitad suyo y la mitad
-    # su estado (seccion 135, municipios chicos).
+    # su estado (seccion 138, municipios chicos).
     suavizado: Mapped[int] = mapped_column(Integer, default=50000,
                                            server_default="50000")
     # El mes publicado contra el que se sacan los percentiles. Vacio: el

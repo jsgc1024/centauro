@@ -11,7 +11,7 @@
 # seguridad (appep.mycentauro.lat). Sin DOMINIO_CAMPO todo vive en
 # DOMINIO, como antes.
 #
-# DOMINIO_CI (seccion 133) es la de la app del cliente de la Central de
+# DOMINIO_CI (seccion 136) es la de la app del cliente de la Central de
 # Inteligencia (ci.mycentauro.lat). Sin ella, la app vive en
 # DOMINIO/ci/.
 
@@ -48,7 +48,7 @@ www.{$DOMINIO} {
 	# API, cada una desde su direccion. 302 y no 301 en todos los saltos:
 	# uno permanente se queda guardado en cada navegador para siempre.
 
-	# En la del cliente de la Central (seccion 133), la raiz abre su app.
+	# En la del cliente de la Central (seccion 136), la raiz abre su app.
 	# Va antes que la de campo: las dos son "no es la consola".
 	# Con `expression` y no con `host`: sin DOMINIO_CI, `host` se queda
 	# sin valor y Caddy no arranca.

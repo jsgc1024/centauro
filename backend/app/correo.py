@@ -98,7 +98,7 @@ HORAS_DE_VIDA = 24
 CON_VIDA_PROPIA = {"acceso_invitacion", "acceso_recuperacion",
                    "encuesta", "encuesta_recordatorio",
                    # El acceso a la app del cliente de la Central
-                   # (seccion 133): vive lo que vive su enlace.
+                   # (seccion 136): vive lo que vive su enlace.
                    "ci_invitacion", "ci_recuperacion"}
 
 
@@ -380,7 +380,7 @@ def versiones(db: Session, aviso: m.Notificacion) -> tuple:
         return acceso_por_correo.versiones(db, aviso)
 
     if aviso.plantilla in ("ci_invitacion", "ci_recuperacion"):
-        # El acceso a la app del cliente de la Central (seccion 133).
+        # El acceso a la app del cliente de la Central (seccion 136).
         from app import cliente_ci
         return cliente_ci.versiones(db, aviso)
 

@@ -1,4 +1,4 @@
-/* El riesgo de fondo en la consola: el Nivel Centauro (seccion 135).
+/* El riesgo de fondo en la consola: el Nivel Centauro (seccion 138).
 
    La tercera pestana del mapa de riesgo, en el orden de los bocetos
    aprobados el 2 de octubre:

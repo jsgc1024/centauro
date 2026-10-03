@@ -1,4 +1,4 @@
-"""La app del cliente de la Central de Inteligencia (seccion 133).
+"""La app del cliente de la Central de Inteligencia (seccion 136).
 
 La gente del cliente no es personal de Centauro: no tiene `Usuario`, no
 ve la consola y no comparte la sesion. Entra a su propia app
