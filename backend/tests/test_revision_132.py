@@ -454,8 +454,11 @@ def test_la_migracion_de_planta_es_la_cabeza():
     versiones = RAIZ / "migrations" / "versions"
     nueva = (versiones / "d4e8f0a3b2c5_freelance_a_planta.py").read_text()
     assert 'down_revision = "c3d7e9f2a1b4"' in nueva
-    assert sum(1 for p in versiones.glob("*.py")
-               if 'down_revision = "d4e8f0a3b2c5"' in p.read_text()) == 0
+    # Era la cabeza; desde que se junto la Central de Inteligencia
+    # (secciones 133 a 138) su unica hija es la primera de esa cadena.
+    hijas = [p.name for p in versiones.glob("*.py")
+             if 'down_revision = "d4e8f0a3b2c5"' in p.read_text()]
+    assert hijas == ["c1a7e5d3b9f0_mapa_de_riesgo.py"]
     with SessionLocal() as db:
         assert db.query(m.Freelance.planta_en, m.Freelance.planta_por_id,
                         m.Freelance.odoo_id_anterior).limit(1).all() is not None
