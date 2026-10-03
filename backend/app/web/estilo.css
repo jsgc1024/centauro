@@ -1881,6 +1881,11 @@ input.pro-mes { width: 132px; margin: 0; text-align: right;
 .lec-arriba { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .lec-titulo { font-weight: 600; line-height: 1.3; }
 .lec-hoy { padding: 2px 4px 6px; }
+/* Los informativos, aparte y plegados (seccion 148). */
+.lec-informativos { margin: 10px 0; padding: 8px 10px; border: 1px dashed var(--linea);
+                    border-radius: 8px; background: #fafbfc; }
+.lec-informativos > summary { cursor: pointer; padding: 4px 0; }
+.lec-informativos > .lec-renglon { margin-top: 6px; }
 .lec-ia-sub { margin-top: 6px; }
 .lec-solo-reglas { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
 .lec-solo-regla { margin-left: 22px; }

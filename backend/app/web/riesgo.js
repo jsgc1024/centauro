@@ -116,7 +116,7 @@ export async function pantallaRiesgo(main) {
   };
   await mostrar("mapa");
   if (ctx.pais.codigo === "MX") {
-    api.get("/riesgo/lector").then((d) => contarLector(d.hallazgos.length)).catch(() => {});
+    api.get("/riesgo/lector").then((d) => contarLector(d.cuenta.revisar)).catch(() => {});
   }
 }
 

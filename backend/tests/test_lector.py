@@ -754,3 +754,20 @@ def test_lo_que_publica_una_persona_en_4_sigue_esperando(
     """La segunda firma del 4 solo se salta en lo que publica el lector."""
     e = publicar(nivel=4)
     assert e["estado"] == "por_confirmar"
+
+
+def test_los_informativos_van_aparte_y_no_se_cuentan(cliente, sesion):
+    """Seccion 148: lo de nivel 1 va aparte en la cola; la cuenta de la
+    pestana es solo lo que espera al analista."""
+    grave = _hallazgo(nota=NOTAS[2])
+    info = _hallazgo(nota=NOTAS[0])
+    db = SessionLocal()
+    try:
+        db.get(m.HallazgoLector, info).nivel = 1
+        db.commit()
+    finally:
+        db.close()
+    vista = cliente.get("/riesgo/lector", headers=sesion("central")).json()
+    assert [x["id"] for x in vista["hallazgos"]] == [grave, info]
+    assert vista["cuenta"] == {"revisar": 1, "informativos": 1,
+                               "vigencia_horas": lector.VIGENCIA_DEL_HALLAZGO}

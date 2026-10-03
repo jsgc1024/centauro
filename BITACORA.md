@@ -10938,6 +10938,21 @@ momento, y lo de nivel 4 como 4, sin esperar al jefe de turno.
 Migracion `b7d9f1a3c5e8` (despues de `a5c7e9b1d3f6`). Pruebas:
 `tests/test_lector.py` (24).
 
+## 148. Los informativos, aparte en la cola del Lector
+
+Salvador, 3 oct: de acuerdo con el boceto. En la cola del Lector, lo de
+nivel 1 ya no se mezcla con lo grave: va abajo, en un apartado plegado
+«Informativos (nivel 1)», con su numero y la nota de que no avisan a
+nadie y vencen solos (`lector.VIGENCIA_DEL_HALLAZGO`, 48 h). Si el que
+esta abierto es informativo, el apartado se despliega solo.
+
+- `lector.por_revisar` devuelve `cuenta`: lo que espera al analista
+  (`revisar`, sin el nivel 1), los `informativos` y la vigencia. La
+  pestana «Lector · n» cuenta solo `revisar`.
+- La linea de «Hoy» dice cuantos informativos hay.
+
+Pruebas: `tests/test_lector.py` (25).
+
 ## 14. Lo que falta
 
 ### Abierto

@@ -964,6 +964,12 @@ def por_revisar(db: Session, pais: m.Pais, ahora: datetime | None = None
     # Lo mas grave primero, y en cada nivel lo mas reciente.
     lista.sort(key=lambda h: (-(h.nivel or 0),
                               -(h.actualizado_en or h.creado_en).timestamp()))
+    # Lo de nivel 1 va aparte en la cola (seccion 148): no avisa a nadie y
+    # no se cuenta como lo que espera al analista.
+    informativos = sum(1 for h in lista if h.nivel == 1)
+    cuenta = {"revisar": len(lista) - informativos,
+              "informativos": informativos,
+              "vigencia_horas": VIGENCIA_DEL_HALLAZGO}
     lista = lista[:EN_LA_PANTALLA]
     hoy = ahora.astimezone(reloj.zona(pais.zona_horaria)).replace(
         hour=0, minute=0, second=0, microsecond=0)
@@ -981,6 +987,7 @@ def por_revisar(db: Session, pais: m.Pais, ahora: datetime | None = None
                         m.HallazgoLector.revisado_en >= hoy).scalar() or 0)
     return {
         "hallazgos": [vista_hallazgo(db, h) for h in lista],
+        "cuenta": cuenta,
         "hoy": {"leidas": leidas, "parecian": filtradas,
                 "fuentes": db.query(func.count(m.FuenteLector.id))
                 .filter_by(activa=True).scalar() or 0,

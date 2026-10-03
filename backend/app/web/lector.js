@@ -76,7 +76,8 @@ export async function mesaDelLector(cuerpo, ctx) {
     cuerpo.replaceChildren(aviso(t("lec_solo_mx"), "alerta"));
     return;
   }
-  const estado = { abierto: null, vista: "revisar", cuantos: EN_LA_LISTA, ia: null };
+  const estado = { abierto: null, vista: "revisar", cuantos: EN_LA_LISTA, cuantosInfo: EN_LA_LISTA,
+                   infoAbierto: false, ia: null };
   const izquierda = h("div", { clase: "rsg-cola lec-cola" });
   const derecha = h("div");
   const mesa = h("div", { clase: "rsg-mesa" }, izquierda, derecha);
@@ -94,14 +95,15 @@ export async function mesaDelLector(cuerpo, ctx) {
       izquierda.replaceChildren(aviso(e.message, "grave"));
       return;
     }
-    ctx.contar(datos.hallazgos.length);
+    ctx.contar(datos.cuenta.revisar);
     estado.ia = datos.ia;
     pintarCola(izquierda, datos, estado, (id) => abrir(id), () => {
       estado.vista = "fuentes";
       pintar();
     });
     if (!estado.abierto || !datos.hallazgos.some((x) => x.id === estado.abierto)) {
-      estado.abierto = datos.hallazgos.length ? datos.hallazgos[0].id : null;
+      const primero = datos.hallazgos.find((x) => x.nivel !== 1);
+      estado.abierto = primero ? primero.id : null;
       await pintarFicha();
     }
     marcar();
@@ -149,9 +151,10 @@ export async function mesaDelLector(cuerpo, ctx) {
   }, REFRESCO_SEGUNDOS * 1000);
 }
 
-function pintarCola(izquierda, datos, estado, alAbrir, alFuentes) {
-  const filas = datos.hallazgos.slice(0, estado.cuantos).map((x) => h("button", {
-    type: "button", clase: "rsg-renglon lec-renglon", "data-hallazgo": x.id,
+function renglonDeCola(x, alAbrir, abierto) {
+  return h("button", {
+    type: "button", clase: x.id === abierto ? "rsg-renglon lec-renglon lec-elegido" : "rsg-renglon lec-renglon",
+    "data-hallazgo": x.id,
     onclick: () => alAbrir(x.id) },
     h("span", { clase: "lec-arriba" }, nivel(x.nivel),
       h("span", { clase: "chico gris" },
@@ -160,11 +163,38 @@ function pintarCola(izquierda, datos, estado, alAbrir, alFuentes) {
       x.notas_n > 1 ? h("span", { clase: "etiqueta info" },
         t("lec_mas_notas").replace("{n}", x.notas_n - 1)) : null),
     h("b", { clase: "lec-titulo" }, x.titulo),
-    h("span", { clase: "chico gris" }, [x.tipo, dondeDe(x)].filter(Boolean).join(" · "))));
-  const mas = datos.hallazgos.length > estado.cuantos
+    h("span", { clase: "chico gris" }, [x.tipo, dondeDe(x)].filter(Boolean).join(" · ")));
+}
+
+/* Lo de nivel 1 va aparte, plegado (seccion 148): no avisa a nadie y no
+   tapa lo grave. Si el que esta abierto es informativo, se despliega. */
+function apartadoInformativos(infos, total, datos, estado, alAbrir, repintar) {
+  if (!infos.length) return null;
+  const filas = infos.slice(0, estado.cuantosInfo).map((x) => renglonDeCola(x, alAbrir, estado.abierto));
+  const mas = total > estado.cuantosInfo
     ? h("button", { type: "button", clase: "claro chico",
-                    onclick: () => { estado.cuantos = datos.hallazgos.length; pintarCola(izquierda, datos, estado, alAbrir, alFuentes); } },
-        t("lec_ver_los").replace("{n}", datos.hallazgos.length))
+                    onclick: () => { estado.cuantosInfo = total; repintar(); } },
+        t("lec_ver_los").replace("{n}", total))
+    : null;
+  const resumen = h("summary", {},
+    h("b", {}, t("lec_informativos").replace("{n}", total)),
+    h("span", { clase: "chico gris" },
+      t("lec_informativos_sub").replace("{h}", datos.cuenta.vigencia_horas)));
+  const caja = h("details", { clase: "lec-informativos" }, resumen, ...filas, mas);
+  caja.open = estado.infoAbierto || infos.some((x) => x.id === estado.abierto);
+  caja.addEventListener("toggle", () => { estado.infoAbierto = caja.open; });
+  return caja;
+}
+
+function pintarCola(izquierda, datos, estado, alAbrir, alFuentes) {
+  const repintar = () => pintarCola(izquierda, datos, estado, alAbrir, alFuentes);
+  const graves = datos.hallazgos.filter((x) => x.nivel !== 1);
+  const infos = datos.hallazgos.filter((x) => x.nivel === 1);
+  const filas = graves.slice(0, estado.cuantos).map((x) => renglonDeCola(x, alAbrir, estado.abierto));
+  const mas = graves.length > estado.cuantos
+    ? h("button", { type: "button", clase: "claro chico",
+                    onclick: () => { estado.cuantos = graves.length; repintar(); } },
+        t("lec_ver_los").replace("{n}", graves.length))
     : null;
   const hoy = datos.hoy;
   const avisos = [avisoDeClaude(datos.ia)];
@@ -172,14 +202,16 @@ function pintarCola(izquierda, datos, estado, alAbrir, alFuentes) {
   if (datos.pausado) avisos.push(aviso(t("lec_pausado"), "alerta"));
   izquierda.replaceChildren(...[
     ...avisos,
-    h("h3", {}, t("lec_por_revisar").replace("{n}", datos.hallazgos.length)),
+    h("h3", {}, t("lec_por_revisar").replace("{n}", datos.cuenta.revisar)),
     ...filas,
-    datos.hallazgos.length ? null : h("p", { clase: "chico gris" }, t("lec_nada_por_revisar")),
+    graves.length ? null : h("p", { clase: "chico gris" }, t("lec_nada_por_revisar")),
     mas,
+    apartadoInformativos(infos, datos.cuenta.informativos, datos, estado, alAbrir, repintar),
     h("h3", {}, t("lec_hoy")),
     h("div", { clase: "chico gris lec-hoy" }, t("lec_hoy_cuenta")
       .replace("{leidas}", hoy.leidas.toLocaleString()).replace("{fuentes}", hoy.fuentes)
-      .replace("{parecian}", hoy.parecian).replace("{revisar}", datos.hallazgos.length)
+      .replace("{parecian}", hoy.parecian).replace("{revisar}", datos.cuenta.revisar)
+      .replace("{informativos}", datos.cuenta.informativos)
       .replace("{eventos}", hoy.eventos).replace("{descartados}", hoy.descartados),
       ...(datos.ia ? [" · ", h("b", { clase: "rojo" },
         t("lec_hoy_esperan").replace("{n}", datos.ia.esperan.toLocaleString()))] : [])),
