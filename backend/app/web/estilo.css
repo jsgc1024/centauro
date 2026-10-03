@@ -1451,6 +1451,56 @@ b.folio { white-space: nowrap; }
   .ctl-hist-renglon { grid-template-columns: 1fr; gap: 0; }
 }
 
+/* La flota y la jornada de Logistica (seccion 151), como en los bocetos
+   aprobados el 3 de octubre. */
+.lgf-barra { height: 6px; border-radius: 999px; background: var(--suave); overflow: hidden;
+             margin-top: 6px; min-width: 120px; }
+.lgf-barra i { display: block; height: 100%; background: var(--ok); }
+.lgf-barra i.alerta { background: var(--alerta); }
+.lgf-barra i.grave { background: var(--grave); }
+.lgf-doc { display: flex; justify-content: space-between; align-items: center; gap: 10px;
+           border: 1px solid var(--linea); border-radius: 8px; padding: 9px 12px; margin-bottom: 8px; }
+.lgf-doc b { display: block; font-size: 13.5px; }
+.lgf-doc-der { display: flex; gap: 8px; align-items: center; }
+.lgf-doc .etiqueta { white-space: nowrap; }
+.lgf-kv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px 14px; font-size: 13.5px; }
+.lgf-kv .der { text-align: right; font-variant-numeric: tabular-nums; }
+.lgf-kv .total { font-weight: 700; border-top: 1px solid var(--linea); padding-top: 8px; }
+.lgf-llantas { display: flex; gap: 22px; flex-wrap: wrap; align-items: stretch; }
+.lgf-eje { display: flex; gap: 8px; }
+.lgf-llanta { border: 1px solid var(--linea); border-radius: 8px; padding: 8px 6px; text-align: center;
+              font-size: 12px; min-width: 104px; }
+.lgf-llanta b { display: block; font-size: 13px; }
+.lgf-llanta.alerta { background: #fdf6e3; border-color: #f0e2bd; }
+.lgf-llanta.grave { background: #fdecea; border-color: #f5cdc8; }
+.lgf-ficha { display: flex; gap: 10px 28px; flex-wrap: wrap; margin-top: 10px; }
+.lgf-ficha > div { min-width: 110px; }
+.lgf-ficha .chico { display: block; }
+.lgf-tres { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: start; }
+.lgf-dos { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px;
+           align-items: start; margin-top: 14px; }
+.lgf-tres .tarjeta, .lgf-dos .tarjeta { margin-bottom: 0; }
+.lgf-cabeza { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px;
+              flex-wrap: wrap; }
+.lgf-cabeza h2 { margin: 0; font-size: 22px; }
+.lgf-acciones { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.lgf-dia { text-align: center; white-space: nowrap; }
+.lgf-dia .etiqueta { min-width: 34px; }
+.lgf-si { color: var(--ok); font-weight: 700; }
+.lgf-no { color: var(--grave); font-weight: 700; }
+.lgf-nada { color: #c3c9cf; font-weight: 700; }
+.lgf-subir { border: 1px dashed var(--centauro); border-radius: 8px; padding: 16px; display: flex;
+             justify-content: space-between; align-items: center; gap: 12px; background: #fafbfc;
+             margin-bottom: 12px; }
+.lgf-nw { white-space: nowrap; }
+.lgf-agregar { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+               gap: 0 10px; margin-top: 12px; align-items: end; }
+.lgf-codigo { font-size: 44px; font-weight: 700; letter-spacing: 12px; color: var(--centauro);
+              font-variant-numeric: tabular-nums; margin: 8px 0 4px; }
+@media (max-width: 900px) {
+  .lgf-tres, .lgf-dos, .lgf-agregar { grid-template-columns: 1fr; }
+}
+
 /* Calidad (seccion 89): el mes en cifras, cuatro bloques y los datos.
    Cada renglon abre su detalle abajo de si mismo, sin mover la pagina
    a otra pantalla: se ve, se cierra y se sigue leyendo. */

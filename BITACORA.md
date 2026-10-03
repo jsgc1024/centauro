@@ -11222,3 +11222,177 @@ holgura, la tolerancia, los alimentos y el margen los captura Karla;
 el costo del operador, los rangos del bono y la garantía los da
 Recursos Humanos; el rendimiento y los costos por tipo, Flota; y la
 ubicación de Base Cuautitlán, sistema y calidad.
+
+## 151. Logística, bloque 2: la flota, los operadores y su jornada
+
+El segundo bloque de «Centauro Logística AI/LG»: sus unidades y sus
+operadores dentro de Connect, el costo por día de cada unidad, la marca
+de jornada en el patio y una sola regla para decir quién puede salir.
+Propuesta con pantallas («Logistica_bloque_2_flota_y_jornada_propuesta.pdf»)
+y decisiones de Salvador del 3 de octubre: las unidades son las de la
+compañía **Centauro Logistic SA CV** de Odoo (solo una traía la etiqueta
+«Logística»); **las cajas secas sí, el Prius no**; un documento **sin
+capturar solo avisa**, vencido frena (lo mismo la licencia); los
+operadores tienen **su propia app, LG Connect**, en
+applg.mycentauro.lat, con su correo personal y la primera vez con un
+código de cuatro dígitos que dicta la gerencia; el mantenimiento sale
+de los **servicios registrados en Connect** (en Odoo no hay facturas de
+taller de Logistic); la oficina de Logistic entra a la consola como la
+de México; los días **en viaje** cuentan para el 5 de 5; el «en viaje»
+se marca a mano mientras los viajes sigan en Tango; y puesto nuevo
+**«Responsable de flota LG»**. «Adelante» el mismo día.
+
+- **El modelo** (`models.py`, después de `LgValor`). `LgUnidad` (lo de
+  Odoo —placa, clase unidad/remolque, categoría, modelo, año, chasis,
+  IAVE— y lo de Connect —económico con su llave que no se repite, tipo,
+  rendimiento, odómetro, estado con motivo y regreso, patio y lo que
+  cuesta tenerla—), `LgLecturaOdometro`, `LgArchivo` (como el
+  expediente del freelance: al depósito de Google si está, si no en la
+  base hasta la mudanza de cada hora), `LgDocumento` (de una unidad o de
+  un operador, nunca de los dos; el nuevo marca al de antes como
+  reemplazado), `LgPlanServicio` (por tipo o de las cajas),
+  `LgServicio` (con su anulación), `LgLlanta` (por posición, con su
+  retiro), `LgCostoDia` (el costo con su `vigente_desde`, su desglose y
+  su origen: mensual, recálculo o carga), `LgOperador` (lo de Odoo y su
+  acceso a LG Connect), `LgCodigoAcceso`, `LgLlave` (su huella) y
+  `LgJornada` (una por operador y día, con su punto, su distancia, si
+  fue dentro y su estado: válida, por validar o rechazada) y
+  `LgViajeManual` (cada viaje marcado a mano mientras siga Tango, en su
+  renglón: marcar el segundo no le borra al primero sus días). Los tipos de
+  unidad ganan `llantas` (4, 6 o 10 sin la refacción) y
+  `vida_llanta_km`.
+- **La flota** (`app/lg_flota.py`). El económico sin «Eco», espacios ni
+  ceros es su llave. Taller y fuera de servicio piden motivo; un odómetro
+  menor que el anterior pide su porqué. El estado de cada documento
+  (falta, vigente, por vencer a 30 días, vencido). El plan dice a qué km
+  toca cada servicio con el último registrado; sin él no se adivina.
+  Registrar un servicio del plan exige su odómetro y mueve el de la
+  unidad. **El costo por día**: depreciación, seguro, tenencia con
+  verificación y GPS, mantenimiento y llantas (lo que gastan por km por
+  los km diarios de sus lecturas del último año, con al menos un mes);
+  cada parte dice de dónde sale y lo que falte se toma del costo del tipo
+  (`lg_catalogos.costo_unidad`). El mantenimiento: con un año de
+  servicios, los de los últimos 12 meses; antes, el anual de la carga;
+  sin nada, el promedio de su tipo. Se guarda el día 1 y a media mes con
+  su porqué; uno igual al que rige no se repite, y el del mes que quedó
+  incompleto (su tipo todavía no tenía costo el día 1) se completa desde
+  el día en que hay con qué. Los avisos de
+  vencimiento salen a 30 días y el día que vence, una vez cada uno: los
+  de las unidades a quien trae `lg.flota.editar` (si nadie, a quien ve
+  la flota), los de las licencias a quien da el acceso.
+- **Quién puede salir** (`app/lg_disponibilidad.py`): `evaluar_unidad` y
+  `evaluar_operador`, reglas puras que contestan libre, alerta o bloqueo
+  con cada motivo. Frena: dada de baja, caja sola, sin tipo, en taller o
+  fuera de servicio, en viaje (la que regresa antes de la salida, solo
+  alerta), ocupada en otro viaje, documento vencido, servicio vencido;
+  el operador sin marca de hoy (o por validar o rechazada), en viaje o
+  con la licencia vencida. Alerta: sin capturar, vence durante el viaje,
+  licencia a menos de 30 días, servicio dentro de los km del viaje. Los
+  viajes de cada uno llegan con el bloque 4; mientras, ninguno.
+- **La jornada** (`app/lg_jornada.py`). La marca dentro de la geocerca
+  del patio más cercano vale; fuera pide dónde está y queda por validar;
+  sin punto en el patio, toda queda por validar. La Central valida o
+  rechaza con justificación de 10 letras o más. El día de lunes a
+  viernes cuenta con marca válida o en viaje; `dias_activos` es lo que
+  tomará la nómina del bloque 8. Un viaje a mano se puede anotar hasta
+  dos semanas atrás, no se encima con otro, y «ya regresó» lo termina
+  ayer —hoy ya puede salir a otro, y para contar el día marca en el
+  patio—.
+- **LG Connect** (`app/lg_app.py`, `routers/lg_app.py` en `/lgapp-api`,
+  y `web/lgapp/`). Su token lleva `tipo: operador_lg`: la consola y la
+  app de EP no aceptan ningún token con `tipo`, y esta solo los suyos.
+  Su contraseña tiene su propio carril de intentos («lg», también por
+  IP), el código vale diez minutos y cinco intentos, cambiar la
+  contraseña cierra sesiones y huellas, y la baja en Odoo cierra la
+  puerta. La huella usa las piezas de `llaves` con sus propios usos
+  (`lg_alta`, `lg_entrada`) y la dirección de la app entre los orígenes.
+  La app: entrar, primera vez con código, Mi día (dónde está contra la
+  geocerca, la marca y la semana) y Yo (idioma, huella, contraseña).
+- **Odoo** (`app/odoo_lg.py`): unidades y empleados de la compañía 3,
+  leídos desde ella; ensayo, aplicar y la de cada hora después de la
+  primera a mano, con el candado de una lectura a la vez y el freno de
+  la lectura en cero. Lo de Odoo se toma de Odoo y lo de Connect no se
+  pisa; la unidad capturada antes se une por su placa; dos operadores
+  con el mismo correo quedan sin correo y pendientes. Y la oficina de
+  Logistic (no operadores) entra a la lectura de oficina como México
+  (`odoo_oficina_reglas.grupo_de_oficina`), para darle acceso a Karla.
+- **La carga del Excel** (`app/lg_carga.py`, openpyxl): columnas por su
+  nombre en cualquier orden, todo o nada, cada error con hoja, renglón,
+  columna y qué pasa, la placa parecida sugerida, comas decimales
+  rechazadas y el intercambio de económicos entre dos renglones
+  permitido. Carga los datos, el odómetro, el plan y el costo del mes.
+- **Las pantallas** (`web/lg_flota.js`, `web/lg_jornada.js`): las de los
+  bocetos aprobados. Flota LG con Unidades (filtros, cifras, la tabla con
+  su próximo servicio y su costo, el ingreso y el margen en guion hasta
+  el bloque 7), el detalle de cada unidad con sus formas, Plan
+  preventivo, Carga inicial (Odoo y Excel) y Bitácora. Jornada LG con
+  Hoy, Semana, Por validar, Operadores (licencia, código, en viaje y la
+  lectura de Odoo) y Bitácora. Textos en los tres idiomas (`lgf_`,
+  `lgj_`, `lgd_`, `lga_`). La gerencia entra ahora a Flota LG.
+- **Quién puede qué.** `lg.flota.ver`, `lg.flota.editar`,
+  `lg.jornada.ver`, `lg.jornada.validar`, `lg.operadores.editar` y
+  `lg.en_viaje.marcar`. La migración crea el puesto de flota, le da a la
+  gerencia ver, código, licencia y en viaje, a sistema y calidad ver, y
+  a la Central ver y validar (validar solo a los puestos que ya corrigen
+  hitos: el monitorista no).
+- **El reloj.** `lg.sincronizar_odoo` a los :51, `lg.mudar_archivos` a
+  los :29 y `lg.diaria` a las 7:40 (avisos y costo del mes), entre las
+  diarias que se reponen.
+- **El proxy.** `DOMINIO_LG` en el Caddyfile y en el compose: su raíz
+  abre `/lgapp/`, la app desde otra puerta va a la suya, su trabajador
+  de fondo sin caché. Validado con `caddy validate` con y sin la
+  dirección.
+
+Pruebas: `test_lg_flota.py` (24), `test_lg_disponibilidad.py` (25),
+`test_lg_jornada.py` (10), `test_lg_app.py` (10), `test_lg_carga.py` (4),
+`test_odoo_lg.py` (9) y `test_lg_pantallas.py` (6), con
+`tests/ayudas_lg.py`. Se ajustaron la del puesto de la gerencia y la
+semilla contra las dos migraciones, la del puesto de sistema y calidad
+y la del menú. Migración: `e2a4c6b8d0f1` (cuelga de `f4b6d8f0a2c3`, la
+última del lector de la Central, que ya estaba en main).
+
+**Para no morderse con la Central.** Todo en archivos propios; en los
+compartidos, lejos de donde agrega la Central: las tablas de movimiento
+de las pruebas en su propio `+=` del conftest, los textos al final de
+cada bloque de `idioma.js` después de los de la 150, sus estilos junto a
+los de la 150, el carril «lg» en un renglón aparte de `CARRILES`, y esta
+sección y su novedad al final de sus archivos.
+
+**Lo que salió al recorrerla con pantallas de verdad** (vista previa con
+las 13 unidades y los 9 empleados de ejemplo de la compañía 3, sembrados
+por la API y por la pantalla, como lo haría Ernesto):
+- **La marca desde el teléfono se rechazaba.** El GPS manda quince
+  decimales y la marca pedía a lo más siete: ninguna marca de verdad
+  habría entrado. Ahora se redondea a siete (un centímetro) y la
+  precisión a metros, sin rechazar (`lg_jornada._redondo`), con su prueba.
+- **LG Connect, vuelta a abrir ya marcada, se quedaba en «Buscando tu
+  ubicación…».** Ahora dice dónde marcó, como lo guardó el servidor, y
+  en viaje no busca nada. Los metros, hacia abajo como el servidor.
+- **El costo.** No se guarda un costo en cero (un viaje lo tomaría por
+  bueno); el del mes que nace a medias se completa en la misma vuelta de
+  la tarea; y la caja que trae su costo de llantas por km dice que le
+  faltan sus km al día, no que le falta el costo.
+- **La lista de la flota**: el económico en orden de número (la 8 antes
+  que la 12), la que solo no tiene tipo «por completar» y no entre las
+  que tienen algo vencido, y arriba las unidades y las cajas contadas
+  aparte. Marca y modelo como en la flota de EP: «International City
+  Star», no «International/City Star».
+- **Arriba de cada unidad**: lo que la frena, sus alertas en su renglón y
+  **lo que hay por atender** aunque hoy no frene (el documento a 30 días,
+  el servicio a menos de 2,000 km), como en el boceto. La caja dice que
+  sale con su tracto sin pintarse en rojo, y no pide rendimiento.
+- **La bitácora**: la llanta con el nombre de su posición, la lectura y
+  el servicio con su fecha (pueden ser de antes, capturados hoy), el
+  estado con su «hasta» y la lectura de Odoo con cuántas altas.
+- **Lo demás**: el ensayo de operadores dice cuántos empleados no son
+  operadores; la última lectura se actualiza al guardar; el Excel dice
+  «2 renglones tienen error» y en qué va el archivo; las fechas a media
+  frase sin el día de la semana y las de un momento, en la fecha de
+  México; los números de las formas sin ceros de sobra; Cancelar en la
+  forma del odómetro; la licencia sin repetir su tipo.
+
+Lo que falta para usarlas: el registro A de applg.mycentauro.lat y
+`DOMINIO_LG` en el `.env`; que Ari le dé a Karla «Gerente de Logística»
+y a quien lleve la flota «Responsable de flota LG», y ponga el punto de
+Base Cuautitlán; la primera lectura de unidades y de operadores; y el
+Excel de costos.

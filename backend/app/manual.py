@@ -218,6 +218,35 @@ def ligas(cap: dict) -> list[str]:
 # izquierda del calendario): una tarea nueva sin su renglon aqui no pasa
 # las pruebas, y asi el manual no se entera tarde.
 TAREAS = {
+    # Logistica, bloque 2 (seccion 151).
+    "lg-leer-odoo": {
+        "es": ("Logística: a los :51 de cada hora lee de Odoo las unidades y los "
+               "operadores de Centauro Logistic. Empieza sola después de la primera "
+               "lectura a mano en Flota LG y en Jornada LG.",
+               "Que Odoo esté conectado y que la primera lectura a mano se haya hecho."),
+        "pt": ("Logística: aos :51 de cada hora lê do Odoo as unidades e os motoristas "
+               "da Centauro Logistic. Começa sozinha depois da primeira leitura manual "
+               "em Frota LG e em Jornada LG.",
+               "Que o Odoo esteja conectado e que a primeira leitura manual tenha sido feita."),
+    },
+    "lg-mudar-archivos": {
+        "es": ("Logística: a los :29 de cada hora sube al depósito de Google los "
+               "archivos de la flota y las licencias que se quedaron en la base.",
+               "Que EXPEDIENTES_DESTINO esté puesto en el servidor."),
+        "pt": ("Logística: aos :29 de cada hora envia ao depósito do Google os arquivos "
+               "da frota e das habilitações que ficaram no banco.",
+               "Que EXPEDIENTES_DESTINO esteja configurado no servidor."),
+    },
+    "lg-diaria": {
+        "es": ("Logística: a las 7:40 avisa a quien lleva la flota de los documentos "
+               "que vencen en 30 días o ya vencieron, y de las licencias a la "
+               "gerencia; y le pone a cada unidad su costo por día del mes.",
+               "Que haya alguien con el puesto de flota y que el correo esté encendido."),
+        "pt": ("Logística: às 7:40 avisa a quem cuida da frota sobre os documentos que "
+               "vencem em 30 dias ou já venceram, e sobre as habilitações à gerência; e "
+               "registra o custo por dia do mês de cada unidade.",
+               "Que haja alguém com o cargo de frota e que o e-mail esteja ligado."),
+    },
     "riesgo-resumen": {
         "es": ("Mapa de riesgo: a las 20:00 de cada país manda a cada "
                "gerente el resumen del día con los eventos de nivel 2 de sus "
@@ -767,6 +796,11 @@ AREA_DE_ARCHIVO = {
     "freelance.py": "freelance", "routers/freelance.py": "freelance",
     # Los catalogos de Logistica (seccion 150).
     "lg_catalogos.py": "logistica", "routers/lg_catalogos.py": "logistica",
+    # Seccion 151: la flota, la jornada y LG Connect.
+    "lg_flota.py": "logistica", "lg_disponibilidad.py": "logistica",
+    "lg_jornada.py": "logistica", "lg_app.py": "logistica", "lg_carga.py": "logistica",
+    "odoo_lg.py": "logistica", "routers/lg_flota.py": "logistica",
+    "routers/lg_jornada.py": "logistica", "routers/lg_app.py": "logistica",
     "implantado_precios.py": "implantados",
     "gps.py": "gps",
     "main.py": "sistema",

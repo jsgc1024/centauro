@@ -1,0 +1,39 @@
+/* Lo que LG Connect agrega a la hoja de la app de campo
+   (/app/estilo.css). Todo lo demas es de alla: la misma cara que
+   Connect. */
+
+.sello-lg { background: var(--centauro); color: #fff; border-radius: 6px;
+            letter-spacing: .5px; }
+
+/* Donde esta el operador contra la geocerca del patio. */
+.lga-geo { display: flex; gap: 8px; align-items: center; font-size: 14px;
+           border-radius: 10px; padding: 10px 12px; font-weight: 600;
+           margin-bottom: 12px; background: #eef0f3; color: var(--gris); }
+.lga-geo.dentro { background: #e6f3ec; color: #1e7a4d; }
+.lga-geo.fuera { background: #fbe9e7; color: #c0392b; }
+.lga-punto { width: 10px; height: 10px; border-radius: 50%; background: currentColor;
+             flex: 0 0 auto; }
+
+.lga-jornada.hecha { border-left: 4px solid #1e7a4d; }
+.lga-jornada.espera { border-left: 4px solid #b8860b; }
+.lga-jornada.no { border-left: 4px solid #c0392b; }
+.lga-kv { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; font-size: 15px;
+          margin-top: 6px; }
+.lga-kv span:nth-child(odd) { color: var(--gris); }
+.lga-kv span:nth-child(even) { text-align: right; font-weight: 650; }
+.lga-palomota { font-size: 44px; line-height: 1; color: #1e7a4d; text-align: center;
+                margin: 8px 0 4px; }
+
+/* La semana de lunes a viernes, como la cuenta el bono. */
+.lga-semana { display: flex; justify-content: space-between; gap: 6px; margin-top: 12px; }
+.lga-semana div { flex: 1; text-align: center; border: 1px solid #e0e4e8; border-radius: 8px;
+                  padding: 6px 0; font-size: 12px; color: #78828c; }
+.lga-semana b { display: block; font-size: 15px; }
+.lga-semana .si b { color: #1e7a4d; }
+.lga-semana .viaje b { color: #1f4fbf; }
+.lga-semana .espera b { color: #b8860b; }
+.lga-semana .no b { color: #c0392b; }
+.lga-semana .hoy { border-color: var(--centauro); }
+
+.lga-url { text-align: center; color: rgba(255, 255, 255, .55); font-size: 12px; margin-top: 4px; }
+.lga-centro { text-align: center; }

@@ -19,7 +19,10 @@ import { pantallaOdoo } from "./odoo.js";
 import { pantallaCatalogos } from "./catalogos_pantalla.js";
 /* Centauro Logistica, AI/LG (seccion 150), en sus propios renglones. */
 import { pantallaLgCatalogos } from "./lg_catalogos.js";
-import { LG_CATALOGOS } from "./menu.js";
+/* Y su flota y la jornada de sus operadores (seccion 151). */
+import { pantallaLgFlota } from "./lg_flota.js";
+import { pantallaLgJornada } from "./lg_jornada.js";
+import { LG_CATALOGOS, LG_FLOTA, LG_JORNADA } from "./menu.js";
 import { pantallaCalidad } from "./calidad.js";
 import { pantallaManual } from "./manual.js";
 import { pantallaDireccion } from "./direccion.js";
@@ -529,6 +532,10 @@ const RUTAS = [
   [/^#\/catalogos$/, pantallaCatalogos, "catalogos", CATALOGOS],
   /* Los catalogos de Logistica (seccion 150). */
   [/^#\/lg\/catalogos$/, pantallaLgCatalogos, "lg_catalogos", LG_CATALOGOS],
+  /* La flota y el detalle de cada unidad, y la jornada (seccion 151). */
+  [/^#\/lg\/flota$/, pantallaLgFlota, "lg_flota", LG_FLOTA],
+  [/^#\/lg\/flota\/(\d+)$/, pantallaLgFlota, "lg_flota", LG_FLOTA],
+  [/^#\/lg\/jornada$/, pantallaLgJornada, "lg_jornada", LG_JORNADA],
   /* El manual y sus paginas: #/manual, #/manual/atorado,
      #/manual/leer/<capitulo>, y asi. La pantalla reparte el resto. */
   [/^#\/manual\b\/?(.*)$/, pantallaManual, "manual", MANUAL],

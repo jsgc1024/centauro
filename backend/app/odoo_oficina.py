@@ -97,7 +97,10 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
     # El freno por pais (seccion 130, decision 3): se cuenta a todos los
     # empleados de cada compania --de oficina o no--, que es lo que la
     # conexion deja de ver cuando pierde la compania.
-    por_compania = odoo_pais.por_compania(empleados, odoo_personal_reglas.PERSONAL)
+    # Centauro Logistic cuenta con Mexico (seccion 151): su oficina es de aqui.
+    por_compania = odoo_pais.por_compania(
+        empleados, odoo_personal_reglas.PERSONAL
+        + ({"pais": "MX", "compania": odoo_api.COMPANIA_LOGISTIC},))
     por_pais = [{"codigo": g["pais"], "pais": g["nombre"],
                  "leidos": por_compania[g["pais"]]}
                 for g in odoo_personal_reglas.PERSONAL]

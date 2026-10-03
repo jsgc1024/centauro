@@ -31,10 +31,15 @@ Las decisiones que viven aqui:
     de seguridad: nunca entra aqui. Y solo las companias de Connect: la
     gente de otra compania que la conexion alcanza a ver --Centauro
     Logistic-- no es de oficina de Centauro.
+  * Hasta que Logistica entro a Connect (seccion 151): la oficina de
+    Centauro Logistic --la gerencia, quien lleva la flota, operacion-- es
+    oficina de Mexico, para que se le pueda dar acceso a la consola. Sus
+    operadores no: entran a su propia app, LG Connect (`odoo_lg`).
 """
 import collections
 import re
 
+from app.odoo_api import COMPANIA_LOGISTIC
 from app.odoo_pais import NO_ENCONTRADO
 from app.odoo_personal_reglas import (CORREO_VALIDO, DOMINIOS_RAROS, PERSONAL,
                                       corto, es_de_seguridad,
@@ -46,11 +51,27 @@ from app.odoo_personal_reglas import (CORREO_VALIDO, DOMINIOS_RAROS, PERSONAL,
 PLAZA_CENTRAL = PERSONAL[0]["central"]
 
 
+def grupo_de_oficina(compania_id) -> dict | None:
+    """El pais de la oficina de una compania de Odoo: las de Connect y,
+    desde la seccion 151, Centauro Logistic como Mexico."""
+    if compania_id == COMPANIA_LOGISTIC:
+        return PERSONAL[0]
+    return grupo_de_compania(compania_id)
+
+
+def es_operador_lg(empleado: dict) -> bool:
+    """Operador de Centauro Logistic: entra a LG Connect, no a la consola."""
+    if id_de(empleado.get("company_id")) != COMPANIA_LOGISTIC:
+        return False
+    puesto = normal(nombre_de(empleado.get("job_id")) or texto(empleado.get("job_title")))
+    return puesto.startswith("operador")
+
+
 def es_de_oficina(empleado: dict) -> bool:
     """De una compania de Connect y sin puesto de seguridad de ningun
-    pais (seccion 121)."""
-    return (not es_de_seguridad(empleado)
-            and grupo_de_compania(id_de(empleado.get("company_id"))) is not None)
+    pais (seccion 121); de Centauro Logistic, sin ser operador (151)."""
+    return (not es_de_seguridad(empleado) and not es_operador_lg(empleado)
+            and grupo_de_oficina(id_de(empleado.get("company_id"))) is not None)
 
 
 def correo_de(empleado: dict) -> str:
@@ -111,7 +132,7 @@ def ciudades_de(empleado: dict, plazas: dict, paises: dict) -> tuple:
     """(las ciudades de su pais, su oficina central) por la compania del
     empleado (seccion 121). Sin compania que Connect conozca, las de
     Mexico, como antes."""
-    grupo = grupo_de_compania(id_de(empleado.get("company_id"))) or PERSONAL[0]
+    grupo = grupo_de_oficina(id_de(empleado.get("company_id"))) or PERSONAL[0]
     pais = paises.get(grupo["pais"])
     suyas = plazas.get(pais["id"], {}) if pais else {}
     return suyas, suyas.get(grupo["central"])
@@ -283,7 +304,7 @@ def clasificar_salidas(revisar: list, estados: dict) -> tuple:
         if f is not None and f.get("active", True) is not False:
             compania = f.get("company_id")
             otra = ("company_id" in f
-                    and grupo_de_compania(id_de(compania)) is None)
+                    and grupo_de_oficina(id_de(compania)) is None)
             if otra and not p.get("con_acceso"):
                 bajas.append({"odoo_id": p["odoo_id"], "persona_id": p["id"],
                               "nombre": p.get("nombre"),

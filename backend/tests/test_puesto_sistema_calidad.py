@@ -137,9 +137,11 @@ def test_entra_con_su_rol_su_menu_y_lo_suyo(cliente, sesion, aridiai):
     # sistema con la 90, Cotizaciones --para consultarla-- con la 114 y el
     # Mapa de riesgo --sus clientes y sus tipos de evento-- con la 135. Van
     # en el orden de `permisos.PANTALLAS`: asi se guardan al crear el puesto.
+    # La flota y la jornada de Logistica, para consultarlas, con la 151.
     assert yo["pantallas"] == ["panorama", "cotizaciones", "servicios",
                                "implantados", "equipo", "unidades", "bonos",
                                "encuestas", "calidad", "lg_catalogos",
+                               "lg_flota", "lg_jornada",
                                "accesos", "odoo",
                                "catalogos", "manual", "riesgo"]
     assert "cotizaciones.ver" in yo["actividades"]

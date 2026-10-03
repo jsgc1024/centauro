@@ -47,6 +47,12 @@ O que espera o visto do diretor de operações —os incidentes por autorizar, o
 ### Catálogos LG {#lg_catalogos}
 Centauro Logística (AI/LG): o que a margem, o adiantamento e a folha de cada viagem vão usar, cada valor com a data a partir da qual vale. O que decide dinheiro —a tabela de comissões, o diesel com a sua folga e a sua tolerância, a alimentação, a margem mínima, o custo do motorista, o rendimento e o custo por tipo de veículo, o bônus e a garantia— é definido pela gerência de Logística; os tipos de veículo e os pátios ficam com sistema e qualidade. A lista da esquerda diz o que falta e de quem vem, e a aba Registro conta cada mudança. Dentro destas telas o cabeçalho diz AI/LG. Ver [Logística](#/manual/leer/logistica).
 
+### Frota LG {#lg_flota}
+Cada unidade da Centauro Logistic: seu número econômico, sua situação, sua documentação com vencimentos, seu plano preventivo, seus serviços, seus pneus e seu custo por dia, e se pode sair hoje. Fica com quem tem o cargo «Responsable de flota LG»; a gerência de Logística e sistema e qualidade a veem, e a gerência marca à mão o «em viagem». A aba Carga inicial lê as unidades do Odoo e envia o Excel de custos. Ver [Logística: a frota](#/manual/leer/logistica_flota).
+
+### Jornada LG {#lg_jornada}
+Quem se apresentou para trabalhar: a marcação de jornada de cada motorista no pátio, pelo LG Connect; sua semana para o bônus de 5 de 5; as marcações fora do pátio que a Central valida; e em Motoristas, sua habilitação federal e o código de quatro dígitos para entrar no LG Connect. Abrem a gerência de Logística, quem cuida da frota, a Central e sistema e qualidade.
+
 ## Operações CI
 
 ### Monitoramento {#central}

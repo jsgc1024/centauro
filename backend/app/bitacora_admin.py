@@ -24,7 +24,7 @@ from decimal import Decimal, InvalidOperation
 
 from sqlalchemy.orm import Session
 
-from app import excel, lg_catalogos, permisos
+from app import excel, lg_catalogos, lg_flota, permisos
 from app import models as m
 from app import textos_aviso as ta
 
@@ -54,6 +54,9 @@ CATALOGOS = ("paises", "plazas", "perfiles", "categorias-vehiculo",
 # Los ocho de Logistica (seccion 150), con su prefijo `lg_`. Su renglon
 # lo cuenta `lg_catalogos`: los valores con fecha se leen de su tabla.
 CATALOGOS += lg_catalogos.OBJETOS
+# Y los de su flota y su jornada (seccion 151): su renglon lo cuenta
+# `lg_flota`.
+CATALOGOS += lg_flota.OBJETOS
 
 GRUPOS = {
     "accesos": ("usuario",),
@@ -745,6 +748,8 @@ def que_cambio(r: m.RegistroAdmin, idioma: str, nombres: _Nombres) -> str:
     """El renglon contado en una frase."""
     if r.objeto in lg_catalogos.OBJETOS:
         return lg_catalogos.que_cambio(r, idioma, nombres.db)
+    if r.objeto in lg_flota.OBJETOS:
+        return lg_flota.que_cambio(r, idioma)
     t = _t(idioma)
     plantilla = t["accion"].get(r.accion)
     persona = nombres.usuario(r.objeto_id) if r.objeto == "usuario" else ""
@@ -828,7 +833,8 @@ def renglon(r: m.RegistroAdmin, idioma: str, nombres: _Nombres) -> dict:
         "grupo": grupo_de(r.objeto),
         "objeto": r.objeto,
         "objeto_id": r.objeto_id,
-        "donde": t["donde"].get(r.objeto) or lg_catalogos.donde(r.objeto, idioma),
+        "donde": (t["donde"].get(r.objeto) or lg_flota.donde(r.objeto, idioma)
+                  or lg_catalogos.donde(r.objeto, idioma)),
         "que": que_cambio(r, idioma, nombres),
         "accion": r.accion, "antes": r.antes, "despues": r.despues,
         "detalle": r.detalle,

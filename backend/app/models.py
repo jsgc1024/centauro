@@ -2858,6 +2858,11 @@ class LgTipoUnidad(Base):
     # confunda al pasar los viajes de alla.
     nombre_tango: Mapped[str | None] = mapped_column(String(60), nullable=True)
     orden: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Cuantas llantas lleva, sin la refaccion (seccion 151): de ahi salen
+    # las posiciones de la flota. 1.5 ton 4, 4 ton 6, torton y tracto 10.
+    llantas: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Los km que dura una llanta: a 2,000 de cumplirlos, «cambio pronto».
+    vida_llanta_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
     activo: Mapped[bool] = mapped_column(Boolean, default=True,
                                          server_default=true())
     creado_en: Mapped[datetime] = mapped_column(
@@ -2942,6 +2947,403 @@ class LgValor(Base):
         foreign_keys=[capturado_por_id])
     quitado_por: Mapped["Persona | None"] = relationship(
         foreign_keys=[quitado_por_id])
+
+
+# ------------------------------------- Logistica, bloque 2 (seccion 151)
+#
+# La flota, los operadores y su jornada. Las unidades y los operadores
+# vienen de la compania «Centauro Logistic» de Odoo y viven en sus propias
+# tablas: si entraran a las de Proteccion Ejecutiva se ofrecerian para sus
+# servicios y la lectura de Odoo de EP los daria de baja cada hora. Nada
+# de aqui se borra: un viaje cerrado puede apuntar a cualquier renglon.
+
+class LgUnidad(Base):
+    """Una unidad de Logistica. Placa, modelo, chasis e IAVE los manda
+    Odoo; el numero economico, el tipo, el rendimiento, el odometro, el
+    estado, el patio y los costos viven aqui."""
+    __tablename__ = "lg_unidad"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    odoo_id: Mapped[int | None] = mapped_column(Integer, unique=True,
+                                                nullable=True)
+    placa: Mapped[str] = mapped_column(String(20), index=True)
+    # «unidad» sale a viaje; «remolque» (las cajas secas) lleva su
+    # expediente, su plan y su costo, pero no se asigna sola: va con su
+    # tracto (decision de Salvador, 3 oct).
+    clase: Mapped[str] = mapped_column(String(12), default="unidad",
+                                       server_default="unidad")
+    categoria_odoo: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    marca_modelo: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    anio: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    chasis: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    iave: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    odoo_sincronizado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    baja_odoo_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    # Lo de Connect. El economico no se repite: en Tango el 01 estaba dos
+    # veces. `economico_llave` es el mismo, sin «Eco», espacios ni ceros a
+    # la izquierda, y es la que no se repite.
+    numero_economico: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    economico_llave: Mapped[str | None] = mapped_column(String(20), unique=True,
+                                                        nullable=True)
+    tipo_id: Mapped[int | None] = mapped_column(
+        ForeignKey("lg_tipo_unidad.id"), nullable=True)
+    rendimiento_ref: Mapped[float | None] = mapped_column(Numeric(6, 2),
+                                                          nullable=True)
+    odometro_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    odometro_fecha: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # disponible, en_viaje, en_taller, fuera_de_servicio
+    # (`lg_flota.ESTADOS`). Taller y fuera de servicio piden motivo.
+    estado: Mapped[str] = mapped_column(String(20), default="disponible",
+                                        server_default="disponible")
+    estado_motivo: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    estado_desde: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    # Cuando se espera que regrese: del viaje o del taller.
+    estado_hasta: Mapped[date | None] = mapped_column(Date, nullable=True)
+    patio_id: Mapped[int | None] = mapped_column(ForeignKey("lg_patio.id"),
+                                                 nullable=True)
+    # Lo que cuesta tenerla, de la carga inicial o capturado aqui. Lo que
+    # falte se toma de su tipo (seccion 150).
+    valor_compra: Mapped[float | None] = mapped_column(Numeric(14, 2), nullable=True)
+    anios_vida: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    seguro_anual: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    tenencia_anual: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    verificacion_anual: Mapped[float | None] = mapped_column(Numeric(12, 2),
+                                                             nullable=True)
+    gps_anual: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    # Lo que gastan sus llantas por km recorrido.
+    llantas_por_km: Mapped[float | None] = mapped_column(Numeric(10, 4),
+                                                         nullable=True)
+    # El mantenimiento de un ano, de la carga inicial: rige mientras la
+    # unidad no tenga un ano de servicios registrados aqui.
+    mantenimiento_anual: Mapped[float | None] = mapped_column(Numeric(12, 2),
+                                                              nullable=True)
+    activo: Mapped[bool] = mapped_column(Boolean, default=True,
+                                         server_default=true())
+    creado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+    tipo: Mapped[LgTipoUnidad | None] = relationship()
+    patio: Mapped[LgPatio | None] = relationship()
+
+
+class LgLecturaOdometro(Base):
+    """Cada lectura del odometro. A mano por ahora; desde el bloque 6, con
+    las fotos de salida y regreso de cada viaje."""
+    __tablename__ = "lg_lectura_odometro"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    unidad_id: Mapped[int] = mapped_column(ForeignKey("lg_unidad.id"),
+                                           index=True)
+    km: Mapped[int] = mapped_column(Integer)
+    fecha: Mapped[date] = mapped_column(Date)
+    # manual, servicio, carga (la carga inicial) o viaje.
+    fuente: Mapped[str] = mapped_column(String(12), default="manual",
+                                        server_default="manual")
+    # Obligatorio cuando la lectura es menor que la anterior.
+    motivo: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    registrado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    registrado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class LgArchivo(Base):
+    """El archivo de un documento o de una factura de taller. Como los del
+    expediente del freelance: al deposito de Google si esta puesto; si
+    no, aqui adentro hasta la mudanza de cada hora."""
+    __tablename__ = "lg_archivo"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nombre: Mapped[str] = mapped_column(String(200))
+    tipo: Mapped[str] = mapped_column(String(60))
+    tamano: Mapped[int] = mapped_column(Integer)
+    md5: Mapped[str] = mapped_column(String(32))
+    contenido: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    objeto: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    subido_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    subido_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class LgDocumento(Base):
+    """Un documento del expediente: de una unidad (tarjeta de circulacion,
+    poliza, permiso SCT, verificacion, GPS) o de un operador (licencia
+    federal). Uno nuevo no borra el anterior: lo marca reemplazado."""
+    __tablename__ = "lg_documento"
+    __table_args__ = (
+        CheckConstraint("(unidad_id IS NULL) <> (operador_id IS NULL)",
+                        name="ck_lg_documento_de_quien"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    unidad_id: Mapped[int | None] = mapped_column(
+        ForeignKey("lg_unidad.id"), nullable=True, index=True)
+    operador_id: Mapped[int | None] = mapped_column(
+        ForeignKey("lg_operador.id"), nullable=True, index=True)
+    # `lg_flota.DOCUMENTOS` o «licencia».
+    tipo: Mapped[str] = mapped_column(String(30))
+    folio: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    # La aseguradora de la poliza, el tipo de licencia (B, E...).
+    detalle: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Sin vencimiento vale: hay tarjetas de circulacion que no vencen.
+    vence_en: Mapped[date | None] = mapped_column(Date, nullable=True)
+    archivo_id: Mapped[int | None] = mapped_column(ForeignKey("lg_archivo.id"),
+                                                   nullable=True)
+    capturado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    capturado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    reemplazado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    # Los avisos a quien lleva la flota: a 30 dias y el dia que vence, una
+    # vez cada uno.
+    aviso_previo_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    aviso_vencido_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+    archivo: Mapped[LgArchivo | None] = relationship()
+
+
+class LgPlanServicio(Base):
+    """El plan preventivo de un tipo de unidad: cada servicio, cada
+    cuantos km y su costo aproximado. Las cajas secas, sin tipo, tienen
+    el suyo con `clase` remolque."""
+    __tablename__ = "lg_plan_servicio"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tipo_id: Mapped[int | None] = mapped_column(
+        ForeignKey("lg_tipo_unidad.id"), nullable=True)
+    clase: Mapped[str] = mapped_column(String(12), default="unidad",
+                                       server_default="unidad")
+    nombre: Mapped[str] = mapped_column(String(80))
+    cada_km: Mapped[int] = mapped_column(Integer)
+    costo_aprox: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    orden: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    activo: Mapped[bool] = mapped_column(Boolean, default=True,
+                                         server_default=true())
+    creado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class LgServicio(Base):
+    """Un servicio hecho a una unidad, con su factura. Del plan, recorre
+    el plan; un correctivo no lo mueve. Los de los ultimos 12 meses son
+    el mantenimiento de su costo por dia."""
+    __tablename__ = "lg_servicio"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    unidad_id: Mapped[int] = mapped_column(ForeignKey("lg_unidad.id"),
+                                           index=True)
+    plan_id: Mapped[int | None] = mapped_column(
+        ForeignKey("lg_plan_servicio.id"), nullable=True)
+    nombre: Mapped[str] = mapped_column(String(120))
+    fecha: Mapped[date] = mapped_column(Date)
+    km: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    costo: Mapped[float] = mapped_column(Numeric(12, 2))
+    taller: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    factura: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    archivo_id: Mapped[int | None] = mapped_column(ForeignKey("lg_archivo.id"),
+                                                   nullable=True)
+    registrado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    registrado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    # Uno mal capturado no se borra: se anula con su motivo.
+    anulado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    anulado_motivo: Mapped[str | None] = mapped_column(String(300), nullable=True)
+
+    plan: Mapped[LgPlanServicio | None] = relationship()
+    archivo: Mapped[LgArchivo | None] = relationship()
+
+
+class LgLlanta(Base):
+    """La llanta de una posicion, desde el km en que se instalo. La que
+    se quita queda con su km de retiro."""
+    __tablename__ = "lg_llanta"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    unidad_id: Mapped[int] = mapped_column(ForeignKey("lg_unidad.id"),
+                                           index=True)
+    # `lg_flota.posiciones`: «DI», «TIE»..., «R» la refaccion.
+    posicion: Mapped[str] = mapped_column(String(8))
+    instalada_km: Mapped[int] = mapped_column(Integer)
+    instalada_en: Mapped[date] = mapped_column(Date)
+    detalle: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    costo: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    retirada_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    retirada_en: Mapped[date | None] = mapped_column(Date, nullable=True)
+    registrado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    registrado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class LgCostoDia(Base):
+    """Lo que cuesta tener una unidad un dia, con la fecha desde la que
+    rige. Se calcula el dia 1 de cada mes y cuando se recalcula a mano;
+    el de antes se conserva: un viaje cerrado guarda el renglon con el
+    que se calculo."""
+    __tablename__ = "lg_costo_dia"
+    __table_args__ = (
+        Index("ix_lg_costo_dia_vigencia", "unidad_id", "vigente_desde"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    unidad_id: Mapped[int] = mapped_column(ForeignKey("lg_unidad.id"))
+    vigente_desde: Mapped[date] = mapped_column(Date)
+    total: Mapped[float] = mapped_column(Numeric(12, 2))
+    # Cada componente con su monto, de donde sale y su detalle (JSON).
+    desglose: Mapped[str] = mapped_column(Text)
+    # mensual, recalculo, carga o completo (el del mes que quedo
+    # incompleto y se completo en cuanto hubo con que).
+    origen: Mapped[str] = mapped_column(String(12))
+    motivo: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    creado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    creado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class LgOperador(Base):
+    """Un operador de Logistica: de la compania «Centauro Logistic» de
+    Odoo con puesto «Operador». Sus datos bancarios se quedan en Odoo.
+
+    Entra a su propia app, LG Connect (applg.mycentauro.lat), con su
+    propia sesion: no es un usuario de la consola ni de la app de EP, y
+    un agente de EP no entra a la suya (decision de Salvador, 3 oct)."""
+    __tablename__ = "lg_operador"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    odoo_id: Mapped[int | None] = mapped_column(Integer, unique=True,
+                                                nullable=True)
+    nombre: Mapped[str] = mapped_column(String(160))
+    # El correo personal de Odoo: con el entra a LG Connect, como en EP.
+    correo: Mapped[str | None] = mapped_column(String(160), unique=True,
+                                               nullable=True)
+    telefono: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    puesto_odoo: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # De ahi sale su antiguedad, que usa el bono de movilidad.
+    fecha_ingreso: Mapped[date | None] = mapped_column(Date, nullable=True)
+    activo: Mapped[bool] = mapped_column(Boolean, default=True,
+                                         server_default=true())
+    odoo_sincronizado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    baja_odoo_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    # Su acceso a LG Connect.
+    hash_contrasena: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    sesiones_desde: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    ultimo_acceso: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    idioma: Mapped[str] = mapped_column(String(5), default="es",
+                                        server_default="es")
+    creado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class LgViajeManual(Base):
+    """Un viaje del operador marcado a mano mientras los viajes sigan en
+    Tango (hasta el bloque 4). Cada uno es su renglon: los dias de un
+    viaje de la semana pasada siguen contando como activos para el bono
+    aunque despues se marque otro. «Ya regreso» le pone su regreso; el
+    que todavia no empezaba se quita."""
+    __tablename__ = "lg_viaje_manual"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    operador_id: Mapped[int] = mapped_column(
+        ForeignKey("lg_operador.id", ondelete="CASCADE"), index=True)
+    desde: Mapped[date] = mapped_column(Date)
+    hasta: Mapped[date] = mapped_column(Date)
+    creado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    creado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    quitado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+
+class LgCodigoAcceso(Base):
+    """Los cuatro digitos que Karla o quien lleve la flota le dicta al
+    operador por telefono para que cree su contrasena. Diez minutos,
+    cinco intentos, guardado cifrado, como el de la app de EP."""
+    __tablename__ = "lg_codigo_acceso"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    operador_id: Mapped[int] = mapped_column(
+        ForeignKey("lg_operador.id", ondelete="CASCADE"), index=True)
+    hash: Mapped[str] = mapped_column(String(200))
+    expira_en: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    fallos: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    usado_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True),
+                                                      nullable=True)
+    anulado_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True),
+                                                        nullable=True)
+    dado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    creado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class LgLlave(Base):
+    """Entrar a LG Connect con huella o cara: la llave publica que el
+    telefono del operador creo, como `LlaveAcceso` en la de EP."""
+    __tablename__ = "lg_llave"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    operador_id: Mapped[int] = mapped_column(
+        ForeignKey("lg_operador.id", ondelete="CASCADE"), index=True)
+    credencial_id: Mapped[str] = mapped_column(String(400), unique=True)
+    llave_publica: Mapped[str] = mapped_column(Text)
+    contador: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    nombre: Mapped[str] = mapped_column(String(120))
+    creada_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    usada_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True),
+                                                      nullable=True)
+
+    operador: Mapped[LgOperador] = relationship()
+
+
+class LgJornada(Base):
+    """El inicio de jornada del operador, marcado en su app dentro del
+    patio, tenga viaje o no. Dice quien esta libre ese dia y cuenta para
+    el bono de movilidad (5 de 5). Fuera de la geocerca queda por validar
+    con la Central, que la valida o la rechaza con justificacion."""
+    __tablename__ = "lg_jornada"
+    __table_args__ = (UniqueConstraint("operador_id", "fecha"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    operador_id: Mapped[int] = mapped_column(ForeignKey("lg_operador.id"),
+                                             index=True)
+    fecha: Mapped[date] = mapped_column(Date, index=True)
+    marcada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    lat: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
+    lon: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
+    precision_m: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    patio_id: Mapped[int | None] = mapped_column(ForeignKey("lg_patio.id"),
+                                                 nullable=True)
+    distancia_m: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    dentro: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Lo que escribio el operador al marcar fuera del patio.
+    nota: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # valida, por_validar o rechazada.
+    estado: Mapped[str] = mapped_column(String(12))
+    revisada_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    revisada_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True),
+                                                         nullable=True)
+    justificacion: Mapped[str | None] = mapped_column(String(300), nullable=True)
+
+    operador: Mapped[LgOperador] = relationship()
+    patio: Mapped[LgPatio | None] = relationship()
+    revisada_por: Mapped["Persona | None"] = relationship()
 
 
 # ================================================================ COTIZACION

@@ -536,6 +536,41 @@ ACTIVIDADES: dict[str, dict] = {
                        "Logistica",
         "roles": {R.SISTEMA_CALIDAD, R.ADMIN},
     },
+    # Seccion 151. Decision de Salvador, 3 oct: quien lleva la flota edita
+    # unidades, documentos y servicios; la gerencia ve todo; la Central
+    # valida las marcas fuera del patio. La gerencia y quien lleva la
+    # flota dan el codigo de LG Connect y capturan la licencia.
+    "lg.flota.ver": {
+        "descripcion": "Ver la flota de Logistica: cada unidad, su expediente, "
+                       "su plan, sus servicios y su costo por dia",
+        "roles": {R.LOGISTICA, R.SISTEMA_CALIDAD, R.ADMIN},
+    },
+    "lg.flota.editar": {
+        "descripcion": "Llevar la flota de Logistica: datos de cada unidad, "
+                       "estado, odometro, expediente, servicios, llantas, plan "
+                       "preventivo, la carga del Excel y la lectura de Odoo",
+        "roles": {R.ADMIN},
+    },
+    "lg.jornada.ver": {
+        "descripcion": "Ver la jornada de los operadores de Logistica: quien "
+                       "se presento, su semana y sus licencias",
+        "roles": {R.LOGISTICA, R.CENTRAL, R.SISTEMA_CALIDAD, R.ADMIN},
+    },
+    "lg.jornada.validar": {
+        "descripcion": "Validar o rechazar con justificacion la marca de un "
+                       "operador fuera del patio",
+        "roles": {R.CENTRAL, R.ADMIN},
+    },
+    "lg.operadores.editar": {
+        "descripcion": "Dar el codigo de LG Connect a un operador, capturar su "
+                       "licencia federal y leer los operadores de Odoo",
+        "roles": {R.LOGISTICA, R.ADMIN},
+    },
+    "lg.en_viaje.marcar": {
+        "descripcion": "Marcar a mano una unidad o un operador en viaje, "
+                       "mientras los viajes sigan en Tango",
+        "roles": {R.LOGISTICA, R.ADMIN},
+    },
     "panorama.ver": {
         "descripcion": "Todo lo que esta pasando ahora, y las marcas que no "
                        "cuadran",
@@ -686,7 +721,7 @@ ACTIVIDADES: dict[str, dict] = {
 # `cotizaciones.ver`.
 PANTALLAS = ("panorama", "cotizaciones", "servicios", "implantados",
              "equipo", "unidades", "bonos", "encuestas", "calidad",
-             "lg_catalogos",
+             "lg_catalogos", "lg_flota", "lg_jornada",
              "central", "codigo", "finanzas", "facturacion", "nomina",
              "accesos", "odoo", "catalogos", "manual", "direccion",
              "riesgo")
