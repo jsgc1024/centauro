@@ -125,6 +125,19 @@ def mapa(db: Session = Depends(get_db),
             "llave_mapa": settings.google_maps_key_navegador or None}
 
 
+@router.get("/fondo", summary="El riesgo de fondo del mes, por estado")
+def fondo(db: Session = Depends(get_db),
+          gente: m.UsuarioCliente = Depends(GENTE)):
+    return motor.fondo(db, gente)
+
+
+@router.get("/fondo/estados/{region_id}",
+            summary="Como se compone el nivel de uno de mis estados")
+def fondo_estado(region_id: int, db: Session = Depends(get_db),
+                 gente: m.UsuarioCliente = Depends(GENTE)):
+    return motor.fondo_estado(db, gente, region_id)
+
+
 @router.get("/avisos", summary="Lo que me llego")
 def avisos(db: Session = Depends(get_db),
            gente: m.UsuarioCliente = Depends(GENTE)):

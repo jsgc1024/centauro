@@ -2,6 +2,9 @@
 
 O que há de novo em cada atualização, escrito para quem usa o sistema. A mais nova fica em cima.
 
+## 135 · 2026-10-03 · O risco de fundo: o Nível Centauro
+Em Mapa de risco há uma aba nova, **Risco de fundo**: o Nível Centauro de cada estado e de cada município, de 0 a 100, com as cores do painel da Central (Baixo, Médio baixo, Médio, Médio alto e Alto). Sai todo mês de seis coisas: a violência letal, os crimes com violência e o crime organizado do Secretariado Executivo, o medo da ENSU, o que não se denuncia da ENVIPE e a cifra oculta que a Central publica no mapa (40 %). O Connect procura sozinho o arquivo do Secretariado do dia 15 ao fim do mês e calcula o **rascunho**; o analista vê de onde saiu cada dado, revisa o que se moveu mais de 10 pontos, mudou de faixa ou não teve relatório, **ajusta** com o motivo se precisar, e o **chefe de turno publica**. As pesquisas do INEGI são enviadas à mão na mesma aba. Ao publicar, o cliente vê no app: no mapa, **«Eventos | Risco de fundo»**, os seus estados com o nível e, ao tocar um, como se compõe e os municípios mais altos. Ver [o mapa de risco](#/riesgo).
+
 ## 134 · 2026-10-02 · O risco perto do serviço, no app de campo
 No app de campo, acima do serviço do dia, aparece **«Risco perto do seu serviço»** com o que a Central de Inteligência publicou de nível 2 ou mais a 25 km ou menos do ponto de encontro: o nível, há quanto tempo aconteceu, a quantos quilômetros está e até quando afeta. Ao tocar, abre o detalhe, com o texto do analista e um botão para abrir no mapa. Os de nível 3 e 4 também chegam ao telefone assim que são publicados ou sobem de nível, uma só vez por nível, e o histórico do evento diz a quantas pessoas chegou. Mede-se a partir do ponto de encontro: um dia sem ponto cadastrado, ou um evento sem ponto no mapa, não entra. Ver [o mapa de risco](#/riesgo).
 

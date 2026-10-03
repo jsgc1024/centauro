@@ -10211,6 +10211,65 @@ La hoja de campo trae ahora `.nivel`, `.riesgo` y `.atras`, que la app
 del cliente toma de ahi. Caches: `centauro-campo-v23`, `centauro-ci-v2`.
 Pruebas: `tests/test_riesgo_campo.py` (5).
 
+## 135. El riesgo de fondo: el Nivel Centauro
+
+El nivel de cada estado y municipio de Mexico, de 0 a 100, cada mes. La
+formula la dio Salvador (2 oct) y quedo escrita en el documento de la
+Central («El Nivel Centauro: propuesta de formula»):
+
+- **Seis componentes** (`app/nivel_catalogo.py`): violencia letal 18,
+  delitos con violencia 12, delincuencia organizada 10 (Secretariado,
+  fuero comun, victimas), miedo 12 (ENSU), lo que no se denuncia 8
+  (ENVIPE) y la cifra negra de redes 40 (lo que la Central publico en el
+  mapa los ultimos 90 dias, pesado por nivel 1/2/4/8).
+- **El calculo** (`app/nivel_centauro.py`): tasa anualizada por 100 mil
+  (meses del ano con la metodologia 2026, por 12/n), el municipio
+  encogido hacia su estado con `a = pob / (pob + 50000)`, percentil
+  estrictamente-menor contra los 32 estados o los 2,475 municipios (o
+  contra un mes de referencia fijo, si se elige). Un componente sin datos
+  o sin variacion no cuenta y su peso se reparte. Cortes 20/42/60/80
+  (42 y 80 por confirmar con la Central), editables con los pesos.
+- **El mes** (`NivelMes`, `NivelLugar`, migracion `b5e7c9a1d3f2`, que
+  siembra municipios y poblacion del CONAPO de `app/datos/`): borrador →
+  revisar (mas de 10 puntos, cambio de rango, sin reporte) → ajustar con
+  motivo de 10+ letras → publicar (`riesgo.confirmar`, el jefe de turno).
+  Publicado no se recalcula ni se ajusta. Rehacer el borrador (llega una
+  encuesta, se pica Recalcular) conserva lo ajustado y su motivo. El
+  rango se saca del numero que se ve (redondeado). Con mes de referencia,
+  un componente que no estaba en ese mes no cuenta.
+- **Las fuentes** (`app/fuentes_riesgo.py`): la tarea
+  `riesgo-secretariado` (7:20, dias 15-31) busca en la pagina de gob.mx el
+  enlace «Fuero comun - Victimas, incidencia delictiva municipal», lo baja
+  de OneDrive con `download=1` y, si es nuevo, recalcula el borrador. Las
+  encuestas se suben a mano (CSV lugar, porcentaje). La poblacion del
+  CONAPO (2025-2027) va en el repositorio.
+
+En la consola, la pestana «Riesgo de fondo» (`web/fondo.js`): el
+borrador con «De donde salio», «Para revisar» con su Ajustar y el boton
+de publicar; el mes publicado con la lista, el mapa y la ficha (como se
+compone, municipios mas altos), por estados o por municipios de un
+estado; y «Subir fuentes a mano». El mapa (`web/mapa_fondo.js`, compartido
+con la app del cliente) pinta con la escala corrida del Power BI de la
+Central (verde #4CAC0B en 20, ambar #F5AA12 en 50, rojo #B90B0B en 80):
+como capa sobre Google si hay llave, y si no como dibujo propio con los
+contornos del INEGI simplificados (`preparar_mapas.py` → `web/geo/`).
+
+En la app del cliente: «Eventos | Riesgo de fondo» en el mapa, sus estados
+con nivel y flecha contra hace un ano, y la ficha de cada uno
+(`GET /ci-api/fondo`, `/ci-api/fondo/estados/{id}`). Solo lo publicado;
+nunca el motivo de un ajuste ni lo que calculo Connect antes; de un estado
+que no sigue solo ve el color. Cache `centauro-ci-v3`.
+
+De paso: los campos de texto libre del mapa de riesgo (titulo, lugar,
+motivo, nota de la llamada, fuente y su enlace) se ponian en Mayusculas
+Cada Palabra al salir del campo, y el enlace de una fuente quedaba
+«Https://...». Ahora van `data-crudo`. Y borrar un servicio suelta el
+dia de los avisos de riesgo de campo (`AvisoRiesgoCampo.jornada_id` a
+nulo, seccion 134), que la prueba de la limpieza pedia; la del puesto de
+sistema de calidad ya cuenta la pantalla de riesgo (seccion 132).
+
+Pruebas: `tests/test_nivel_centauro.py` (14).
+
 ## 14. Lo que falta
 
 ### Abierto

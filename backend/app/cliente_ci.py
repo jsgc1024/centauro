@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session
 
 from app import auth, contrasenas, correo, correo_html, intentos, push
 from app import models as m
+from app import nivel_centauro as nivel_mes
 from app import reloj
 from app.config import settings
 from app.db import get_db
@@ -447,6 +448,89 @@ def mapa(db: Session, gente: m.UsuarioCliente) -> list[dict]:
                .order_by(m.EventoRiesgo.nivel.desc(),
                          m.EventoRiesgo.ocurrio_en.desc()).all())
     return [vista_evento(e, ahora) for e in eventos]
+
+
+# ------------------------------------------------- el riesgo de fondo
+
+# Los municipios que se le ensenan al cliente en la ficha de un estado.
+MUNICIPIOS_EN_LA_FICHA = 5
+
+
+def _pais_de(db: Session, gente: m.UsuarioCliente) -> m.Pais | None:
+    """Mexico, el unico con nivel por ahora, si sigue algun estado de
+    alla; si no, el pais de sus estados."""
+    paises = [z.region.pais for z in gente.cliente_central.zonas]
+    for pais in paises:
+        if pais.codigo == "MX":
+            return pais
+    if paises:
+        return paises[0]
+    return db.query(m.Pais).filter_by(codigo="MX").first()
+
+
+def _lugar_para_cliente(lugar: dict, mios: set[int]) -> dict:
+    """El numero y como se compone. Sin el motivo de un ajuste ni lo que
+    calculo Connect antes de ajustarlo: eso es trabajo de la Central."""
+    return {"region_id": lugar["region_id"], "region": lugar["region"],
+            "clave_region": lugar["clave_region"],
+            "municipio": lugar["municipio"],
+            "clave_municipio": lugar["clave_municipio"],
+            "valor": lugar["valor"], "rango": lugar["rango"],
+            "vs_mes": lugar["vs_mes"], "vs_ano": lugar["vs_ano"],
+            "componentes": {c: d.get("p")
+                            for c, d in lugar["componentes"].items()},
+            "mio": lugar["region_id"] in mios}
+
+
+def fondo(db: Session, gente: m.UsuarioCliente) -> dict:
+    """El ultimo mes publicado, por estado: todo el pais se pinta, y sus
+    estados van marcados. Un borrador nunca llega aqui."""
+    pais = _pais_de(db, gente)
+    mes = nivel_mes.vigente(db, pais) if pais else None
+    if not mes:
+        return {"mes": None}
+    vista = nivel_mes.vista_mes(db, mes)
+    mios = set(_regiones(gente))
+    # De los estados que no sigue, solo lo que pinta el mapa.
+    solo_color = ("region_id", "region", "clave_region", "valor", "rango",
+                  "mio")
+    estados = []
+    for x in vista["lugares"]:
+        lugar = _lugar_para_cliente(x, mios)
+        estados.append(lugar if lugar["mio"]
+                       else {k: lugar[k] for k in solo_color})
+    return {"mes": {"id": mes.id, "periodo": vista["periodo"],
+                    "cortes": vista["cortes"], "faltan": vista["faltan"]},
+            "estados": estados}
+
+
+def fondo_estado(db: Session, gente: m.UsuarioCliente, region_id: int
+                 ) -> dict:
+    """La ficha de uno de SUS estados: como se compone y sus municipios
+    mas altos. De los demas solo ve el color en el mapa."""
+    if region_id not in _regiones(gente):
+        raise HTTPException(404, "Ese estado no está en tu servicio")
+    pais = _pais_de(db, gente)
+    mes = nivel_mes.vigente(db, pais) if pais else None
+    if not mes:
+        raise HTTPException(404, "Todavía no hay un nivel publicado")
+    mios = {region_id}
+    estados = nivel_mes.vista_mes(db, mes, region_id=region_id)["lugares"]
+    if not estados:
+        raise HTTPException(404, "Ese estado no está en el nivel del mes")
+    municipios = nivel_mes.vista_mes(db, mes, region_id=region_id,
+                                 con_municipios=True)["lugares"]
+    vigentes = (db.query(func.count(m.EventoRiesgo.id))
+                .filter(m.EventoRiesgo.region_id == region_id,
+                        m.EventoRiesgo.estado == m.EstadoEvento.PUBLICADO,
+                        m.EventoRiesgo.vigente_hasta > _ahora()).scalar())
+    return {"mes": {"id": mes.id, "periodo": mes.periodo.isoformat(),
+                    "cortes": json.loads(mes.resumen).get("cortes"),
+                    "faltan": json.loads(mes.resumen).get("faltan", [])},
+            "estado": _lugar_para_cliente(estados[0], mios),
+            "municipios": [_lugar_para_cliente(x, mios) for x in
+                           municipios[:MUNICIPIOS_EN_LA_FICHA]],
+            "vigentes": vigentes or 0}
 
 
 def _vista_aviso(alerta: m.AlertaCliente, ahora: datetime) -> dict:

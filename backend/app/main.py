@@ -29,6 +29,7 @@ from app.routers import cotizaciones as cotizaciones_router
 from app.routers import propuestas as propuestas_router
 from app.routers import riesgo as riesgo_router
 from app.routers import cliente_ci as cliente_ci_router
+from app.routers import nivel as nivel_router
 from app.seed import (sembrar, sembrar_bonos, sembrar_festivos,
                       sembrar_lugares, sembrar_parametros, sembrar_recursos)
 
@@ -160,6 +161,8 @@ app.include_router(propuestas_router.router)
 # La Central de Inteligencia: el mapa de riesgo y sus eventos
 # (seccion 130).
 app.include_router(riesgo_router.router)
+# El riesgo de fondo: el Nivel Centauro (seccion 135).
+app.include_router(nivel_router.router)
 # Y la app de su cliente (seccion 133), con su propia sesion.
 app.include_router(cliente_ci_router.router)
 

@@ -18,6 +18,7 @@ import { api, sesion } from "./api.js";
 import { aviso, campo, entrada, fecha, fechaLocal, h, hora, lista, mensaje } from "./util.js";
 import { t } from "./idioma.js";
 import { tiene } from "./menu.js";
+import { mesaDeFondo } from "./fondo.js";
 
 const REFRESCO_SEGUNDOS = 60;
 const COLOR = { 1: "#5f7187", 2: "#c99a06", 3: "#e07000", 4: "#c62828" };
@@ -62,6 +63,7 @@ export async function pantallaRiesgo(main) {
   selPais.value = ctx.pais.id;
 
   const pestanaMapa = h("button", { type: "button", clase: "pestana activa" }, t("rsg_tab_mapa"));
+  const pestanaFondo = h("button", { type: "button", clase: "pestana" }, t("rsg_tab_fondo"));
   const pestanaClientes = h("button", { type: "button", clase: "pestana" }, t("rsg_tab_clientes"));
   const cuerpo = h("div");
 
@@ -69,24 +71,29 @@ export async function pantallaRiesgo(main) {
     h("h1", {}, t("rsg_titulo")),
     h("p", { clase: "sub" }, t("rsg_sub")),
     h("div", { clase: "rsg-barra" }, campo(t("rsg_pais"), selPais),
-      h("div", { clase: "pestanas" }, pestanaMapa, pestanaClientes)),
+      h("div", { clase: "pestanas" }, pestanaMapa, pestanaFondo, pestanaClientes)),
     cuerpo);
 
   const mostrar = async (cual) => {
     pestanaMapa.classList.toggle("activa", cual === "mapa");
+    pestanaFondo.classList.toggle("activa", cual === "fondo");
     pestanaClientes.classList.toggle("activa", cual === "clientes");
     clearInterval(temporizador);
     cuerpo.replaceChildren();
     if (cual === "mapa") await mesaDelAnalista(cuerpo);
+    else if (cual === "fondo") await mesaDeFondo(cuerpo, { pais: ctx.pais, cargarGoogle });
     else await mesaDeClientes(cuerpo);
   };
+  const activa = () => (pestanaMapa.classList.contains("activa") ? "mapa"
+    : pestanaFondo.classList.contains("activa") ? "fondo" : "clientes");
   pestanaMapa.onclick = () => mostrar("mapa");
+  pestanaFondo.onclick = () => mostrar("fondo");
   pestanaClientes.onclick = () => mostrar("clientes");
   selPais.onchange = async () => {
     ctx.pais = conRegiones.find((p) => String(p.id) === selPais.value);
     ctx.cat = null;
     mapa = null;
-    await mostrar(pestanaMapa.classList.contains("activa") ? "mapa" : "clientes");
+    await mostrar(activa());
   };
   await mostrar("mapa");
 }
@@ -250,7 +257,7 @@ function renglonEvento(e) {
 }
 
 function renglonLlamada(a, zona, ficha) {
-  const nota = entrada("nota", { placeholder: t("rsg_nota_llamada") });
+  const nota = entrada("nota", { "data-crudo": "", placeholder: t("rsg_nota_llamada") });
   const salida = h("div");
   return h("div", { clase: "rsg-renglon rsg-llamar" },
     h("div", {}, etiquetaNivel(a.nivel), " ", h("strong", {}, a.persona)),
@@ -315,10 +322,10 @@ function pintarFicha(ficha, e) {
   const region = lista("region_id", [{ valor: "", texto: t("rsg_elige_estado") },
     ...cat.regiones.map((r) => ({ valor: r.id, texto: r.nombre }))]);
   const municipio = entrada("municipio", { maxlength: 120 });
-  const titulo = entrada("titulo", { maxlength: 160 });
+  const titulo = entrada("titulo", { maxlength: 160, "data-crudo": "" });
   const texto = h("textarea", { name: "texto_cliente", rows: 3, maxlength: 2000,
                                 placeholder: t("rsg_ph_texto") });
-  const lugar = entrada("lugar", { maxlength: 300 });
+  const lugar = entrada("lugar", { maxlength: 300, "data-crudo": "" });
   const lat = entrada("lat", { inputmode: "decimal" });
   const lon = entrada("lon", { inputmode: "decimal" });
   const radio = entrada("radio_m", { type: "number", min: 50, max: 200000, step: 50 });
@@ -445,7 +452,7 @@ function pintarFicha(ficha, e) {
 
   /* Las acciones que piden motivo abren su renglon en vez de un dialogo. */
   const conMotivo = (texto, ruta, tono = "") => {
-    const motivo = entrada("motivo", { maxlength: 400, placeholder: t("rsg_ph_motivo") });
+    const motivo = entrada("motivo", { maxlength: 400, "data-crudo": "", placeholder: t("rsg_ph_motivo") });
     const fila = h("div", { clase: "rsg-linea" }, motivo,
       h("button", { type: "button", clase: tono, onclick: () => accion(ruta, { motivo: motivo.value }) },
         t("rsg_confirmar")));
@@ -534,8 +541,8 @@ function sumarHoras(valor, horas) {
 }
 
 function fuentes(e, editable, ficha) {
-  const descripcion = entrada("descripcion", { maxlength: 300, placeholder: t("rsg_ph_fuente") });
-  const url = entrada("url", { maxlength: 600, placeholder: "https://…" });
+  const descripcion = entrada("descripcion", { maxlength: 300, "data-crudo": "", placeholder: t("rsg_ph_fuente") });
+  const url = entrada("url", { maxlength: 600, "data-crudo": "", placeholder: "https://…" });
   const oficial = h("input", { type: "checkbox", name: "oficial" });
   const salida = h("div");
   const quitar = (f) => h("button", { type: "button", clase: "claro chico", title: t("rsg_quitar"),

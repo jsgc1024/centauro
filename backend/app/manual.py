@@ -227,6 +227,18 @@ TAREAS = {
                "resumo do dia com os eventos de nível 2 das suas zonas.",
                "Que o e-mail esteja ligado e que o gerente tenha zonas."),
     },
+    "riesgo-secretariado": {
+        "es": ("Nivel Centauro: del 15 al fin de mes, a las 7:20, busca el "
+               "archivo nuevo del Secretariado; si llegó, lo guarda y rehace "
+               "el borrador del mes para que el analista lo revise.",
+               "Si a fin de mes no hay borrador, que el servidor llegue a "
+               "gob.mx; si no, el analista sube el archivo en Riesgo de fondo."),
+        "pt": ("Nível Centauro: do dia 15 ao fim do mês, às 7:20, procura o "
+               "arquivo novo do Secretariado; se chegou, guarda e refaz o "
+               "rascunho do mês para o analista revisar.",
+               "Se no fim do mês não há rascunho, que o servidor alcance "
+               "gob.mx; se não, o analista sobe o arquivo em Risco de fundo."),
+    },
     "riesgo-vencer": {
         "es": ("Mapa de riesgo: cierra los eventos publicados cuya vigencia "
                "ya pasó y descarta lo propuesto que nadie publicó a tiempo.",
@@ -670,6 +682,12 @@ AREAS = {
 
 AREA_DE_ARCHIVO = {
     "riesgo.py": "riesgo", "routers/riesgo.py": "riesgo",
+    # La Central de Inteligencia: los clientes, su app, el campo y el
+    # Nivel Centauro (secciones 131 a 135).
+    "alertas_riesgo.py": "riesgo", "cliente_ci.py": "riesgo",
+    "routers/cliente_ci.py": "riesgo", "riesgo_campo.py": "riesgo",
+    "nivel_centauro.py": "riesgo", "fuentes_riesgo.py": "riesgo",
+    "routers/nivel.py": "riesgo",
     "operacion.py": "operacion", "routers/operacion.py": "operacion",
     "routers/central.py": "operacion", "central.py": "operacion",
     "geocercas.py": "operacion", "intentos.py": "operacion",

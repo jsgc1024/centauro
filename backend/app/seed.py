@@ -36,6 +36,7 @@ def sembrar_riesgo(db: Session) -> None:
             _obtener_o_crear(db, m.Region, {"pais_id": pais.id,
                                             "nombre": nombre},
                              {"clave": clave})
+    sembrar_municipios(db)
     for codigo, tipos in cat.TIPOS.items():
         pais = db.query(m.Pais).filter_by(codigo=codigo).first()
         if not pais or db.query(m.TipoEvento).filter_by(
@@ -45,6 +46,35 @@ def sembrar_riesgo(db: Session) -> None:
             db.add(m.TipoEvento(pais_id=pais.id, nombre=nombre,
                                 radio_m=radio, definicion=definicion,
                                 orden=orden))
+    db.flush()
+
+
+def sembrar_municipios(db: Session) -> None:
+    """Los municipios de Mexico con su poblacion del CONAPO, y los pesos
+    de arranque del Nivel Centauro (seccion 135). Solo si no estan."""
+    import json
+    from app import nivel_catalogo as nc
+
+    pais = db.query(m.Pais).filter_by(codigo="MX").first()
+    if not pais:
+        return
+    if not db.query(m.ParametrosNivel).filter_by(pais_id=pais.id).first():
+        db.add(m.ParametrosNivel(pais_id=pais.id,
+                                 pesos=json.dumps(nc.PESOS_INICIALES),
+                                 cortes=json.dumps(nc.CORTES_INICIALES)))
+    if db.query(m.Municipio.id).first():
+        return
+    regiones = {r.clave: r.id for r in
+                db.query(m.Region).filter_by(pais_id=pais.id).all()}
+    lista = nc.municipios()
+    filas = [m.Municipio(region_id=regiones[x["entidad"]], clave=x["clave"],
+                         nombre=x["nombre"]) for x in lista]
+    db.add_all(filas)
+    db.flush()
+    db.add_all([m.PoblacionMunicipio(municipio_id=f.id, anio=anio,
+                                     habitantes=n)
+                for f, x in zip(filas, lista)
+                for anio, n in x["poblacion"].items()])
     db.flush()
 
 

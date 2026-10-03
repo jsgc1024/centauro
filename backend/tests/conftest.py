@@ -104,6 +104,8 @@ TABLAS_DE_OPERACION = [
     # El mapa de riesgo (seccion 130): los eventos, sus fuentes y su
     # bitacora. Los estados y los tipos de evento son catalogo.
     # Sus clientes, su gente y sus alertas (seccion 131).
+    "nivel_lugar", "parametros_nivel", "nivel_mes", "carga_fuente",
+    "encuesta_valor", "cifra_oficial",
     "aviso_riesgo_campo", "enlace_cliente", "alerta_cliente", "suscripcion_push_cliente", "usuario_cliente",
     "zona_cliente", "cliente_central",
     "cambio_evento", "fuente_evento", "evento_riesgo",

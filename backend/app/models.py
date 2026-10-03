@@ -5517,3 +5517,165 @@ class AvisoRiesgoCampo(Base):
                                            server_default="0")
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True),
                                                 server_default=func.now())
+
+
+# ==================================================================
+# El riesgo de fondo: el Nivel Centauro (seccion 135)
+# ==================================================================
+
+class Municipio(Base):
+    """Un municipio, con la clave de INEGI que usan el Secretariado y el
+    CONAPO (1001 es Aguascalientes, Aguascalientes)."""
+    __tablename__ = "municipio"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    region_id: Mapped[int] = mapped_column(ForeignKey("region.id"), index=True)
+    clave: Mapped[int] = mapped_column(Integer, unique=True)
+    nombre: Mapped[str] = mapped_column(String(120))
+
+    region: Mapped[Region] = relationship()
+
+
+class PoblacionMunicipio(Base):
+    """Habitantes a mitad de ano, de las proyecciones del CONAPO."""
+    __tablename__ = "poblacion_municipio"
+    __table_args__ = (UniqueConstraint("municipio_id", "anio",
+                                       name="uq_poblacion_municipio"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    municipio_id: Mapped[int] = mapped_column(
+        ForeignKey("municipio.id", ondelete="CASCADE"), index=True)
+    anio: Mapped[int] = mapped_column(Integer)
+    habitantes: Mapped[int] = mapped_column(Integer)
+
+
+class CifraOficial(Base):
+    """Lo que dio el Secretariado en un mes, ya sumado por componente.
+
+    Sin municipio es lo que la fiscalia no ubico en ninguno («no
+    especificado»): cuenta para el estado y para nadie mas. Un renglon con
+    cero tambien dice algo: que ese municipio reporto ese mes.
+    """
+    __tablename__ = "cifra_oficial"
+    __table_args__ = (UniqueConstraint("fuente", "componente", "region_id",
+                                       "municipio_id", "periodo",
+                                       name="uq_cifra_oficial"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    fuente: Mapped[str] = mapped_column(String(30))
+    componente: Mapped[str] = mapped_column(String(30))
+    region_id: Mapped[int] = mapped_column(ForeignKey("region.id"), index=True)
+    municipio_id: Mapped[int | None] = mapped_column(
+        ForeignKey("municipio.id", ondelete="CASCADE"), nullable=True,
+        index=True)
+    # El primer dia del mes.
+    periodo: Mapped[date] = mapped_column(Date, index=True)
+    valor: Mapped[int] = mapped_column(Integer)
+
+
+class EncuestaValor(Base):
+    """Un dato de encuesta: la ENSU por ciudad (guardada en cada
+    municipio de la ciudad) o la ENVIPE por estado."""
+    __tablename__ = "encuesta_valor"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # "ensu", "envipe_percepcion" o "envipe_prevalencia".
+    fuente: Mapped[str] = mapped_column(String(30), index=True)
+    periodo: Mapped[date] = mapped_column(Date)
+    region_id: Mapped[int] = mapped_column(ForeignKey("region.id"), index=True)
+    municipio_id: Mapped[int | None] = mapped_column(
+        ForeignKey("municipio.id", ondelete="CASCADE"), nullable=True)
+    etiqueta: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    valor: Mapped[float] = mapped_column(Numeric(12, 2))
+
+
+class CargaFuente(Base):
+    """Cada vez que entro una fuente: sola o subida por alguien."""
+    __tablename__ = "carga_fuente"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    fuente: Mapped[str] = mapped_column(String(30), index=True)
+    # Hasta que mes trae datos.
+    periodo: Mapped[date] = mapped_column(Date)
+    origen: Mapped[str] = mapped_column(String(12))   # "automatica" | "subida"
+    archivo: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    filas: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    nota: Mapped[str | None] = mapped_column(Text, nullable=True)
+    usuario_id: Mapped[int | None] = mapped_column(
+        ForeignKey("usuario.id", ondelete="SET NULL"), nullable=True)
+    en: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+                                         server_default=func.now())
+
+
+class ParametrosNivel(Base):
+    """Los pesos, los cortes y la referencia del Nivel Centauro de un
+    pais. Se cambian en la consola sin programar."""
+    __tablename__ = "parametros_nivel"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    pais_id: Mapped[int] = mapped_column(ForeignKey("pais.id"), unique=True)
+    # JSON de texto: {"violencia_letal": 18, ...}, en puntos de 100.
+    pesos: Mapped[str] = mapped_column(Text)
+    # JSON de texto: [20, 42, 60, 80].
+    cortes: Mapped[str] = mapped_column(Text)
+    # Con cuantos habitantes un municipio pesa la mitad suyo y la mitad
+    # su estado (seccion 135, municipios chicos).
+    suavizado: Mapped[int] = mapped_column(Integer, default=50000,
+                                           server_default="50000")
+    # El mes publicado contra el que se sacan los percentiles. Vacio: el
+    # mismo mes que se calcula.
+    referencia_id: Mapped[int | None] = mapped_column(
+        ForeignKey("nivel_mes.id", ondelete="SET NULL"),
+        nullable=True)
+
+
+class NivelMes(Base):
+    """El Nivel Centauro de un mes: borrador hasta que lo publica el jefe
+    de turno."""
+    __tablename__ = "nivel_mes"
+    __table_args__ = (UniqueConstraint("pais_id", "periodo",
+                                       name="uq_nivel_mes"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    pais_id: Mapped[int] = mapped_column(ForeignKey("pais.id"))
+    periodo: Mapped[date] = mapped_column(Date)
+    estado: Mapped[str] = mapped_column(String(12), default="borrador",
+                                        server_default="borrador")
+    calculado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # JSON de texto: los pesos y cortes con que se calculo, y de que mes
+    # era cada fuente. Lo publicado no cambia si mañana cambian los pesos.
+    resumen: Mapped[str] = mapped_column(Text)
+    publicado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    publicado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("usuario.id", ondelete="SET NULL"), nullable=True)
+
+
+class NivelLugar(Base):
+    """El nivel de un estado (sin municipio) o de un municipio en un mes."""
+    __tablename__ = "nivel_lugar"
+    __table_args__ = (Index("ix_nivel_lugar_mes_region", "nivel_mes_id",
+                            "region_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nivel_mes_id: Mapped[int] = mapped_column(
+        ForeignKey("nivel_mes.id", ondelete="CASCADE"))
+    region_id: Mapped[int] = mapped_column(ForeignKey("region.id"))
+    municipio_id: Mapped[int | None] = mapped_column(
+        ForeignKey("municipio.id", ondelete="CASCADE"), nullable=True)
+    calculado: Mapped[float] = mapped_column(Numeric(6, 2))
+    # El que se publica: el calculado, o el que puso el analista.
+    valor: Mapped[float] = mapped_column(Numeric(6, 2))
+    # JSON de texto: {"violencia_letal": {"tasa": 31.2, "p": 91}, ...}
+    componentes: Mapped[str] = mapped_column(Text)
+    sin_reporte: Mapped[bool] = mapped_column(Boolean, default=False,
+                                              server_default="false")
+    ajuste_motivo: Mapped[str | None] = mapped_column(String(400),
+                                                      nullable=True)
+    ajustado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("usuario.id", ondelete="SET NULL"), nullable=True)
+    ajustado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+    region: Mapped[Region] = relationship()
+    municipio: Mapped[Municipio | None] = relationship()

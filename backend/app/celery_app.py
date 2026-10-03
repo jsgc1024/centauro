@@ -78,6 +78,13 @@ celery.conf.update(
             "task": "riesgo.resumen_del_dia",
             "schedule": crontab(minute=7),
         },
+        # El Nivel Centauro (seccion 135): del 15 al fin de mes, cada
+        # manana, se busca el archivo nuevo del Secretariado. Si llego, se
+        # guarda y se rehace el borrador del mes, que espera al analista.
+        "riesgo-secretariado": {
+            "task": "riesgo.bajar_secretariado",
+            "schedule": crontab(hour=7, minute=20, day_of_month="15-31"),
+        },
         # El camino al meet and greet. Cada cinco minutos manda los
         # toques que tocan y cobra los silencios: reponer a alguien toma
         # hora y media, asi que enterarse tarde es no enterarse.
@@ -414,6 +421,32 @@ def resumen_de_riesgo():
     db = SessionLocal()
     try:
         salida = alertas_riesgo.resumen_del_dia(db)
+        db.commit()
+        return salida
+    finally:
+        db.close()
+
+
+@celery.task(name="riesgo.bajar_secretariado")
+def bajar_secretariado():
+    """El archivo del mes del Secretariado y el borrador del Nivel
+    Centauro (seccion 135)."""
+    from datetime import date
+
+    from app import fuentes_riesgo, nivel_centauro
+    from app import models as m
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        salida = fuentes_riesgo.bajar_sesnsp(db)
+        if salida.get("resultado") == "nuevo":
+            pais = db.query(m.Pais).filter_by(codigo="MX").one()
+            periodo = date.fromisoformat(salida["periodo"])
+            previo = db.query(m.NivelMes).filter_by(
+                pais_id=pais.id, periodo=periodo).first()
+            if not previo or previo.estado != "publicado":
+                nivel_centauro.calcular(db, pais, periodo)
         db.commit()
         return salida
     finally:

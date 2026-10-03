@@ -12,6 +12,8 @@
 import { firma } from "/consola/firma.js";
 import { idioma, nombreIdioma, ponerIdioma as fijarIdioma, t as traducir }
   from "/consola/idioma.js";
+import { capaGoogle, colorDe, contornos, dibujo, leyenda as leyendaFondo, nombreRango,
+         rangoDe, textoSobre } from "/consola/mapa_fondo.js";
 
 const LLAVE = "centauro_ci_token";
 const COLOR = { 1: "#5f7187", 2: "#c99a06", 3: "#e07000", 4: "#c62828" };
@@ -418,21 +420,157 @@ function listaDeZonas(zonas) {
   return `${zonas.slice(0, -1).join(", ")}${y}${zonas[zonas.length - 1]}`;
 }
 
+/* Dos vistas del mismo mapa (seccion 135): lo que pasa hoy y el riesgo
+   de fondo del mes. Se queda la que eligio la ultima vez. */
+const LLAVE_VISTA = "centauro_ci_vista";
+
+function selectorDeVista(actual) {
+  const opcion = (cual, texto) => h("button", {
+    clase: actual === cual ? null : "claro",
+    onclick: () => { guardar(LLAVE_VISTA, cual); route(); } }, texto);
+  return h("div", { clase: "seg" },
+    opcion("eventos", t("ci_f_eventos")), opcion("fondo", t("ci_f_fondo")));
+}
+
 async function pantallaMapa(mia = vuelta) {
+  const vista = guardado(LLAVE_VISTA) === "fondo" ? "fondo" : "eventos";
   const datos = await api("GET", "/mapa");
+  const fondo = vista === "fondo" ? await api("GET", "/fondo") : null;
   if (mia !== vuelta) return;
   const eventos = datos.eventos;
   pintar(encabezado(),
     h("h1", {}, t("ci_hola", { nombre: yo.nombre.split(" ")[0] })),
-    h("p", { clase: "gris chico", style: "margin:2px 0 14px" },
+    h("p", { clase: "gris chico", style: "margin:2px 0 10px" },
       yo.zonas.length ? t("ci_lo_que_pasa", { zonas: listaDeZonas(yo.zonas) })
                       : t("ci_sin_zonas")),
-    lienzoMapa(eventos, datos.llave_mapa),
-    datos.llave_mapa ? leyenda() : null,
-    h("h2", {}, t("ci_vigente_ahora", { n: eventos.length })),
-    eventos.length ? eventos.map((e) => tarjetaEvento(e))
-                   : h("div", { clase: "vacio" }, t("ci_nada_vigente")),
+    selectorDeVista(vista),
+    vista === "fondo" ? vistaFondo(fondo, eventos, datos.llave_mapa) : [
+      lienzoMapa(eventos, datos.llave_mapa),
+      datos.llave_mapa ? leyenda() : null,
+      h("h2", {}, t("ci_vigente_ahora", { n: eventos.length })),
+      eventos.length ? eventos.map((e) => tarjetaEvento(e))
+                     : h("div", { clase: "vacio" }, t("ci_nada_vigente"))],
     llamarCentral(),
+    barra("mapa"));
+}
+
+/* ------------------------------------------------- el riesgo de fondo */
+
+function mesDe(iso, menos = 0) {
+  const [a, m] = iso.split("-").map(Number);
+  const total = a * 12 + (m - 1) - menos;
+  return { mes: t("rsg_f_meses").split(",")[total % 12], anio: Math.floor(total / 12) };
+}
+
+/* «66 · Medio alto», del color del numero. */
+function chipFondo(v, cortes) {
+  return h("span", { clase: "nivel",
+                     style: `background:${colorDe(v)};color:${textoSobre(v)}` },
+    `${v} · ${nombreRango(rangoDe(v, cortes))}`);
+}
+
+const FLECHA = { 1: ["sube", "▲"], "-1": ["baja", "▼"], 0: ["igual", "="] };
+
+function flecha(diferencia) {
+  if (diferencia === null || diferencia === undefined) return null;
+  const [clase, signo] = FLECHA[Math.sign(diferencia)];
+  return h("span", { clase: `flecha ${clase}` }, `${signo} ${Math.abs(diferencia)}`);
+}
+
+function vistaFondo(fondo, eventos, llave) {
+  if (!fondo || !fondo.mes) return h("div", { clase: "vacio" }, t("ci_f_sin_mes"));
+  const mes = fondo.mes;
+  const porClave = new Map(fondo.estados.map((l) => [String(l.clave_region), l]));
+  const valorDe = (f) => {
+    const l = porClave.get(String(f.properties.c));
+    return l ? { valor: l.valor, nombre: l.region } : null;
+  };
+  const alElegir = (clave) => {
+    const l = porClave.get(String(clave));
+    if (l && l.mio) location.hash = `#/fondo/${l.region_id}`;
+  };
+  const puntos = eventos.map((e) => ({ lat: e.lat, lon: e.lon, color: COLOR[e.nivel] }));
+  const lienzo = h("div", { clase: "mapa fondo" });
+  contornos("estados").then((geo) => {
+    if (llave) {
+      return cargarGoogle(llave).then(() => {
+        const mapa = new google.maps.Map(lienzo, {
+          center: { lat: 23.6, lng: -102.5 }, zoom: 4,
+          disableDefaultUI: true, zoomControl: true, gestureHandling: "greedy" });
+        for (const p of puntos) {
+          if (p.lat === null || p.lat === undefined) continue;
+          new google.maps.Marker({ map: mapa, position: { lat: p.lat, lng: p.lon }, clickable: false,
+            icon: { path: google.maps.SymbolPath.CIRCLE, scale: 6, fillColor: p.color,
+                    fillOpacity: 1, strokeColor: "#fff", strokeWeight: 2 } });
+        }
+        capaGoogle(mapa, geo.features, valorDe, { alElegir });
+      });
+    }
+    lienzo.classList.add("dibujo");
+    lienzo.replaceChildren(dibujo(geo.features, valorDe, { eventos: puntos, alElegir }));
+    return null;
+  }).catch(() => { lienzo.remove(); });
+
+  const mios = fondo.estados.filter((l) => l.mio);
+  return [
+    lienzo,
+    leyendaFondo(mes.cortes, false),
+    h("h2", {}, t("ci_f_tus_estados", { mes: mesDe(mes.periodo).mes })),
+    mios.length
+      ? mios.map((l) => h("a", { clase: "caja evento fila estado-fondo", href: `#/fondo/${l.region_id}` },
+          h("b", { clase: "nombre" }, l.region), chipFondo(l.valor, mes.cortes), flecha(l.vs_ano)))
+      : h("div", { clase: "vacio" }, t("ci_sin_zonas")),
+    h("p", { clase: "chico gris" }, t("ci_f_que_es")),
+  ];
+}
+
+async function pantallaFondoEstado(regionId, mia = vuelta) {
+  let d;
+  try { d = await api("GET", `/fondo/estados/${regionId}`); }
+  catch (err) {
+    if (mia !== vuelta) return;
+    pintar(encabezado(), h("a", { clase: "atras", href: "#/mapa" }, t("ci_f_atras")),
+           h("div", { clase: "vacio" }, err.codigo === 404 ? t("ci_no_encontrado") : err.message),
+           barra("mapa"));
+    return;
+  }
+  if (mia !== vuelta) return;
+  const { mes, estado: e } = d;
+  const este = mesDe(mes.periodo);
+  const haceUnAno = mesDe(mes.periodo, 12);
+  const antes = mesDe(mes.periodo, 1);
+  const contra = [
+    e.vs_ano === null ? null : [flecha(e.vs_ano), " ",
+      t("ci_f_contra_ano", { mes: haceUnAno.mes, anio: haceUnAno.anio })],
+    e.vs_mes === null ? null : [flecha(e.vs_mes), " ", t("ci_f_contra_mes", { mes: antes.mes })],
+  ].filter(Boolean);
+  const faltan = new Set(mes.faltan);
+  const componentes = ["violencia_letal", "delitos_violencia", "delincuencia_organizada",
+                       "miedo", "no_denuncia", "cifra_negra"].map((c) => {
+    const p = e.componentes[c];
+    const sinDato = p === null || p === undefined || faltan.has(c);
+    return h("div", { clase: "componente" },
+      h("div", { clase: "fila separa chico" }, h("span", {}, t(`ci_f_comp_${c}`)),
+        sinDato ? h("span", { clase: "gris" }, t("rsg_f_sin_dato_min")) : h("b", {}, String(Math.round(p)))),
+      h("div", { clase: "riel" }, sinDato ? null
+        : h("div", { clase: "lleno", style: `width:${Math.max(1, Math.round(p))}%` })));
+  });
+  const verEventos = h("a", { href: "#/mapa", onclick: () => guardar(LLAVE_VISTA, "eventos") },
+                       t("ci_f_verlo"));
+  pintar(encabezado(),
+    h("a", { clase: "atras", href: "#/mapa" }, t("ci_f_atras")),
+    h("div", { clase: "caja principal" },
+      h("div", { clase: "chico gris" }, t("ci_f_nivel_de", { mes: este.mes, anio: este.anio })),
+      h("h1", { clase: "titulo-estado" }, e.region),
+      h("div", { clase: "fila" }, h("span", { clase: "grande" }, String(e.valor)), chipFondo(e.valor, mes.cortes)),
+      contra.length ? h("div", { clase: "chico contra" },
+        contra.flatMap((x, i) => (i ? [" · ", ...x] : x))) : null,
+      h("h2", {}, t("ci_f_compone")), componentes,
+      d.municipios.length ? [h("h2", {}, t("ci_f_mas_altos")),
+        d.municipios.map((l) => h("div", { clase: "fila separa municipio-fondo" },
+          h("span", {}, l.municipio), chipFondo(l.valor, mes.cortes)))] : null),
+    h("p", { clase: "chico gris" },
+      t("ci_f_vigentes", { edo: e.region, n: d.vigentes }), " ", d.vigentes ? verEventos : null),
     barra("mapa"));
 }
 
@@ -693,6 +831,7 @@ async function route() {
     if (mia !== vuelta) return;
     if (pantalla === "avisos") await pantallaAvisos(mia);
     else if (pantalla === "evento" && arg) await pantallaEvento(Number(arg), mia);
+    else if (pantalla === "fondo" && arg) await pantallaFondoEstado(Number(arg), mia);
     else if (pantalla === "yo") await pantallaYo(mia);
     else if (pantalla === "contrasena") pantallaContrasena();
     else await pantallaMapa(mia);

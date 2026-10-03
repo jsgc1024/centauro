@@ -29,3 +29,28 @@
 
 .dato .clave { font-size: 12px; color: var(--gris); text-transform: uppercase;
                letter-spacing: .4px; font-weight: 650; }
+
+/* El riesgo de fondo (seccion 135): el selector de vista, el mapa
+   pintado por estado y la ficha de cada uno de sus estados. */
+.seg { display: flex; gap: 6px; margin: 0 0 12px; }
+.seg button { min-height: 38px; padding: 8px 14px; font-size: 13px; width: auto; }
+.mapa.fondo { height: auto; min-height: 220px; background: #fff; padding: 6px; }
+.mapa.fondo:not(.dibujo) { height: 320px; padding: 0; }
+.fondo-dibujo { width: 100%; height: auto; display: block; }
+.fondo-lugar { stroke: #fff; stroke-width: .8; fill-opacity: .9; }
+.fondo-marcado { stroke: #1B1546; stroke-width: 2.5; }
+.fondo-evento { fill: #fff; stroke: #1B1546; stroke-width: 2.5; }
+.fondo-leyenda { display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--gris); margin: 0 0 14px; }
+.fondo-leyenda i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+.estado-fondo { display: flex; align-items: center; gap: 10px; padding: 12px 16px; }
+.estado-fondo .nombre { flex: 1; }
+.flecha { font-size: 13px; font-weight: 650; }
+.flecha.sube { color: #c0392b; }
+.flecha.baja { color: #1e7a4d; }
+.flecha.igual { color: var(--gris); }
+.titulo-estado { margin: 4px 0 6px; }
+.contra { margin-top: 6px; }
+.componente { margin: 8px 0; }
+.riel { background: #eef0f8; border-radius: 4px; height: 8px; margin-top: 4px; }
+.riel .lleno { background: var(--centauro); border-radius: 4px; height: 8px; }
+.municipio-fondo { padding: 6px 0; }

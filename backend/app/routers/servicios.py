@@ -1862,7 +1862,10 @@ def _limpiar_jornadas(db: Session, jornada_ids: list[int]) -> int:
                          (m.AlertaIncidencia, m.AlertaIncidencia.jornada_id),
                          (m.Incidencia, m.Incidencia.jornada_id),
                          (m.AjusteNomina, m.AjusteNomina.jornada_id),
-                         (m.ConceptoNomina, m.ConceptoNomina.jornada_id)):
+                         (m.ConceptoNomina, m.ConceptoNomina.jornada_id),
+                         # El aviso de riesgo que le llego a alguien
+                         # (seccion 134) sigue siendo cierto sin su dia.
+                         (m.AvisoRiesgoCampo, m.AvisoRiesgoCampo.jornada_id)):
         db.query(tabla).filter(campo.in_(jornada_ids)).update(
             {campo: None}, synchronize_session=False)
     return en_camino
