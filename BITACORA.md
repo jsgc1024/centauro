@@ -10831,6 +10831,22 @@ el mismo filtro). `lector_catalogo.POR_GOOGLE`; la migracion
 origen. Se quedan por su RSS los que si leyeron: Infobae, El Universal,
 Zeta Tijuana y El Sur.
 
+## 146. Lo que Connect publica solo: sin detenciones y sin violencia como informativo
+
+En su primer dia, la regla «todo lo de nivel 1» publico solo siete
+eventos: cinco detenciones («detienen a dos por homicidio...»), un
+huracan, y un «hombre muere en ataque armado» que Claude dejo en nivel
+1. Salvador, 3 oct: de acuerdo con corregirlo.
+
+- **Lo violento nunca es 1** (`lector.NIVEL_MINIMO`): ataque armado,
+  ejecucion, enfrentamiento, persecucion armada, secuestro y explosivo
+  quedan al menos en 2 aunque Claude diga 1. Y la guia de niveles que
+  lee Claude lo dice.
+- **Una detencion nunca sale sola** (`lector.NUNCA_SOLO`): va al
+  analista. El texto de «Ver lo que lee» lo dice.
+
+Pruebas: `tests/test_lector.py` (22).
+
 ## 14. Lo que falta
 
 ### Abierto

@@ -2,6 +2,9 @@
 
 O que há de novo em cada atualização, escrito para quem usa o sistema. A mais nova fica em cima.
 
+## 146 · 2026-10-03 · O que o Connect publica sozinho: sem detenções
+As **detenções** já não se publicam sozinhas: vão ao analista, porque são notícia e não risco para quem passa. E o violento —um ataque armado, uma execução, um confronto, um sequestro, um explosivo— nunca fica como nível 1 (informativo): é pelo menos nível 2. Ver [o mapa de risco](#/riesgo).
+
 ## 144 · 2026-10-03 · Os veículos que não deixam ler, pelo Google Notícias
 Animal Político, Aristegui, Pie de Página, Ríodoce e Quadratín Michoacán não deixavam o servidor ler sua página de notícias (uns respondiam com erro e outros não davam nenhuma notícia). Agora o leitor os lê pelo **Google Notícias**, com o que cada um publicou no último dia; em «Ver o que lê» aparecem como Busca, com o mesmo nome. Ver [o mapa de risco](#/riesgo).
 

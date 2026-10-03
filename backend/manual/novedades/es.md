@@ -2,6 +2,9 @@
 
 Lo nuevo de cada actualización, escrito para quien usa el sistema. La más nueva va arriba.
 
+## 146 · 2026-10-03 · Lo que Connect publica solo: sin detenciones
+Las **detenciones** ya no se publican solas: van al analista, porque son noticia y no riesgo para quien pasa. Y lo violento —un ataque armado, una ejecución, un enfrentamiento, un secuestro, un explosivo— nunca queda como nivel 1 (informativo): es al menos nivel 2. Ver [el mapa de riesgo](#/riesgo).
+
 ## 144 · 2026-10-03 · Los medios que no dejan leer, por Google Noticias
 Animal Político, Aristegui, Pie de Página, Ríodoce y Quadratín Michoacán no dejaban que el servidor leyera su página de noticias (unos contestaban con error y otros no daban ninguna nota). Ahora el lector los lee por **Google Noticias**, con lo que cada uno publicó en el último día; en «Ver lo que lee» salen como Búsqueda, con su mismo nombre. Ver [el mapa de riesgo](#/riesgo).
 
