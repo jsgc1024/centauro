@@ -1103,6 +1103,19 @@ def que_le_falta(db: Session, cot: m.Cotizacion,
         elif not especial_vigente(cot, calc):
             faltan.append("El visto bueno de dirección de operaciones al "
                           "precio especial")
+    # Lo de Catalogos sin lo que no se manda (seccion 130, decision 15):
+    # la tasa si va con IVA, y el texto de aceptacion del pais en el
+    # idioma del PDF, que es lo que el cliente firma.
+    if cot.pais_id:
+        datos = cc.datos_del_pais(db, cot.pais_id)
+        if cot.con_iva is not False and (datos is None or datos.tasa_iva is None):
+            faltan.append("La tasa de IVA del país, en Catálogos → Propuesta "
+                          "al cliente")
+        idioma = cot.idioma or "es"
+        if not _texto(db, cot.pais_id, "pro_aceptacion", idioma).strip():
+            faltan.append("El texto de aceptación del país en "
+                          f"{cc.NOMBRE_IDIOMA.get(idioma, idioma)}, en "
+                          "Catálogos → Propuesta al cliente")
     return faltan
 
 

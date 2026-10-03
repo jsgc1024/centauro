@@ -35,6 +35,7 @@ Las decisiones que viven aqui:
 import collections
 import re
 
+from app.odoo_pais import NO_ENCONTRADO
 from app.odoo_personal_reglas import (CORREO_VALIDO, DOMINIOS_RAROS, PERSONAL,
                                       corto, es_de_seguridad,
                                       grupo_de_compania, id_de, nombre_de,
@@ -293,9 +294,14 @@ def clasificar_salidas(revisar: list, estados: dict) -> tuple:
                      else "ahora es personal de seguridad en Odoo")
             pendientes.append({"odoo_id": p["odoo_id"], "persona_id": p["id"],
                                "nombre": p.get("nombre"), "falta": [falta]})
+        elif f is None:
+            # Lo que Odoo no devolvio ni entre los archivados no es baja
+            # (seccion 130, decision 3): queda pendiente.
+            pendientes.append({"odoo_id": p["odoo_id"], "persona_id": p["id"],
+                               "nombre": p.get("nombre"),
+                               "falta": [NO_ENCONTRADO]})
         else:
             bajas.append({"odoo_id": p["odoo_id"], "persona_id": p["id"],
                           "nombre": p.get("nombre"),
-                          "motivo": ("archivado en Odoo" if f is not None
-                                     else "ya no esta en Odoo")})
+                          "motivo": "archivado en Odoo"})
     return bajas, pendientes

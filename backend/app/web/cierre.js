@@ -696,6 +696,9 @@ export const CAMPO_DE_TERMINOS = {
   precio_dia_adicional: "cie_dia_adicional",
   precio_mes_vehiculo: "cie_vehiculo_al_mes",
   precio_hora_extra: "cie_hora_extra",
+  /* Con la lista que cobra por mes (seccion 130): el mensual y el esquema. */
+  precio_mes_completo: "cie_mes_completo",
+  esquema: "imp_lista_esquema",
   moneda: "imp_lista_moneda",
 };
 
@@ -703,10 +706,14 @@ export const CAMPO_DE_TERMINOS = {
    por dia: $2,900 (la lista, USD 100)». La moneda se dice como moneda
    (seccion 82), no como monto. */
 export function diferenciaConLaLista(montoMes, montoLista = montoMes) {
+  const esquema = (v) => t(v === "mes_completo" ? "imp_mes_completo" : "imp_por_dia");
   return (x) => x.campo === "moneda"
     ? reemplazar(t("imp_lista_dif_moneda"), { m: x.mes, l: x.lista })
-    : reemplazar(t("imp_lista_dif"), { c: t(CAMPO_DE_TERMINOS[x.campo]),
-                                       m: montoMes(x.mes), l: montoLista(x.lista) });
+    : x.campo === "esquema"
+      ? reemplazar(t("imp_lista_dif"), { c: t(CAMPO_DE_TERMINOS[x.campo]),
+                                         m: esquema(x.mes), l: esquema(x.lista) })
+      : reemplazar(t("imp_lista_dif"), { c: t(CAMPO_DE_TERMINOS[x.campo]),
+                                         m: montoMes(x.mes), l: montoLista(x.lista) });
 }
 
 /* Lo que ya dice el reloj de la tarjeta no se repite abajo. */

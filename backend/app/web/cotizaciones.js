@@ -968,6 +968,14 @@ async function armar(main, cat, d) {
     if (e.gastos === "fijo" && !(Number(e.monto) > 0)) return t("cot_falta_monto");
     if (e.version > 1 && !e.motivo.trim()) return t("ctz_falta_motivo");
     if (!ultimo || !ultimo.lineas.some(l => l.tipo !== "viaticos")) return t("ctz_falta_lleva");
+    /* Lo de Catalogos sin lo que no se manda (seccion 130, decision 15):
+       la tasa, si va con IVA, y las condiciones de pago del pais en el
+       idioma del PDF. Lo demas que le falte al PDF se avisa en amarillo. */
+    const delPais = ultimo.faltan_textos || [];
+    if (e.con_iva !== false && delPais.includes("tasa_iva")) return t("ctz_falta_tasa_pais");
+    if (delPais.includes("pago")) {
+      return reemplazar(t("ctz_falta_pago_pais"), { i: t(IDIOMA_PDF[e.idioma] || "ctz_idioma_es") });
+    }
     return null;
   }
 

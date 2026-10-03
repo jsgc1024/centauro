@@ -2235,8 +2235,12 @@ function bloqueDeLaLista(x) {
          h("span", { clase: "etiqueta info", style: "margin-left:6px" },
            t("imp_lista_paquete"))]
       : [`${r.quien || "—"} · ${r.rol}`];
-    filas.push(fila(que, reemplazar(t("imp_lista_por_dia"),
-                                    { p: dinero(r.precio_dia, m) }), ""));
+    /* La lista que cobra por mes (seccion 130): el mensual tal cual, y
+       su dia es el mensual entre los dias de la modalidad. */
+    filas.push(fila(que, r.por_mes
+      ? [h("b", {}, reemplazar(t("imp_lista_al_mes"), { p: dinero(r.precio_mes, m) })),
+         " · ", reemplazar(t("imp_lista_por_dia"), { p: dinero(r.precio_dia, m) })]
+      : reemplazar(t("imp_lista_por_dia"), { p: dinero(r.precio_dia, m) }), ""));
   }
   for (const f of d.faltan.filter(f => f.que === "rol")) {
     filas.push(fila([`${f.quien || "—"} · ${f.descripcion || t("imp_lista_sin_rol")}`],
@@ -2248,8 +2252,9 @@ function bloqueDeLaLista(x) {
   for (const r of d.renglones) {
     if (r.tipo === "unidad") {
       filas.push(fila([`${r.placa} · ${r.unidad}`],
-        reemplazar(t("imp_lista_unidad_dias"),
-                   { p: dinero(r.precio_dia, m), n: r.dias }),
+        r.por_mes ? t("imp_lista_unidad_por_mes")
+          : reemplazar(t("imp_lista_unidad_dias"),
+                       { p: dinero(r.precio_dia, m), n: r.dias }),
         h("b", {}, reemplazar(t("imp_lista_al_mes"),
                               { p: dinero(r.precio_mes, m) }))));
     } else if (r.tipo === "unidad_en_paquete") {
@@ -2276,9 +2281,17 @@ function bloqueDeLaLista(x) {
       h("th", { clase: "der" }, t("imp_lista_col_terminos")))),
     h("tbody", {}, ...filas));
 
-  /* Como queda el mes frente a la lista. */
+  /* Como queda el mes frente a la lista. Con la lista que cobra por mes
+     (seccion 130) el mes va con el esquema de mes completo y se compara
+     el mensual, el dia adicional y la hora extra. */
   const pie = [];
-  if (x.esquema === "mes_completo") {
+  if (d.por_mes && d.precio_mes_completo !== null) {
+    pie.push(h("p", { clase: "gris chico", style: "margin:8px 0 0" },
+      reemplazar(t("imp_lista_mensual_de_la_lista"), {
+        p: dinero(d.precio_mes_completo, m), n: d.dias_del_mensual,
+        a: monto(d.terminos.precio_dia_adicional) })));
+  }
+  if (x.esquema === "mes_completo" && !d.por_mes) {
     if (d.mes_completo !== null) {
       pie.push(h("p", { clase: "gris chico", style: "margin:8px 0 0" },
         reemplazar(t("imp_lista_mes_completo"), { p: dinero(d.mes_completo, m) })));

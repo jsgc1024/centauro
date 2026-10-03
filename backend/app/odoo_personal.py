@@ -49,7 +49,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app import accesos, odoo_api
+from app import accesos, odoo_api, odoo_pais
 from app import models as m
 from app import odoo_personal_reglas as reglas
 from app import reloj, telefonos
@@ -373,6 +373,29 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
         lambda numero, pais_id: telefonos.normalizar(db, numero, pais_id),
         cuentas=cuentas, paises=paises, campos_extra=extra)
 
+    # El freno por pais (seccion 130, decision 3): un pais que leyo cero
+    # con su gente activa en Connect es la conexion sin su compania, no
+    # cuarenta bajas. La vuelta entera se detiene y lo dice.
+    por_pais = [{"codigo": g["pais"], "pais": g["nombre"],
+                 "leidos": plan["por_pais"][g["pais"]]}
+                for g in reglas.PERSONAL]
+    # Se cuenta a todos los empleados de cada compania, de seguridad o no:
+    # lo que la conexion deja de ver cuando pierde la compania es la
+    # compania entera, no un puesto.
+    freno = odoo_pais.frenos(db, odoo_pais.PERSONAL,
+                             odoo_pais.por_compania(empleados, reglas.PERSONAL))
+    if freno:
+        informe = odoo_pais.detenida(
+            {"ensayo": ensayo, "leidos": plan["leidos"], "por_pais": por_pais},
+            freno, accesos_cerrados=[], celular_no_valido=[],
+            campos_por_capturar=reglas.nombres_de_campos(visibles, extra),
+            fotos={"revisadas": 0, "reales": 0, "sin_foto_real": 0,
+                   "actualizadas": 0},
+            cuentas={"con_cuenta": 0, "sin_cuenta": 0, "error": None})
+        if not ensayo:
+            odoo_pais.registrar_detenida(db, TIPO, informe, quien, automatica)
+        return informe
+
     estados = {}
     if plan["revisar_salida"]:
         estados = {f["id"]: f for f in odoo.leer(
@@ -397,9 +420,7 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
         "leidos": plan["leidos"],
         # Cuantos de cada pais (seccion 121). Brasil en cero con su gente
         # cargada en Odoo es la conexion sin su compania.
-        "por_pais": [{"codigo": g["pais"], "pais": g["nombre"],
-                      "leidos": plan["por_pais"][g["pais"]]}
-                     for g in reglas.PERSONAL],
+        "por_pais": por_pais,
         "altas": [{k: a[k] for k in ("odoo_id", "nombre", "plaza", "correo")}
                   for a in plan["altas"]],
         "vinculadas": plan["vinculos"],
@@ -534,6 +555,9 @@ def _por_falta(lista: list) -> dict:
 
 def resumen(informe: dict) -> dict:
     """Solo cuentas: para la terminal y para la tarea de cada hora."""
+    if informe.get("detenida"):
+        return {"detenida": True, "freno": informe["freno"],
+                "leidos": informe["leidos"]}
     faltas = {}
     for p in informe["pendientes"]:
         for falta in p["falta"]:

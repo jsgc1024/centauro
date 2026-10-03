@@ -14,7 +14,7 @@ Ao designar pessoas para uma equipe, a pessoa não aparece na lista, ou aparece 
    Como confirmar: [Odoo](#/odoo) → Pessoal → Ensaio. Se aparecer nos pendentes, diz o que falta.
 2. **Aparece «Ocupado»:** nesse dia já trabalha em outro serviço no mesmo horário, ou num dia inteiro. O motivo aparece abaixo do nome, com o dia.
 3. **Aparece «Com risco»:** tem menos de duas horas entre um serviço e outro, ou uma jornada que passa da meia-noite. Pode ser designada do mesmo jeito: quem decide é o consultor.
-4. **Aparece com «deslocamento»:** é de outra cidade. Pode ser enviada, com as suas diárias.
+4. **Aparece com «deslocamento»:** é de outra cidade do mesmo país. Pode ser enviada, com as suas diárias. A equipe de outro país não é oferecida, como as unidades: um motorista de São Paulo não aparece num serviço do México.
 5. **É freelancer e aparece em vermelho:** o prontuário não está pronto, falta o custo ou é um implantado. Ver [um freelancer não pode ser escalado](#/manual/leer/sintoma-freelance-no-se-asigna).
 
 ### Como se resolve

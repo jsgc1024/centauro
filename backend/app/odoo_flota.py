@@ -41,7 +41,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session, joinedload
 
-from app import accesos, odoo_api
+from app import accesos, odoo_api, odoo_pais
 from app import models as m
 from app import odoo_flota_reglas as reglas
 from app import reloj
@@ -176,6 +176,26 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
     plan = reglas.planear(unidades, etiquetas, vehiculos, categorias, plazas,
                           paises)
 
+    # El freno por pais (seccion 130, decision 3): una flota que leyo cero
+    # con sus unidades activas en Connect es la conexion sin su compania.
+    por_pais = [{"codigo": f["pais"], "pais": f["nombre"],
+                 "leidas": plan["por_pais"][f["pais"]]}
+                for f in reglas.FLOTAS]
+    # Se cuentan todas las unidades de cada compania, con etiqueta o sin
+    # ella: la compania perdida se pierde entera.
+    freno = odoo_pais.frenos(db, odoo_pais.FLOTA,
+                             odoo_pais.por_compania(unidades, reglas.FLOTAS))
+    if freno:
+        informe = odoo_pais.detenida(
+            {"ensayo": ensayo, "leidas": plan["leidas"], "por_pais": por_pais,
+             "etiquetas": reglas.etiquetas_de_las_flotas(etiquetas)},
+            freno, taller={"nuevas": 0, "cambios": 0, "borradas": 0,
+                           "sin_cambio": 0, "de_otras_unidades": 0,
+                           "pendientes": [], "error": None})
+        if not ensayo:
+            odoo_pais.registrar_detenida(db, TIPO, informe, quien, automatica)
+        return informe
+
     estados = {}
     if plan["revisar_salida"]:
         estados = {f["id"]: f for f in odoo.leer(
@@ -217,9 +237,7 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
             # Cuantas de cada flota (seccion 118). Brasil en cero, con sus
             # unidades cargadas en Odoo, es que el usuario de la conexion no
             # tiene la compania Centauro Brasil.
-            "por_pais": [{"codigo": f["pais"], "pais": f["nombre"],
-                          "leidas": plan["por_pais"][f["pais"]]}
-                         for f in reglas.FLOTAS],
+            "por_pais": por_pais,
             # La etiqueta de cada flota por su numero, con el nombre que
             # trae hoy en Odoo (seccion 121): antes de renombrarla se ve
             # aqui que Connect la reconoce por el numero.
@@ -342,6 +360,9 @@ def _agrupadas(lista: list) -> dict:
 
 def resumen(informe: dict) -> dict:
     """Solo cuentas: para la terminal y para la tarea de cada hora."""
+    if informe.get("detenida"):
+        return {"detenida": True, "freno": informe["freno"],
+                "leidas": informe["leidas"]}
     t = informe["taller"]
     salida = {"leidas": informe["leidas"],
               "por_pais": {p["codigo"]: p["leidas"]

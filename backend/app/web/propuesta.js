@@ -704,6 +704,12 @@ async function armar(main, cat, d) {
     }
     if (e.version > 1 && !e.motivo.trim()) return t("ctz_falta_motivo");
     if (ultimo.especial && !e.especial_motivo.trim()) return t("pro_falta_motivo_especial");
+    /* Lo de Catalogos sin lo que no se manda (seccion 130, decision 15). */
+    const delPais = ultimo.faltan_textos || [];
+    if (e.con_iva !== false && delPais.includes("tasa_iva")) return t("pro_falta_tasa_pais");
+    if (delPais.includes("pro_aceptacion")) {
+      return reemplazar(t("pro_falta_aceptacion_pais"), { i: t(IDIOMA_PDF[e.idioma] || "ctz_idioma_es") });
+    }
     return null;
   }
 

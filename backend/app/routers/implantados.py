@@ -467,8 +467,11 @@ def terminos_de_la_lista(contrato_id: int, db: Session = Depends(get_db),
                         "servicio"),
             "que_hacer": "Los terminos del mes se capturan a mano."})
     cambios = []
-    if contrato.esquema != m.EsquemaCotizacionImplantado.POR_DIA:
+    if (contrato.esquema != m.EsquemaCotizacionImplantado.POR_DIA
+            and not propuesta["por_mes"]):
         # La lista cobra por dia: el precio fijo por mes no sale de ella.
+        # La que cobra por mes (seccion 130) pone el esquema de mes
+        # completo ella misma, en `aplicar`.
         cambios.append(f"esquema: {contrato.esquema.value} -> por_dia")
         contrato.esquema = m.EsquemaCotizacionImplantado.POR_DIA
     cambios += implantado_precios.aplicar(contrato, propuesta)
@@ -864,10 +867,12 @@ def _abrir_mes(db: Session, usuario: m.Usuario, servicio: m.Servicio,
             motor_propuesta.nombre_de(
                 motor_propuesta.autorizada_de(db, servicio.id)))
     # Los precios del mes salen de la lista de implantados del cliente
-    # (seccion 80). Si vinieron escritos, mandan esos: son un acuerdo.
-    elif (datos.esquema == m.EsquemaCotizacionImplantado.POR_DIA
-            and all(getattr(datos, c) is None
-                    for c in implantado_precios.CAMPOS)):
+    # (seccion 80). Si vinieron escritos, mandan esos: son un acuerdo. Sin
+    # ninguno escrito, la lista se lee sea cual sea el esquema pedido: la
+    # que cobra por mes (seccion 130, decision 12) deja el mes con el
+    # esquema de mes completo y su mensual, como la propuesta.
+    elif (all(getattr(datos, c) is None for c in implantado_precios.CAMPOS)
+            and getattr(datos, "precio_mes_completo", None) is None):
         implantado_precios.al_abrir(db, contrato)
     db.commit()
     db.refresh(contrato)

@@ -34,6 +34,7 @@ import collections
 import re
 
 from app.odoo_api import COMPANIAS
+from app.odoo_pais import NO_ENCONTRADO
 from app.odoo_personal_reglas import (buscar_plaza, corto, fecha, nombre_de,
                                       normal, texto)
 
@@ -222,11 +223,14 @@ def planear(unidades: list, etiquetas: dict, vehiculos: list,
             "revisar_salida": []}
     tomadas = set()
 
-    def pendiente(u, vehiculo_id, faltas, flota=None):
-        plan["pendientes"].append({"odoo_id": u["id"], "vehiculo_id": vehiculo_id,
-                                   "placa": texto(u.get("license_plate")),
-                                   "pais": flota["nombre"] if flota else None,
-                                   "falta": faltas})
+    def pendiente(u, vehiculo_id, faltas, flota=None, cambio_de_pais=None):
+        fila = {"odoo_id": u["id"], "vehiculo_id": vehiculo_id,
+                "placa": texto(u.get("license_plate")),
+                "pais": flota["nombre"] if flota else None, "falta": faltas}
+        if cambio_de_pais:
+            # A que flota y ciudad la pone Odoo (seccion 130, decision 4).
+            fila["cambio_de_pais"] = cambio_de_pais
+        plan["pendientes"].append(fila)
 
     def capturar(u, vehiculo_id, flota, faltas):
         if faltas:
@@ -311,7 +315,12 @@ def planear(unidades: list, etiquetas: dict, vehiculos: list,
         if vehiculo.get("pais_id") != pais["id"]:
             pendiente(u, vehiculo["id"],
                       [f"en Odoo es de la flota de «{flota['nombre']}» y en "
-                       "Centauro es de otro pais"], flota)
+                       "Centauro es de otro pais"], flota,
+                      cambio_de_pais={
+                          "a_pais_id": pais["id"], "a_pais": flota["nombre"],
+                          "plaza_id": plaza["id"] if plaza is not None else None,
+                          "plaza": (plaza["nombre"] if plaza is not None
+                                    else (lugar or None))})
             continue
         if not vehiculo.get("activo"):
             pendiente(u, vehiculo["id"], ["activa en Odoo pero dada de baja en "
@@ -377,7 +386,13 @@ def clasificar_salidas(revisar: list, estados: dict, etiquetas: dict) -> tuple:
     bajas, pendientes = [], []
     for v in revisar:
         u = estados.get(v["odoo_id"])
-        if u is not None and u.get("active", True) is not False:
+        if u is None:
+            # Lo que Odoo no devolvio ni entre las archivadas no es baja
+            # (seccion 130, decision 3): queda pendiente.
+            pendientes.append({"odoo_id": v["odoo_id"], "vehiculo_id": v["id"],
+                               "placa": v.get("placa"),
+                               "falta": [NO_ENCONTRADO]})
+        elif u.get("active", True) is not False:
             pendientes.append({"odoo_id": v["odoo_id"], "vehiculo_id": v["id"],
                                "placa": v.get("placa"),
                                "falta": ["ya no es de Proteccion Ejecutiva "
@@ -386,8 +401,7 @@ def clasificar_salidas(revisar: list, estados: dict, etiquetas: dict) -> tuple:
         else:
             bajas.append({"odoo_id": v["odoo_id"], "vehiculo_id": v["id"],
                           "placa": v.get("placa"),
-                          "motivo": ("archivada en Odoo" if u is not None
-                                     else "ya no esta en Odoo")})
+                          "motivo": "archivada en Odoo"})
     return bajas, pendientes
 
 

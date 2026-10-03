@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app import accesos, odoo_api
+from app import accesos, odoo_api, odoo_pais
 from app import models as m
 from app import odoo_oficina_reglas as reglas
 from app import odoo_personal_reglas
@@ -93,6 +93,22 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
     paises = {p.codigo.upper(): {"id": p.id, "nombre": p.nombre}
               for p in db.query(m.Pais).all()}
     plan = reglas.planear(empleados, personas, plazas, correos, paises)
+
+    # El freno por pais (seccion 130, decision 3): se cuenta a todos los
+    # empleados de cada compania --de oficina o no--, que es lo que la
+    # conexion deja de ver cuando pierde la compania.
+    por_compania = odoo_pais.por_compania(empleados, odoo_personal_reglas.PERSONAL)
+    por_pais = [{"codigo": g["pais"], "pais": g["nombre"],
+                 "leidos": por_compania[g["pais"]]}
+                for g in odoo_personal_reglas.PERSONAL]
+    freno = odoo_pais.frenos(db, odoo_pais.OFICINA, por_compania)
+    if freno:
+        informe = odoo_pais.detenida(
+            {"ensayo": ensayo, "leidos": plan["leidos"], "por_pais": por_pais},
+            freno, sin_correo=[], sin_lugar=[], sin_sugerencia=[])
+        if not ensayo:
+            odoo_pais.registrar_detenida(db, TIPO, informe, quien, automatica)
+        return informe
 
     estados = {}
     if plan["revisar_salida"]:
@@ -216,6 +232,9 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
 
 def resumen(informe: dict) -> dict:
     """Solo cuentas: para la tarea de cada hora."""
+    if informe.get("detenida"):
+        return {"detenida": True, "freno": informe["freno"],
+                "leidos": informe["leidos"]}
     return {"leidos": informe["leidos"], "altas": len(informe["altas"]),
             "vinculadas": len(informe["vinculadas"]),
             "cambios": len(informe["cambios"]), "bajas": len(informe["bajas"]),

@@ -210,7 +210,9 @@ def test_la_cuenta_que_falta_en_odoo_no_borra_la_de_brasil(db):
 
 
 def test_una_persona_no_cambia_de_pais_sola(db, datos):
-    odoo = OdooConCampos(empleado(1))
+    # Un registro mas que se queda en su compania: si el pais leyera cero
+    # con gente activa, la vuelta se detendria (seccion 130, decision 3).
+    odoo = OdooConCampos(empleado(1), empleado(9))
     leer(db, odoo)
     odoo.cambiar(1, company_id=BRASIL, job_id=[40, "Motorista Executivo Bilíngue"],
                  job_title="Motorista Executivo Bilíngue",
@@ -268,7 +270,11 @@ def test_la_gente_de_otra_compania_que_ya_estaba_sale(db, cliente, sesion):
         empleado(1, job_id=[52, "Jefatura Logística"],
                  job_title="Jefatura Logística"),
         empleado(2, job_id=[53, "Coordinadora de Administración"],
-                 job_title="Coordinadora de Administración"))
+                 job_title="Coordinadora de Administración"),
+        # Alguien que se queda en Centauro Mexico: sin nadie, la compania
+        # leeria cero y la vuelta se detendria (seccion 130).
+        empleado(9, job_id=[54, "Analista Contable"],
+                 job_title="Analista Contable"))
     db.expire_all()
     odoo_oficina.sincronizar(db, odoo, ensayo=False)
     con_acceso = persona(db, 2)

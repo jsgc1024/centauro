@@ -878,7 +878,33 @@ def que_le_falta(db: Session, cot: m.Cotizacion) -> list[str]:
     if (motor.modo_de_gastos(cot) == motor.GASTOS_FIJOS
             and not gastos_fijos(cot) > 0):
         faltan.append("El monto fijo de gastos")
+    faltan += lo_del_pais_que_frena(db, cot.pais_id, cot.idioma or "es",
+                                    cot.con_iva)
     return faltan
+
+
+def lo_del_pais_que_frena(db: Session, pais_id: int | None, idioma: str,
+                          con_iva) -> list[str]:
+    """Lo de Catalogos sin lo que una cotizacion o una propuesta no se
+    manda (seccion 130, decision 15): la tasa de IVA, si va con IVA, y las
+    condiciones de pago y facturacion del pais en el idioma del PDF. Lo
+    demas que le falte al PDF se avisa en amarillo y deja mandar; esto
+    no: una cotizacion de Brasil salia sin tasa ni condiciones."""
+    if not pais_id:
+        return []
+    d = textos_de(db, pais_id)
+    faltan = []
+    if con_iva is not False and d["tasa_iva"] is None:
+        faltan.append("La tasa de IVA del país, en Catálogos → Cotización "
+                      "al cliente")
+    if not d["textos"]["pago"].get(idioma, "").strip():
+        faltan.append("Las condiciones de pago y facturación del país en "
+                      f"{NOMBRE_IDIOMA.get(idioma, idioma)}, en Catálogos → "
+                      "Cotización al cliente")
+    return faltan
+
+
+NOMBRE_IDIOMA = {"es": "español", "en": "inglés", "pt": "portugués"}
 
 
 def enviar(db: Session, actor: m.Usuario, cot: m.Cotizacion) -> m.Cotizacion:

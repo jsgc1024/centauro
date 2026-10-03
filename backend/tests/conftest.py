@@ -146,7 +146,29 @@ def base_de_pruebas():
     sembrar_festivos()
     sembrar_bonos()
     sembrar_lugares()
+    _condiciones_de_pago_de_mexico(engine)
     yield engine
+
+
+def _condiciones_de_pago_de_mexico(engine):
+    """Las condiciones de pago y facturacion de Mexico, en los tres
+    idiomas: sin ellas una cotizacion no se manda (seccion 130, decision
+    15). La semilla de Mexico no las trae --las captura direccion de
+    operaciones en Catalogos--; aqui se ponen como lo haria ella."""
+    with engine.begin() as con:
+        mx = con.execute(text("SELECT id FROM pais WHERE codigo = 'MX'")).scalar()
+        if mx is None:
+            return
+        for idioma, texto_ in (("es", "Crédito a 30 días a partir de la factura."),
+                               ("en", "30-day credit from the invoice date."),
+                               ("pt", "Crédito de 30 dias a partir da fatura.")):
+            existe = con.execute(text(
+                "SELECT 1 FROM texto_cotizacion WHERE pais_id = :p AND clave = 'pago' "
+                "AND idioma = :i"), {"p": mx, "i": idioma}).scalar()
+            if not existe:
+                con.execute(text(
+                    "INSERT INTO texto_cotizacion (pais_id, clave, idioma, texto) "
+                    "VALUES (:p, 'pago', :i, :t)"), {"p": mx, "i": idioma, "t": texto_})
 
 
 @pytest.fixture(autouse=True)

@@ -692,6 +692,8 @@ AREA_DE_ARCHIVO = {
     "titular.py": "servicios",
     "routers/crud.py": "catalogos", "routers/bitacora_admin.py": "catalogos",
     "routers/odoo.py": "odoo",
+    # El cambio de pais desde Pendientes y el freno por pais (seccion 130).
+    "odoo_pais.py": "odoo",
     "routers/archivo.py": "archivo",
     # El freelance: su alta, su expediente y la urgencia (seccion 111).
     "freelance.py": "freelance", "routers/freelance.py": "freelance",

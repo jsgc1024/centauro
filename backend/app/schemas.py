@@ -365,6 +365,17 @@ class MotivoIn(Base):
     motivo: str = Field(min_length=1, max_length=400)
 
 
+class PasarDePaisIn(Base):
+    """Pasar de pais a quien Odoo ya puso alla (seccion 130, decision 4):
+    `tipo` persona, unidad o cliente; `plaza_id` o `plaza`, la ciudad que
+    dice Odoo; sin ninguna, la primera del pais."""
+    tipo: Literal["persona", "unidad", "cliente"]
+    id: int
+    pais_id: int
+    plaza_id: int | None = None
+    plaza: str | None = Field(default=None, max_length=80)
+
+
 class VehiculoIn(Base):
     placa: str
     categoria_id: int
