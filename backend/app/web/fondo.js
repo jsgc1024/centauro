@@ -89,6 +89,7 @@ export async function mesaDeFondo(cuerpo, ctx) {
     }
     estado.datos = datos;
     const partes = [];
+    if (datos.falta_secretariado && datos.puede.analista) partes.push(avisoFalta(datos));
     if (datos.borrador_id && (datos.puede.analista || datos.puede.publicar)) {
       partes.push(await tarjetaBorrador(datos, ctx, pintar));
     }
@@ -124,7 +125,27 @@ function alDia(periodoDato, periodoMes, meses) {
   return (a2 * 12 + m2) - (a1 * 12 + m1) <= meses;
 }
 
-function tablaFuentes(mes, cargas) {
+/* El archivo del mes que ya deberia estar y nadie ha subido (seccion
+   139). gob.mx no le ensena la pagina a un servidor: lo baja una persona
+   y lo sube aqui; Connect solo se lo recuerda. */
+function avisoFalta(datos) {
+  const falta = datos.falta_secretariado;
+  const mes = mesSolo(falta);
+  const archivo = t("rsg_f_archivo_sesnsp")
+    .replace("{mes}", t("rsg_f_meses_archivo").split(",")[Number(falta.slice(5, 7)) - 1])
+    .replace("{anio}", falta.slice(0, 4));
+  return h("div", { clase: "aviso alerta fondo-falta" },
+    h("b", {}, t("rsg_f_falta_titulo").replace("{mes}", mes)), " ", t("rsg_f_falta_por_que"),
+    h("ol", {},
+      h("li", {}, t("rsg_f_falta_paso_1"), " ",
+        h("a", { href: datos.pagina_secretariado, target: "_blank", rel: "noopener" },
+          t("rsg_f_falta_pagina"))),
+      h("li", {}, t("rsg_f_falta_paso_2"), " ", h("b", {}, archivo), " ", t("rsg_f_falta_peso")),
+      h("li", {}, t("rsg_f_falta_paso_3"))),
+    h("span", { clase: "chico" }, t("rsg_f_falta_correo")));
+}
+
+function tablaFuentes(mes, cargas, falta) {
   const f = mes.fuentes || {};
   const sesnsp = (f.sesnsp && f.sesnsp.meses) || [];
   const ultimo = sesnsp.length ? sesnsp[sesnsp.length - 1] : null;
@@ -132,7 +153,9 @@ function tablaFuentes(mes, cargas) {
   const estadoDe = (dato, limite) => dato
     ? (alDia(dato, mes.periodo, limite) ? ["ok", t("rsg_f_al_dia")] : ["alerta", t("rsg_f_atrasado")])
     : ["grave", t("rsg_f_sin_dato")];
-  let [tono, texto] = estadoDe(ultimo, 0);
+  let [tono, texto] = falta
+    ? ["alerta", t("rsg_f_falta_mes").replace("{mes}", mesSolo(falta).toUpperCase())]
+    : estadoDe(ultimo, 0);
   filas.push(filaFuente(t("rsg_f_fuente_sesnsp"), ultimo ? mayuscula(mesLargo(ultimo)) : "—",
                         comoLlego(cargas.sesnsp), tono, texto));
   for (const [clave, limite] of [["ensu", 4], ["envipe_percepcion", 14], ["envipe_prevalencia", 14]]) {
@@ -281,7 +304,7 @@ async function tarjetaBorrador(datos, ctx, recargar) {
   }
 
   return h("div", { clase: "tarjeta fondo-borrador" }, cabeza,
-    h("h3", {}, t("rsg_f_de_donde")), tablaFuentes(mes, datos.cargas), faltan,
+    h("h3", {}, t("rsg_f_de_donde")), tablaFuentes(mes, datos.cargas, datos.falta_secretariado), faltan,
     h("h3", {}, t("rsg_f_para_revisar").replace("{n}", revisar.length)),
     h("p", { clase: "chico gris" }, t("rsg_f_para_revisar_sub")),
     tablaRevisar, verTodos,
@@ -574,21 +597,9 @@ function tarjetaFuentes(datos, recargar) {
     }
   };
 
-  const buscar = h("button", { type: "button", clase: "claro" }, t("rsg_f_buscar_ahora"));
-  buscar.onclick = async () => {
-    buscar.disabled = true;
-    decir(aviso(t("rsg_f_buscando")));
-    try {
-      const r = await api.post("/riesgo/nivel/fuentes/sesnsp/bajar", {});
-      const texto = t(`rsg_f_bajar_${r.resultado}`).replace("{mes}", r.periodo ? mesLargo(r.periodo) : "");
-      if (r.resultado === "nuevo") { mensaje(texto); await recargar(); return; }
-      decir(aviso(texto + (r.detalle ? ` (${r.detalle})` : ""),
-                  r.resultado === "sin_cambios" ? "ok" : "alerta"));
-    } catch (e) {
-      decir(aviso(e.message, "grave"));
-    }
-    buscar.disabled = false;
-  };
+  const pagina = h("button", { type: "button", clase: "claro",
+                               onclick: () => window.open(datos.pagina_secretariado, "_blank", "noopener") },
+                   t("rsg_f_abrir_pagina"));
 
   const fuente = lista("fuente", ["ensu", "envipe_percepcion", "envipe_prevalencia"]
     .map((c) => ({ valor: c, texto: t(`rsg_f_fuente_${c}`) })));
@@ -621,7 +632,7 @@ function tarjetaFuentes(datos, recargar) {
     h("p", { clase: "chico gris" }, t("rsg_f_subir_sub")),
     h("h4", {}, t("rsg_f_fuente_sesnsp")),
     h("p", { clase: "chico gris" }, t("rsg_f_sesnsp_ayuda")),
-    h("div", { clase: "rsg-linea" }, archivoSesnsp, subirSesnsp, buscar),
+    h("div", { clase: "rsg-linea" }, archivoSesnsp, subirSesnsp, pagina),
     h("h4", {}, t("rsg_f_encuestas")),
     h("p", { clase: "chico gris" }, t("rsg_f_encuestas_ayuda")),
     h("div", { clase: "rsg-linea" }, campo(t("rsg_f_cual"), fuente), campo(t("rsg_f_periodo"), periodo),

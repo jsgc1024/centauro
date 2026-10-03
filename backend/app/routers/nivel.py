@@ -69,8 +69,13 @@ def ver(pais_id: int | None = None, mes_id: int | None = None,
     mes = (_mes(db, mes_id) if mes_id else motor.vigente(db, pais))
     if mes is None and borrador:
         mes = db.get(m.NivelMes, borrador["id"])
+    hoy = motor.hoy_en(pais)
+    falta = fuentes.falta_secretariado(db, hoy)
     return {
         "mes": motor.vista_mes(db, mes) if mes else None,
+        # El archivo del mes que ya deberia estar (seccion 139).
+        "falta_secretariado": falta.isoformat() if falta else None,
+        "pagina_secretariado": fuentes.PAGINA_SESNSP,
         "meses": meses, "borrador_id": borrador["id"] if borrador else None,
         "cargas": motor.cargas(db),
         "parametros": motor.parametros(db, pais),
@@ -159,16 +164,6 @@ def _recalcular(db: Session, pais: m.Pais, periodo: date) -> m.NivelMes | None:
     if previo and previo.estado == "publicado":
         return None
     return motor.calcular(db, pais, periodo)
-
-
-@router.post("/fuentes/sesnsp/bajar",
-             summary="Buscar ahora el archivo del Secretariado")
-def bajar_sesnsp(db: Session = Depends(get_db), _=Depends(ANALISTA)):
-    salida = fuentes.bajar_sesnsp(db)
-    if salida.get("resultado") == "nuevo":
-        _recalcular(db, _pais(db, None), date.fromisoformat(salida["periodo"]))
-    db.commit()
-    return salida
 
 
 @router.post("/fuentes/encuesta", summary="Subir una encuesta del INEGI")

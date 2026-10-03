@@ -68,6 +68,9 @@ def test_el_correo_de_invitacion_lleva_su_boton(cliente, cliente_ci):  # noqa: F
     finally:
         db.close()
     assert "Crear mi contraseña" in html
+    # Lleva la placa y el pie de la Central, no los de AI/EP (3 oct).
+    assert "AI/CI" in html and "AI/EP" not in html
+    assert texto.rstrip().endswith("Centauro · Central de Inteligencia")
     assert "https://mycentauro.lat/ci/#/enlace/" in texto
     assert "vence el" in texto
 

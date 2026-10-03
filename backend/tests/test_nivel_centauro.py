@@ -295,36 +295,83 @@ def test_pesos_y_cortes(cliente, sesion):
     assert motor.rango(75, [20, 43, 60, 75]) == "alto"
 
 
-def test_buscar_el_enlace_en_la_pagina():
-    html = ('<p><a href="https://x/a?e=1">Enero - agosto 2026 (Fuero común - '
-            'Delitos). Incidencia delictiva municipal</a></p>'
-            '<p><a href="https://x/b?e=2&amp;z=3">Enero - agosto 2026 (Fuero '
-            'común - Víctimas). Incidencia delictiva municipal</a></p>'
-            '<p><a href="https://x/c">2015 - 2025 (Fuero Común - Víctimas). '
-            'Incidencia delictiva estatal</a></p>')
-    enlace = fuentes.enlace_en_la_pagina(html)
-    assert enlace == "https://x/b?e=2&z=3"
-    assert fuentes.con_descarga(enlace) == "https://x/b?e=2&z=3&download=1"
-    # Como la escribe de verdad gob.mx (3 oct): acentos y espacios como
-    # entidades, y antes el tablero dinamico, que no es el archivo.
-    real = ("<a href='https://x/tablero'>Enero - agosto&nbsp;2026 (Fuero "
-            "com&uacute;n - V&iacute;ctimas).&nbsp;Tablero din&aacute;mico de "
-            "Registro Nacional de Incidencia Delictiva municipal</a>"
-            '<a href="https://x/zip?e=4">Enero - agosto&nbsp;2026 (Fuero '
-            "com&uacute;n - V&iacute;ctimas). Incidencia delictiva "
-            "municipal</a>")
-    assert fuentes.enlace_en_la_pagina(real) == "https://x/zip?e=4"
+def test_que_mes_ya_debe_estar():
+    assert fuentes.mes_esperado(date(2026, 10, 17)) == date(2026, 8, 1)
+    assert fuentes.mes_esperado(date(2026, 10, 18)) == date(2026, 9, 1)
+    assert fuentes.mes_esperado(date(2027, 1, 20)) == date(2026, 12, 1)
+    assert fuentes.mes_esperado(date(2027, 1, 5)) == date(2026, 11, 1)
 
 
-def test_bajar_sin_conexion_no_revienta():
-    class Roto:
-        def get(self, *a, **k):
-            raise OSError("sin red")
+def _a_las(dia, hora=9):
+    """Una hora de la Ciudad de Mexico (UTC-6) en UTC."""
+    return datetime(2026, 10, dia, hora + 6, 10, tzinfo=timezone.utc)
+
+
+def _recordatorios():
     db = SessionLocal()
     try:
-        assert fuentes.bajar_sesnsp(db, Roto())["resultado"] == "sin_conexion"
+        return sorted(c for (c,) in db.query(m.Notificacion.correo).filter_by(
+            plantilla=fuentes.PLANTILLA_RECORDATORIO))
     finally:
         db.close()
+
+
+def test_el_recordatorio_del_secretariado(cliente, sesion):
+    """Desde el 18, si falta el archivo del mes pasado, un correo a quien
+    publica en el mapa; luego cada tres dias, una vez al dia, y nada en
+    cuanto se sube."""
+    _guardar()                          # hasta agosto
+    db = SessionLocal()
+    try:
+        # El 17 todavia no toca: lo que ya debia estar es agosto.
+        assert fuentes.recordar_secretariado(db, _a_las(17)) == {
+            "falta": None, "correos": 0}
+        salida = fuentes.recordar_secretariado(db, _a_las(18))
+        db.commit()
+        assert salida["falta"] == "2026-09-01" and salida["correos"] >= 1
+        # Otra vuelta el mismo dia no repite.
+        assert fuentes.recordar_secretariado(db, _a_las(18, 15))["correos"] == 0
+        db.commit()
+        assert fuentes.recordar_secretariado(db, _a_las(19))["correos"] == 0
+        assert fuentes.recordar_secretariado(db, _a_las(21))["correos"] >= 1
+        db.commit()
+        aviso = (db.query(m.Notificacion)
+                 .filter_by(plantilla=fuentes.PLANTILLA_RECORDATORIO).first())
+        assert aviso.asunto == "Falta el archivo del Secretariado de septiembre"
+        assert aviso.enlace_seguimiento == fuentes.PAGINA_SESNSP
+    finally:
+        db.close()
+    quienes = _recordatorios()
+    assert "central@centauro.lat" in quienes
+    # Direccion general lo puede todo, pero no es quien sube el archivo.
+    assert "direccion@centauro.lat" not in quienes
+
+    # La consola lo dice arriba (la fecha la pone el reloj del sistema:
+    # aqui solo se mira que el dato viaje y con la pagina).
+    vista = cliente.get("/riesgo/nivel", headers=sesion("central")).json()
+    assert "falta_secretariado" in vista
+    assert vista["pagina_secretariado"].startswith("https://www.gob.mx/")
+
+
+def test_el_correo_del_recordatorio_lleva_su_boton(cliente, sesion):
+    from app import correo
+    _guardar()
+    db = SessionLocal()
+    try:
+        fuentes.recordar_secretariado(db, _a_las(18))
+        db.commit()
+        aviso = (db.query(m.Notificacion)
+                 .filter_by(plantilla=fuentes.PLANTILLA_RECORDATORIO).first())
+        texto, html = correo.versiones(db, aviso)
+    finally:
+        db.close()
+    assert "Abrir la página del Secretariado" in html
+    assert "Enero - septiembre 2026 (Fuero común - Víctimas)" in html
+    assert fuentes.PAGINA_SESNSP in texto
+    # Es de la Central de Inteligencia: su placa y su pie (3 oct).
+    assert "AI/CI" in html and "AI/EP" not in html
+    assert "Centauro · Central de Inteligencia" in html
+    assert texto.rstrip().endswith("Centauro · Central de Inteligencia")
 
 
 def test_el_cliente_ve_solo_lo_publicado_y_sin_el_motivo(cliente, sesion,

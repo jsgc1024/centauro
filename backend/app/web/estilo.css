@@ -1818,3 +1818,6 @@ input.pro-mes { width: 132px; margin: 0; text-align: right;
 @media (max-width: 900px) { .fondo-dos { grid-template-columns: 1fr; } }
 .fondo-valor { max-width: 90px; }
 .fondo-acciones { margin-top: 12px; }
+.fondo-falta { margin: 0 0 14px; }
+.fondo-falta ol { margin: 8px 0 4px 18px; padding: 0; }
+.fondo-falta a { color: var(--centauro); font-weight: 650; }
