@@ -35,6 +35,7 @@ Nuevo servicio y la MISMA fila queda como su cotizacion autorizada: lo
 que el cliente vio es lo que compara el cierre, sin copiar precios.
 """
 import json
+import logging
 import unicodedata
 import zlib
 from datetime import date, datetime, time, timezone
@@ -52,6 +53,7 @@ from app import models as m
 E = m.EstatusCotizacion
 SERIE = motor.SERIE
 folio_texto = motor.folio_texto
+registro = logging.getLogger(__name__)
 
 # Lo que la lista cuenta como abierta, cerrada o ya resuelta.
 ABIERTAS = (E.BORRADOR, E.ENVIADA)
@@ -878,7 +880,33 @@ def que_le_falta(db: Session, cot: m.Cotizacion) -> list[str]:
     if (motor.modo_de_gastos(cot) == motor.GASTOS_FIJOS
             and not gastos_fijos(cot) > 0):
         faltan.append("El monto fijo de gastos")
+    faltan += lo_del_pais_que_frena(db, cot.pais_id, cot.idioma or "es",
+                                    cot.con_iva)
     return faltan
+
+
+def lo_del_pais_que_frena(db: Session, pais_id: int | None, idioma: str,
+                          con_iva) -> list[str]:
+    """Lo de Catalogos sin lo que una cotizacion o una propuesta no se
+    manda (seccion 130, decision 15): la tasa de IVA, si va con IVA, y las
+    condiciones de pago y facturacion del pais en el idioma del PDF. Lo
+    demas que le falte al PDF se avisa en amarillo y deja mandar; esto
+    no: una cotizacion de Brasil salia sin tasa ni condiciones."""
+    if not pais_id:
+        return []
+    d = textos_de(db, pais_id)
+    faltan = []
+    if con_iva is not False and d["tasa_iva"] is None:
+        faltan.append("La tasa de IVA del país, en Catálogos → Cotización "
+                      "al cliente")
+    if not d["textos"]["pago"].get(idioma, "").strip():
+        faltan.append("Las condiciones de pago y facturación del país en "
+                      f"{NOMBRE_IDIOMA.get(idioma, idioma)}, en Catálogos → "
+                      "Cotización al cliente")
+    return faltan
+
+
+NOMBRE_IDIOMA = {"es": "español", "en": "inglés", "pt": "portugués"}
 
 
 def enviar(db: Session, actor: m.Usuario, cot: m.Cotizacion) -> m.Cotizacion:
@@ -915,16 +943,84 @@ def enviar(db: Session, actor: m.Usuario, cot: m.Cotizacion) -> m.Cotizacion:
     cot.actualizada_en = cot.enviada_en
     db.flush()
     contenido = cotizacion_pdf.pdf(db, cot)
-    cot.archivos.append(m.ArchivoCotizacion(
+    pdf = m.ArchivoCotizacion(
         clase="pdf", nombre=cotizacion_pdf.nombre_del_archivo(db, cot),
         tipo="application/pdf", tamano=len(contenido), contenido=contenido,
-        subido_por_id=actor.persona_id))
+        subido_por_id=actor.persona_id)
+    cot.archivos.append(pdf)
     for vieja in versiones(db, cot.folio, cot.clase):
         if vieja.id != cot.id and vieja.estatus in (E.BORRADOR, E.ENVIADA,
                                                     E.VENCIDA):
             vieja.estatus = E.SUSTITUIDA
     db.flush()
+    # El titular se entera si la mando otro (decision 16).
+    avisar_al_titular(db, actor, cot, pdf)
     return cot
+
+
+def avisar_al_titular(db: Session, actor: m.Usuario, cot: m.Cotizacion,
+                      pdf: m.ArchivoCotizacion | None) -> dict | None:
+    """Cuando quien la manda no es el consultor titular, el titular se
+    entera (seccion 131, decision 16 de Salvador): la cotizacion --o la
+    propuesta-- salio al cliente con su firma y su contacto, y le llega
+    el aviso al correo con el PDF tal como salio, y al telefono. Quien
+    arma sigue pudiendo mandarla. Solo escribe; quien llama guarda.
+    Devuelve a quien se le aviso, o None si no habia a quien."""
+    from app import correo_html, push
+    from app import textos_aviso as ta
+
+    if not cot.consultor_id or cot.consultor_id == actor.persona_id:
+        return None
+    titular = db.get(m.Persona, cot.consultor_id)
+    if titular is None:
+        return None
+    quien = (db.get(m.Persona, actor.persona_id) if actor.persona_id else None)
+    nombre_de_quien = (quien.nombre if quien else None) or actor.correo or "—"
+    nombre, cliente = nombre_de(cot), cliente_texto(cot)
+    lengua = push.idioma_de(db, titular.id)
+    pantalla = ("/consola/#/propuesta/" if cot.clase == motor.PROPUESTA
+                else "/consola/#/cotizacion/") + str(cot.id)
+    avisado = {"persona_id": titular.id, "nombre": titular.nombre,
+               "correo": False, "telefono": 0}
+    if titular.correo:
+        pares = [(ta.t(lengua, "ctz_otro_nombre"), nombre),
+                 (ta.t(lengua, "ctz_otro_cliente"), cliente),
+                 (ta.t(lengua, "ctz_otro_quien"), nombre_de_quien),
+                 (ta.t(lengua, "cie_que_hacer"),
+                  ta.t(lengua, "ctz_otro_que_hacer", quien=nombre_de_quien))]
+        db.add(m.Notificacion(
+            servicio_id=cot.servicio_id,
+            destinatario=m.Destinatario.CONSULTOR, canal=m.Canal.CORREO,
+            correo=titular.correo, idioma=lengua,
+            asunto=ta.t(lengua, "ctz_otro_asunto", nombre=nombre,
+                        quien=nombre_de_quien)[:200],
+            cuerpo=ta.t(lengua, "ctz_otro_cuerpo", nombre=nombre,
+                        quien=nombre_de_quien, cliente=cliente)[:2000],
+            datos=correo_html.guardar_datos(pares),
+            enlace_seguimiento=pantalla,
+            adjunto_id=pdf.id if pdf is not None else None))
+        avisado["correo"] = True
+    try:
+        r = push.avisar(
+            db, titular.id,
+            titulo=push.tx(lengua, "ctz_otro_titulo", nombre=nombre,
+                           quien=nombre_de_quien),
+            cuerpo=push.tx(lengua, "ctz_otro_cuerpo", cliente=cliente),
+            url=pantalla, etiqueta=f"cotizacion-{cot.id}")
+        avisado["telefono"] = r.get("enviados", 0)
+    except Exception:                                   # noqa: BLE001
+        # Un aviso que no sale no deshace el envio al cliente.
+        registro.exception("no se pudo avisar al titular de %s", nombre)
+    # Y en la bitacora de administracion: quien mando que con la firma
+    # de quien, y que el titular se entero.
+    accesos.anotar(db, actor, "mandada con la firma de otro",
+                   "propuesta" if cot.clase == motor.PROPUESTA else "cotizacion",
+                   cot.folio,
+                   antes=f"titular {titular.nombre}"[:200],
+                   despues=("avisado por correo con el PDF" if avisado["correo"]
+                            else "titular sin correo: solo al telefono")[:200],
+                   detalle=f"{nombre} · {cliente}"[:400])
+    return avisado
 
 
 def archivo(cot: m.Cotizacion, clase: str) -> m.ArchivoCotizacion | None:
@@ -1136,18 +1232,24 @@ def autorizar(db: Session, actor: m.Usuario, cot: m.Cotizacion,
 def servicio_eliminado(cot: m.Cotizacion) -> bool:
     """La autorizada cuyo servicio se elimino despues (seccion 126): se
     queda con el folio que tuvo y sin servicio. Antes se quedaba atorada:
-    ni otra version --ya estaba autorizada-- ni su servicio."""
-    return (cot.clase == motor.COTIZACION and cot.estatus == E.AUTORIZADA
-            and cot.servicio_id is None and bool(cot.servicio_folio))
+    ni otra version --ya estaba autorizada-- ni su servicio. Desde la
+    seccion 131 tambien la propuesta cuyo implantado se elimino
+    (decision 2 de Salvador, 2 de octubre)."""
+    return (cot.estatus == E.AUTORIZADA and cot.servicio_id is None
+            and bool(cot.servicio_folio))
 
 
 def _del_servicio_eliminado(db: Session, cot: m.Cotizacion) -> None:
     if not servicio_eliminado(cot):
-        raise HTTPException(409, "Solo con la cotización autorizada cuyo "
+        raise HTTPException(409, "Solo con la propuesta autorizada cuyo "
+                                 "implantado se eliminó."
+                                 if cot.clase == motor.PROPUESTA else
+                                 "Solo con la cotización autorizada cuyo "
                                  "servicio se eliminó.")
     if ultima(db, cot.folio, cot.clase).id != cot.id:
         raise HTTPException(409, "Hay una versión más nueva de esta "
-                                 "cotización.")
+                                 + ("propuesta." if cot.clase == motor.PROPUESTA
+                                    else "cotización."))
 
 
 def recrear_servicio(db: Session, actor: m.Usuario,
@@ -1190,16 +1292,63 @@ def eliminar(db: Session, actor: m.Usuario, cot: m.Cotizacion,
         raise HTTPException(400, "Di por qué se elimina.")
     nombre = nombre_de(cot)
     todas = versiones(db, cot.folio, cot.clase)
+    que = "implantado" if cot.clase == motor.PROPUESTA else "servicio"
     db.add(m.CotizacionEliminada(
         clase=cot.clase, folio=cot.folio,
         cliente=cliente_texto(cot)[:200],
         resumen=(f"{nombre} · {len(todas)} versión(es) · autorizada; su "
-                 f"servicio {cot.servicio_folio} se había eliminado")[:400],
+                 f"{que} {cot.servicio_folio} se había eliminado")[:400],
         motivo=motivo, eliminado_por_id=actor.persona_id))
     for v in todas:
         db.delete(v)
     db.flush()
     return nombre
+
+
+def descartar(db: Session, actor: m.Usuario, cot: m.Cotizacion) -> dict:
+    """«Descartar este borrador» (seccion 131, decision 1 de Salvador, 2 de
+    octubre). La version 2 o siguiente se borra y la anterior vuelve a
+    ser la ultima: la V1 que el cliente autorizo tal como la vio se puede
+    autorizar otra vez. La version 1 que nunca se mando se elimina con su
+    registro, y su folio no se vuelve a usar. Antes un borrador abierto
+    por error vivia para siempre en «Abiertas» y bloqueaba la anterior."""
+    if cot.estatus != E.BORRADOR:
+        raise HTTPException(409, f"La {nombre_de(cot)} ya no es borrador: "
+                                 "no se descarta.")
+    if ultima(db, cot.folio, cot.clase).id != cot.id:
+        raise HTTPException(409, "Hay una versión más nueva de esta "
+                                 + ("propuesta." if cot.clase == motor.PROPUESTA
+                                    else "cotización."))
+    nombre, folio, version = nombre_de(cot), cot.folio, cot.version
+    anteriores = [v for v in versiones(db, folio, cot.clase) if v.id != cot.id]
+    objeto = "propuesta" if cot.clase == motor.PROPUESTA else "cotizacion"
+    if anteriores:
+        vuelve = anteriores[0]
+        accesos.anotar(db, actor, "version descartada", objeto, folio,
+                       antes=f"V{version} en borrador"[:200],
+                       despues=f"V{vuelve.version} vuelve a ser la última "
+                               f"({vuelve.estatus.value})"[:200],
+                       detalle=nombre[:400])
+        db.delete(cot)
+        db.flush()
+        return {"resultado": "borrador descartado", "nombre": nombre,
+                "folio": folio, "version": version,
+                "vuelve": {"id": vuelve.id, "version": vuelve.version,
+                           "estatus": vuelve.estatus.value},
+                "eliminada": False}
+    db.add(m.CotizacionEliminada(
+        clase=cot.clase, folio=folio, cliente=cliente_texto(cot)[:200],
+        resumen=f"{nombre} · borrador que nunca se mandó, descartado"[:400],
+        motivo=None, eliminado_por_id=actor.persona_id))
+    accesos.anotar(db, actor, "borrador descartado", objeto, folio,
+                   antes="V1 en borrador, nunca mandada"[:200],
+                   despues="eliminada; su folio no se vuelve a usar"[:200],
+                   detalle=nombre[:400])
+    db.delete(cot)
+    db.flush()
+    return {"resultado": "borrador descartado", "nombre": nombre,
+            "folio": folio, "version": version, "vuelve": None,
+            "eliminada": True}
 
 
 # ------------------------------------------------------------- el reloj
@@ -1335,6 +1484,16 @@ def cuentas(db: Session, que: str = "cotizaciones") -> dict:
 
 # ------------------------------------------------------------- el detalle
 
+def dias_pasados(db: Session, cot: m.Cotizacion) -> dict:
+    """{n, desde, hasta}: cuantos dias de la cotizacion ya pasaron con el
+    hoy de su pais, y entre que fechas."""
+    hoy = _hoy(db, cot)
+    fechas = sorted({d.fecha for d in cot.dias if d.fecha and d.fecha < hoy})
+    return {"n": len(fechas),
+            "desde": fechas[0].isoformat() if fechas else None,
+            "hasta": fechas[-1].isoformat() if fechas else None}
+
+
 def detalle(db: Session, cot: m.Cotizacion, puede_armar: bool) -> dict:
     t = totales(cot)
     fechas = sorted({d.fecha for d in cot.dias})
@@ -1409,6 +1568,11 @@ def detalle(db: Session, cot: m.Cotizacion, puede_armar: bool) -> dict:
         "faltan": (que_le_falta(db, cot) if cot.estatus == E.BORRADOR else []),
         "firma": tiene_firma(db, cot.consultor_id),
         "hoy": _hoy(db, cot).isoformat(),
+        # Los dias de la cotizacion que ya pasaron (seccion 131, decision
+        # 11): la vencida que se autoriza tarde, o el servicio que se
+        # vuelve a crear dias despues, nace con esos dias atras. Se avisa
+        # antes de autorizar o recrear, y se deja seguir.
+        "dias_pasados": dias_pasados(db, cot),
         "versiones": [{
             "id": v.id, "version": v.version, "estatus": v.estatus.value,
             "motivo": v.motivo_recotizacion,

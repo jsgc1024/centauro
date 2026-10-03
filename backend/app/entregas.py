@@ -46,8 +46,17 @@ def _abierta(db: Session, servicio_id: int, vehiculo_id: int):
 
 def _quien_responde(jornada: m.Jornada, vehiculo_id: int,
                     persona_id: int) -> int:
-    """El que traia esa unidad asignada ese dia; si nadie la trae
-    asignada (una sola unidad), quien marco el fin."""
+    """Por la unidad responde quien va al volante (seccion 132, decision
+    17 de Salvador): la misma regla que la gasolina y que la central
+    (`viaticos.al_volante`): el conductor a bordo de esa unidad, y si
+    nadie va de conductor, quien vaya en ella. Antes era el que traia
+    la unidad asignada por nombre, y con una sola unidad --donde nadie
+    la trae asignada-- caia en quien marco el fin, que suele ser el
+    agente y no quien maneja. Sin nadie a bordo, quien marco el fin."""
+    from app import viaticos
+    conductor = viaticos.al_volante(jornada, vehiculo_id)
+    if conductor is not None:
+        return conductor
     for a in jornada.personal:
         if a.vehiculo_id == vehiculo_id and a.relevado_en is None:
             return a.persona_id

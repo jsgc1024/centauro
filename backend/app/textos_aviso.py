@@ -255,6 +255,17 @@ TEXTOS = {
         "tit_nuevo": "Consultant in charge",
         "tit_anterior": "Previous consultant",
         "tit_motivo": "Reason",
+        # --- la cotizacion que otro manda con la firma del titular
+        # (seccion 131, decision 16 de Salvador)
+        "ctz_otro_asunto": "{nombre}: {quien} sent it with your signature",
+        "ctz_otro_cuerpo": ("{quien} sent {nombre} to the client ({cliente}) "
+                            "with your signature and your contact details. "
+                            "The PDF, exactly as it went out, is attached."),
+        "ctz_otro_que_hacer": ("Read it. If something is wrong, talk to {quien} "
+                               "or open a new version from Quotes."),
+        "ctz_otro_nombre": "Quote",
+        "ctz_otro_cliente": "Client",
+        "ctz_otro_quien": "Sent by",
         # --- la incidencia grave, a Recursos Humanos (seccion 105)
         "inc_grave_asunto": "Serious incident: {quien} on {folio}",
         "inc_grave_cuerpo": ("Operations management authorized a serious "
@@ -471,6 +482,17 @@ TEXTOS = {
         "tit_nuevo": "Consultor titular",
         "tit_anterior": "Titular anterior",
         "tit_motivo": "Motivo",
+        # --- la cotizacion que otro manda con la firma del titular
+        # (seccion 131, decision 16 de Salvador)
+        "ctz_otro_asunto": "{nombre}: {quien} la mandó con tu firma",
+        "ctz_otro_cuerpo": ("{quien} le mandó al cliente {nombre} ({cliente}) "
+                            "con tu firma y tu contacto. Va adjunto el PDF "
+                            "tal como salió."),
+        "ctz_otro_que_hacer": ("Léela. Si algo no va, habla con {quien} o abre "
+                               "una versión nueva desde Cotizaciones."),
+        "ctz_otro_nombre": "Cotización",
+        "ctz_otro_cliente": "Cliente",
+        "ctz_otro_quien": "La mandó",
         "quien": "Quién",
         "que_hizo": "Qué hizo",
         "detalle": "Detalle",
@@ -649,6 +671,17 @@ TEXTOS = {
         "tit_nuevo": "Consultor titular",
         "tit_anterior": "Titular anterior",
         "tit_motivo": "Motivo",
+        # --- la cotizacion que otro manda con la firma del titular
+        # (seccion 131, decision 16 de Salvador)
+        "ctz_otro_asunto": "{nombre}: {quien} enviou com a sua assinatura",
+        "ctz_otro_cuerpo": ("{quien} enviou {nombre} ao cliente ({cliente}) "
+                            "com a sua assinatura e o seu contato. O PDF vai "
+                            "anexo, tal como saiu."),
+        "ctz_otro_que_hacer": ("Leia. Se algo não estiver certo, fale com "
+                               "{quien} ou abra uma versão nova em Cotações."),
+        "ctz_otro_nombre": "Cotação",
+        "ctz_otro_cliente": "Cliente",
+        "ctz_otro_quien": "Enviada por",
         "cambio_cuerpo_unidad": ("O serviço de hoje é coberto com outro "
                                  "veículo: {quien}. Abaixo está sua equipe "
                                  "como fica."),

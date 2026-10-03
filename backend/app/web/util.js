@@ -523,6 +523,12 @@ export function vaciar(nodo) {
 
 /* Una sola forma de contar lo que pasa, para no llenar la pantalla de
    alertas del navegador. */
+/* Los avisos que siguen vivos: la pantalla que se pinta despues de una
+   accion --«descartado», «eliminada», y luego otra direccion-- vuelve a
+   armar la barra, y el aviso que acababa de salir se perdia con ella
+   (seccion 131). `reponerMensajes` los vuelve a poner en la barra nueva. */
+const VIVOS = [];
+
 export function mensaje(texto, tono = "ok") {
   /* Lo que salio en rojo o en ambar se queda en la caja negra, para el
      reporte de una falla (seccion 92). */
@@ -530,7 +536,16 @@ export function mensaje(texto, tono = "ok") {
   const barra = document.getElementById("mensajes");
   const nodo = aviso(texto, tono);
   barra.prepend(nodo);
-  setTimeout(() => nodo.remove(), tono === "grave" ? 9000 : 5000);
+  const vivo = { nodo };
+  VIVOS.push(vivo);
+  setTimeout(() => {
+    nodo.remove();
+    VIVOS.splice(VIVOS.indexOf(vivo), 1);
+  }, tono === "grave" ? 9000 : 5000);
+}
+
+export function reponerMensajes(barra) {
+  for (const { nodo } of VIVOS) barra.append(nodo);
 }
 
 export function datosDeFormulario(formulario) {

@@ -170,9 +170,12 @@ def test_la_vista_previa_dice_la_introduccion_la_firma_y_lo_que_falta(cliente, s
     assert intro.startswith("A solicitud de Valeria Rodas, de ")
     assert "transportación ejecutiva" in intro and "<b>" not in intro
     assert previa["firma"] is False
-    # Mexico nace sin RFC ni condiciones de pago: los escribe direccion de
-    # operaciones en Catalogos.
-    assert {"rfc", "pago"} <= set(previa["faltan_textos"])
+    # Mexico nace sin RFC: lo escribe direccion de operaciones en
+    # Catalogos. Las condiciones de pago las trae la bateria (conftest):
+    # sin ellas no se manda (seccion 130, decision 15), asi que aqui no
+    # faltan.
+    assert "rfc" in previa["faltan_textos"]
+    assert "pago" not in previa["faltan_textos"]
     assert "razon_social" not in previa["faltan_textos"]
 
     # La empresa nueva sin nombre todavia: los precios salen igual, de la
@@ -655,7 +658,10 @@ def test_los_textos_los_cambia_direccion_de_operaciones(cliente, sesion, datos, 
                         headers=sesion("consultor")).json()
     assert antes["razon_social"] == "Centauro ASS, S.A. de C.V."
     assert antes["textos"]["cancelacion"]["es"].startswith("Si se cancela")
-    assert antes["textos"]["pago"]["es"] == ""
+    # Las condiciones de pago las pone la bateria (conftest): sin ellas no
+    # se manda ninguna cotizacion (seccion 130, decision 15).
+    pago_antes = antes["textos"]["pago"]["es"]
+    assert pago_antes.startswith("Crédito")
 
     cuerpo = {"razon_social": antes["razon_social"], "rfc": "cas123456ab1",
               "tasa_iva": "0.16",
@@ -678,7 +684,7 @@ def test_los_textos_los_cambia_direccion_de_operaciones(cliente, sesion, datos, 
     finally:
         cliente.put(f"/cotizaciones/textos/{mx}", headers=sesion("admin"),
                     json={"razon_social": antes["razon_social"], "rfc": None,
-                          "tasa_iva": "0.16", "textos": {"pago": {"es": ""}}})
+                          "tasa_iva": "0.16", "textos": {"pago": {"es": pago_antes}}})
 
 
 def test_la_semilla_y_la_migracion_dicen_lo_mismo():

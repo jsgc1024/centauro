@@ -31,7 +31,7 @@ import { pantallaServicio } from "./servicio.js";
 import { nuevaCotizacion, pantallaCotizacion,
          pantallaCotizaciones } from "./cotizaciones.js";
 import { pantallaPropuesta } from "./propuesta.js";
-import { aviso, campo, entrada, h, lista, mensaje, vaciar,
+import { aviso, campo, entrada, h, lista, mensaje, reponerMensajes, vaciar,
          vigilarCapturas } from "./util.js";
 import { IDIOMAS, idioma, idiomaGuardado, ponerIdioma, t } from "./idioma.js";
 import { abrirRecorrido } from "./recorrido.js";
@@ -502,7 +502,10 @@ const RUTAS = [
   [/^#\/unidades$/, pantallaUnidades, "unidades", MONITOREO],
   [/^#\/finanzas$/, bandejaFinanzas, "finanzas", DINERO],
   [/^#\/facturacion$/, pantallaFacturacion, "facturacion", DINERO],
-  [/^#\/nomina$/, pantallaNomina, "nomina", NOMINAS],
+  /* Nominas, y la pestana de comisiones de un pais y un mes abierta
+     directo desde el panel de direccion (seccion 131):
+     #/nomina/comisiones/<pais>/<anio>-<mes>. */
+  [/^#\/nomina\/?(comisiones\/\d+\/\d{4}-\d{1,2})?$/, pantallaNomina, "nomina", NOMINAS],
   [/^#\/bonos$/, pantallaBonos, "bonos", DESEMPENO],
   [/^#\/encuestas$/, pantallaEncuestas, "encuestas", VOZ_CLIENTE],
   [/^#\/calidad$/, pantallaCalidad, "calidad", CALIDAD],
@@ -541,8 +544,11 @@ async function pintar() {
 
   vaciar(cuerpo);
   const main = h("main");
-  cuerpo.append(armazon(), h("div", { id: "mensajes",
-    style: "max-width:1180px;margin:10px auto 0;padding:0 20px" }), main);
+  const mensajes = h("div", { id: "mensajes",
+    style: "max-width:1180px;margin:10px auto 0;padding:0 20px" });
+  cuerpo.append(armazon(), mensajes, main);
+  /* El aviso de la accion que trajo hasta aqui sigue a la vista. */
+  reponerMensajes(mensajes);
 
   /* La primera vez, el recorrido. Una sola vez por persona y no por
      navegador: quien ya lo vio no lo vuelve a ver porque cambio de

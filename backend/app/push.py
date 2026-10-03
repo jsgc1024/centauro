@@ -224,6 +224,10 @@ TEXTOS_PUSH = {
         "entrega_vencida_cuerpo": "El plazo para entregar la {placa} ({folio}) venció el {fecha} a las {hora}. Entrégala hoy con sus fotos y avisa a tu consultor.",
         "entrega_vencida_of_titulo": "{folio}: unidad sin entregar",
         "entrega_vencida_of_cuerpo": "{quien} no entregó la {placa} en el plazo ({fecha} {hora}). Sigue por entregar; el cierre la reclama hasta que se entregue o se registre sin revisión.",
+        # Seccion 131, decision 16: la cotizacion que otro manda con la
+        # firma del titular; el PDF va en el correo.
+        "ctz_otro_titulo": "{nombre}: {quien} la mandó con tu firma",
+        "ctz_otro_cuerpo": "Salió al cliente ({cliente}) con tu firma y tu contacto. El PDF va en tu correo; ábrela en Cotizaciones.",
     },
     "pt": {
         "vispera_titulo": "Amanhã você trabalha",
@@ -289,6 +293,8 @@ TEXTOS_PUSH = {
         "entrega_vencida_cuerpo": "O prazo para entregar a {placa} ({folio}) venceu em {fecha} às {hora}. Entregue hoje com as fotos e avise o seu consultor.",
         "entrega_vencida_of_titulo": "{folio}: unidade sem entregar",
         "entrega_vencida_of_cuerpo": "{quien} não entregou a {placa} no prazo ({fecha} {hora}). Continua por entregar; o fechamento cobra até que seja entregue ou registrada sem revisão.",
+        "ctz_otro_titulo": "{nombre}: {quien} enviou com a sua assinatura",
+        "ctz_otro_cuerpo": "Saiu ao cliente ({cliente}) com a sua assinatura e o seu contato. O PDF vai no seu e-mail; abra em Cotações.",
     },
 }
 
@@ -825,12 +831,17 @@ def avisar_hora_rechazada(db: Session, jornada, persona_id: int) -> dict:
         etiqueta="cambio-hora", urgente=True)
 
 
-def avisar_cambio_de_hora(db: Session, jornada, antes) -> dict:
+def avisar_cambio_de_hora(db: Session, jornada, antes,
+                          salvo: int | None = None) -> dict:
     """Confirmo para las cinco y la hora se movio.
 
     La confirmacion de la vispera se hace sobre una hora; si esa hora
     cambia despues y nadie avisa, la confirmacion queda apuntando a algo
     que ya no es cierto.
+
+    `salvo`: quien propuso esa hora (seccion 132, decision 17 de
+    Salvador). A el no le llega el aviso ni se le pide reconfirmar: ya
+    sabe a que hora es, porque la pidio.
     """
     if jornada.estatus in (m.EstatusJornada.CANCELADA,
                            m.EstatusJornada.TERMINADA):
@@ -853,6 +864,8 @@ def avisar_cambio_de_hora(db: Session, jornada, antes) -> dict:
     lengua_central = (getattr(pais, "idioma", None) or "es").lower()
     lengua_central = lengua_central if lengua_central in TEXTOS_PUSH else "es"
     for a in jornada.personal:
+        if a.persona_id == salvo:
+            continue
         if a.confirmado and a.relevado_en is None:
             a.confirmado = False
             a.confirmado_en = None
@@ -865,6 +878,8 @@ def avisar_cambio_de_hora(db: Session, jornada, antes) -> dict:
             reconfirman += 1
     avisados = []
     for persona_id in _asignados(db, [jornada]):
+        if persona_id == salvo:
+            continue
         lengua = idioma_de(db, persona_id)
         r = avisar(db, persona_id,
                    titulo=tx(lengua, "cambio_fecha_titulo" if cambio_de_fecha

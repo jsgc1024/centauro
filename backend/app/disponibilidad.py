@@ -419,7 +419,17 @@ def recomendar_personal_por_dia(
         .all()
     )
     candidatos = [p for p in todos if p.plaza_id == plaza_id]
-    otras_ciudades = [p for p in todos if p.plaza_id != plaza_id]
+    # Los de otra ciudad, solo de este pais (seccion 130, decision 5),
+    # como las unidades desde la 118: con Brasil adentro, cada eventual de
+    # Mexico ofrecia a los 40 de Sao Paulo «de otras ciudades» con
+    # viaticos foraneos, y un freelance de Brasil pasaba el candado de un
+    # servicio de Mexico que su nomina no sabe pagar.
+    plaza = db.get(m.Plaza, plaza_id)
+    pais_id = plaza.pais_id if plaza else None
+    otras_ciudades = [p for p in todos if p.plaza_id != plaza_id
+                      and (pais_id is None or p.plaza is None
+                           or p.plaza.pais_id == pais_id)]
+    todos = candidatos + otras_ciudades
     ids = [p.id for p in todos]
     ocupadas = _jornadas_de_personas(
         db, ids, min(d[0] for d in dias), max(d[1] for d in dias))

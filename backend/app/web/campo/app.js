@@ -331,12 +331,11 @@ async function entrada(conContrasena = false) {
     const error = h("div");
     const grande = botonHuella(error, null);
     grande.style.cssText = "height:60px;font-size:16px";
-    const primero = (conocido.nombre || "").trim().split(/\s+/)[0] || conocido.nombre;
+    /* Solo el nombre de pila (seccion 132, decision 8): la pantalla se
+       ve antes de entrar y no dice el nombre completo. */
     raiz().replaceChildren(puerta(
-      h("p", { style: "text-align:center;margin:18px 0 2px;font-size:17px" },
-        huella.th("hola", { nombre: "" }), h("b", {}, primero)),
-      h("p", { clase: "gris chico", style: "text-align:center;margin:0 0 18px" },
-        conocido.nombre),
+      h("p", { style: "text-align:center;margin:18px 0 18px;font-size:17px" },
+        huella.th("hola", { nombre: "" }), h("b", {}, huella.primerNombre(conocido.nombre))),
       error,
       grande,
       h("button", { clase: "claro", style: "margin-top:10px",

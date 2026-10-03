@@ -57,6 +57,7 @@ import unicodedata
 from datetime import date, datetime
 
 from app.odoo_api import COMPANIAS
+from app.odoo_pais import NO_ENCONTRADO
 
 # El personal de seguridad de cada pais (seccion 121). En Odoo cada pais es
 # una compania, con sus puestos. `central`: la ciudad de la oficina de ese
@@ -399,10 +400,14 @@ def planear(empleados: list, personas: list, plazas: dict,
             "por_capturar": [], "con_cuenta": 0, "sin_cuenta": 0}
     tomados = set()        # correos que este plan ya aparto
 
-    def pendiente(e, persona_id, faltas):
-        plan["pendientes"].append({"odoo_id": e["id"], "persona_id": persona_id,
-                                   "nombre": texto(e.get("name")),
-                                   "falta": faltas})
+    def pendiente(e, persona_id, faltas, cambio_de_pais=None):
+        fila = {"odoo_id": e["id"], "persona_id": persona_id,
+                "nombre": texto(e.get("name")), "falta": faltas}
+        if cambio_de_pais:
+            # A que pais y ciudad la pone Odoo (seccion 130, decision 4):
+            # con esto la pantalla ofrece pasarla.
+            fila["cambio_de_pais"] = cambio_de_pais
+        plan["pendientes"].append(fila)
 
     def banco(e, grupo):
         """Lo bancario que dice Odoo, o None si no se toca. Cuenta a
@@ -566,9 +571,15 @@ def planear(empleados: list, personas: list, plazas: dict,
             continue
         if persona.get("pais_id") and persona["pais_id"] != pais["id"]:
             # Una persona no cambia de pais sola (seccion 121), como la
-            # unidad: el cambio lo decide alguien.
+            # unidad: el cambio lo decide alguien. Desde la seccion 130 el
+            # pendiente trae a donde la pone Odoo, y la pantalla la pasa.
             pendiente(e, persona["id"], [f"en Odoo es de «{pais['nombre']}» y "
-                                         "en Centauro es de otro pais"])
+                                         "en Centauro es de otro pais"],
+                      cambio_de_pais={
+                          "a_pais_id": pais["id"], "a_pais": pais["nombre"],
+                          "plaza_id": plaza["id"] if plaza is not None else None,
+                          "plaza": (plaza["nombre"] if plaza is not None
+                                    else (lugar or None))})
             continue
 
         valores, que, avisos = {}, [], []
@@ -665,11 +676,20 @@ def planear(empleados: list, personas: list, plazas: dict,
 
 def clasificar_salidas(revisar: list, estados: dict) -> tuple:
     """(bajas, pendientes). `estados`: lo que dice Odoo de cada una,
-    leido con los archivados incluidos."""
+    leido con los archivados incluidos.
+
+    Solo el archivado explicito en Odoo da de baja (seccion 130, decision
+    3). Lo que Odoo no devolvio ni entre los archivados --la conexion dejo
+    de verlo, o lo borraron de verdad-- queda pendiente: antes se tomaba
+    por borrado y se daba de baja con su acceso."""
     bajas, pendientes = [], []
     for p in revisar:
         f = estados.get(p["odoo_id"])
-        if f is not None and f.get("active", True) is not False:
+        if f is None:
+            pendientes.append({"odoo_id": p["odoo_id"], "persona_id": p["id"],
+                               "nombre": p.get("nombre"),
+                               "falta": [NO_ENCONTRADO]})
+        elif f.get("active", True) is not False:
             pendientes.append({"odoo_id": p["odoo_id"], "persona_id": p["id"],
                                "nombre": p.get("nombre"),
                                "falta": ["ya no tiene puesto de seguridad "
@@ -677,6 +697,5 @@ def clasificar_salidas(revisar: list, estados: dict) -> tuple:
         else:
             bajas.append({"odoo_id": p["odoo_id"], "persona_id": p["id"],
                           "nombre": p.get("nombre"),
-                          "motivo": ("archivado en Odoo" if f is not None
-                                     else "ya no esta en Odoo")})
+                          "motivo": "archivado en Odoo"})
     return bajas, pendientes

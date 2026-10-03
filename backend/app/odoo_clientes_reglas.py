@@ -27,6 +27,7 @@ Las decisiones que viven aqui:
 import collections
 import re
 
+from app.odoo_pais import NO_ENCONTRADO
 from app.odoo_personal_reglas import corto, nombre_de, normal, texto
 
 # La razon social no es parte del nombre: con ella o sin ella es la
@@ -96,18 +97,25 @@ def planear(partners: list, clientes: list, paises: dict) -> dict:
 
     plan = {"leidos": len(partners), "altas": [], "vinculos": [],
             "cambios": [], "pendientes": [], "sin_rfc": [], "por_rfc": [],
-            "sin_cambio": 0, "procesados": [], "revisar_salida": []}
+            "sin_cambio": 0, "procesados": [], "revisar_salida": [],
+            # Cuantos de cada pais (por su id), para el freno por pais
+            # (seccion 130).
+            "por_pais_id": {}}
     tomados = set()        # clientes de Centauro que este plan ya ligo
 
-    def pendiente(p, cliente_id, faltas):
-        plan["pendientes"].append({"odoo_id": p["id"], "cliente_id": cliente_id,
-                                   "nombre": texto(p.get("name")),
-                                   "falta": faltas})
+    def pendiente(p, cliente_id, faltas, cambio_de_pais=None):
+        fila = {"odoo_id": p["id"], "cliente_id": cliente_id,
+                "nombre": texto(p.get("name")), "falta": faltas}
+        if cambio_de_pais:
+            fila["cambio_de_pais"] = cambio_de_pais
+        plan["pendientes"].append(fila)
 
     for p in partners:
         nombre = corto(p.get("name"), 160)
         rfc = rfc_de(p)[:30]
         pais, escrito, del_rfc = pais_de(p, paises)
+        if pais is not None:
+            plan["por_pais_id"][pais["id"]] = plan["por_pais_id"].get(pais["id"], 0) + 1
 
         cliente = por_odoo.get(p["id"])
         # El que se ligo a mano en el ensayo trae su No. Odoo pero nunca
@@ -155,8 +163,16 @@ def planear(partners: list, clientes: list, paises: dict) -> dict:
             valores["rfc"] = rfc
             que.append("rfc")
         if pais is not None and pais["id"] != cliente.get("pais_id"):
-            valores["pais_id"] = pais["id"]
-            que.append("pais")
+            # El cliente que Odoo pasa a otro pais no cambia solo (seccion
+            # 130, decision 4): se llevaria sus cotizaciones y servicios
+            # al otro pais. Queda pendiente, con el boton para pasarlo.
+            pendiente(p, cliente["id"],
+                      [f"en Odoo es de «{pais['nombre']}» y en Centauro es "
+                       "de otro pais"],
+                      cambio_de_pais={"a_pais_id": pais["id"],
+                                      "a_pais": pais["nombre"]})
+            plan["procesados"].append(cliente["id"])
+            continue
         if vinculo:
             plan["vinculos"].append({"cliente_id": cliente["id"],
                                      "odoo_id": p["id"],
@@ -200,9 +216,14 @@ def clasificar_salidas(revisar: list, estados: dict) -> tuple:
                                "nombre": c.get("nombre"),
                                "falta": ["ya no trae la etiqueta de "
                                          "Proteccion Ejecutiva en Odoo"]})
+        elif f is None:
+            # Lo que Odoo no devolvio ni entre los archivados no es baja
+            # (seccion 130, decision 3): queda pendiente.
+            pendientes.append({"odoo_id": c["odoo_id"], "cliente_id": c["id"],
+                               "nombre": c.get("nombre"),
+                               "falta": [NO_ENCONTRADO]})
         else:
             bajas.append({"odoo_id": c["odoo_id"], "cliente_id": c["id"],
                           "nombre": c.get("nombre"),
-                          "motivo": ("archivado en Odoo" if f is not None
-                                     else "ya no esta en Odoo")})
+                          "motivo": "archivado en Odoo"})
     return bajas, pendientes

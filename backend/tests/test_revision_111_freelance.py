@@ -551,7 +551,9 @@ def test_el_de_emergencia_que_repite_tiene_quince_dias(
     assert r.status_code == 200, r.text
     db.expire_all()
     ficha = db.query(m.Freelance).filter_by(persona_id=persona_id).one()
-    assert ficha.plazo_programado == manana(30) + timedelta(days=15)
+    # Quince dias desde el ultimo dia del servicio que se le asigna
+    # (seccion 132, decision 7): el segundo, no el primero.
+    assert ficha.plazo_programado == manana(35) + timedelta(days=15)
     # Recursos Humanos se entero.
     aviso = (db.query(m.Notificacion)
              .filter(m.Notificacion.correo == "rrhh@centauro.lat")

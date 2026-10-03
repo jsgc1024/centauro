@@ -757,6 +757,18 @@ class Freelance(Base):
         DateTime(timezone=True), nullable=True)
     # El aviso a Recursos Humanos del dia que vence el plazo: uno solo.
     plazo_avisado_en: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # El freelance que Centauro contrata de planta (seccion 132, decision
+    # 6 de Salvador): RH lo pasa a planta y la ficha se cierra como
+    # historia --cuando y quien--; la persona sigue, ya sin la marca de
+    # freelance, y la lectura de Odoo la toma por su correo.
+    planta_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    planta_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("persona.id"), nullable=True)
+    # Al reves: quien se fue de Odoo y vuelve como freelance con su mismo
+    # correo sigue con su misma persona; aqui queda el empleado de Odoo
+    # que fue, para que la historia no se pierda.
+    odoo_id_anterior: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     persona: Mapped["Persona"] = relationship(foreign_keys=[persona_id])
 
@@ -2323,6 +2335,13 @@ class Notificacion(Base):
     # crece con cada intento (correo.ESPERAS_MINUTOS). Vacio: en la
     # siguiente vuelta.
     reintentar_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # El archivo que viaja con el correo (seccion 131, decision 16 de
+    # Salvador): el PDF de la cotizacion que otro mando con la firma del
+    # titular. Se guarda la referencia, no otra copia: el PDF ya esta
+    # en `archivo_cotizacion` tal como salio.
+    adjunto_id: Mapped[int | None] = mapped_column(
+        ForeignKey("archivo_cotizacion.id", ondelete="SET NULL"),
+        nullable=True)
 
     servicio: Mapped[Servicio | None] = relationship()
 

@@ -1103,6 +1103,19 @@ def que_le_falta(db: Session, cot: m.Cotizacion,
         elif not especial_vigente(cot, calc):
             faltan.append("El visto bueno de dirección de operaciones al "
                           "precio especial")
+    # Lo de Catalogos sin lo que no se manda (seccion 130, decision 15):
+    # la tasa si va con IVA, y el texto de aceptacion del pais en el
+    # idioma del PDF, que es lo que el cliente firma.
+    if cot.pais_id:
+        datos = cc.datos_del_pais(db, cot.pais_id)
+        if cot.con_iva is not False and (datos is None or datos.tasa_iva is None):
+            faltan.append("La tasa de IVA del país, en Catálogos → Propuesta "
+                          "al cliente")
+        idioma = cot.idioma or "es"
+        if not _texto(db, cot.pais_id, "pro_aceptacion", idioma).strip():
+            faltan.append("El texto de aceptación del país en "
+                          f"{cc.NOMBRE_IDIOMA.get(idioma, idioma)}, en "
+                          "Catálogos → Propuesta al cliente")
     return faltan
 
 
@@ -1135,15 +1148,18 @@ def enviar(db: Session, actor: m.Usuario, cot: m.Cotizacion) -> m.Cotizacion:
     cot.actualizada_en = cot.enviada_en
     db.flush()
     contenido = propuesta_pdf.pdf(db, cot)
-    cot.archivos.append(m.ArchivoCotizacion(
+    pdf = m.ArchivoCotizacion(
         clase="pdf", nombre=propuesta_pdf.nombre_del_archivo(db, cot),
         tipo="application/pdf", tamano=len(contenido), contenido=contenido,
-        subido_por_id=actor.persona_id))
+        subido_por_id=actor.persona_id)
+    cot.archivos.append(pdf)
     for vieja in cc.versiones(db, cot.folio, cot.clase):
         if vieja.id != cot.id and vieja.estatus in (E.BORRADOR, E.ENVIADA,
                                                     E.VENCIDA):
             vieja.estatus = E.SUSTITUIDA
     db.flush()
+    # El titular se entera si la mando otro (seccion 131, decision 16).
+    cc.avisar_al_titular(db, actor, cot, pdf)
     return cot
 
 
@@ -1449,6 +1465,40 @@ def autorizar(db: Session, actor: m.Usuario, cot: m.Cotizacion,
     if not cot.plaza_id:
         raise HTTPException(400, "Falta la ciudad donde opera.")
 
+    servicio = _nacer_implantado(db, actor, cot, cliente)
+
+    cot.cliente_id = cliente.id
+    cot.servicio_id = servicio.id
+    cot.servicio = servicio
+    motor._autorizar(db, cot, quien, autorizada_el, None)
+    for otra in cc.versiones(db, cot.folio, cot.clase):
+        otra.servicio_folio = servicio.folio
+        if otra.id == cot.id:
+            continue
+        otra.servicio_id = servicio.id
+        otra.cliente_id = cliente.id
+        if otra.estatus in (E.BORRADOR, E.ENVIADA, E.VENCIDA):
+            otra.estatus = E.SUSTITUIDA
+    if comprobante:
+        nombre, tipo, contenido = comprobante
+        cot.archivos.append(m.ArchivoCotizacion(
+            clase="comprobante", nombre=nombre, tipo=tipo,
+            tamano=len(contenido), contenido=contenido,
+            subido_por_id=actor.persona_id))
+    db.flush()
+    auditoria.registrar(db, actor, servicio, "alta desde la propuesta",
+                        f"{nombre_de(cot)} · autorizada por {quien} el "
+                        f"{autorizada_el:%d/%m/%Y}")
+    return servicio
+
+
+def _nacer_implantado(db: Session, actor: m.Usuario, cot: m.Cotizacion,
+                      cliente: m.Cliente) -> m.Servicio:
+    """El implantado que nace de la propuesta: cliente, quien la pidio, el
+    consultor, la ciudad y el trato --desde cuando y que dias--, con la
+    hora de presentacion. Le falta lo que una propuesta no dice."""
+    from app.routers import implantados as rutas
+
     calc = de_la_guardada(cot)
     suyo = (db.get(m.Solicitante, cot.solicitante_id)
             if cot.solicitante_id else None)
@@ -1474,29 +1524,40 @@ def autorizar(db: Session, actor: m.Usuario, cot: m.Cotizacion,
                .filter_by(servicio_id=servicio.id).first())
     if acuerdo is not None and cot.hora_presentacion:
         acuerdo.hora_presentacion = cot.hora_presentacion
+    return servicio
 
-    cot.cliente_id = cliente.id
+
+def recrear_implantado(db: Session, actor: m.Usuario,
+                       cot: m.Cotizacion) -> m.Servicio:
+    """«Volver a crear el implantado» (seccion 131, decision 2 de Salvador,
+    2 de octubre): la propuesta autorizada cuyo implantado se elimino
+    vuelve a hacerlo nacer con lo mismo que la primera vez --cliente,
+    trato, ciudad-- y la misma autorizacion; su primer mes se abre con los
+    terminos de la propuesta, como al autorizar. Lleva folio nuevo; el que
+    se elimino queda en su bitacora de eliminados. Antes se quedaba
+    atorada: ni otra version ni implantado."""
+    cc._del_servicio_eliminado(db, cot)
+    cliente = cot.cliente
+    if cliente is None or not cliente.activo:
+        raise HTTPException(409, "Su cliente ya no está activo en Connect.")
+    if not cliente.odoo_id:
+        raise HTTPException(400, {
+            "mensaje": f"{cliente.nombre} no viene de Odoo",
+            "que_hacer": "Para que vuelva a nacer, el cliente tiene que "
+                         "estar en Odoo: de ahí sale su factura."})
+    if not cot.plaza_id:
+        raise HTTPException(400, "Falta la ciudad donde opera.")
+    antes = cot.servicio_folio
+    servicio = _nacer_implantado(db, actor, cot, cliente)
     cot.servicio_id = servicio.id
     cot.servicio = servicio
-    motor._autorizar(db, cot, quien, autorizada_el, None)
     for otra in cc.versiones(db, cot.folio, cot.clase):
         otra.servicio_folio = servicio.folio
-        if otra.id == cot.id:
-            continue
         otra.servicio_id = servicio.id
-        otra.cliente_id = cliente.id
-        if otra.estatus in (E.BORRADOR, E.ENVIADA, E.VENCIDA):
-            otra.estatus = E.SUSTITUIDA
-    if comprobante:
-        nombre, tipo, contenido = comprobante
-        cot.archivos.append(m.ArchivoCotizacion(
-            clase="comprobante", nombre=nombre, tipo=tipo,
-            tamano=len(contenido), contenido=contenido,
-            subido_por_id=actor.persona_id))
     db.flush()
     auditoria.registrar(db, actor, servicio, "alta desde la propuesta",
-                        f"{nombre_de(cot)} · autorizada por {quien} el "
-                        f"{autorizada_el:%d/%m/%Y}")
+                        f"{nombre_de(cot)} · otra vez: su implantado {antes} "
+                        "se había eliminado")
     return servicio
 
 
@@ -1701,6 +1762,9 @@ def detalle(db: Session, cot: m.Cotizacion, usuario: m.Usuario) -> dict:
                         and cot.estatus in cc.SE_AUTORIZAN),
         "sale_otra": (puede_armar and es_ultima
                       and cot.estatus in cc.DE_ESTAS_SALE_OTRA),
+        # Su implantado se elimino (seccion 131): se vuelve a crear o se
+        # elimina la propuesta, como la cotizacion desde la 126.
+        "se_recrea": (puede_armar and es_ultima and cc.servicio_eliminado(cot)),
         "se_pide_especial": (puede_armar and es_ultima and borrador
                              and calc["especial"] and not vigente
                              and cot.especial_estatus != PEDIDO),
@@ -1712,6 +1776,11 @@ def detalle(db: Session, cot: m.Cotizacion, usuario: m.Usuario) -> dict:
                                         como_va) if borrador else []),
         "firma": cc.tiene_firma(db, cot.consultor_id),
         "hoy": _hoy(db, cot).isoformat(),
+        # Cuantos dias lleva pasado el inicio del trato (seccion 131,
+        # decision 11): el implantado que se autoriza o se vuelve a crear
+        # tarde nace con su primer mes atrasado. Se avisa y se deja seguir.
+        "dias_pasados": max(0, (_hoy(db, cot) - cot.inicio).days)
+                        if cot.inicio else 0,
         "versiones": [{
             "id": v.id, "version": v.version, "estatus": v.estatus.value,
             "motivo": v.motivo_recotizacion,

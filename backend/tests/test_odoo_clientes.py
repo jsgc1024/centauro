@@ -222,7 +222,9 @@ def test_lo_que_cambia_en_odoo_se_pone_al_dia(db):
 
 def test_la_baja_no_borra_y_lo_de_centauro_no_se_toca(db, cliente, sesion):
     propio = de_centauro(cliente, sesion, f"{PREFIJO} Brasil {uuid.uuid4().hex[:6]}")
-    odoo = OdooFalso(partner(1))
+    # Otro cliente de Mexico que se queda: si el pais leyera cero con sus
+    # clientes activos, la vuelta se detendria (seccion 130, decision 3).
+    odoo = OdooFalso(partner(1), partner(9))
     leer(db, odoo)
     odoo.archivar(1)
     informe = leer(db, odoo)
@@ -252,7 +254,7 @@ def test_lo_de_odoo_no_se_edita_en_centauro(db, cliente, sesion):
 
 def test_el_que_pierde_la_etiqueta_no_se_da_de_baja(db):
     """Quitarle la etiqueta puede ser un descuido: se dice, no se apaga."""
-    odoo = OdooFalso(partner(1))
+    odoo = OdooFalso(partner(1), partner(9))
     leer(db, odoo)
     odoo.cambiar(1, category_id=[GPS])
     informe = leer(db, odoo)

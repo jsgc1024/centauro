@@ -195,7 +195,7 @@ def imagenes_pegadas(html: str) -> tuple[str, list]:
 
 
 def entregar(destino: str, asunto: str, cuerpo: str,
-             html: str | None = None) -> None:
+             html: str | None = None, adjuntos: list | None = None) -> None:
     """La unica funcion que sabe de SMTP. Revienta si no pudo.
 
     Lo que revienta aqui lo atrapa `despachar` y lo guarda en el aviso:
@@ -204,7 +204,9 @@ def entregar(destino: str, asunto: str, cuerpo: str,
 
     Las dos versiones van en el mismo mensaje y el buzon elige: el texto
     primero, el HTML como alternativa. Asi el que bloquea HTML lee el
-    aviso completo en vez de un mensaje vacio.
+    aviso completo en vez de un mensaje vacio. `adjuntos`: [(nombre,
+    tipo, contenido)], los archivos que viajan con el correo (seccion
+    131): el PDF de la cotizacion que otro mando con la firma del titular.
     """
     mensaje = EmailMessage()
     mensaje["From"] = settings.correo_de
@@ -227,6 +229,11 @@ def entregar(destino: str, asunto: str, cuerpo: str,
             parte_html.add_related(datos, maintype=principal,
                                    subtype=secundario, cid=cid,
                                    disposition="inline")
+    for nombre, tipo, contenido in adjuntos or []:
+        principal, _, secundario = (tipo or "application/octet-stream").partition("/")
+        mensaje.add_attachment(contenido, maintype=principal,
+                               subtype=secundario or "octet-stream",
+                               filename=nombre)
 
     if por_microsoft():
         _por_microsoft(mensaje)
@@ -503,7 +510,12 @@ def despachar(db: Session, limite: int = POR_VUELTA, solo=None) -> dict:
             aviso.intentos = (aviso.intentos or 0) + 1
             try:
                 texto, html = versiones(db, aviso)
-                entregar(aviso.correo, aviso.asunto, texto, html)
+                adjuntos = adjuntos_de(db, aviso)
+                if adjuntos:
+                    entregar(aviso.correo, aviso.asunto, texto, html,
+                             adjuntos=adjuntos)
+                else:
+                    entregar(aviso.correo, aviso.asunto, texto, html)
                 aviso.estado = "enviada"
                 aviso.salio_en = datetime.now()
                 aviso.ultimo_error = None
@@ -522,6 +534,17 @@ def despachar(db: Session, limite: int = POR_VUELTA, solo=None) -> dict:
             "pendientes": db.query(m.Notificacion)
                             .filter(m.Notificacion.estado == "pendiente")
                             .count()}
+
+
+def adjuntos_de(db: Session, aviso: m.Notificacion) -> list:
+    """Los archivos que viajan con el aviso (seccion 131): el PDF de la
+    cotizacion, tal como salio. Si ya no esta, el correo sale sin el."""
+    if not aviso.adjunto_id:
+        return []
+    archivo = db.get(m.ArchivoCotizacion, aviso.adjunto_id)
+    if archivo is None:
+        return []
+    return [(archivo.nombre, archivo.tipo, archivo.contenido)]
 
 
 def _anotar_falla(aviso: m.Notificacion, falla: Exception) -> bool:

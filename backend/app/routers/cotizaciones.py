@@ -194,6 +194,19 @@ def nueva_version(cotizacion_id: int, db: Session = Depends(get_db),
     return motor.detalle(db, nueva, True)
 
 
+@router.post("/eventual/{cotizacion_id}/descartar",
+             summary="Descartar este borrador")
+def descartar(cotizacion_id: int, db: Session = Depends(get_db),
+              usuario: m.Usuario = Depends(ARMAR)):
+    """El borrador abierto por error (seccion 131, decision 1): la version
+    2 o siguiente se borra y la anterior vuelve a ser la ultima; la
+    version 1 que nunca se mando se elimina con registro y su folio no se
+    vuelve a usar."""
+    hecho = motor.descartar(db, usuario, _de(db, cotizacion_id))
+    db.commit()
+    return hecho
+
+
 @router.post("/eventual/{cotizacion_id}/rechazar",
              summary="El cliente dijo que no")
 def rechazar(cotizacion_id: int, cuerpo: RechazoIn,

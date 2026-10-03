@@ -83,11 +83,19 @@ function puede(que) {
   return (ACTIVIDAD[que] || []).some(a => tiene(sesion.usuario, a));
 }
 
-export async function pantallaNomina(main) {
+export async function pantallaNomina(main, abrir = null) {
   const cat = await catalogos();
   const hoy = new Date();
   if (!periodoActual) {
     periodoActual = { anio: hoy.getFullYear(), mes: hoy.getMonth() + 1 };
+  }
+  /* Abierta desde el panel de direccion con el corte de comisiones de
+     un pais y un mes (seccion 131): «comisiones/1/2026-09». */
+  const pedido = abrir && abrir.match(/^comisiones\/(\d+)\/(\d{4})-(\d{1,2})$/);
+  if (pedido) {
+    pestanaActual = "comisiones";
+    paisActual = Number(pedido[1]);
+    periodoActual = { anio: Number(pedido[2]), mes: Number(pedido[3]) };
   }
   /* El pais de quien mira. Abria en el primero del catalogo, que sale
      por nombre: al de Mexico le abria Brasil. */

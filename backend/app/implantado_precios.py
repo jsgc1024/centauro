@@ -20,6 +20,16 @@ El dia adicional lleva el precio del dia: la lista no tiene otro. El
 precio fijo por mes no sale de aqui --la lista no trae precio por mes--;
 se dice cuanto seria a precios de la lista, de referencia.
 
+Salvo que la lista cobre por mes (seccion 130, decision 12 de Salvador):
+el paquete de Amazon Brasil viene de Odoo por «Mes», y la propuesta ya lo
+leia asi (seccion 123). Ahora el alta directa lo lee igual: el mes nace
+con el esquema de mes completo y el mensual de la lista --el de cada
+puesto, cada paquete y cada unidad, tal cual--, el dia adicional es el
+mensual de las personas entre los dias de la modalidad, y la hora extra la
+del paquete. Antes el mes de Amazon Brasil nacia sin precios, «Usar los de
+la lista» borraba la hora extra escrita a mano, y la prefactura tomaba el
+producto del dia y no el del paquete.
+
 Si el cliente no tiene lista de implantados, sale de su lista de siempre,
 y se dice. En 12x36 trabaja una de las dos personas cada dia: se cobra
 una. Lo que la lista no tiene no se adivina: se dice, y ese precio se
@@ -30,7 +40,7 @@ en dolares deja el mes en dolares, con el tipo de cambio que esta puesto
 cuando se abre --como el de una cotizacion autorizada--. Solo la lista en
 una moneda que Centauro no sabe convertir se queda sin propuesta.
 """
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy.orm import Session
 
@@ -56,6 +66,8 @@ NOMBRES = {"precio_dia_personal": "personal por dia",
            "precio_dia_adicional": "dia adicional",
            "precio_mes_vehiculo": "vehiculo al mes",
            "precio_hora_extra": "hora extra",
+           "precio_mes_completo": "mensual",
+           "esquema": "esquema",
            "moneda": "moneda"}
 
 
@@ -124,7 +136,11 @@ def de_la_lista(db: Session, contrato: m.ContratoImplantado) -> dict:
     salida = {"lista": None, "motivo": None, "renglones": [], "faltan": [],
               "terminos": dict.fromkeys(CAMPOS), "completa": False,
               "dias_base": contrato.dias_base, "mes_completo": None,
-              "moneda_local": None}
+              "moneda_local": None,
+              # Si la lista cobra por mes (seccion 130): el mes va con el
+              # esquema de mes completo y estos terminos.
+              "por_mes": False, "precio_mes_completo": None,
+              "dias_del_mensual": None}
     servicio = contrato.servicio
     local = tipo_cambio.local_del_pais(db, servicio.pais_id)
     salida["moneda_local"] = local.value if local else None
@@ -145,11 +161,28 @@ def de_la_lista(db: Session, contrato: m.ContratoImplantado) -> dict:
 
     modalidad = modalidad_de_la_lista(db, contrato)
     modalidad_id = modalidad.id if modalidad else contrato.modalidad_id
+    # La modalidad con la que la lista guarda lo que cobra al mes (seccion
+    # 123): la del implantado del pais. Con un precio ahi, ese renglon va
+    # por mes (seccion 130, decision 12), como en la propuesta.
+    from app import propuesta as motor_propuesta
+    mensual = motor_propuesta.mensual_del_pais(db, servicio.pais_id)
+    # Los dias que cubre el mensual: los de la modalidad del mes (22, 26 o
+    # 30), como en la propuesta; sin esquema, los dias base del mes.
+    base = motor.DIAS_DEL_MENSUAL.get(contrato.dias_servicio) or contrato.dias_base
     paquetes = cot.paquetes_del_tarifario(db, lista.id, modalidad_id)
+    paquetes_mes = (cot.paquetes_del_tarifario(db, lista.id, mensual.id)
+                    if mensual is not None else [])
     renglones, faltan = salida["renglones"], salida["faltan"]
     en_paquete = set()
     dia, hora_extra = CERO, CERO
     dia_completo, con_hora_extra = True, False
+    por_mes = False
+
+    def al_mes(precio_dia):
+        return (precio_dia * base).quantize(CENTAVO)
+
+    def al_dia(precio_mes):
+        return (precio_mes / base).quantize(CENTAVO, rounding=ROUND_HALF_UP)
 
     for fila in del_dia(db, contrato):
         quien = fila.persona.nombre if fila.persona else None
@@ -159,36 +192,64 @@ def de_la_lista(db: Session, contrato: m.ContratoImplantado) -> dict:
             continue
         rol = fila.rol.nombre if fila.rol else None
         unidad = _unidad_de(db, contrato, fila)
-        paquete = None
+        paquete, con = None, modalidad
         if unidad is not None and unidad.id not in en_paquete:
-            paquete = next((p for p in paquetes if p.perfil_id == fila.rol_id
+            # El del mes primero; si la lista trae los dos, el del mes.
+            paquete = next((p for p in paquetes_mes if p.perfil_id == fila.rol_id
                             and p.categoria_id == unidad.categoria_id), None)
-        extra = _d(motor_cierre._precio_hora_extra(db, lista.id, fila.rol_id,
-                                                   modalidad))
+            if paquete is not None:
+                con = mensual
+            else:
+                paquete = next((p for p in paquetes if p.perfil_id == fila.rol_id
+                                and p.categoria_id == unidad.categoria_id), None)
         if paquete is not None:
             en_paquete.add(unidad.id)
+            es_mes = con is mensual
             precio = _d(paquete.precio)
+            extra = _d(motor_cierre._precio_hora_extra(db, lista.id, fila.rol_id,
+                                                       con))
             renglones.append({"tipo": "paquete", "quien": quien, "rol": rol,
                               # De que rol y que unidad: con ellos sale el
                               # producto de Odoo de la factura (seccion 117).
                               "perfil_id": fila.rol_id,
                               "categoria_id": unidad.categoria_id,
                               "unidad": unidad.categoria.nombre,
-                              "placa": unidad.placa, "precio_dia": precio,
+                              "placa": unidad.placa,
+                              "precio_dia": al_dia(precio) if es_mes else precio,
+                              "precio_mes": precio if es_mes else al_mes(precio),
+                              "por_mes": es_mes,
                               "precio_hora_extra": extra})
+            por_mes = por_mes or es_mes
+            precio_dia = al_dia(precio) if es_mes else precio
         else:
-            tarifa = (db.query(m.TarifaRecurso)
-                      .filter_by(tarifario_id=lista.id, perfil_id=fila.rol_id,
-                                 modalidad_id=modalidad_id).first())
+            tarifa, con = None, modalidad
+            if mensual is not None:
+                tarifa = (db.query(m.TarifaRecurso)
+                          .filter_by(tarifario_id=lista.id, perfil_id=fila.rol_id,
+                                     modalidad_id=mensual.id).first())
+                if tarifa is not None:
+                    con = mensual
+            if tarifa is None:
+                tarifa = (db.query(m.TarifaRecurso)
+                          .filter_by(tarifario_id=lista.id, perfil_id=fila.rol_id,
+                                     modalidad_id=modalidad_id).first())
             if tarifa is None:
                 faltan.append({"que": "rol", "quien": quien, "descripcion": rol})
                 dia_completo = False
                 continue
+            es_mes = con is mensual
             precio = _d(tarifa.precio)
+            extra = _d(motor_cierre._precio_hora_extra(db, lista.id, fila.rol_id,
+                                                       con))
             renglones.append({"tipo": "recurso", "quien": quien, "rol": rol,
                               "perfil_id": fila.rol_id,
-                              "precio_dia": precio, "precio_hora_extra": extra})
-        dia += precio
+                              "precio_dia": al_dia(precio) if es_mes else precio,
+                              "precio_mes": precio if es_mes else al_mes(precio),
+                              "por_mes": es_mes,
+                              "precio_hora_extra": extra})
+            por_mes = por_mes or es_mes
+            precio_dia = al_dia(precio) if es_mes else precio
+        dia += precio_dia
         if extra:
             hora_extra += extra
             con_hora_extra = True
@@ -201,20 +262,31 @@ def de_la_lista(db: Session, contrato: m.ContratoImplantado) -> dict:
             renglones.append({"tipo": "unidad_en_paquete", "placa": v.placa,
                               "unidad": v.categoria.nombre})
             continue
-        tarifa = (db.query(m.TarifaVehiculo)
-                  .filter_by(tarifario_id=lista.id, categoria_id=v.categoria_id,
-                             modalidad_id=modalidad_id).first())
+        tarifa, es_mes = None, False
+        if mensual is not None:
+            tarifa = (db.query(m.TarifaVehiculo)
+                      .filter_by(tarifario_id=lista.id, categoria_id=v.categoria_id,
+                                 modalidad_id=mensual.id).first())
+            es_mes = tarifa is not None
+        if tarifa is None:
+            tarifa = (db.query(m.TarifaVehiculo)
+                      .filter_by(tarifario_id=lista.id, categoria_id=v.categoria_id,
+                                 modalidad_id=modalidad_id).first())
         if tarifa is None:
             faltan.append({"que": "unidad", "quien": v.placa,
                            "descripcion": v.categoria.nombre})
             unidades_completas = False
             continue
         precio = _d(tarifa.precio)
-        mes = (precio * contrato.dias_base).quantize(CENTAVO)
+        mes = precio if es_mes else (precio * contrato.dias_base).quantize(CENTAVO)
         renglones.append({"tipo": "unidad", "placa": v.placa,
                           "categoria_id": v.categoria_id,
-                          "unidad": v.categoria.nombre, "precio_dia": precio,
-                          "dias": contrato.dias_base, "precio_mes": mes})
+                          "unidad": v.categoria.nombre,
+                          "precio_dia": None if es_mes else precio,
+                          "por_mes": es_mes,
+                          "dias": None if es_mes else contrato.dias_base,
+                          "precio_mes": mes})
+        por_mes = por_mes or es_mes
         vehiculo_mes += mes
 
     # Lo que falta se queda sin precio: una suma a medias cobraria de menos
@@ -228,9 +300,19 @@ def de_la_lista(db: Session, contrato: m.ContratoImplantado) -> dict:
         "precio_hora_extra": hora_extra if con_hora_extra else None,
     }
     salida["completa"] = bool(dia_completo and unidades_completas and personal)
+    salida["por_mes"] = por_mes
     if salida["completa"]:
-        salida["mes_completo"] = (personal * contrato.dias_base
-                                  + (unidades or CERO)).quantize(CENTAVO)
+        if por_mes:
+            # El mes completo es la suma de los mensuales, tal cual: el de
+            # cada persona o paquete y el de cada unidad.
+            de_personas = sum((r["precio_mes"] for r in renglones
+                               if r["tipo"] in ("recurso", "paquete")), CERO)
+            salida["mes_completo"] = (de_personas + (unidades or CERO)).quantize(CENTAVO)
+            salida["precio_mes_completo"] = salida["mes_completo"]
+            salida["dias_del_mensual"] = base
+        else:
+            salida["mes_completo"] = (personal * contrato.dias_base
+                                      + (unidades or CERO)).quantize(CENTAVO)
     return salida
 
 
@@ -241,9 +323,19 @@ def diferencias(contrato: m.ContratoImplantado, propuesta: dict) -> list[dict]:
     extra: lo demas no se usa."""
     if propuesta["lista"] is None or propuesta["motivo"]:
         return []
-    campos = (CAMPOS if contrato.esquema == m.EsquemaCotizacionImplantado.POR_DIA
-              else ("precio_hora_extra",))
+    if propuesta.get("por_mes"):
+        # La lista cobra por mes (seccion 130): lo que cuenta es el
+        # mensual, el dia adicional y la hora extra; el esquema tambien.
+        campos = ("precio_mes_completo", "precio_dia_adicional",
+                  "precio_hora_extra")
+    else:
+        campos = (CAMPOS if contrato.esquema == m.EsquemaCotizacionImplantado.POR_DIA
+                  else ("precio_hora_extra",))
     salida = []
+    if (propuesta.get("por_mes") and propuesta["completa"]
+            and contrato.esquema != m.EsquemaCotizacionImplantado.MES_COMPLETO):
+        salida.append({"campo": "esquema", "mes": contrato.esquema.value,
+                       "lista": m.EsquemaCotizacionImplantado.MES_COMPLETO.value})
     # Unos precios en pesos no son los de una lista en dolares aunque
     # digan el mismo numero (seccion 82).
     moneda_mes = contrato.moneda.value if contrato.moneda else propuesta.get(
@@ -252,7 +344,8 @@ def diferencias(contrato: m.ContratoImplantado, propuesta: dict) -> list[dict]:
         salida.append({"campo": "moneda", "mes": moneda_mes,
                        "lista": propuesta["lista"]["moneda"]})
     for campo in campos:
-        lista = propuesta["terminos"][campo]
+        lista = (propuesta["precio_mes_completo"] if campo == "precio_mes_completo"
+                 else propuesta["terminos"][campo])
         if lista is None and campo != "precio_hora_extra":
             continue
         mes = _d(getattr(contrato, campo))
@@ -264,7 +357,10 @@ def diferencias(contrato: m.ContratoImplantado, propuesta: dict) -> list[dict]:
 def sigue_la_lista(contrato: m.ContratoImplantado, propuesta: dict) -> bool:
     """Si el mes va con la lista: cobrado por dia, con todo lo de la lista
     y sin nada distinto."""
-    return (contrato.esquema == m.EsquemaCotizacionImplantado.POR_DIA
+    esquema = (m.EsquemaCotizacionImplantado.MES_COMPLETO
+               if propuesta.get("por_mes")
+               else m.EsquemaCotizacionImplantado.POR_DIA)
+    return (contrato.esquema == esquema
             and propuesta["completa"]
             and not diferencias(contrato, propuesta))
 
@@ -302,6 +398,20 @@ def aplicar(contrato: m.ContratoImplantado, propuesta: dict) -> list[str]:
         if antes != nuevo:
             cambios.append(f"{campo}: {antes} -> {nuevo}")
             setattr(contrato, campo, nuevo)
+    if propuesta.get("por_mes") and propuesta["completa"]:
+        # La lista cobra por mes (seccion 130, decision 12): el mes va con
+        # el esquema de mes completo, el mensual de la lista y los dias
+        # que cubre, como el que nace de una propuesta.
+        if contrato.esquema != m.EsquemaCotizacionImplantado.MES_COMPLETO:
+            cambios.append(f"esquema: {contrato.esquema.value} -> mes_completo")
+            contrato.esquema = m.EsquemaCotizacionImplantado.MES_COMPLETO
+        for campo, nuevo in (("precio_mes_completo", propuesta["precio_mes_completo"]),
+                             ("dias_del_mensual", propuesta["dias_del_mensual"])):
+            antes = getattr(contrato, campo)
+            antes = _d(antes) if campo == "precio_mes_completo" else antes
+            if antes != nuevo:
+                cambios.append(f"{campo}: {antes} -> {nuevo}")
+                setattr(contrato, campo, nuevo)
     contrato.precios_de_la_lista = sigue_la_lista(contrato, propuesta)
     return cambios
 

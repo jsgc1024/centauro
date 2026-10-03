@@ -26,7 +26,8 @@ from sqlalchemy.orm import Session
 
 from app import models as m
 from app import (odoo, odoo_api, odoo_clientes, odoo_facturacion, odoo_flota,
-                 odoo_oficina, odoo_personal, odoo_tarifarios, schemas as s)
+                 odoo_oficina, odoo_pais, odoo_personal, odoo_tarifarios,
+                 schemas as s)
 from app.auth import puede, requiere
 from app.config import settings
 from app.db import get_db
@@ -122,13 +123,16 @@ LECTURAS_EN_PANTALLA = 10
 def _renglon(fila, nombres: dict) -> dict | None:
     if fila is None:
         return None
+    # La vuelta que se detuvo por el freno de un pais (seccion 130) lo
+    # dice en su renglon; su detalle es chico y trae solo eso.
+    detenida = bool(fila.detalle and fila.detalle.startswith('{"detenida": true'))
     return {"id": fila.id, "tipo": fila.tipo,
             "hecha_en": fila.hecha_en.isoformat() if fila.hecha_en else None,
             "automatica": fila.automatica,
             "hecha_por": nombres.get(fila.hecha_por_id),
             "leidos": fila.leidos, "altas": fila.altas,
             "cambios": fila.cambios, "bajas": fila.bajas,
-            "pendientes": fila.pendientes}
+            "pendientes": fila.pendientes, "detenida": detenida}
 
 
 @router.get("/estado",
@@ -187,6 +191,20 @@ def personal_sincronizar(db: Session = Depends(get_db),
     """Lo mismo que el ensayo, guardado. La primera vez se hace a mano,
     despues de ver el ensayo; de ahi en adelante se lee solo cada hora."""
     return _leer(odoo_personal, db, False, usuario)
+
+
+# ------------------------------------------------ el cambio de pais (seccion 130)
+
+@router.post("/pasar-de-pais",
+             summary="Pasar a otro pais a quien Odoo ya puso alla")
+def pasar_de_pais(datos: s.PasarDePaisIn, db: Session = Depends(get_db),
+                  usuario: m.Usuario = Depends(ADMINISTRA_ODOO)):
+    """La persona, la unidad o el cliente que en Odoo ya es de otro pais y
+    aqui quedo pendiente (decision 4 de Salvador, 2 de octubre): se pasa
+    desde Pendientes, solo sin dias asignados por delante. Lo que ya
+    trabajo se queda en su pais de antes; la siguiente lectura lo toma."""
+    return odoo_pais.cambiar(db, usuario, datos.tipo, datos.id, datos.pais_id,
+                             datos.plaza_id, datos.plaza)
 
 
 # ------------------------------------------------ la flota, leida de Odoo

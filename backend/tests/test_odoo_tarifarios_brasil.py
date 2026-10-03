@@ -800,6 +800,16 @@ def test_la_propuesta_de_amazon_brasil(db, filtros, de_brasil, cliente, sesion,
                           json=_propuesta(db, amazon, datos))
     assert creada.status_code == 201, creada.text
     pid = creada.json()["id"]
+    # Sin el texto de aceptacion de Brasil en portugues no se manda
+    # (seccion 130, decision 15): se captura en Catalogos y entonces si.
+    sin_texto = cliente.post(f"/cotizaciones/propuesta/{pid}/enviar", headers=h)
+    assert sin_texto.status_code == 400, sin_texto.text
+    assert any("aceptación" in f for f in sin_texto.json()["detail"]["faltan"])
+    brasil = db.query(m.Pais).filter_by(codigo="BR").one()
+    r = cliente.put(f"/cotizaciones/propuesta/textos/{brasil.id}",
+                    json={"textos": {"pro_aceptacion": {"pt": "Aceite por escrito."}}},
+                    headers=sesion("diroperaciones"))
+    assert r.status_code == 200, r.text
     enviada = cliente.post(f"/cotizaciones/propuesta/{pid}/enviar", headers=h)
     assert enviada.status_code == 200, enviada.text
     [p] = enviada.json()["posiciones"]

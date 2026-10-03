@@ -10,13 +10,13 @@ Los puestos que ya existen toman sus actividades: la central captura y
 publica, el supervisor de central (jefe de turno) confirma el nivel 4.
 
 Revision ID: c1a7e5d3b9f0
-Revises: b7d3e9a1c5f2
+Revises: d4e8f0a3b2c5
 """
 import sqlalchemy as sa
 from alembic import op
 
 revision = "c1a7e5d3b9f0"
-down_revision = "b7d3e9a1c5f2"
+down_revision = "d4e8f0a3b2c5"
 branch_labels = None
 depends_on = None
 

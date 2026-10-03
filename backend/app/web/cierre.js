@@ -507,7 +507,11 @@ export function tablaDeRenglones(cmp, moneda) {
             h("td", {}, nombre(r)),
             h("td", { clase: "der num" }, cuantos(r)),
             h("td", { clase: "der num" }, r.precio !== null && r.precio !== undefined
-              ? dinero(r.precio, moneda) : "—"),
+              ? dinero(r.precio, moneda) : "—",
+              /* El precio de la cotizacion y no el de hoy (seccion 131,
+                 decision 13): lo que la lista toma en gris. */
+              r.precio_cotizado
+                ? h("div", { clase: "chico gris" }, t("cie_r_precio_cotizado")) : ""),
             h("td", { clase: "der num" }, dinero(r.importe, moneda)))),
           gastos || "",
           h("tr", { clase: "total" },
@@ -696,6 +700,9 @@ export const CAMPO_DE_TERMINOS = {
   precio_dia_adicional: "cie_dia_adicional",
   precio_mes_vehiculo: "cie_vehiculo_al_mes",
   precio_hora_extra: "cie_hora_extra",
+  /* Con la lista que cobra por mes (seccion 130): el mensual y el esquema. */
+  precio_mes_completo: "cie_mes_completo",
+  esquema: "imp_lista_esquema",
   moneda: "imp_lista_moneda",
 };
 
@@ -703,10 +710,14 @@ export const CAMPO_DE_TERMINOS = {
    por dia: $2,900 (la lista, USD 100)». La moneda se dice como moneda
    (seccion 82), no como monto. */
 export function diferenciaConLaLista(montoMes, montoLista = montoMes) {
+  const esquema = (v) => t(v === "mes_completo" ? "imp_mes_completo" : "imp_por_dia");
   return (x) => x.campo === "moneda"
     ? reemplazar(t("imp_lista_dif_moneda"), { m: x.mes, l: x.lista })
-    : reemplazar(t("imp_lista_dif"), { c: t(CAMPO_DE_TERMINOS[x.campo]),
-                                       m: montoMes(x.mes), l: montoLista(x.lista) });
+    : x.campo === "esquema"
+      ? reemplazar(t("imp_lista_dif"), { c: t(CAMPO_DE_TERMINOS[x.campo]),
+                                         m: esquema(x.mes), l: esquema(x.lista) })
+      : reemplazar(t("imp_lista_dif"), { c: t(CAMPO_DE_TERMINOS[x.campo]),
+                                         m: montoMes(x.mes), l: montoLista(x.lista) });
 }
 
 /* Lo que ya dice el reloj de la tarjeta no se repite abajo. */
@@ -763,9 +774,11 @@ function botonJustificar(o, cierreId, recargar) {
   const zona = h("div", { style: "margin-top:4px" });
   const abrir = h("button", { clase: "claro chico", type: "button",
     onclick: () => {
+      /* data-crudo: es una frase, no un nombre. Sin el, «costo fijo
+         pactado con Amazon» se guardaba «Costo Fijo Pactado con Amazon». */
       const texto = entrada("justificacion", {
         placeholder: t("cie_justificar_ej"), maxlength: "500",
-        style: "max-width:320px" });
+        style: "max-width:320px", "data-crudo": "" });
       const mandar = h("button", { clase: "chico", type: "button",
         onclick: async (e) => {
           if (texto.value.trim().length < 15) {
@@ -822,7 +835,10 @@ function antesDeMandarlo(revision, fallo, viaticos, cierreId = null,
           return h("li", { style: "margin-bottom:6px" },
             h("b", { style: "color:var(--texto)" }, `${dicho.asunto}:`), " ",
             dicho.mensaje,
-            dicho.accion ? h("div", {}, dicho.accion) : "");
+            dicho.accion ? h("div", {}, dicho.accion) : "",
+            /* El aviso que se puede justificar sin que frene (seccion
+               131): el mes sin dias trabajados como costo fijo. */
+            o.justificable && justifica ? botonJustificar(o, cierreId, recargar) : "");
         }))));
   }
   return zona;
@@ -942,6 +958,14 @@ function paraRevisar(o) {
       return { asunto: t("cie_asu_sin_odoo"),
                mensaje: reemplazar(t("cie_sin_odoo_mensaje"), { c: d.cliente || "" }),
                accion: t("cie_sin_odoo_accion") };
+    /* El mes a precio fijo sin ningun dia trabajado (seccion 131,
+       decision 10): se manda en cero, o se justifica como costo fijo
+       pactado y se cobra el mensual. */
+    case "mes_sin_dias":
+      return { asunto: t("cie_asu_mes_sin_dias"),
+               mensaje: reemplazar(t("cie_msd_mensaje"),
+                                   { m: dinero(d.mensual, d.moneda || undefined) }),
+               accion: t("cie_msd_accion") };
     default:
       return { asunto: asunto(o.asunto), mensaje: o.mensaje || "" };
   }
@@ -1395,9 +1419,9 @@ async function cuerpo(c, op, recargar) {
                                            l: op.lugar || "" })));
     }
     const rev = revision && revision.x;
-    /* "Justificar" solo en el eventual (seccion 105): el mes del
-       implantado no compara contra una cotizacion. */
-    const justificaEn = op.esMes ? null : c.cierre_id;
+    /* "Justificar" en el eventual (seccion 105) y, desde la 131, en el
+       mes del implantado sin dias trabajados (decision 10). */
+    const justificaEn = c.cierre_id;
     nodos.push(
       tablaComparativo(rev && rev.comparativo, op.esMes, m, op.rutas.desglose),
       antesDeMandarlo(rev, revision && revision.fallo, viaticos, justificaEn,
@@ -1416,6 +1440,10 @@ async function cuerpo(c, op, recargar) {
         if (salio === "en odoo") {
           mensaje(reemplazar(t("cie_pre_salio_corto"),
                              { n: envio.factura.prefactura }));
+        } else if (salio === "nada que facturar") {
+          /* El mes sin dias trabajados, en cero (seccion 131): no hay
+             prefactura que esperar. */
+          mensaje(t("cie_sin_cobro_corto"), "alerta");
         } else if (salio && salio !== "facturado"
                    && salio !== "ya estaba en odoo") {
           mensaje(t(c.llave_factura ? "cie_pre_pendiente"

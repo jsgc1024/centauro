@@ -344,12 +344,23 @@ def listar_usuarios(db: Session = Depends(get_db), incluir_inactivos: bool = Tru
     if not incluir_inactivos:
         consulta = consulta.filter(m.Usuario.activo.is_(True))
     filas = consulta.order_by(m.Usuario.correo).all()
+    # El pais de cada quien --el de su ciudad-- para separar la lista
+    # por pais (Salvador, 3 oct, seccion 131): con Brasil encendido, la
+    # gente de los dos paises salia revuelta.
+    paises = {p.id: p.nombre for p in db.query(m.Pais).all()}
+
+    def pais_de(u):
+        persona = u.persona
+        return persona.plaza.pais_id if persona and persona.plaza else None
+
     return [{
         "usuario_id": u.id,
         "persona_id": u.persona_id,
         "nombre": u.persona.nombre if u.persona else None,
         "correo": u.correo,
         "rol": u.rol.value,
+        "pais_id": pais_de(u),
+        "pais": paises.get(pais_de(u)),
         # Con categoria, el rol ya no es lo que manda. Si el renglon
         # siguiera diciendo solo "Consultor", la lista mentiria por
         # omision justo en la pantalla donde se reparte el acceso.

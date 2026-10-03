@@ -2748,8 +2748,9 @@ def abrir_siguiente(db: Session, servicio: m.Servicio,
     # con lo que la lista diga hoy. Si iba a mano --un acuerdo especial--,
     # se queda lo copiado, como siempre.
     from app import implantado_precios
-    if (anterior.precios_de_la_lista
-            and anterior.esquema == m.EsquemaCotizacionImplantado.POR_DIA):
+    # Tambien el que va con la lista que cobra por mes (seccion 130): su
+    # esquema es el de mes completo y la lista lo vuelve a poner.
+    if anterior.precios_de_la_lista:
         implantado_precios.al_abrir(db, contrato)
     else:
         implantado_precios.fijar_moneda_del_mes(db, contrato)

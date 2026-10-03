@@ -262,6 +262,17 @@ def enviar(db: Session, cierre: m.Cierre, usuario: m.Usuario | None = None,
         return {"resultado": "no se factura",
                 "motivo": f"el cierre esta en {cierre.estatus.value}"}
 
+    if sin_cobro(cierre):
+        # Nada que facturar (seccion 131, decision 10): el mes sin dias
+        # trabajados se cobro en cero. No sale prefactura ni factura; al
+        # aprobarlo finanzas, el cierre queda facturado sin folio.
+        if cierre.estatus == m.EstatusCierre.APROBADO:
+            cierre.estatus = m.EstatusCierre.FACTURADO
+            cierre.facturado_en = reloj.ahora_del_servicio(db, cierre.servicio)
+            cierre.factura_error = None
+            db.flush()
+        return {"resultado": "nada que facturar", "factura": None}
+
     if odoo_facturacion.hay_llave():
         resultado = _mandar_sin_reventar(db, cierre, primera_vez)
         if usuario is not None and resultado["resultado"] == "en odoo":
@@ -450,13 +461,23 @@ def _de_que(cierre: m.Cierre) -> str:
     return cierre.servicio.folio
 
 
+def sin_cobro(cierre: m.Cierre) -> bool:
+    """El cierre que se mando en cero (seccion 131, decision 10): el mes
+    sin dias trabajados. No tiene nada que facturar."""
+    return (cierre.total_ejecutado is not None
+            and Decimal(str(cierre.total_ejecutado)) == Decimal("0"))
+
+
 def sin_factura(db: Session) -> list[m.Cierre]:
-    """Los cierres que ya tienen visto bueno y todavia no tienen factura."""
-    return (db.query(m.Cierre)
-            .filter(m.Cierre.estatus.in_((m.EstatusCierre.ENVIADO_FINANZAS,
-                                          m.EstatusCierre.APROBADO)),
-                    m.Cierre.facturado_en.is_(None))
-            .order_by(m.Cierre.enviado_en).all())
+    """Los cierres que ya tienen visto bueno y todavia no tienen factura.
+    El que se cobro en cero no espera ninguna (decision 10)."""
+    return [c for c in (db.query(m.Cierre)
+                        .filter(m.Cierre.estatus.in_((
+                            m.EstatusCierre.ENVIADO_FINANZAS,
+                            m.EstatusCierre.APROBADO)),
+                            m.Cierre.facturado_en.is_(None))
+                        .order_by(m.Cierre.enviado_en).all())
+            if not sin_cobro(c)]
 
 
 def por_facturar(db: Session) -> list[dict]:
@@ -490,10 +511,25 @@ def renglon(db: Session, c: m.Cierre) -> dict:
                  if servicio.consultor_id else None)
     anoto = (db.get(m.Persona, c.factura_anotada_por_id)
              if c.factura_anotada_por_id else None)
+    aprobo = (db.get(m.Persona, c.aprobado_por_id)
+              if c.aprobado_por_id else None)
     # En que moneda se factura: la de la cotizacion en el eventual, la
     # de los precios del mes en el implantado (seccion 82).
     moneda = motor_cierre.moneda_del_cierre(db, c)
     moneda = moneda.value if moneda else None
+    # Lo aprobado sin factura se puede regresar (seccion 131, decision 9
+    # de Salvador): la pantalla dice quien lo aprobo y como esta su
+    # comision, que se cancela con el regreso si no entro a un corte.
+    aprobado = c.estatus == m.EstatusCierre.APROBADO and not c.factura_odoo
+    comision = None
+    if aprobado:
+        generada = motor_cierre.comision_del_cierre(db, c)
+        if generada is not None:
+            comision = {"estatus": generada.estatus.value,
+                        "monto": str(generada.monto),
+                        "moneda": generada.moneda.value,
+                        "en_corte": generada.corte_id is not None,
+                        "periodo": f"{generada.mes:02d}/{generada.anio}"}
     return {
         "cierre_id": c.id,
         "estatus": c.estatus.value,
@@ -515,6 +551,14 @@ def renglon(db: Session, c: m.Cierre) -> dict:
         "total": str(c.total_ejecutado),
         "moneda": moneda,
         "aprobado_en": iso(c.aprobado_en),
+        "aprobado_por": aprobo.nombre if aprobo else None,
+        # Se puede regresar desde aqui (seccion 131): lo aprobado que no
+        # tiene factura; la prefactura timbrada la detiene el motor.
+        "se_regresa": aprobado,
+        "comision": comision,
+        # El mes que se mando en cero (seccion 131, decision 10): sin
+        # nada que facturar.
+        "sin_cobro": sin_cobro(c),
         "factura": c.factura_odoo,
         "facturado_en": iso(c.facturado_en),
         # La que se hizo en Odoo y se anoto aqui (seccion 96): se corrige
@@ -659,7 +703,18 @@ def bandeja(db: Session, ahora: datetime | None = None) -> dict:
         },
         "por_aprobar": [con_gastos(c) for c in aprobar],
         "por_facturar": facturar,
-        "cerrados": [{**renglon(db, c),
-                      "comision": comisiones.del_cierre(db, c)}
-                     for c in cerrados],
+        "cerrados": [_cerrado(db, c, comisiones) for c in cerrados],
     }
+
+
+def _cerrado(db: Session, c: m.Cierre, comisiones) -> dict:
+    """Un renglon de «Cerrados»: con su comision como la ve el consultor
+    y, si todavia se puede regresar (seccion 131), en que corte quedo."""
+    fila = renglon(db, c)
+    del_corte = fila["comision"] or {}
+    generada = comisiones.del_cierre(db, c)
+    fila["comision"] = ({**generada,
+                         "en_corte": del_corte.get("en_corte", False),
+                         "periodo": del_corte.get("periodo")}
+                        if generada else None)
+    return fila

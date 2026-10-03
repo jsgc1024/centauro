@@ -400,7 +400,9 @@ def test_la_baja_en_odoo_cierra_el_acceso_y_avisa_a_la_central(
 
 def test_quien_debe_viaticos_conserva_el_acceso_hasta_comprobarlos(
         cliente, sesion, datos, db):
-    odoo = OdooFalso(empleado(1))
+    # Con un segundo empleado que se queda: si Mexico leyera cero con su
+    # gente activa, la vuelta se detendria (seccion 130, decision 3).
+    odoo = OdooFalso(empleado(1), empleado(2))
     leer(db, odoo)
     p = persona(db, 1)
     j = en_un_servicio(cliente, sesion, datos, p.id)
@@ -432,12 +434,18 @@ def test_quien_debe_viaticos_conserva_el_acceso_hasta_comprobarlos(
     assert not leer(db, odoo)["accesos_cerrados"]
 
 
-def test_quien_desaparece_de_odoo_tambien_se_da_de_baja(db):
-    odoo = OdooFalso(empleado(1))
+def test_quien_desaparece_de_odoo_queda_pendiente_y_no_se_da_de_baja(db):
+    # Lo que Odoo no devuelve ni entre los archivados ya no es baja
+    # (seccion 130, decision 3): la conexion pudo dejar de verlo. Queda
+    # pendiente, y solo el archivado explicito da de baja.
+    odoo = OdooFalso(empleado(1), empleado(2))
     leer(db, odoo)
     del odoo.empleados[ODOO0 + 1]
-    assert [b["motivo"] for b in leer(db, odoo)["bajas"]] == ["ya no esta en Odoo"]
-    assert not persona(db, 1).activo
+    informe = leer(db, odoo)
+    assert not informe["bajas"]
+    assert [(p["odoo_id"] - ODOO0, p["falta"]) for p in informe["pendientes"]] == [
+        (1, ["no se encontro en Odoo: revisar la conexion"])]
+    assert persona(db, 1).activo
 
 
 def test_quien_cambia_de_puesto_queda_pendiente_sin_baja(db):

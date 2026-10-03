@@ -40,7 +40,7 @@ Lo que dijo el cliente: las encuestas, la tasa de respuesta y las calificaciones
 El mes en cifras: lo que dijo el cliente, la calle, el cierre, la gente y los datos que faltan en Odoo y en Catálogos, contra el mes de antes, con su reporte en Excel para la junta.
 
 ### Dirección de operaciones {#direccion}
-Lo que espera la firma del director de operaciones —las incidencias por autorizar, el freelance que alguien pide por urgencia, los precios especiales de las propuestas, los cobros al cancelar y los plazos vencidos del cierre— y las cuentas de hoy por país: servicios hoy y mañana, en curso, con alerta, cambios por contingencia e incidencias del mes. Cada número se abre para ver cuáles servicios son. La ven el director de operaciones y la dirección general.
+Lo que espera la firma del director de operaciones —las incidencias por autorizar, el freelance que alguien pide por urgencia, los precios especiales de las propuestas, los cobros al cancelar y los plazos vencidos del cierre—, las tres que viven en otras pantallas —las comisiones del mes por firmar, que abren Nóminas → Comisiones en ese país y ese mes; las malas calificaciones por revisar, que abren Clientes; y los cierres por firmar que siguen en plazo, con cuánto les queda, que abren la tarjeta del cierre— y las cuentas de hoy por país: servicios hoy y mañana, en curso, con alerta, cambios por contingencia e incidencias del mes. Cada número se abre para ver cuáles servicios son. La ven el director de operaciones y la dirección general.
 
 ## Operaciones CI
 
@@ -59,13 +59,13 @@ El código de cuatro dígitos que se le dicta por teléfono al personal de campo
 La bandeja de finanzas: los depósitos que confirmar, las compras, las rentas, las devoluciones y los descuentos.
 
 ### Facturación {#facturacion}
-Lo que ya tiene el visto bueno del consultor —el servicio eventual o el mes del implantado—: aprobarlo, regresarlo a operación con su motivo y seguir su factura. Con la llave de la factura, «En Odoo» tiene las prefacturas que esperan al facturista y «No se pudo mandar» las que no salieron, con su porqué, «Mandar otra vez» y el reintento de cada hora; «Ver» separa los eventuales de los implantados. Sin la llave, la factura se hace en Odoo y aquí se anota, con «Ya se facturó en Odoo». Aquí viven también los tarifarios y la tabla de productos de Odoo que finanzas confirma.
+Lo que ya tiene el visto bueno del consultor —el servicio eventual o el mes del implantado—: aprobarlo, regresarlo a operación con su motivo y seguir su factura; lo aprobado sin factura ni prefactura timbrada también se regresa, con «Regresar» en su renglón. Con la llave de la factura, «En Odoo» tiene las prefacturas que esperan al facturista y «No se pudo mandar» las que no salieron, con su porqué, «Mandar otra vez» y el reintento de cada hora; «Ver» separa los eventuales de los implantados. Sin la llave, la factura se hace en Odoo y aquí se anota, con «Ya se facturó en Odoo». Aquí viven también los tarifarios y la tabla de productos de Odoo que finanzas confirma.
 
 ### Nóminas {#nomina}
 El corte del personal de cada lunes y la comisión de los consultores de cada mes: lo que entra, lo que todavía no y por qué.
 
 ### Accesos {#accesos}
-Quién puede entrar, con qué puesto, y cuándo entró por última vez. Aquí se arman los puestos, se manda o se copia la invitación y se cierran los accesos. Ver [accesos, roles y puestos](#/manual/leer/accesos).
+Quién puede entrar, con qué puesto, y cuándo entró por última vez; se filtra por país y por quiénes ya entraron, nunca han entrado o llevan meses sin entrar. Aquí se arman los puestos, se manda o se copia la invitación y se cierran los accesos. Ver [accesos, roles y puestos](#/manual/leer/accesos).
 
 ### Odoo {#odoo}
 Las cinco lecturas de Odoo: aquí se hacen el ensayo y la primera lectura de cada una, y se ve lo que falta corregir allá. Arriba dice si el servidor ya tiene la llave de la factura del eventual. Ver [lo que viene de Odoo](#/manual/leer/odoo).

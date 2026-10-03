@@ -10022,6 +10022,396 @@ consulta, «Monto fijo» que se queda, la moneda por versión, «Apto», el
 aviso de los 20 MB y el precio sugerido de Brasil sin separador de
 miles.
 
+## 130. La revisión 360 de lo nuevo, ola 4a: Brasil antes de encenderlo
+
+El 2 de octubre Salvador tomó, una por una, las dieciocho decisiones que
+dejó abierta la revisión (sección 127) —en todas, la recomendación— y
+una más sobre el panel de dirección de operaciones; el 3 dio el visto
+bueno a las maquetas de los cinco botones nuevos (`Ola_4_maquetas.pdf`).
+Quedan aquí, para que la 4b y la 4c se construyan sobre lo mismo:
+
+1. **Descartar un borrador:** botón «Descartar este borrador». La V2 o
+   siguiente se borra y la anterior vuelve a ser la última; la V1 nunca
+   mandada se elimina con registro y folio quemado. *(4b)*
+2. **La propuesta cuyo implantado se eliminó:** las dos salidas de la
+   126, «Volver a crear el implantado» (nace con su primer mes con los
+   términos de la propuesta, folio nuevo) y «Eliminar la propuesta» con
+   motivo. *(4b)*
+3. **Lo que Odoo deja de devolver:** queda pendiente, «no se encontró en
+   Odoo: revisar la conexión»; solo el archivado explícito da de baja. Y
+   el freno por país: si un país leyó cero y Connect tiene registros
+   activos de ese país, la vuelta se detiene y lo dice. *(4a)*
+4. **El cambio de país:** botón «Pasarlo a Brasil» (o a México) en
+   Pendientes de la pantalla de Odoo, para quien administra Odoo, solo sin
+   días asignados por delante; el cliente que cambia de país queda
+   pendiente igual. *(4a)*
+5. **La gente de otro país:** al asignar, solo la gente del país de la
+   plaza, como las unidades. *(4a)*
+6. **Freelance ↔ planta:** botón «Pasar a planta» (RH) en la ficha del
+   freelance, que cierra su ficha como historia y deja que Odoo lo tome;
+   el alta de freelance reutiliza a la persona dada de baja en Odoo con
+   el mismo correo. *(4c)*
+7. **El plazo del de emergencia:** 15 días desde el último día del
+   servicio que se le asigna; RH recibe el aviso entonces. *(4c)*
+8. **La huella:** se ofrece sola solo en teléfonos; en computadoras se
+   activa a mano desde el menú con la advertencia «solo en un equipo
+   tuyo»; el saludo con el nombre de pila; la llave que viaja con la
+   cuenta del teléfono se queda. *(4c)*
+9. **Regresar lo aprobado:** «Regresar» sobre lo aprobado mientras no
+   tenga factura ni prefactura timbrada; la comisión se cancela y renace
+   con el nuevo visto bueno; queda quién y por qué. *(4b)*
+10. **El mes sin días trabajados:** cobra lo trabajado (cero si nada) y
+    el visto bueno lo dice; el costo fijo se justifica ahí. *(4b)*
+11. **Fechas pasadas al autorizar o recrear:** «N días ya pasaron» y
+    deja seguir. *(4b)*
+12. **El implantado sin propuesta con una lista por mes:** el alta
+    directa lee el mes como la propuesta. *(4a)*
+13. **Los precios en gris en el cierre:** el cierre respeta el precio
+    cotizado en lo que la lista toma en gris; lo no cotizado va con el
+    precio de hoy. *(4b)*
+14. **«Sin IVA» a la prefactura:** la prefactura va sin impuesto cuando
+    la cotización o la propuesta van sin IVA; se construye cuando Ari y
+    el facturista lo confirmen. *(4a si llega; si no, 4b)*
+15. **Brasil sin datos de cotización:** no se manda sin la tasa (si va
+    con IVA) ni las condiciones de pago del país; los de Brasil se
+    capturan en Catálogos antes de la primera cotización. *(4a)*
+16. **La cotización firmada por otro:** el titular recibe el aviso con el
+    PDF. *(4b)*
+17. **Por la unidad responde quien va al volante;** la reconfirmación por
+    cambio de hora no le llega a quien propuso esa hora. *(4c)*
+18. **El gerente de administración y Odoo:** se queda; solo se corrige el
+    texto de novedades y del manual. *(4c)*
+19. **El panel de dirección de operaciones** con las tres que vivían en
+    otras pantallas: comisiones del mes por firmar, malas calificaciones
+    por revisar, cierres por firmar. *(4b)* Y el botón «Eliminar» en la
+    pantalla del implantado que no arrancó, como ya lo tiene el eventual.
+
+Esta sección es la 4a: lo que Odoo puede dañar y lo que Brasil necesita
+para cotizar y cerrar (decisiones 3, 4, 5, 12 y 15).
+
+- **Decisión 3, lo que Odoo no devuelve.** `clasificar_salidas` de las
+  cuatro lecturas (`odoo_personal_reglas`, `odoo_flota_reglas`,
+  `odoo_oficina_reglas`, `odoo_clientes_reglas`): la fila que Odoo no
+  devolvió ni entre los archivados ya no es baja sino pendiente
+  (`odoo_pais.NO_ENCONTRADO`, en la pantalla `odo_f_no_encontrado`:
+  «si de verdad se borró allá, se da de baja en Catálogos»); solo
+  `active` en falso da de baja, «archivado en Odoo». Y el **freno por
+  país** (`odoo_pais.frenos`, `activos_por_pais`, `por_compania`): cada
+  `sincronizar` cuenta lo leído por país —en el personal, la flota y la
+  oficina, todos los registros de la compañía de cada país, de
+  seguridad o no, porque la compañía perdida se pierde entera; en los
+  clientes, por país del partner— y, si un país leyó cero con registros
+  activos de Odoo de ese país en Connect, devuelve el informe
+  `detenida` con su `freno` (`odoo_pais.detenida`), no aplica nada y, si
+  no era ensayo, deja su renglón en `SincronizacionOdoo` con el detalle
+  `{"detenida": true, ...}` y su línea en la bitácora de administración
+  (`registrar_detenida`). `resumen` de las cuatro lo dice para la tarea
+  de cada hora; `/odoo/estado` marca el renglón con `detenida`. La
+  pantalla: el aviso en rojo (`odo_detenida`, `odo_freno_pais`),
+  «Aplicar» apagado, la etiqueta «se detuvo» en el historial. Las
+  pruebas de las lecturas que daban de baja al único registro de su
+  compañía llevan ahora un segundo que se queda: con uno solo, la
+  vuelta se detendría, que es justo la regla.
+- **Decisión 4, el cambio de país.** El pendiente «en Odoo es de «Brasil»
+  y en Centauro es de otro pais» trae `cambio_de_pais` (`a_pais_id`,
+  `a_pais`, `plaza_id`, `plaza`) en el personal y en la flota; el
+  cliente que Odoo pasa a otro país ya no cambia solo —se llevaba sus
+  cotizaciones y servicios—: queda pendiente con lo mismo
+  (`odoo_clientes_reglas.planear`). `POST /odoo/pasar-de-pais`
+  (`PasarDePaisIn`: tipo persona | unidad | cliente, id, pais_id,
+  plaza_id o plaza; `odoo.administrar`) → `odoo_pais.cambiar`: solo lo
+  que vino de Odoo, solo sin días asignados por delante (409
+  `dias_por_delante` con cuántos), a la ciudad que dice Odoo o la primera
+  activa del país; la unidad cambia también `pais_id`; el cliente pierde
+  la lista y la de implantados de su país de antes (la lectura de
+  tarifarios le pone la suya); todo con su renglón en la bitácora de
+  administración («pasado de pais desde odoo»). La siguiente lectura lo
+  toma. En la pantalla, `botonDePais`: «Pasarlo a Brasil» / «Pasarla a
+  Brasil» en cada renglón de Pendientes, con la ciudad a la que va y el
+  pie `odo_pasar_pie`.
+- **Decisión 5, la gente de otro país.** `disponibilidad.
+  recomendar_personal_por_dia`: «de otras ciudades» son las del mismo
+  país que la plaza, como las unidades desde la 118. Manual
+  `110_persona_no_aparece.md`.
+- **Decisión 12, la lista que cobra por mes.** `implantado_precios.
+  de_la_lista` lee cada renglón primero con la modalidad del mes del
+  país (`propuesta.mensual_del_pais`, como la propuesta desde la 123) y
+  luego con el día: el renglón por mes trae `por_mes`, su `precio_mes`
+  tal cual y su día (el mensual entre los días de la modalidad,
+  `DIAS_DEL_MENSUAL`); el renglón por día trae su mes (el día por los
+  días). Con algún renglón por mes, `por_mes`, `precio_mes_completo` (la
+  suma de los mensuales de personas, paquetes y unidades) y
+  `dias_del_mensual`; `aplicar` deja el mes con el esquema de **mes
+  completo**, su mensual y sus días, y `sigue_la_lista` y `diferencias`
+  comparan el mensual, el día adicional, la hora extra y el esquema
+  (`NOMBRES`, `CAMPO_DE_TERMINOS` en `cierre.js`). El alta lee la lista
+  si no vino ningún precio escrito, sea cual sea el esquema pedido;
+  «Usar los de la lista» ya no fuerza «por día» con una lista por mes; el
+  mes siguiente vuelve a tomar la lista también en mes completo. La
+  prefactura (`puestos_del_mes`) recibe el `precio_mes` de cada puesto y
+  `Productos` ya prefería el producto del mes. La pantalla de términos
+  pinta «{p} al mes · {d} por día» en el renglón por mes y la línea
+  `imp_lista_mensual_de_la_lista`. Lo de México con su lista por día no
+  cambia. Manual `03_implantado.md`.
+- **Decisión 15, lo del país que frena.** `cotizacion_cliente.
+  lo_del_pais_que_frena` entra a `que_le_falta` de la cotización: sin la
+  tasa de IVA del país (si va con IVA) o sin las condiciones de pago y
+  facturación en el idioma del PDF, no se manda, y la pantalla lo dice
+  entre lo que falta («…, en Catálogos → Cotización al cliente»). La
+  propuesta frena sin la tasa (si va con IVA) y sin el texto de
+  aceptación del país en su idioma. Lo demás del PDF sigue en amarillo.
+  La semilla de México nunca trajo las condiciones de pago: la batería
+  las pone en `conftest` y **en producción hay que capturarlas en
+  Catálogos → Cotización al cliente antes de la siguiente cotización**
+  (español, y en inglés si el PDF va en inglés); y antes de la primera
+  cotización o propuesta de Brasil, sus datos y textos.
+
+Pruebas en `tests/test_revision_130.py` (14) y las de las lecturas
+ajustadas al freno. Manual: Odoo (`04_odoo.md`, el freno, lo no
+encontrado, pasar de país), el implantado (`03_implantado.md`), la
+persona que no aparece (`110_persona_no_aparece.md`), la cotización
+(`10_cotizaciones.md`) y la propuesta (`11_propuesta.md`), en español y
+portugués. Lo que cambia de pantalla: el aviso rojo de la vuelta
+detenida y «se detuvo» en el historial de Odoo, el botón «Pasarlo a
+Brasil» en Pendientes, el renglón por mes en los términos del implantado
+y lo que falta de Catálogos antes de mandar una cotización.
+
+## 131. La revisión 360 de lo nuevo, ola 4b: lo que se quedaba atorado y lo que faltaba firmar
+
+La segunda entrega de las decisiones del 2 de octubre (sección 130):
+las 1, 2, 9, 10, 11, 13, 16 y 19, el «Eliminar» del implantado que no
+arrancó, y dos cosas que Salvador pidió el 3 de octubre mientras se
+construía: en Accesos, ver quiénes ya entraron y quiénes no, y separar
+por país (no encontraba al personal de Brasil: sí tenía su acceso, solo
+estaba revuelto con el de México en una lista por correo). La decisión
+14 («sin IVA» a la prefactura) sigue esperando a Ari y al facturista.
+
+- **Decisión 1, descartar un borrador.** `cotizacion_cliente.descartar`
+  (para las dos clases): solo el borrador que es la última versión; la
+  V2 o siguiente se borra y la anterior vuelve a ser la última, con su
+  renglón en la bitácora de administración («version descartada»); la V1
+  que nunca se mandó se elimina con su `CotizacionEliminada` («borrador
+  que nunca se mandó, descartado», sin motivo) y el folio se queda
+  quemado como en la 126. `POST /cotizaciones/eventual/{id}/descartar` y
+  `POST /cotizaciones/propuesta/{id}/descartar` (`cotizaciones.armar`).
+  En los dos editores, el botón «Descartar este borrador» junto a
+  «Guardar», con su confirmación (`ctz_seguro_descartar_v` /
+  `_1`, `pro_seguro_descartar_v` / `_1`), que vuelve a la versión
+  anterior o a la lista.
+- **Decisión 2, la propuesta cuyo implantado se eliminó.**
+  `cotizacion_cliente.servicio_eliminado` ya cuenta para la propuesta
+  (autorizada, sin `servicio_id` y con `servicio_folio`, que
+  `desarmar_servicio` deja desde la 126). `propuesta.recrear_implantado`
+  hace nacer otro con `_nacer_implantado` —lo mismo que `autorizar`: el
+  servicio, el acuerdo, el folio nuevo— y liga todas las versiones;
+  queda «alta desde la propuesta … · otra vez: su implantado EP/IM-004
+  se había eliminado» en la bitácora del nuevo. Su primer mes se abre,
+  como siempre, con los términos de la propuesta. `POST
+  /cotizaciones/propuesta/{id}/servicio` y `POST …/eliminar`
+  (`EliminarIn` con motivo, `cc.eliminar` con el resumen «implantado»).
+  En la pantalla, el bloque del implantado borrado ofrece «Volver a
+  crear el implantado» y «Eliminar la propuesta» (`formularioEliminar`).
+- **Decisión 11, «N días ya pasaron».** `cotizacion_cliente.dias_pasados`
+  (los días de la cotización antes del hoy del país) en el detalle, y
+  `propuesta.detalle` trae `dias_pasados` desde su `inicio`. Las dos
+  pantallas lo dicen en ámbar antes de autorizar y antes de volver a
+  crear (`avisoDiasPasados`, `avisoInicioPasado`) y dejan seguir.
+- **Decisión 9, regresar lo aprobado.** `cierre.regresar` acepta
+  también lo `APROBADO` sin `factura_odoo`; la prefactura timbrada lo
+  detiene como en la 127 (`_la_prefactura_sigue_en_borrador`) y lo
+  `FACTURADO` dice «nota de crédito». Al regresar lo aprobado:
+  `aprobado_en` y `aprobado_por_id` se vacían, el eventual cerrado
+  vuelve a `SIN_VISTO_BUENO`, y la comisión que nació con la aprobación
+  (`comision_del_cierre`) se **borra** si no entró a un corte
+  (`_cancelar_la_comision`): con el nuevo visto bueno y la nueva
+  aprobación vuelve a nacer con sus reglas (plazo, incidencia grave). La
+  que ya tiene `corte_id` —o un ajuste en un corte— se queda, y lo que
+  cambie va como diferencia (`comisiones._volver_a_calcular`, como
+  siempre). La bitácora del servicio dice «estaba aprobado por …; su
+  comisión de … se cancela y vuelve a nacer…» o «ya quedó en el corte
+  de …». `facturacion.renglon` trae `aprobado_por`, `se_regresa` y
+  `comision` {estatus, en_corte, periodo}; «Cerrados» lo mezcla con lo
+  que ya traía (`_cerrado`). En `facturacion.js`, `lineaAprobado`
+  («aprobado por … · fecha · COMISIÓN GENERADA / EN EL CORTE DE …») y
+  `botonRegresar` en En Odoo, No se pudo mandar, Por facturar y
+  Cerrados, con el formulario de siempre y el pie de lo aprobado
+  (`pieDelRegresoAprobado`).
+- **Decisión 10, el mes sin días trabajados.** `cierre_mes.comparar`:
+  en mes completo sin días base, sin adicionales y sin horas extra, el
+  mes se cobra en cero (`desglose["mes_completo"] = 0`, el monto fijo de
+  gastos también en cero; los netos comprobados sí) y deja la desviación
+  `texto_sin_dias` marcada `aviso` con `monto` −mensual; `comparar`
+  devuelve `sin_dias` {cobro: cero | costo_fijo, justificacion}.
+  `revisar` la enseña como AVISO `mes_sin_dias` **justificable** sin
+  frenar el visto bueno; justificada (`POST
+  /cierre/{id}/desviaciones/respaldar`, que ahora acepta las del mes
+  con `cierre_mes.comparar`), se cobra el mensual completo y la nota lo
+  dice con la justificación. `enviar_a_finanzas` lo escribe en la
+  bitácora («sin dias trabajados: se cobra en cero» / «…como costo fijo
+  pactado (…)») y lo devuelve (`sin_dias`). `facturacion.sin_cobro`: el
+  cierre con `total_ejecutado` 0 no manda prefactura ni factura
+  («nada que facturar»), no entra a `sin_factura` ni a la vuelta de
+  cada hora, y al aprobarlo queda `FACTURADO` sin folio con su
+  `facturado_en`; la bandeja lo marca `sin_cobro` («Se cobra en cero»).
+  `armar_factura` no lleva el renglón del mes en cero. En `cierre.js`,
+  la observación traducida (`cie_msd_*`) y «Justificar» también en lo
+  de «Para revisar» cuando es justificable; `justificaEn` ya va en el
+  mes.
+- **Decisión 13, el precio cotizado en gris.** `cierre.precios_cotizados`
+  (lo que la cotización autorizada cobra por rol, unidad o paquete en
+  cada modalidad) y `precio_del_cierre`: lo que la lista pacta en negro
+  (`origen` vacío o `propio`) se cobra como está en la lista; lo que
+  toma en gris —de otra lista o del precio de venta, que en dólares se
+  recalcula cada hora— se cobra al precio cotizado si se cotizó, y si
+  no, al de hoy. `ejecutado` marca `precio_cotizado` en cada renglón y
+  `renglones` lo conserva; la tabla de renglones dice «el de la
+  cotización» (`cie_r_precio_cotizado`).
+- **Decisión 16, la cotización que manda otro.** `Notificacion.adjunto_id`
+  (migración `c3d7e9f2a1b4`, FK a `archivo_cotizacion`) y
+  `correo.entregar(adjuntos=[(nombre, tipo, contenido)])`, que el
+  despachador llena con `adjuntos_de` (el mismo MIME por SMTP y por
+  Microsoft). `cotizacion_cliente.avisar_al_titular`, desde los dos
+  `enviar`: si quien manda no es `cot.consultor_id`, el titular recibe
+  el correo (`ctz_otro_*` de `textos_aviso`, en su idioma, con el PDF
+  adjunto y el enlace a la pantalla) y el push (`ctz_otro_*` de
+  `push`), y queda «mandada con la firma de otro» en la bitácora de
+  administración. Quien arma sigue pudiendo mandar.
+- **Decisión 19, el panel de dirección de operaciones.**
+  `direccion_operaciones.bandeja` suma `comisiones_por_firmar` (los
+  meses terminados por país con comisiones o ajustes y sin
+  `CorteComision`, con `corte_del_mes`: consultores, a pagar, y la ruta
+  `#/nomina/comisiones/{pais}/{anio}-{mes}`), `malas_calificaciones`
+  (las encuestas por clasificar, con `le_toca` dirección | consultor y
+  el comentario) y `cierres_por_firmar` (los cierres sin visto bueno
+  que siguen en plazo, con lo que va a facturarse —la cotización
+  vigente, o el comparativo del mes— y los minutos que quedan; los
+  vencidos siguen en «Plazos vencidos»). En `direccion.js`, las tres
+  tarjetas en una rejilla de tres (`tarjetaComisiones`,
+  `tarjetaCalificaciones`, `tarjetaCierres`) con «Abrir»; la ruta de
+  Nóminas acepta `#/nomina/comisiones/<pais>/<anio>-<mes>` y
+  `pantallaNomina` abre esa pestaña con ese país y ese mes.
+- **El «Eliminar» del implantado.** `implantado.js`: en el encabezado,
+  antes de arrancar (`ANTES_DE_ARRANCAR`), «Eliminar» con su motivo
+  (`borrarImplantado`, `DELETE /servicios/{id}`, el mismo del eventual);
+  la propuesta queda con «Volver a crear el implantado».
+- **Accesos (3 de octubre).** `GET /auth/usuarios` trae `pais_id` y
+  `pais` (el de la ciudad de cada quien); en `accesos.js`, junto al
+  buscador, los filtros «País» (con «Sin país» para el acceso sin ficha;
+  se esconde con un solo país) y «Quiénes ya entraron» (todos · ya
+  entraron · nunca han entrado · más de 3 meses sin entrar) con su
+  cuenta cada opción, cruzados con el buscador y la casilla de cerrados;
+  cada renglón dice su país. Diagnóstico en producción del 3 de
+  octubre: Brasil 43 activas, 42 con acceso (40 de campo); México 109 de
+  Odoo y 85 con acceso —casi seguro correos repetidos en Odoo—, pendiente
+  de un bloque de cuenta para Ari.
+
+Pruebas en `tests/test_revision_131.py` (15). Manual: cotizaciones,
+propuesta, implantado, el dinero, accesos y las pantallas, en español y
+portugués; novedades §131. Lo que cambia de pantalla: «Descartar este
+borrador», las dos salidas de la propuesta, «N días ya pasaron»,
+«Regresar» sobre lo aprobado con su línea de comisión, el mes en cero
+con «Justificar», «el de la cotización» en los renglones, las tres
+tarjetas del panel, «Eliminar» en el implantado y los filtros de
+Accesos. Migración: `c3d7e9f2a1b4` (el adjunto del aviso).
+
+## 132. La revisión 360 de lo nuevo, ola 4c: el freelance, la huella y la unidad
+
+La tercera entrega de las decisiones del 2 de octubre (sección 130):
+las 6, 7, 8, 17 y 18. Las maquetas de la ola 4 ya estaban aprobadas
+(«adelante»), así que fue directo a construir. La decisión 14 («sin
+IVA» a la prefactura) sigue esperando a Ari y al facturista.
+
+- **Decisión 6, el freelance que pasa a planta.** En `Freelance`,
+  `planta_en`, `planta_por_id` y `odoo_id_anterior` (migración
+  `d4e8f0a3b2c5`). `freelance.a_planta`: solo el freelance vivo;
+  `persona.es_freelance` se apaga, la ficha guarda cuándo y quién, y
+  queda «pasa a planta» (freelance → de planta) en su historial. Lo que
+  no se toca: sus días asignados, su expediente, su acceso a la app,
+  sus horas y sus tarifas. `POST /freelance/{id}/a-planta`
+  (`freelance.validar`: Recursos Humanos). `ficha_de(…, solo_vivo=False)`
+  abre la ficha del que ya pasó a planta como historia: `GET
+  /freelance/{id}` y su expediente la devuelven con `planta_en`,
+  `planta_por`, `puede` todo en falso salvo ver el expediente y la
+  cuenta (`_puede(db, u, persona)`), `puede_acceso` falso y
+  `puede_cargar` falso; corregir, costos, acceso, urgencia, baja y
+  cargar documentos contestan 404. La lista con `incluir_bajas` trae
+  también a los que pasaron a planta (`outerjoin` con la ficha), con
+  `planta_en` en cada renglón; `urgencias` ya no lista la pedida de
+  quien dejó de ser freelance. La lectura de personal de Odoo, que
+  desde la 128 dejaba al freelance pendiente («en Centauro es
+  freelance; en Odoo ya es de planta: pasarlo a mano»), lo liga por su
+  correo en cuanto deja de serlo (`vinculos`), sin cambiar nada de esa
+  lectura. **La nómina:** `freelance.cobra_como_freelance(db, persona,
+  fecha)` —freelance, o con `planta_en` y la fecha anterior al día
+  (del país) en que pasó— decide en `nomina.que_falta_de_tarifa`,
+  `pago_de_jornada` y `_sin_tarifa`: los días de antes del cambio se
+  pagan con su tarifa de freelance y desde ese día con el tabulador
+  de su puesto. **El alta que vuelve:** `_correo_libre(…,
+  o_quien_vuelve=True)` acepta el correo de quien está dado de baja sin
+  ser freelance (se fue de Odoo) y `freelance.volver_de_odoo` lo trae
+  de vuelta como la misma persona: activo, freelance, sin oficina,
+  con el nombre, la ciudad y el teléfono del formulario; se le suelta
+  el empleado de Odoo (`odoo_id`, `odoo_sincronizado_en`,
+  `baja_odoo_en`, puesto y área en blanco) para que la lectura no lo
+  vuelva a dar de baja por estar archivado allá, y el número queda en
+  `odoo_id_anterior`; su ficha se rehace (tipo, nombre, alta, sin
+  plazo ni `planta_en`) y queda «alta … · vuelve de Odoo (empleado N)».
+  El correo del freelance dado de baja sigue contestando 409, ahora
+  diciendo que se reactiva desde la lista con el filtro «De baja».
+  `dar_acceso` reabre el acceso cerrado que ya tenía (`activo`, correo
+  y rol de personal de seguridad; «acceso reactivado · vuelve como
+  freelance») en vez de contestar que ya tiene acceso. Si Odoo lo
+  contrata de nuevo con otro empleado y el mismo correo, la lectura lo
+  deja pendiente y RH lo pasa a planta: se liga al nuevo. En
+  `freelance.js`: la tarjeta «Pasa a planta» arriba de «Baja» (solo
+  `puede.a_planta`, con confirmación), el aviso «Pasó a planta el … ·
+  lo pidió …» arriba de la ficha con el enlace a Personal de seguridad,
+  la etiqueta en la lista y el filtro «Pasaron a planta», «Dar acceso»
+  también con el acceso cerrado, el expediente sin «Cargar», y el
+  mensaje del alta que vuelve.
+- **Decisión 7, el plazo del de emergencia.** `para_asignar`: al
+  repetir, el plazo es el último día no cancelado del servicio que se
+  le asigna (`_ultimo_dia`), o hoy si ya pasó, más los quince días.
+  Antes contaba desde el último servicio que tuvo y, al que volvía
+  meses después, le salía vencido antes de empezar (`plazo_vencido` al
+  asignar), que se quitó. `al_asignar` sigue igual: pone el plazo y
+  avisa a RH en ese momento.
+- **Decisión 8, la huella en computadoras compartidas.**
+  `huella.esTelefono()` (`userAgentData.mobile`, el agente de usuario,
+  y el iPad que se presenta como Mac con pantalla táctil);
+  `convieneOfrecer` no ofrece nada fuera de un teléfono. En el menú
+  («Entrar con huella o cara»), en una computadora, la advertencia
+  `hue_solo_tuyo` antes del formulario de activar. El saludo de la
+  entrada, en la consola y en la app, dice solo el nombre de pila
+  (`huella.primerNombre`) y ya no el nombre completo ni el correo. La
+  llave que viaja con la cuenta del teléfono se queda como estaba.
+- **Decisión 17, quién responde por la unidad y la hora.**
+  `entregas._quien_responde` pregunta primero a `viaticos.al_volante`
+  (el conductor a bordo; si nadie va de conductor, quien vaya en ella),
+  la misma regla que la gasolina y la central; antes, con una sola
+  unidad, caía en quien marcó el fin, que suele ser el agente. La
+  entrega pendiente, su aviso al teléfono y el de las 24 horas van al
+  que maneja. `push.avisar_cambio_de_hora(…, salvo=)`: a quien propuso
+  la hora no se le quita la confirmación ni le llega «cambió tu hora»;
+  lo pasan `routers/central.confirmar_hora` y
+  `operacion.confirmar_propuestas_vencidas` (sus filas traen
+  `propuso_id`).
+- **Decisión 18, el gerente de administración y Odoo.** Nada cambia
+  en el puesto. Las novedades §108 (es/pt), el comentario de
+  `puestos_base` y el de su prueba ya no dicen «no toca Odoo»: no
+  administra la conexión —la lectura es de sistema y calidad—, pero
+  como parte de firmar el dinero lee las listas de precios de Odoo,
+  confirma productos y tipo de cambio y vuelve a mandar prefacturas
+  (`cierre.facturar`).
+
+Pruebas en `tests/test_revision_132.py` (12); la de la 111 del plazo
+se ajustó a la regla nueva y la de la 131 de la migración cabeza
+reconoce a la 132. Manual: el freelance y accesos (la huella), en
+español y portugués; novedades §132. Lo que cambia de pantalla: «Pasa
+a planta» y la ficha como historia, el filtro «Pasaron a planta», el
+alta que vuelve, la advertencia de la huella en computadoras y el
+saludo con el nombre de pila. Migración: `d4e8f0a3b2c5` (el freelance
+que pasa a planta).
 
 ## 133. La Central de Inteligencia, AI/CI: el evento de riesgo
 

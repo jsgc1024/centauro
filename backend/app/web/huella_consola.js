@@ -49,16 +49,17 @@ export function separador() {
 }
 
 /* Quien ya entra con huella en este equipo: "Hola, Salvador" y un boton.
-   La contrasena y "no soy yo" quedan abajo, chicos. */
+   Solo el nombre de pila (seccion 132, decision 8): la pantalla de
+   entrada se ve antes de entrar, y no tiene por que decir el nombre
+   completo ni el correo de quien usa el equipo. La contrasena y "no soy
+   yo" quedan abajo, chicos. */
 export function saludo({ portada, alEntrar, usarContrasena, cambiarPersona }) {
   const r = huella.recordado();
   const error = h("div", { clase: "error" });
   return h("form", { onsubmit: (e) => e.preventDefault() },
     portada,
-    h("p", { style: "text-align:center;margin:18px 0 4px;font-size:15px" },
-      huella.th("hola", { nombre: "" }), h("b", {}, r.nombre)),
-    h("p", { clase: "gris", style: "text-align:center;font-size:13px;margin:0 0 16px" },
-      r.correo),
+    h("p", { style: "text-align:center;margin:18px 0 16px;font-size:15px" },
+      huella.th("hola", { nombre: "" }), h("b", {}, huella.primerNombre(r.nombre))),
     error,
     (() => {
       const b = botonEntrar({ alEntrar, error });
@@ -161,7 +162,10 @@ export async function pantalla(main, usuario) {
                                                  autocomplete: "current-password" });
       const error = h("div");
       const boton = h("button", { type: "submit" }, icono(), huella.th("activar_aqui"));
-      zona.replaceChildren(h("form", { onsubmit: async (e) => {
+      /* En una computadora se activa solo a mano y con la advertencia
+         (seccion 132, decision 8): puede ser de varios. */
+      const advertencia = huella.esTelefono() ? null : aviso(huella.th("solo_tuyo"), "alerta");
+      zona.replaceChildren(...[advertencia, h("form", { onsubmit: async (e) => {
         e.preventDefault();
         boton.disabled = true;
         error.replaceChildren();
@@ -177,7 +181,7 @@ export async function pantalla(main, usuario) {
         h("p", { clase: "gris chico", style: "margin:16px 0 8px" }, huella.th("pide_contrasena")),
         campo(huella.th("contrasena"), contrasena),
         error,
-        h("div", { clase: "acciones" }, boton)));
+        h("div", { clase: "acciones" }, boton))].filter(Boolean));
     }
   }
 

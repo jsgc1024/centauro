@@ -4,7 +4,9 @@
 Salvador (30 sep) pidio el puesto con la recomendacion de Claude: firma
 el dinero y la gente sin operar. Aprueba y factura, fija los
 tabuladores, autoriza el bono y ve toda la operacion; no deposita, no
-arma ni paga el corte, no da accesos y no toca Odoo. Lo que estas
+arma ni paga el corte, no da accesos y no administra la conexion con
+Odoo (lo que si hace con Odoo --listas de precios, productos, tipo de
+cambio, prefacturas-- es parte de firmar el dinero; seccion 132). Lo que estas
 pruebas cuidan: que el puesto de la propuesta y el de la migracion sean
 el mismo, y que quien lo trae pueda lo suyo y nada mas.
 """
@@ -94,7 +96,7 @@ def test_firma_el_dinero_y_no_lo_ejecuta(cliente, sesion, gerente):
     assert cliente.post("/nomina/999999/pagar", headers=h).status_code == 403
     # Fija el tabulador (lo que se paga por dia): no es 403.
     assert cliente.put("/nomina/tabulador", json={}, headers=h).status_code != 403
-    # Autoriza el bono; no lo paga, no da accesos, no toca Odoo.
+    # Autoriza el bono; no lo paga, no da accesos, no administra Odoo.
     assert cliente.get("/auth/categorias", headers=h).status_code == 403
     assert cliente.post("/auth/categorias/base", headers=h).status_code == 403
     assert cliente.get("/odoo/estado", headers=h).status_code in (403, 404)

@@ -12,10 +12,11 @@
    siguiente lectura lo toma sola: nada se captura dos veces.
 
    Nada de esta pantalla escribe en Odoo. */
-import { api } from "./api.js";
+import { api, sesion } from "./api.js";
 import { aviso, conAyuda, fecha, h, hora, mensaje, plegable,
          sinTildes } from "./util.js";
 import { t } from "./idioma.js";
+import { tiene } from "./menu.js";
 
 function reemplazar(texto, valores) {
   return Object.entries(valores).reduce(
@@ -68,6 +69,8 @@ const FALTAS = {
   "su cuenta bancaria no se pudo leer de Odoo": "odo_f_cuenta_no_leida",
   "en Centauro es freelance; en Odoo ya es de planta: pasarlo a mano":
     "odo_f_freelance_de_planta",
+  /* Lo que Odoo no devolvio ni entre los archivados (seccion 130). */
+  "no se encontro en Odoo: revisar la conexion": "odo_f_no_encontrado",
   /* Los clientes (seccion 75). */
   "sin pais": "odo_f_sin_pais",
   "se parece a mas de un cliente de Centauro": "odo_f_cliente_doble",
@@ -333,7 +336,8 @@ function tarjeta(caja, tipo, estado, repintar, mostrar = null) {
       /* Sin la etiqueta de los clientes --o sin la categoria de los
          productos de PE, en los tarifarios (seccion 112)-- no hay nada
          que aplicar. */
-      aplicar.disabled = !!(ultimo.sin_etiqueta || ultimo.sin_categoria);
+      aplicar.disabled = !!(ultimo.sin_etiqueta || ultimo.sin_categoria
+                            || ultimo.detenida);
       aplicar.textContent = reemplazar(t(cfg.etiqueta || "odo_aplicar_cifras"),
                                        (cfg.cifras || cifras)(ultimo));
       nota.textContent = "";
@@ -361,7 +365,8 @@ function tarjeta(caja, tipo, estado, repintar, mostrar = null) {
       confirmar.replaceChildren(h("p", { clase: "gris" }, t("odo_guardando")));
       try {
         const hecho = await api.post(cfg.aplicar, {}, { segundos: SEGUNDOS });
-        mensaje(t("odo_aplicado"));
+        mensaje(t(hecho.detenida ? "odo_detenida_corto" : "odo_aplicado"),
+                hecho.detenida ? "grave" : "ok");
         await repintar(tipo, hecho);
       } catch (err) {
         confirmar.replaceChildren(aviso(err.message, "grave"));
@@ -447,6 +452,16 @@ function lineaDeEtiquetas(tipo, d) {
 function informe(tipo, d) {
   const cfg = LECTURAS[tipo];
   if (cfg.informe) return cfg.informe(d);
+  /* La vuelta que se detuvo por el freno de un pais (seccion 130,
+     decision 3): no toco nada y lo dice en rojo, con lo leido de cada
+     pais al lado. No hay nada que aplicar. */
+  if (d.detenida) {
+    return h("div", { style: "margin:14px 0 0" },
+      aviso(reemplazar(t("odo_detenida"), {
+        q: (d.freno || []).map(f => reemplazar(t("odo_freno_pais"),
+          { p: f.pais, n: f.activos })).join("; ") }), "grave"),
+      h("p", { clase: "gris chico", style: "margin:8px 0 0" }, cfg.leidos(d)));
+  }
   /* Sin la etiqueta de los clientes en Odoo no se lee a nadie: se dice
      que falta y donde se pone, y nada mas. */
   if (d.sin_etiqueta) {
@@ -948,7 +963,41 @@ function listaDePendientes(pendientes, cfg) {
     h("div", { style: "font-weight:600;font-size:13px;margin:0 0 4px" },
       `${texto} (${quienes.length})`),
     renglones(quienes, (x) => [cfg.quien(x),
-      [noOdoo(x.odoo_id), x.pais].filter(Boolean).join(" · ")]))));
+      [noOdoo(x.odoo_id), x.pais,
+       x.cambio_de_pais && x.cambio_de_pais.plaza
+         ? reemplazar(t("odo_pasar_a_ciudad"), { c: x.cambio_de_pais.plaza }) : null]
+        .filter(Boolean).join(" · "),
+      botonDePais(x)]),
+    quienes.some(x => x.cambio_de_pais && tiene(sesion.usuario, "odoo.administrar"))
+      ? h("p", { clase: "gris chico", style: "margin:0 0 6px" }, t("odo_pasar_pie"))
+      : "")));
+}
+
+/* «Pasarlo a Brasil» (seccion 130, decision 4): la persona, la unidad o
+   el cliente que Odoo ya puso en otro pais se pasa desde aqui, solo sin
+   dias asignados por delante. La siguiente lectura lo toma. */
+function botonDePais(x) {
+  const c = x.cambio_de_pais;
+  if (!c || !tiene(sesion.usuario, "odoo.administrar")) return null;
+  const tipo = x.vehiculo_id ? "unidad" : x.cliente_id ? "cliente" : "persona";
+  const id = x.vehiculo_id || x.cliente_id || x.persona_id;
+  if (!id) return null;
+  const b = h("button", { type: "button", clase: "chico" },
+    reemplazar(t(tipo === "unidad" ? "odo_pasarla_a" : "odo_pasar_a"), { p: c.a_pais }));
+  b.addEventListener("click", async () => {
+    b.disabled = true;
+    try {
+      await api.post("/odoo/pasar-de-pais", { tipo, id, pais_id: c.a_pais_id,
+                                             plaza_id: c.plaza_id || null,
+                                             plaza: c.plaza || null });
+      mensaje(reemplazar(t("odo_pasado"), { p: c.a_pais }));
+      b.replaceWith(h("span", { clase: "etiqueta ok" }, c.a_pais));
+    } catch (err) {
+      mensaje(err.message, "grave");
+      b.disabled = false;
+    }
+  });
+  return b;
 }
 
 /* Un renglon por persona o unidad: lo que se busca en Odoo --el nombre
@@ -956,11 +1005,12 @@ function listaDePendientes(pendientes, cfg) {
    lista de pendientes es la que RH va a recorrer entera. */
 function renglones(lista, partes) {
   return h("div", { style: "margin:2px 0 10px" }, ...lista.map((x) => {
-    const [principal, detalle] = partes(x);
-    return h("div", { style: "display:flex;gap:14px;align-items:baseline;"
+    const [principal, detalle, accion] = partes(x);
+    return h("div", { style: "display:flex;gap:14px;align-items:center;"
                               + "padding:5px 0;border-bottom:1px solid #f0f2f4" },
       h("span", { style: "flex:0 0 280px" }, principal),
-      h("span", { clase: "gris chico" }, detalle || ""));
+      h("span", { clase: "gris chico", style: "flex:1" }, detalle || ""),
+      accion || "");
   }));
 }
 
@@ -1092,7 +1142,8 @@ function pintarHistorial(caja, estado) {
                     : f.tipo === "oficina" ? "odo_t_oficina"
                     : f.tipo === "clientes" ? "odo_t_clientes"
                     : f.tipo === "tarifarios" ? "odo_t_tarifarios" : "odo_t_personal")),
-      h("td", { clase: "gris" }, t(f.automatica ? "odo_sola_h" : "odo_a_mano")),
+      h("td", { clase: "gris" }, t(f.automatica ? "odo_sola_h" : "odo_a_mano"),
+        f.detenida ? [" ", h("span", { clase: "etiqueta grave" }, t("odo_detenida_corto"))] : ""),
       h("td", {}, f.hecha_por || "—"),
       h("td", { clase: "num" }, String(f.altas)),
       h("td", { clase: "num" }, String(f.cambios)),

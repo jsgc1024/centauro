@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app import accesos, odoo_api, odoo_tarifarios
+from app import accesos, odoo_api, odoo_pais, odoo_tarifarios
 from app import models as m
 from app import odoo_clientes_reglas as reglas
 from app.config import settings
@@ -89,6 +89,24 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
     partners = odoo.leer(MODELO, dominio(etiqueta_id), CAMPOS)
     paises, clientes = _fotos_fijas(db)
     plan = reglas.planear(partners, clientes, paises)
+
+    # El freno por pais (seccion 130, decision 3): un pais del que Connect
+    # tiene clientes de Odoo y hoy no se leyo ninguno es la conexion que
+    # dejo de verlos, no una tanda de bajas.
+    todos = db.query(m.Pais).all()
+    leidos_por_pais = {x.codigo.upper(): plan["por_pais_id"].get(x.id, 0)
+                       for x in todos}
+    por_pais = [{"codigo": x.codigo.upper(), "pais": x.nombre,
+                 "leidos": leidos_por_pais[x.codigo.upper()]} for x in todos]
+    freno = odoo_pais.frenos(db, odoo_pais.CLIENTES, leidos_por_pais)
+    if freno:
+        informe = odoo_pais.detenida(
+            {"ensayo": ensayo, "leidos": plan["leidos"], "por_pais": por_pais},
+            freno, sin_rfc=[], pais_por_rfc=[], sin_ligar=[], sin_tarifario=0,
+            tarifarios_de_odoo=odoo_tarifarios.en_marcha(db))
+        if not ensayo:
+            odoo_pais.registrar_detenida(db, TIPO, informe, quien, automatica)
+        return informe
 
     estados = {}
     if plan["revisar_salida"]:
@@ -171,6 +189,9 @@ def sincronizar(db: Session, odoo, ensayo: bool = True,
 
 
 def resumen(informe: dict) -> dict:
+    if informe.get("detenida"):
+        return {"detenida": True, "freno": informe["freno"],
+                "leidos": informe["leidos"]}
     salida = {"leidos": informe["leidos"], "altas": len(informe["altas"]),
               "vinculadas": len(informe["vinculadas"]),
               "cambios": len(informe["cambios"]), "bajas": len(informe["bajas"]),

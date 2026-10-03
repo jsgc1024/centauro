@@ -580,7 +580,9 @@ def test_la_ubicacion_se_busca_entre_las_ciudades_de_su_pais(db, datos):
 
 
 def test_una_unidad_no_cambia_de_pais_ni_se_da_de_baja_sola(db, datos):
-    odoo = OdooFalso(unidad(1), unidad(2))
+    # La 9 se queda en la flota de Mexico: si Mexico leyera cero con sus
+    # unidades activas, la vuelta se detendria (seccion 130, decision 3).
+    odoo = OdooFalso(unidad(1), unidad(2), unidad(9))
     leer(db, odoo)
     # La 1 pasa entera a Brasil en Odoo; la 2 cambia de compania y se
     # queda con la etiqueta de Mexico.

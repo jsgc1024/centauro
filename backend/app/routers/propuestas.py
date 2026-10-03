@@ -210,6 +210,50 @@ def nueva_version(cotizacion_id: int, db: Session = Depends(get_db),
     return motor.detalle(db, nueva, usuario)
 
 
+@router.post("/{cotizacion_id}/descartar", summary="Descartar este borrador")
+def descartar(cotizacion_id: int, db: Session = Depends(get_db),
+              usuario: m.Usuario = Depends(ARMAR)):
+    """El borrador abierto por error (seccion 131, decision 1): la version
+    2 o siguiente se borra y la anterior vuelve a ser la ultima; la
+    version 1 que nunca se mando se elimina con registro y su folio no se
+    vuelve a usar."""
+    hecho = cc.descartar(db, usuario, _de(db, cotizacion_id))
+    db.commit()
+    return hecho
+
+
+@router.post("/{cotizacion_id}/servicio",
+             summary="Volver a crear el implantado que se elimino")
+def recrear_implantado(cotizacion_id: int, db: Session = Depends(get_db),
+                       usuario: m.Usuario = Depends(ARMAR)):
+    """La autorizada cuyo implantado se elimino (seccion 131, decision 2):
+    nace otra vez, con lo mismo y la misma autorizacion, con folio nuevo.
+    Su primer mes se abre con los terminos de la propuesta."""
+    servicio = motor.recrear_implantado(db, usuario, _de(db, cotizacion_id))
+    db.commit()
+    return {"servicio_id": servicio.id, "folio": servicio.folio,
+            "estatus": servicio.estatus.value,
+            "sin_consultor": servicio.consultor_id is None}
+
+
+class EliminarIn(BaseModel):
+    """Por que ya no va (seccion 131). Sin el, se pregunta."""
+    motivo: str | None = Field(None, max_length=cc.LARGO_MOTIVO)
+
+
+@router.post("/{cotizacion_id}/eliminar",
+             summary="Eliminar la propuesta cuyo implantado se elimino")
+def eliminar(cotizacion_id: int, cuerpo: EliminarIn,
+             db: Session = Depends(get_db),
+             usuario: m.Usuario = Depends(ARMAR)):
+    """La que ya no va (seccion 131, decision 2): se van todas sus
+    versiones; queda su renglon en las eliminadas, con el motivo, y su
+    folio no se vuelve a usar."""
+    nombre = cc.eliminar(db, usuario, _de(db, cotizacion_id), cuerpo.motivo)
+    db.commit()
+    return {"eliminada": nombre}
+
+
 @router.post("/{cotizacion_id}/rechazar", summary="El cliente dijo que no")
 def rechazar(cotizacion_id: int, cuerpo: RechazoIn,
              db: Session = Depends(get_db),

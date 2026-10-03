@@ -114,6 +114,52 @@ def con_paquetes_del_servicio(db: Session, servicio_id: int) -> bool:
     return cot.con_paquetes(db, vigente) if vigente is not None else True
 
 
+def precios_cotizados(db: Session, servicio_id: int) -> dict:
+    """Lo que la cotizacion autorizada del servicio cobra por cada concepto
+    (seccion 131, decision 13 de Salvador): {(tipo, referencia, modalidad):
+    precio unitario}. El rol por su perfil, la unidad por su categoria, el
+    paquete por los dos. Sin cotizacion, vacio."""
+    vigente = cot.vigente(db, servicio_id)
+    if vigente is None:
+        return {}
+    salida = {}
+    for linea in vigente.lineas:
+        if linea.tipo == m.TipoLinea.RECURSO:
+            clave = ("recurso", linea.perfil_id, linea.modalidad_id)
+        elif linea.tipo == m.TipoLinea.VEHICULO:
+            clave = ("vehiculo", linea.categoria_id, linea.modalidad_id)
+        elif linea.tipo == m.TipoLinea.PAQUETE:
+            clave = ("paquete", f"{linea.perfil_id}-{linea.categoria_id}",
+                     linea.modalidad_id)
+        else:
+            continue
+        salida.setdefault(clave, _d(linea.precio_unitario))
+    return salida
+
+
+def precio_del_cierre(tarifa, cotizados: dict, clave: tuple
+                      ) -> tuple[Decimal, bool]:
+    """(precio, si es el cotizado) de un concepto del ejecutado.
+
+    Lo que la lista pacta en negro se cobra como esta en la lista. Lo
+    que la lista toma en gris --de otra lista o del precio de venta, que
+    en una lista en dolares se recalcula cada hora con el tipo de cambio
+    de hoy-- se cobra al precio que la cotizacion autorizada le puso, si
+    lo cotizo (seccion 131, decision 13): lo autorizado se queda con lo
+    suyo, como el tipo de cambio. Lo que no se cotizo va con el precio
+    de hoy. Antes un eventual cotizado a 228.57 con el dolar a 17.50 se
+    cerraba a 216.22 con el dolar a 18.50, y el comparativo decia «cobra
+    menos de lo cotizado» por un cambio que el cliente nunca pidio.
+    """
+    precio = _d(tarifa.precio)
+    if tarifa.origen in (None, cot.PACTADO):
+        return precio, False
+    cotizado = cotizados.get(clave)
+    if cotizado is None:
+        return precio, False
+    return cotizado, True
+
+
 def emparejar_el_dia(db: Session, tarifario_id: int, j: m.Jornada,
                      con_paquetes: bool = True) -> tuple:
     """(pares, personas, unidades) del dia de un equipo (seccion 79).
@@ -181,6 +227,9 @@ def ejecutado(db: Session, servicio: m.Servicio, tarifario_id: int,
     de la cotizacion autorizada del servicio."""
     if con_paquetes is None:
         con_paquetes = con_paquetes_del_servicio(db, servicio.id)
+    # Los precios de la cotizacion autorizada, para lo que la lista toma
+    # en gris (decision 13).
+    cotizados = precios_cotizados(db, servicio.id)
     detalle = []
     total = CERO
     horas_extra_total = 0
@@ -255,12 +304,14 @@ def ejecutado(db: Session, servicio: m.Servicio, tarifario_id: int,
                 # persona es: eso es lo que se le vendio al cliente.
                 tarifa = cot.precio_recurso(db, tarifario_id, a.rol_id,
                                             j.modalidad_id)
-                precio = _d(tarifa.precio)
+                precio, cotizado = precio_del_cierre(
+                    tarifa, cotizados, ("recurso", a.rol_id, j.modalidad_id))
                 linea = {"fecha": j.fecha.isoformat(), "equipo": equipo.alias,
                          "tipo": "recurso", "referencia_id": a.rol_id,
                          "descripcion": a.rol.nombre if a.rol else None,
                          "cantidad": 1, "importe": precio,
                          "modalidad": codigo, "precio": precio,
+                         "precio_cotizado": cotizado,
                          "producto_odoo_id": tarifa.producto_odoo_id,
                          "rol_id": a.rol_id}
                 # La misma regla que la cotizacion (seccion 127, hallazgo
@@ -278,12 +329,15 @@ def ejecutado(db: Session, servicio: m.Servicio, tarifario_id: int,
             for a in unidades:
                 tarifa = cot.precio_vehiculo(db, tarifario_id, a.vehiculo.categoria_id,
                                              j.modalidad_id)
-                precio = _d(tarifa.precio)
+                precio, cotizado = precio_del_cierre(
+                    tarifa, cotizados,
+                    ("vehiculo", a.vehiculo.categoria_id, j.modalidad_id))
                 detalle.append({"fecha": j.fecha.isoformat(), "equipo": equipo.alias,
                                 "tipo": "vehiculo", "referencia_id": a.vehiculo.categoria_id,
                                 "descripcion": a.vehiculo.categoria.nombre,
                                 "cantidad": 1, "importe": precio,
                                 "modalidad": codigo, "precio": precio,
+                                "precio_cotizado": cotizado,
                                 "producto_odoo_id": tarifa.producto_odoo_id})
                 total += precio
 
@@ -309,6 +363,8 @@ def renglones(detalle: list) -> list[dict]:
         r = base.setdefault(clave, {
             "tipo": l["tipo"], "descripcion": l["descripcion"],
             "modalidad": l.get("modalidad"), "precio": l.get("precio"),
+            # Al precio de la cotizacion y no al de hoy (decision 13).
+            "precio_cotizado": bool(l.get("precio_cotizado")),
             "cantidad": 0, "importe": CERO})
         r["cantidad"] += l["cantidad"]
         r["importe"] += l["importe"] - (l.get("importe_horas_extra") or CERO)
@@ -1414,13 +1470,59 @@ def _la_prefactura_sigue_en_borrador(cierre: m.Cierre) -> bool:
     return False
 
 
+def comision_del_cierre(db: Session, cierre: m.Cierre
+                         ) -> m.ComisionConsultor | None:
+    """La comision que nacio con la aprobacion de ese cierre: la del
+    servicio en el eventual, la del mes en el implantado."""
+    consulta = db.query(m.ComisionConsultor)
+    if cierre.contrato_id:
+        return consulta.filter_by(contrato_id=cierre.contrato_id).first()
+    return consulta.filter_by(servicio_id=cierre.servicio_id,
+                              contrato_id=None).first()
+
+
+def _cancelar_la_comision(db: Session, cierre: m.Cierre
+                          ) -> tuple[dict | None, dict | None]:
+    """Al regresar lo aprobado (seccion 131, decision 9 de Salvador): la
+    comision que nacio con la aprobacion se cancela --se borra-- y vuelve
+    a nacer con el nuevo visto bueno de finanzas. La que ya quedo en un
+    corte con visto bueno de direccion de operaciones no se toca: ese
+    dinero ya se fijo o se pago; lo que cambie con la nueva aprobacion
+    va como diferencia, como ya hace `comisiones._volver_a_calcular`.
+    Devuelve (la cancelada, la que se quedo en su corte), como textos
+    para la bitacora y la pantalla."""
+    comision = comision_del_cierre(db, cierre)
+    if comision is None:
+        return None, None
+    consultor = db.get(m.Persona, comision.consultor_id)
+    datos = {"comision_id": comision.id,
+             "consultor": consultor.nombre if consultor else None,
+             "monto": _d(comision.monto), "moneda": comision.moneda.value,
+             "estatus": comision.estatus.value,
+             "periodo": f"{comision.mes:02d}/{comision.anio}"}
+    ajustes = (db.query(m.AjusteComision)
+               .filter_by(comision_id=comision.id).all())
+    if comision.corte_id or any(a.corte_id for a in ajustes):
+        return None, datos
+    for ajuste in ajustes:
+        db.delete(ajuste)
+    db.delete(comision)
+    db.flush()
+    return datos, None
+
+
 def regresar(db: Session, cierre: m.Cierre, motivo: str, usuario: m.Usuario,
              ahora: datetime | None = None) -> dict:
     """Finanzas regresa el servicio --o el mes-- a operacion.
 
-    Solo lo que esta en facturacion: lo cerrado ya genero la comision y
-    su factura, y lo que no tiene visto bueno todavia no es de finanzas.
-    El motivo se exige porque es lo que el consultor lee en su tarjeta.
+    Lo que esta en facturacion y, desde la seccion 131 (decision 9 de
+    Salvador, 2 oct), tambien lo que finanzas ya aprobo mientras no
+    tenga factura ni prefactura timbrada: la comision que nacio con la
+    aprobacion se cancela y vuelve a nacer con el nuevo visto bueno, y
+    queda escrito quien lo regreso y por que. Lo que no tiene visto
+    bueno todavia no es de finanzas, y lo facturado se corrige con nota
+    de credito. El motivo se exige porque es lo que el consultor lee en
+    su tarjeta.
 
     Decisiones de Salvador (23 sep): el consultor tiene 24 horas desde el
     regreso, y lo "en plazo" de su primer visto bueno se queda. Si la
@@ -1431,12 +1533,21 @@ def regresar(db: Session, cierre: m.Cierre, motivo: str, usuario: m.Usuario,
     """
     from app import auditoria
 
-    if cierre.estatus != m.EstatusCierre.ENVIADO_FINANZAS:
+    aprobado = cierre.estatus == m.EstatusCierre.APROBADO
+    if cierre.estatus not in (m.EstatusCierre.ENVIADO_FINANZAS,
+                              m.EstatusCierre.APROBADO):
         raise HTTPException(409, {
-            "mensaje": (f"Solo se regresa lo que esta en facturacion; este "
-                        f"esta en {nombre_estatus(cierre.estatus)}"),
-            "que_hacer": ("Lo que ya se cerro se corrige con una nota de "
+            "mensaje": (f"Solo se regresa lo que esta en facturacion o "
+                        f"aprobado sin factura; este esta en "
+                        f"{nombre_estatus(cierre.estatus)}"),
+            "que_hacer": ("Lo que ya se facturo se corrige con una nota de "
                           "credito, no regresandolo.")})
+    if aprobado and cierre.factura_odoo:
+        raise HTTPException(409, {
+            "mensaje": (f"Este cierre ya tiene la factura "
+                        f"{cierre.factura_odoo}: no se regresa"),
+            "que_hacer": ("Lo facturado se corrige con una nota de credito "
+                          "en Odoo.")})
     motivo = (motivo or "").strip()
     if len(motivo) < 10:
         raise HTTPException(400, {
@@ -1451,6 +1562,21 @@ def regresar(db: Session, cierre: m.Cierre, motivo: str, usuario: m.Usuario,
     odoo_no_contesto = _la_prefactura_sigue_en_borrador(cierre)
 
     momento = reloj.ahora_del_servicio(db, cierre.servicio, ahora)
+    # Lo aprobado deja de estarlo: la aprobacion que se deshace queda en
+    # la bitacora con quien la habia dado, y la comision que nacio con
+    # ella se cancela (o se queda, si ya entro a un corte).
+    aprobacion = None
+    comision_cancelada = comision_en_corte = None
+    if aprobado:
+        quien = (db.get(m.Persona, cierre.aprobado_por_id)
+                 if cierre.aprobado_por_id else None)
+        aprobacion = {"por": quien.nombre if quien else None,
+                      "en": cierre.aprobado_en.isoformat()
+                      if cierre.aprobado_en else None}
+        comision_cancelada, comision_en_corte = _cancelar_la_comision(
+            db, cierre)
+        cierre.aprobado_en = None
+        cierre.aprobado_por_id = None
     cierre.estatus = m.EstatusCierre.DEVUELTO_A_OPERACION
     cierre.devuelto_motivo = motivo[:500]
     cierre.devuelto_en = momento
@@ -1483,14 +1609,31 @@ def regresar(db: Session, cierre: m.Cierre, motivo: str, usuario: m.Usuario,
     # que ya paso no cuentan para este.
     cierre.aviso_mitad_en = None
     cierre.aviso_vencido_en = None
-    # Vuelve al consultor: el eventual regresa a sin visto bueno. El
-    # implantado no cambia de estatus: la fase la lleva el mes.
+    # Vuelve al consultor: el eventual regresa a sin visto bueno --tambien
+    # el que finanzas ya habia cerrado--. El cancelado se queda cancelado
+    # y el implantado no cambia de estatus: la fase la lleva el mes.
     if (not cierre.contrato_id
-            and cierre.servicio.estatus == m.EstatusServicio.EN_FACTURACION):
+            and cierre.servicio.estatus in (m.EstatusServicio.EN_FACTURACION,
+                                            m.EstatusServicio.CERRADO)):
         cierre.servicio.estatus = m.EstatusServicio.SIN_VISTO_BUENO
     de_que = _de_que(cierre)
+    de_la_aprobacion = ""
+    if aprobacion:
+        de_la_aprobacion = (f" (estaba aprobado por "
+                            f"{aprobacion['por'] or 'finanzas'}")
+        if comision_cancelada:
+            de_la_aprobacion += (f"; su comision de "
+                                 f"{comision_cancelada['consultor'] or '—'} "
+                                 f"se cancela y vuelve a nacer con el nuevo "
+                                 f"visto bueno")
+        elif comision_en_corte:
+            de_la_aprobacion += (f"; su comision ya quedo en el corte de "
+                                 f"{comision_en_corte['periodo']}: lo que "
+                                 f"cambie va como diferencia")
+        de_la_aprobacion += ")"
     auditoria.registrar(db, usuario, cierre.servicio, "devolver a operacion",
                         (f"{de_que}: {motivo}"
+                         + de_la_aprobacion
                          + (f" (factura {anulada} anulada)" if anulada
                             else "")
                          + (f" (la prefactura #{prefactura} quedo en Odoo: "
@@ -1524,7 +1667,11 @@ def regresar(db: Session, cierre: m.Cierre, motivo: str, usuario: m.Usuario,
             registro.exception("no se pudo avisar el regreso de %s", de_que)
     return {"resultado": "devuelto a operacion", "motivo": motivo,
             "hasta": hasta.isoformat(), "factura_anulada": anulada,
-            "prefactura_anulada": prefactura}
+            "prefactura_anulada": prefactura,
+            "estaba_aprobado": aprobacion,
+            "comision_cancelada": comision_cancelada,
+            "comision_en_corte": comision_en_corte,
+            "odoo_no_contesto": odoo_no_contesto}
 
 
 # ---------------------------------------------------------------- el segundo reloj

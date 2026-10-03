@@ -135,6 +135,10 @@ function aFacturar(f, moneda) {
 function factura(f) {
   if (f.factura) return h("td", {}, folioDe(f));
   if (f.prefactura) return h("td", {}, prefacturaDe(f));
+  /* El mes que se mando en cero (seccion 131, decision 10): no lleva
+     factura, y no es un error. */
+  if (f.sin_cobro) return h("td", {}, etiqueta(t("fac_sin_cobro"), ""),
+    h("div", { clase: "chico gris", style: "margin-top:4px" }, t("fac_sin_cobro_pie")));
   return h("td", {}, etiqueta(t("fac_sin_factura"), "alerta"),
     f.que_paso ? h("div", { clase: "chico gris", style: "margin-top:4px" },
                    t(QUE_PASO[f.que_paso] || "fac_paso_falta_dato")) : "");
@@ -384,8 +388,10 @@ function tablaDetalle(cmp, esMes, moneda) {
     h("tbody", {}, ...filas));
 }
 
-/* Regresar pide el motivo: es lo que el consultor lee en su tarjeta. */
-function formularioRegreso(f, repintar) {
+/* Regresar pide el motivo: es lo que el consultor lee en su tarjeta.
+   Sobre lo aprobado (seccion 131, decision 9 de Salvador) el pie dice
+   ademas que pasa con la prefactura y con la comision que ya nacio. */
+function formularioRegreso(f, repintar, alCerrar = null) {
   const motivo = h("textarea", { rows: "2", style: "margin-bottom:10px",
                                  placeholder: t("fac_motivo_ej") });
   const mandar = h("button", { clase: "chico", type: "button",
@@ -402,15 +408,66 @@ function formularioRegreso(f, repintar) {
           : r.prefactura_anulada
             ? reemplazar(t("fac_regresado_prefactura"), { n: r.prefactura_anulada })
             : t("fac_regresado"));
+        if (r.comision_cancelada) {
+          mensaje(reemplazar(t("fac_regresado_comision"),
+                             { c: r.comision_cancelada.consultor || "—" }));
+        } else if (r.comision_en_corte) {
+          mensaje(reemplazar(t("fac_regresado_corte"),
+                             { c: r.comision_en_corte.consultor || "—",
+                               p: r.comision_en_corte.periodo }), "alerta");
+        }
+        if (r.odoo_no_contesto) mensaje(t("fac_regresado_odoo_mudo"), "alerta");
         await repintar();
       } catch (err) { mensaje(err.message, "grave"); e.target.disabled = false; }
     } }, t("fac_regresar"));
+  const pie = f.se_regresa ? pieDelRegresoAprobado(f) : t("fac_regresar_pie");
   return h("div", { clase: "tarjeta lisa", style: "margin:10px 0 0" },
     h("label", {}, t("fac_por_que_regresa")), motivo,
     h("div", { clase: "acciones" }, mandar,
       h("button", { clase: "chico claro", type: "button",
-        onclick: (e) => e.target.closest(".tarjeta").remove() }, t("cancelar"))),
-    h("p", { clase: "chico gris", style: "margin:10px 0 0" }, t("fac_regresar_pie")));
+        onclick: (e) => alCerrar ? alCerrar() : e.target.closest(".tarjeta").remove() },
+        t("cancelar"))),
+    h("p", { clase: "chico gris", style: "margin:10px 0 0" }, pie));
+}
+
+function pieDelRegresoAprobado(f) {
+  const c = f.comision;
+  const pre = f.prefactura
+    ? reemplazar(t("fac_regresar_pre_queda"), { n: f.prefactura.id }) + " " : "";
+  const com = !c ? ""
+    : c.en_corte
+      ? reemplazar(t("fac_regresar_com_corte"), { c: f.consultor || "—", p: c.periodo })
+      : reemplazar(t("fac_regresar_com_cancela"), { c: f.consultor || "—" });
+  return reemplazar(t("fac_regresar_aprobado_pie"), { pre, com });
+}
+
+/* «aprobado por Jorge Diaz · jue 1 oct · COMISIÓN GENERADA»: la linea
+   de lo aprobado que sigue sin factura, debajo del visto bueno. */
+function lineaAprobado(f) {
+  if (!f.se_regresa) return "";
+  const c = f.comision;
+  const marca = !c ? etiqueta(t("fac_marca_com_sin"), "")
+    : c.en_corte ? etiqueta(reemplazar(t("fac_marca_com_en_corte"), { p: c.periodo }), "info")
+    : c.estatus === "retenida" ? etiqueta(t("fac_marca_com_retenida"), "alerta")
+    : c.estatus === "perdida" ? etiqueta(t("fac_marca_com_perdida"), "")
+    : etiqueta(t("fac_marca_com_generada"), "ok");
+  return h("div", { clase: "chico gris" },
+    reemplazar(t("fac_aprobado_por"), { q: f.aprobado_por || "—",
+                                        f: f.aprobado_en ? dia(f.aprobado_en) : "—" }),
+    " ", marca);
+}
+
+/* El boton «Regresar» de un renglon aprobado: abre el formulario del
+   motivo en el renglon extra de abajo, como las demas formas. */
+function botonRegresar(f, extra, cerrar, repintar) {
+  if (!f.se_regresa || !puedeFacturar()) return "";
+  return h("button", { clase: "chico claro", type: "button",
+    onclick: () => {
+      if (!extra.hidden && extra.querySelector("textarea")) return cerrar();
+      extra.firstChild.replaceChildren(formularioRegreso(f, repintar, cerrar));
+      extra.hidden = false;
+      extra.querySelector("textarea").focus();
+    } }, t("fac_regresar_corto"));
 }
 
 /* ------------------------------------------------------------ en Odoo (seccion 117) */
@@ -465,7 +522,8 @@ function enOdoo(filas, moneda, repintar) {
     cuerpo.append(
       h("tr", {},
         h("td", {}, servicio(f),
-          h("div", { clase: "chico gris" }, vistoBuenoCorto(f))),
+          h("div", { clase: "chico gris" }, vistoBuenoCorto(f)),
+          lineaAprobado(f)),
         h("td", { clase: "der num" },
           h("b", {}, dinero(f.prefactura.total ?? f.total, f.moneda || moneda)),
           h("div", { clase: "chico gris" },
@@ -474,7 +532,8 @@ function enOdoo(filas, moneda, repintar) {
         h("td", { clase: "der", style: "width:1%;white-space:nowrap" },
           h("div", { clase: "acciones",
                      style: "flex-direction:column;align-items:stretch" },
-            f.prefactura.url ? botonOdoo(f.prefactura.url) : "", revisar, anotar))),
+            f.prefactura.url ? botonOdoo(f.prefactura.url) : "", revisar, anotar,
+            botonRegresar(f, extra, cerrar, repintar)))),
       extra);
   }
   return h("div", {},
@@ -544,7 +603,7 @@ function noSePudo(filas, moneda, repintar) {
             .filter(Boolean).join(" · ");
     cuerpo.append(
       h("tr", {},
-        h("td", { style: "min-width:190px" }, servicio(f)),
+        h("td", { style: "min-width:190px" }, servicio(f), lineaAprobado(f)),
         h("td", { clase: "der num", style: "white-space:nowrap" },
           h("b", {}, dinero(f.total, f.moneda || moneda))),
         h("td", {},
@@ -558,7 +617,7 @@ function noSePudo(filas, moneda, repintar) {
           !puedeFacturar() ? ""
             : h("div", { clase: "acciones",
                          style: "flex-direction:column;align-items:stretch" },
-                mandar, anotar))),
+                mandar, anotar, botonRegresar(f, extra, cerrar, repintar)))),
       extra);
   }
   return h("div", {},
@@ -617,7 +676,7 @@ function porFacturar(filas, moneda, repintar, conectado) {
     ].filter(Boolean).join(" · ");
     cuerpo.append(
       h("tr", {},
-        h("td", {}, servicio(f)),
+        h("td", {}, servicio(f), lineaAprobado(f)),
         h("td", { clase: "der num" }, h("b", {}, dinero(f.total, f.moneda || moneda))),
         h("td", {},
           h("span", { style: "color:var(--alerta);font-weight:650" },
@@ -625,7 +684,7 @@ function porFacturar(filas, moneda, repintar, conectado) {
           h("div", { clase: "chico gris" }, intentos)),
         h("td", { clase: "der" }, !puedeFacturar() ? ""
           : h("div", { clase: "acciones", style: "justify-content:flex-end" },
-              anotar, otraVez))),
+              anotar, otraVez, botonRegresar(f, extra, cerrar, repintar)))),
       extra);
   }
   return h("div", {},
@@ -750,13 +809,20 @@ function cerrados(filas, moneda, repintar) {
             extra.hidden = false;
           } }, t("fac_corregir"))
       : "";
+    /* Lo aprobado que sigue sin factura se puede regresar tambien desde
+       aqui (seccion 131): es el mismo boton de «En Odoo». */
+    const regresar = botonRegresar(f, extra, cerrar, repintar);
     cuerpo.append(
       h("tr", {},
         h("td", {}, servicio(f)),
-        h("td", {}, dia(f.aprobado_en)),
+        h("td", {}, dia(f.aprobado_en),
+          f.aprobado_por ? h("div", { clase: "chico gris" }, f.aprobado_por) : ""),
         h("td", { clase: "der num" }, dinero(f.total, f.moneda || moneda)),
-        h("td", {}, f.factura ? folioDe(f) : etiqueta(t("fac_sin_factura"), "alerta"),
-          corregir),
+        h("td", {}, f.factura ? folioDe(f)
+          : f.sin_cobro ? etiqueta(t("fac_sin_cobro"), "")
+          : etiqueta(t("fac_sin_factura"), "alerta"),
+          corregir,
+          regresar ? h("div", { style: "margin-top:4px" }, regresar) : ""),
         h("td", { clase: "der num" }, comision(f.comision))),
       extra);
   }

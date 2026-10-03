@@ -46,7 +46,7 @@ export function recordar(correo, nombre, credencial) {
 }
 export function olvidar() { escribir(RECUERDO, null); }
 
-function primerNombre(nombre) {
+export function primerNombre(nombre) {
   return (nombre || "").trim().split(/\s+/)[0] || nombre || "";
 }
 export function saludo() {
@@ -74,10 +74,24 @@ export async function hayLector() {
   } catch { return false; }
 }
 
-/* Se ofrece al entrar con contrasena, una vez: si ya entra con huella en
-   este equipo, o dijo "ahora no" hace menos de un mes, no se pregunta.
-   Se llama ya con la sesion puesta. */
+/* Si este equipo es un telefono o una tableta: un equipo de una sola
+   persona. En una computadora --que en la oficina puede ser de varios--
+   la huella no se ofrece sola (seccion 132, decision 8 de Salvador): se
+   activa a mano desde el menu, con la advertencia de que sea suya. */
+export function esTelefono() {
+  const datos = navigator.userAgentData;
+  if (datos && typeof datos.mobile === "boolean" && datos.mobile) return true;
+  const ua = navigator.userAgent || "";
+  if (/Android|iPhone|iPad|iPod|Mobile/i.test(ua)) return true;
+  /* El iPad de hoy se presenta como Mac, pero con pantalla tactil. */
+  return /Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1;
+}
+
+/* Se ofrece al entrar con contrasena, una vez, y solo en telefonos: si
+   ya entra con huella en este equipo, o dijo "ahora no" hace menos de un
+   mes, no se pregunta. Se llama ya con la sesion puesta. */
 export async function convieneOfrecer(correo) {
+  if (!esTelefono()) return false;
   if (!(await hayLector())) return false;
   const r = recordado();
   if (r && r.correo === correo) {

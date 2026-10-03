@@ -202,7 +202,9 @@ def test_lo_que_cambia_en_odoo_se_pone_al_dia(db):
 
 
 def test_la_baja_en_odoo_le_cierra_el_acceso(db, cliente, sesion):
-    odoo = OdooFalso(empleado(1))
+    # Un registro mas que se queda en su compania: si el pais leyera cero
+    # con gente activa, la vuelta se detendria (seccion 130, decision 3).
+    odoo = OdooFalso(empleado(1), empleado(9))
     leer(db, odoo)
     p = persona(db, 1)
     r = cliente.post("/auth/usuarios", json={"persona_id": p.id,
