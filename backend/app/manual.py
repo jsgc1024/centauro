@@ -227,6 +227,28 @@ TAREAS = {
                "resumo do dia com os eventos de nível 2 das suas zonas.",
                "Que o e-mail esteja ligado e que o gerente tenha zonas."),
     },
+    "riesgo-lector": {
+        "es": ("Lector de noticias y redes: cada cinco minutos lee las "
+               "fuentes a las que ya les toca, se queda con lo que parece "
+               "de seguridad y Claude lo entiende y lo junta por hecho para "
+               "que el analista lo revise en la pestaña Lector.",
+               "Si en una hora no llega nada, mira en Lector → fuentes cuáles "
+               "dicen error; sin la llave de Claude sigue, solo por palabras."),
+        "pt": ("Leitor de notícias e redes: a cada cinco minutos lê as fontes "
+               "que já tocam, fica com o que parece de segurança e o Claude o "
+               "entende e o junta por fato para o analista revisar na aba "
+               "Leitor.",
+               "Se em uma hora nada chega, veja em Leitor → fontes quais dizem "
+               "erro; sem a chave do Claude continua, só por palavras."),
+    },
+    "riesgo-lector-podar": {
+        "es": ("Lector: a las 3:40 borra las notas de hace dos semanas que no "
+               "llegaron a ningún hallazgo.",
+               "Si la base crece de más, que esta tarea esté corriendo."),
+        "pt": ("Leitor: às 3:40 apaga as notas de duas semanas atrás que não "
+               "chegaram a nenhum achado.",
+               "Se a base crescer demais, que esta tarefa esteja rodando."),
+    },
     "riesgo-secretariado": {
         "es": ("Nivel Centauro: cada mañana a las 9:10 revisa si ya debió "
                "subirse el archivo del mes del Secretariado (desde el 18); "
@@ -690,6 +712,8 @@ AREA_DE_ARCHIVO = {
     "routers/cliente_ci.py": "riesgo", "riesgo_campo.py": "riesgo",
     "nivel_centauro.py": "riesgo", "fuentes_riesgo.py": "riesgo",
     "routers/nivel.py": "riesgo",
+    # El lector de noticias y redes (seccion 140).
+    "lector.py": "riesgo", "routers/lector.py": "riesgo",
     "operacion.py": "operacion", "routers/operacion.py": "operacion",
     "routers/central.py": "operacion", "central.py": "operacion",
     "geocercas.py": "operacion", "intentos.py": "operacion",

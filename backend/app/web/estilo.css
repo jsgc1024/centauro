@@ -1821,3 +1821,23 @@ input.pro-mes { width: 132px; margin: 0; text-align: right;
 .fondo-falta { margin: 0 0 14px; }
 .fondo-falta ol { margin: 8px 0 4px 18px; padding: 0; }
 .fondo-falta a { color: var(--centauro); font-weight: 650; }
+
+/* ------------------------------------------ el lector de noticias (AI/CI)
+   Seccion 140. A la izquierda lo que encontro y espera una mano; a la
+   derecha la ficha del hallazgo. */
+.lec-cola { max-height: none; }
+.lec-renglon { gap: 4px; }
+.lec-elegido { border: 2px solid var(--centauro); }
+.lec-arriba { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.lec-titulo { font-weight: 600; line-height: 1.3; }
+.lec-hoy { padding: 2px 4px 6px; }
+.lec-ficha { border-top: 4px solid var(--centauro); }
+.lec-ficha h3 { margin: 14px 0 6px; font-size: 15px; }
+.lec-titular { margin: 4px 0 6px; font-size: 20px; line-height: 1.3; }
+.lec-resumen { margin: 0 0 10px; }
+.lec-clave { width: 170px; }
+.lec-acciones { margin-top: 12px; }
+.lec-pie { margin-top: 8px; }
+.lec-motivos { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.lec-tope { max-width: 140px; }
+.lec-ficha .etiqueta { white-space: nowrap; }

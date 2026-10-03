@@ -656,6 +656,7 @@ AYUDA_POR_PANTALLA = {
     "riesgo.js": 0,
     "fondo.js": 0,
     "mapa_fondo.js": 0,
+    "lector.js": 0,
     "accesos.js": 1,
     "bonos.js": 2,
     "bitacora.js": 3,

@@ -30,6 +30,7 @@ from app.routers import propuestas as propuestas_router
 from app.routers import riesgo as riesgo_router
 from app.routers import cliente_ci as cliente_ci_router
 from app.routers import nivel as nivel_router
+from app.routers import lector as lector_router
 from app.seed import (sembrar, sembrar_bonos, sembrar_festivos,
                       sembrar_lugares, sembrar_parametros, sembrar_recursos)
 
@@ -163,6 +164,7 @@ app.include_router(propuestas_router.router)
 app.include_router(riesgo_router.router)
 # El riesgo de fondo: el Nivel Centauro (seccion 138).
 app.include_router(nivel_router.router)
+app.include_router(lector_router.router)
 # Y la app de su cliente (seccion 136), con su propia sesion.
 app.include_router(cliente_ci_router.router)
 

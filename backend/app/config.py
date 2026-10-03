@@ -20,6 +20,13 @@ class Settings(BaseSettings):
     # (mycentauro.lat/* y ci.mycentauro.lat/*) y solo a Maps JavaScript
     # API. La del servidor nunca sale.
     google_maps_key_navegador: str = ""
+    # El lector de noticias y redes (seccion 140). La de Claude entiende
+    # las notas (console.anthropic.com); la de X lee la lista de cuentas
+    # (el Bearer Token de la app en el portal de desarrolladores de X).
+    # Sin ellas el lector sigue: sin Claude, solo por palabras; sin X,
+    # sin la lista.
+    anthropic_api_key: str = ""
+    x_bearer_token: str = ""
     # La linea de la central: el numero que el boton de panico marca.
     # Es una linea fija, no el celular de quien este de turno, porque el
     # turno cambia y el numero al que se llama en una emergencia no.

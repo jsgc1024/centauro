@@ -5698,3 +5698,130 @@ class NivelLugar(Base):
 
     region: Mapped[Region] = relationship()
     municipio: Mapped[Municipio | None] = relationship()
+
+
+# ===================================================== el lector (seccion 140)
+#
+# Connect lee medios, busquedas de Google Noticias y una lista de X cada
+# pocos minutos. Lo que parece de seguridad lo entiende Claude y lo junta
+# por hecho; el analista decide si es un evento. Nada se publica solo.
+
+class FuenteLector(Base):
+    """Algo que el lector lee: un medio (su RSS), una busqueda de Google
+    Noticias o una lista de X."""
+    __tablename__ = "fuente_lector"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # medio | busqueda | lista_x
+    tipo: Mapped[str] = mapped_column(String(20))
+    nombre: Mapped[str] = mapped_column(String(120))
+    # La direccion del RSS, las palabras de la busqueda o la de la lista.
+    direccion: Mapped[str] = mapped_column(String(600))
+    # JSON de texto con los id de los estados que cubre; [] = nacional.
+    regiones: Mapped[str] = mapped_column(Text, server_default="[]")
+    oficial: Mapped[bool] = mapped_column(Boolean, default=False,
+                                          server_default="false")
+    cada_min: Mapped[int] = mapped_column(Integer, default=15,
+                                          server_default="15")
+    activa: Mapped[bool] = mapped_column(Boolean, default=True,
+                                         server_default="true")
+    leida_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    # Lo ultimo que se leyo de X: desde ahi pide lo nuevo.
+    desde_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    error: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    error_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    creada_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("usuario.id", ondelete="SET NULL"), nullable=True)
+    creada_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class HallazgoLector(Base):
+    """Un hecho que encontro el lector, con todas sus notas. Lo que el
+    analista revisa."""
+    __tablename__ = "hallazgo_lector"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    pais_id: Mapped[int] = mapped_column(ForeignKey("pais.id"))
+    # por_revisar | evento | sumado | descartado
+    estado: Mapped[str] = mapped_column(String(20), index=True,
+                                        server_default="por_revisar")
+    titulo: Mapped[str] = mapped_column(String(300))
+    resumen: Mapped[str] = mapped_column(Text, server_default="")
+    tipo_id: Mapped[int | None] = mapped_column(
+        ForeignKey("tipo_evento.id", ondelete="SET NULL"), nullable=True)
+    region_id: Mapped[int | None] = mapped_column(
+        ForeignKey("region.id"), nullable=True)
+    municipio_id: Mapped[int | None] = mapped_column(
+        ForeignKey("municipio.id", ondelete="SET NULL"), nullable=True)
+    lugar: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    lat: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
+    lon: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
+    nivel: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    razon: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    ocurrio_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    sigue: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Lo entendio Claude, o solo las palabras (sin llave).
+    con_ia: Mapped[bool] = mapped_column(Boolean, default=False,
+                                         server_default="false")
+    creado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    actualizado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    revisado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("usuario.id", ondelete="SET NULL"), nullable=True)
+    revisado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    motivo: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    evento_id: Mapped[int | None] = mapped_column(
+        ForeignKey("evento_riesgo.id", ondelete="SET NULL"), nullable=True)
+
+    tipo: Mapped["TipoEvento | None"] = relationship()
+    region: Mapped["Region | None"] = relationship()
+    municipio: Mapped["Municipio | None"] = relationship()
+    notas: Mapped[list["NotaLector"]] = relationship(
+        back_populates="hallazgo", order_by="NotaLector.publicada_en")
+
+
+class NotaLector(Base):
+    """Una nota o publicacion leida. Se guarda una vez (por su huella)
+    aunque salga en varias vueltas o en varias busquedas."""
+    __tablename__ = "nota_lector"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    fuente_id: Mapped[int] = mapped_column(
+        ForeignKey("fuente_lector.id", ondelete="CASCADE"), index=True)
+    huella: Mapped[str] = mapped_column(String(64), unique=True)
+    url: Mapped[str | None] = mapped_column(String(600), nullable=True)
+    titulo: Mapped[str] = mapped_column(String(400))
+    texto: Mapped[str] = mapped_column(Text, server_default="")
+    # El medio que la publico (en Google Noticias no es la fuente).
+    medio: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    publicada_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    leida_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True)
+    # nueva | sin_filtro | analizada | no_es | error
+    estado: Mapped[str] = mapped_column(String(20), server_default="nueva")
+    hallazgo_id: Mapped[int | None] = mapped_column(
+        ForeignKey("hallazgo_lector.id", ondelete="SET NULL"), nullable=True,
+        index=True)
+
+    fuente: Mapped[FuenteLector] = relationship()
+    hallazgo: Mapped[HallazgoLector | None] = relationship(
+        back_populates="notas")
+
+
+class ParametrosLector(Base):
+    """Uno solo: el tope de publicaciones de X al dia (X cobra por cada
+    una) y si el lector esta en pausa."""
+    __tablename__ = "parametros_lector"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tope_x_dia: Mapped[int] = mapped_column(Integer, default=1500,
+                                            server_default="1500")
+    pausado: Mapped[bool] = mapped_column(Boolean, default=False,
+                                          server_default="false")

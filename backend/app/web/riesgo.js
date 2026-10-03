@@ -19,6 +19,7 @@ import { aviso, campo, entrada, fecha, fechaLocal, h, hora, lista, mensaje } fro
 import { t } from "./idioma.js";
 import { tiene } from "./menu.js";
 import { mesaDeFondo } from "./fondo.js";
+import { mesaDelLector } from "./lector.js";
 
 const REFRESCO_SEGUNDOS = 60;
 const COLOR = { 1: "#5f7187", 2: "#c99a06", 3: "#e07000", 4: "#c62828" };
@@ -63,6 +64,7 @@ export async function pantallaRiesgo(main) {
   selPais.value = ctx.pais.id;
 
   const pestanaMapa = h("button", { type: "button", clase: "pestana activa" }, t("rsg_tab_mapa"));
+  const pestanaLector = h("button", { type: "button", clase: "pestana" }, t("rsg_tab_lector"));
   const pestanaFondo = h("button", { type: "button", clase: "pestana" }, t("rsg_tab_fondo"));
   const pestanaClientes = h("button", { type: "button", clase: "pestana" }, t("rsg_tab_clientes"));
   const cuerpo = h("div");
@@ -71,21 +73,38 @@ export async function pantallaRiesgo(main) {
     h("h1", {}, t("rsg_titulo")),
     h("p", { clase: "sub" }, t("rsg_sub")),
     h("div", { clase: "rsg-barra" }, campo(t("rsg_pais"), selPais),
-      h("div", { clase: "pestanas" }, pestanaMapa, pestanaFondo, pestanaClientes)),
+      h("div", { clase: "pestanas" }, pestanaMapa, pestanaLector, pestanaFondo, pestanaClientes)),
     cuerpo);
 
-  const mostrar = async (cual) => {
+  /* La cuenta de lo que espera en el lector va en su pestana: se ve
+     desde cualquier otra. */
+  const contarLector = (n) => {
+    pestanaLector.textContent = n ? `${t("rsg_tab_lector")} · ${n}` : t("rsg_tab_lector");
+  };
+  const mostrar = async (cual, abrir = null) => {
     pestanaMapa.classList.toggle("activa", cual === "mapa");
+    pestanaLector.classList.toggle("activa", cual === "lector");
     pestanaFondo.classList.toggle("activa", cual === "fondo");
     pestanaClientes.classList.toggle("activa", cual === "clientes");
     clearInterval(temporizador);
     cuerpo.replaceChildren();
-    if (cual === "mapa") await mesaDelAnalista(cuerpo);
-    else if (cual === "fondo") await mesaDeFondo(cuerpo, { pais: ctx.pais, cargarGoogle });
+    if (cual === "mapa") {
+      await mesaDelAnalista(cuerpo);
+      if (abrir) await abrirEvento(abrir);
+    } else if (cual === "lector") {
+      await mesaDelLector(cuerpo, {
+        pais: ctx.pais, contar: contarLector, catalogos,
+        puedePublicar: puede("riesgo.publicar"), puedeFuentes: puede("riesgo.catalogo"),
+        abrirEnMapa: (id) => mostrar("mapa", id),
+        cadaMinuto: (fn, ms) => { clearInterval(temporizador); temporizador = setInterval(fn, ms); },
+      });
+    } else if (cual === "fondo") await mesaDeFondo(cuerpo, { pais: ctx.pais, cargarGoogle });
     else await mesaDeClientes(cuerpo);
   };
   const activa = () => (pestanaMapa.classList.contains("activa") ? "mapa"
+    : pestanaLector.classList.contains("activa") ? "lector"
     : pestanaFondo.classList.contains("activa") ? "fondo" : "clientes");
+  pestanaLector.onclick = () => mostrar("lector");
   pestanaMapa.onclick = () => mostrar("mapa");
   pestanaFondo.onclick = () => mostrar("fondo");
   pestanaClientes.onclick = () => mostrar("clientes");
@@ -96,6 +115,9 @@ export async function pantallaRiesgo(main) {
     await mostrar(activa());
   };
   await mostrar("mapa");
+  if (ctx.pais.codigo === "MX") {
+    api.get("/riesgo/lector").then((d) => contarLector(d.hallazgos.length)).catch(() => {});
+  }
 }
 
 async function catalogos() {

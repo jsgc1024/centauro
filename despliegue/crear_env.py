@@ -50,6 +50,12 @@ GOOGLE_MAPS_KEY=
 # JavaScript API».
 GOOGLE_MAPS_KEY_NAVEGADOR=
 
+# El lector de noticias y redes (seccion 140). La de Claude, de
+# console.anthropic.com; la de X, el Bearer Token de la app en el portal
+# de desarrolladores de X. Sin ellas el lector sigue, mas limitado.
+ANTHROPIC_API_KEY=
+X_BEARER_TOKEN=
+
 # Avisos al telefono. Las dos llaves las escribe generar_llaves_push.py.
 VAPID_CONTACTO=mailto:operaciones@centauro.lat
 

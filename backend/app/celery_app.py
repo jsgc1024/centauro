@@ -82,6 +82,18 @@ celery.conf.update(
         # sube una persona --gob.mx no le ensena la pagina a un servidor--
         # y cada manana se revisa si ya debio estar: el 18 y cada tres
         # dias se le recuerda por correo a quien publica en el mapa.
+        # El lector de noticias y redes (seccion 140): cada cinco minutos
+        # lee las fuentes a las que ya les toca (cada una tiene su cada
+        # cuanto) y le pasa a Claude lo nuevo que parece de seguridad.
+        "riesgo-lector": {
+            "task": "riesgo.lector",
+            "schedule": crontab(minute="*/5"),
+        },
+        # Y una vez al dia borra las notas viejas que no sirvieron.
+        "riesgo-lector-podar": {
+            "task": "riesgo.lector_podar",
+            "schedule": crontab(hour=3, minute=40),
+        },
         "riesgo-secretariado": {
             "task": "riesgo.recordar_secretariado",
             "schedule": crontab(hour=9, minute=10),
@@ -440,6 +452,34 @@ def recordar_secretariado():
         salida = fuentes_riesgo.recordar_secretariado(db)
         db.commit()
         return salida
+    finally:
+        db.close()
+
+
+@celery.task(name="riesgo.lector")
+def lector_vuelta():
+    """Lee las fuentes del lector y entiende lo nuevo (seccion 140)."""
+    from app import lector
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        return lector.vuelta(db)
+    finally:
+        db.close()
+
+
+@celery.task(name="riesgo.lector_podar")
+def lector_podar():
+    """Las notas de hace dos semanas que no sirvieron (seccion 140)."""
+    from app import lector
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        cuantas = lector.podar(db)
+        db.commit()
+        return {"borradas": cuantas}
     finally:
         db.close()
 

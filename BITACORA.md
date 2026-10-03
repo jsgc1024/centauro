@@ -10699,6 +10699,45 @@ cliente de la Central (`CLIENTE_CI`) o con plantilla `ci_` o `riesgo_`.
 
 Pruebas: `tests/test_nivel_centauro.py` (15).
 
+## 140. El lector de noticias y redes
+
+La segunda fase de la Central de Inteligencia (Salvador, 3 oct: «con IA,
+como recomiendas», y X desde el principio). Bocetos aprobados el 3 oct.
+
+- **Lo que lee** (`FuenteLector`, migracion `c9d1e3f5a7b0`): medios por
+  su RSS, busquedas de Google Noticias (`when:1d`, en espanol de Mexico)
+  y una **lista de X** (`/2/lists/{id}/tweets` con `X_BEARER_TOKEN`).
+  Cada fuente tiene su cada cuanto; la tarea `riesgo-lector` corre cada
+  5 minutos y lee las que ya tocan. Arranca con 47 (`lector_catalogo`):
+  6 busquedas por tema cada 15 min, una por estado cada hora y 9 medios.
+  Lo que falla queda escrito en la fuente («La pagina contesto 503»).
+  Connect nunca entra a X con usuario y contrasena: lee por la API.
+- **Cada nota una vez** (`NotaLector.huella`); lo de mas de dos dias no
+  entra; las que no sirvieron se borran a las dos semanas
+  (`riesgo-lector-podar`).
+- **El filtro**: palabras de seguridad, ancho a proposito. Lo que pasa
+  va a Claude Haiku 4.5 (`ANTHROPIC_API_KEY`) por lotes de 12, con los
+  tipos y sus definiciones, los niveles, los hallazgos abiertos de 36 h
+  y los eventos vivos (para juntar el mismo hecho) y los ultimos 15
+  descartes (para no repetirlos). Contesta por herramienta: es hecho o
+  no, tipo, estado, municipio, lugar, nivel y por que, cuando, si
+  sigue, y `mismo_que` (H12, CI-0040 o N3).
+- **El hallazgo** (`HallazgoLector`): el hecho con sus notas. Punto
+  aproximado = centro del municipio, de los contornos del mapa. «Cerca
+  de»: clientes que siguen el estado y el servicio de hoy a 25 km o
+  menos. Una nota oficial nueva actualiza lo que dice el hallazgo.
+- **Lo que hace el analista** (`riesgo.publicar`): crear el evento
+  (`origen=lector`, propuesto, con las notas como fuentes y radio de 8
+  km; lo que no entendio Connect --tipo, estado, nivel-- lo elige ahi
+  mismo) y se abre en Mapa y eventos; sumarlo a un evento; descartarlo
+  con motivo. Nada se publica solo.
+- **Sin llave de Claude** sigue por palabras («SOLO POR PALABRAS»).
+  **X** lleva la cuenta del dia (UTC, como cobra) y un tope
+  (`ParametrosLector`, 1,500 de entrada) que mueve quien lleva el
+  catalogo de riesgo; tambien puede pausar el lector.
+
+Pruebas: `tests/test_lector.py` (10).
+
 ## 14. Lo que falta
 
 ### Abierto
