@@ -103,10 +103,13 @@ PUESTOS: list[dict] = [
         "area": "Operaciones CI",
         "rol": R.CENTRAL,
         "orden": 30,
-        "descripcion": "Monitoreo, código y correcciones con su motivo.",
+        "descripcion": "Monitoreo, código y correcciones con su motivo. "
+                       "Confirma el nivel 4 del mapa de riesgo.",
         "pantallas": ["panorama", "servicios", "implantados", "equipo",
                       "unidades", "bonos", "central", "codigo"],
-        "actividades": _de(R.CENTRAL),
+        # El jefe de turno de la central (seccion 130): confirma lo que
+        # sale como nivel 4 en el mapa de riesgo.
+        "actividades": _de(R.CENTRAL) | {"riesgo.confirmar"},
         "puestos_odoo": ("Supervisor Analisis, Supervisor Análisis, "
                          "Especialista Monitoreo, Supervisor de Central, "
                          "Jefe de Central"),

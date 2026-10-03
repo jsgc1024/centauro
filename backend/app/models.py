@@ -1914,6 +1914,9 @@ class Destinatario(str, enum.Enum):
     # aviso de administracion. Los cinco de arriba son papeles dentro de
     # un servicio; este es una persona a secas.
     COLABORADOR = "colaborador"
+    # Alguien del cliente de la Central de Inteligencia (seccion 131): su
+    # alerta de riesgo, su resumen del dia, su invitacion a la app.
+    CLIENTE_CI = "cliente_ci"
 
 
 class Canal(str, enum.Enum):
@@ -5095,3 +5098,369 @@ class CasoResuelto(Base):
         ForeignKey("persona.id", ondelete="SET NULL"), nullable=True)
     resuelto_en: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True)
+
+
+# ------------------------------------------- Central de Inteligencia (AI/CI)
+#
+# La segunda linea de operacion de Connect (seccion 130). Su pieza es una
+# sola: el evento de riesgo, algo que paso en un lugar y a una hora y que
+# cambia el riesgo de quien pase por ahi. El mapa son eventos; una alerta
+# es un evento que toca a un cliente; un trayecto es una ruta que los
+# cruza. La propuesta completa, con las decisiones de Salvador del 2 de
+# octubre, esta en PROPUESTA_CENTRAL_INTELIGENCIA.md.
+
+class Region(Base):
+    """Un estado (Mexico), una unidad federativa (Brasil): la zona que
+    sigue un cliente y a la que pertenece cada evento.
+
+    Es lo que decide a quien le toca un evento sin geometria de por
+    medio: el evento dice su estado, el cliente dice que estados sigue.
+    Un poligono por estado se puede agregar despues sin cambiar eso.
+    """
+    __tablename__ = "region"
+    __table_args__ = (UniqueConstraint("pais_id", "nombre",
+                                       name="uq_region_pais_nombre"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    pais_id: Mapped[int] = mapped_column(ForeignKey("pais.id"))
+    nombre: Mapped[str] = mapped_column(String(80))
+    # La clave oficial: la de INEGI en Mexico ("09" es la Ciudad de
+    # Mexico), la sigla en Brasil ("SP"). Con ella se casan las cifras
+    # oficiales que llegan por archivo.
+    clave: Mapped[str] = mapped_column(String(4))
+    activo: Mapped[bool] = mapped_column(Boolean, default=True,
+                                         server_default="true")
+
+    pais: Mapped[Pais] = relationship()
+
+
+class TipoEvento(Base):
+    """El catalogo de lo que puede pasar, cada tipo con su definicion.
+
+    Es el catalogo que la central ya usa en su mapa de cifra negra
+    (artefacto explosivo, ataque armado, detencion...): la definicion
+    viaja con el tipo para que dos analistas clasifiquen igual el mismo
+    hecho. Por pais, porque el lenguaje no es el mismo en Brasil.
+    """
+    __tablename__ = "tipo_evento"
+    __table_args__ = (UniqueConstraint("pais_id", "nombre",
+                                       name="uq_tipo_evento_pais_nombre"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    pais_id: Mapped[int] = mapped_column(ForeignKey("pais.id"))
+    nombre: Mapped[str] = mapped_column(String(80))
+    definicion: Mapped[str] = mapped_column(Text, server_default="")
+    # El radio con que nace un evento de este tipo, en metros: una
+    # balacera alcanza menos que un bloqueo carretero. El analista lo
+    # cambia en cada evento.
+    radio_m: Mapped[int] = mapped_column(Integer, default=2000,
+                                         server_default="2000")
+    orden: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    activo: Mapped[bool] = mapped_column(Boolean, default=True,
+                                         server_default="true")
+
+    pais: Mapped[Pais] = relationship()
+
+
+class EstadoEvento(str, enum.Enum):
+    # Lo empezo un analista o lo propuso el lector automatico. Nadie
+    # fuera de la central lo ve.
+    PROPUESTO = "propuesto"
+    # Nivel 4 que espera al jefe de turno (decision de Salvador, 2 oct).
+    POR_CONFIRMAR = "por_confirmar"
+    # Ya lo ve el cliente.
+    PUBLICADO = "publicado"
+    # Vencio su vigencia o la central lo dio por terminado.
+    CERRADO = "cerrado"
+    # Lo propuesto que no se confirmo, con su motivo.
+    DESCARTADO = "descartado"
+
+
+class VerificacionEvento(str, enum.Enum):
+    SIN_CONFIRMAR = "sin_confirmar"
+    CONFIRMADO = "confirmado"         # dos fuentes o mas
+    OFICIAL = "oficial"               # lo dijo una autoridad
+
+
+class TendenciaEvento(str, enum.Enum):
+    PERSISTENTE = "persistente"
+    CRECIENTE = "creciente"
+    DECRECIENTE = "decreciente"
+
+
+class EventoRiesgo(Base):
+    """Algo que paso en un lugar y a una hora, y hasta cuando afecta."""
+    __tablename__ = "evento_riesgo"
+    __table_args__ = (
+        CheckConstraint("nivel BETWEEN 1 AND 4", name="ck_evento_nivel"),
+        CheckConstraint("nivel_pendiente IS NULL OR nivel_pendiente = 4",
+                        name="ck_evento_nivel_pendiente"),
+        Index("ix_evento_estado_vigencia", "estado", "vigente_hasta"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    folio: Mapped[str] = mapped_column(String(16), unique=True)    # CI-0001
+    pais_id: Mapped[int] = mapped_column(ForeignKey("pais.id"))
+    region_id: Mapped[int] = mapped_column(ForeignKey("region.id"))
+    municipio: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    tipo_id: Mapped[int] = mapped_column(ForeignKey("tipo_evento.id"))
+    # 1 Informativo · 2 Precaucion · 3 Alto · 4 Critico.
+    nivel: Mapped[int] = mapped_column(Integer)
+    # Un evento ya publicado que sube a 4 sigue en su nivel hasta que el
+    # jefe de turno lo confirma: mientras, aqui espera el 4.
+    nivel_pendiente: Mapped[int | None] = mapped_column(Integer,
+                                                        nullable=True)
+    titulo: Mapped[str] = mapped_column(String(160))
+    # Lo que lee el cliente. Lo escribe el analista; nunca se copia la
+    # nota de la fuente.
+    texto_cliente: Mapped[str] = mapped_column(Text, server_default="")
+    # Un punto con su radio. Sin punto, el evento es de toda la region
+    # (un paro estatal): sale en el mapa como la region entera.
+    lat: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
+    lon: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
+    radio_m: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    lugar: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    ocurrio_en: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # Sin vigencia un evento se quedaria en el mapa para siempre; con
+    # ella se apaga solo.
+    vigente_hasta: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    verificacion: Mapped[VerificacionEvento] = mapped_column(
+        Enum(VerificacionEvento),
+        default=VerificacionEvento.SIN_CONFIRMAR)
+    tendencia: Mapped[TendenciaEvento | None] = mapped_column(
+        Enum(TendenciaEvento), nullable=True)
+    estado: Mapped[EstadoEvento] = mapped_column(
+        Enum(EstadoEvento), default=EstadoEvento.PROPUESTO)
+    # "analista" o "lector" (el lector automatico de la fase 2).
+    origen: Mapped[str] = mapped_column(String(12), default="analista",
+                                        server_default="analista")
+
+    creado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("usuario.id", ondelete="SET NULL"), nullable=True)
+    creado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    actualizado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    publicado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("usuario.id", ondelete="SET NULL"), nullable=True)
+    publicado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    # Quien pidio el nivel 4 y quien lo confirmo: tienen que ser dos.
+    critico_pedido_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("usuario.id", ondelete="SET NULL"), nullable=True)
+    critico_confirmado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("usuario.id", ondelete="SET NULL"), nullable=True)
+    critico_confirmado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    terminado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("usuario.id", ondelete="SET NULL"), nullable=True)
+    terminado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    # Por que se cerro antes de tiempo o por que se descarto.
+    motivo: Mapped[str | None] = mapped_column(String(400), nullable=True)
+
+    pais: Mapped[Pais] = relationship()
+    region: Mapped[Region] = relationship()
+    tipo: Mapped[TipoEvento] = relationship()
+    fuentes: Mapped[list["FuenteEvento"]] = relationship(
+        back_populates="evento", cascade="all, delete-orphan",
+        order_by="FuenteEvento.id")
+
+
+class FuenteEvento(Base):
+    """De donde salio: una nota, una publicacion, un comunicado."""
+    __tablename__ = "fuente_evento"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    evento_id: Mapped[int] = mapped_column(
+        ForeignKey("evento_riesgo.id", ondelete="CASCADE"), index=True)
+    url: Mapped[str | None] = mapped_column(String(600), nullable=True)
+    descripcion: Mapped[str] = mapped_column(String(300))
+    oficial: Mapped[bool] = mapped_column(Boolean, default=False,
+                                          server_default="false")
+    registrada_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("usuario.id", ondelete="SET NULL"), nullable=True)
+    registrada_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+    evento: Mapped[EventoRiesgo] = relationship(back_populates="fuentes")
+
+
+class CambioEvento(Base):
+    """La bitacora del evento: quien hizo que y cuando.
+
+    Lo que se publica le llega a clientes; dentro de un ano hay que poder
+    decir quien subio el nivel, a que hora y por que.
+    """
+    __tablename__ = "cambio_evento"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    evento_id: Mapped[int] = mapped_column(
+        ForeignKey("evento_riesgo.id", ondelete="CASCADE"), index=True)
+    usuario_id: Mapped[int | None] = mapped_column(
+        ForeignKey("usuario.id", ondelete="SET NULL"), nullable=True)
+    # El nombre de quien actuo, por si su acceso se borra despues.
+    quien: Mapped[str] = mapped_column(String(160), server_default="")
+    accion: Mapped[str] = mapped_column(String(40))
+    detalle: Mapped[str] = mapped_column(Text, server_default="")
+    en: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+                                         server_default=func.now())
+
+
+# --------------------------------- AI/CI: los clientes y sus alertas
+#
+# Seccion 131. El cliente de la Central es el mismo de Odoo (decision de
+# Salvador, 2 oct): aqui solo se marca que tiene el servicio, que estados
+# sigue y quien de su gente entra a la app del cliente. Su gente no es
+# personal de Centauro, asi que no es `Persona` ni `Usuario`: tiene su
+# propio acceso, en su propia app (ci.mycentauro.lat), y nunca ve la
+# consola.
+
+class PerfilCliente(str, enum.Enum):
+    # Ve el mapa de su empresa, recibe las alertas de sus zonas y da de
+    # alta a su gente. Es el unico perfil de la fase 1.
+    GERENTE = "gerente"
+    # Fase 3: el empleado que avisa su trayecto.
+    VIAJERO = "viajero"
+    # Fase 4: el operador de camion.
+    OPERADOR = "operador"
+
+
+class ClienteCentral(Base):
+    """Un cliente de Odoo con el servicio de la Central de Inteligencia."""
+    __tablename__ = "cliente_central"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cliente_id: Mapped[int] = mapped_column(ForeignKey("cliente.id"),
+                                            unique=True)
+    activo: Mapped[bool] = mapped_column(Boolean, default=True,
+                                         server_default="true")
+    alta_en: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+                                              server_default=func.now())
+    alta_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("usuario.id", ondelete="SET NULL"), nullable=True)
+
+    cliente: Mapped[Cliente] = relationship()
+    zonas: Mapped[list["ZonaCliente"]] = relationship(
+        back_populates="cliente_central", cascade="all, delete-orphan")
+
+
+class ZonaCliente(Base):
+    """Un estado que sigue el cliente: lo que pase ahi le llega."""
+    __tablename__ = "zona_cliente"
+    __table_args__ = (UniqueConstraint("cliente_central_id", "region_id",
+                                       name="uq_zona_cliente"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cliente_central_id: Mapped[int] = mapped_column(
+        ForeignKey("cliente_central.id", ondelete="CASCADE"), index=True)
+    region_id: Mapped[int] = mapped_column(ForeignKey("region.id"))
+
+    cliente_central: Mapped[ClienteCentral] = relationship(
+        back_populates="zonas")
+    region: Mapped[Region] = relationship()
+
+
+class UsuarioCliente(Base):
+    """Alguien de la empresa cliente que entra a la app de la Central."""
+    __tablename__ = "usuario_cliente"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cliente_central_id: Mapped[int] = mapped_column(
+        ForeignKey("cliente_central.id", ondelete="CASCADE"), index=True)
+    nombre: Mapped[str] = mapped_column(String(80))
+    apellidos: Mapped[str] = mapped_column(String(120), server_default="")
+    correo: Mapped[str] = mapped_column(String(160), unique=True, index=True)
+    # Con clave de pais, como todos los telefonos del sistema.
+    telefono: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    perfil: Mapped[PerfilCliente] = mapped_column(Enum(PerfilCliente))
+    idioma: Mapped[str] = mapped_column(String(2), default="es",
+                                        server_default="es")
+    hash_contrasena: Mapped[str | None] = mapped_column(String(200),
+                                                        nullable=True)
+    activo: Mapped[bool] = mapped_column(Boolean, default=True,
+                                         server_default="true")
+    creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+                                                server_default=func.now())
+    # Quien lo dio de alta: alguien de Centauro, o su propio gerente.
+    alta_por_usuario_id: Mapped[int | None] = mapped_column(
+        ForeignKey("usuario.id", ondelete="SET NULL"), nullable=True)
+    alta_por_cliente_id: Mapped[int | None] = mapped_column(
+        ForeignKey("usuario_cliente.id", ondelete="SET NULL"), nullable=True)
+    ultimo_acceso: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    # Todo token emitido antes de esta hora deja de valer, como en
+    # `Usuario`: cambiar la contrasena o cerrar el acceso tira las
+    # sesiones abiertas.
+    sesiones_desde: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+    cliente_central: Mapped[ClienteCentral] = relationship()
+
+    @property
+    def nombre_completo(self) -> str:
+        return f"{self.nombre} {self.apellidos}".strip()
+
+
+class SuscripcionPushCliente(Base):
+    """A donde mandarle un aviso al telefono de alguien del cliente.
+    Igual que `SuscripcionPush`, del otro lado de la casa."""
+    __tablename__ = "suscripcion_push_cliente"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    usuario_cliente_id: Mapped[int] = mapped_column(
+        ForeignKey("usuario_cliente.id", ondelete="CASCADE"), index=True)
+    endpoint: Mapped[str] = mapped_column(Text, unique=True)
+    p256dh: Mapped[str] = mapped_column(String(200))
+    auth: Mapped[str] = mapped_column(String(100))
+    agente: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    activa: Mapped[bool] = mapped_column(Boolean, default=True,
+                                         server_default="true")
+    creada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+                                                server_default=func.now())
+
+
+class AlertaCliente(Base):
+    """Un evento que le toco a alguien: por donde le llego y si lo vio.
+
+    Una por evento, persona y nivel: si el evento sube de 2 a 3 es otra
+    alerta --la que pide acuse--; si se corrige sin subir, no hay alerta
+    nueva. Una central que avisa de todo ensena a no leerla.
+    """
+    __tablename__ = "alerta_cliente"
+    __table_args__ = (UniqueConstraint("evento_id", "usuario_cliente_id",
+                                       "nivel", name="uq_alerta_cliente"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    evento_id: Mapped[int] = mapped_column(
+        ForeignKey("evento_riesgo.id", ondelete="CASCADE"), index=True)
+    usuario_cliente_id: Mapped[int] = mapped_column(
+        ForeignKey("usuario_cliente.id", ondelete="CASCADE"), index=True)
+    nivel: Mapped[int] = mapped_column(Integer)
+    # "nuevo" o "sube".
+    motivo: Mapped[str] = mapped_column(String(8))
+    creada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+                                                server_default=func.now())
+    telefonos: Mapped[int] = mapped_column(Integer, default=0,
+                                           server_default="0")
+    correo_id: Mapped[int | None] = mapped_column(
+        ForeignKey("notificacion.id", ondelete="SET NULL"), nullable=True)
+    # El nivel 2 va en el resumen del dia por correo, no al momento.
+    en_resumen: Mapped[bool] = mapped_column(Boolean, default=False,
+                                             server_default="false")
+    requiere_acuse: Mapped[bool] = mapped_column(Boolean, default=False,
+                                                 server_default="false")
+    acuse_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    # Nivel 4 sin acuse: desde esta hora la central tiene que llamar.
+    llamar_desde: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    llamada_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    llamada_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("usuario.id", ondelete="SET NULL"), nullable=True)
+    llamada_nota: Mapped[str | None] = mapped_column(String(400),
+                                                     nullable=True)
+
+    evento: Mapped[EventoRiesgo] = relationship()
+    usuario_cliente: Mapped[UsuarioCliente] = relationship()

@@ -23,6 +23,31 @@ def _obtener_o_crear(db: Session, modelo, filtro: dict, valores: dict | None = N
     return obj, True
 
 
+def sembrar_riesgo(db: Session) -> None:
+    """Los estados de Mexico y Brasil y los tipos de evento de Mexico.
+    Lo que ya existe no se toca: lo lleva la central en Catalogos."""
+    from app import riesgo_catalogo as cat
+
+    for codigo, regiones in cat.REGIONES.items():
+        pais = db.query(m.Pais).filter_by(codigo=codigo).first()
+        if not pais:
+            continue
+        for clave, nombre in regiones:
+            _obtener_o_crear(db, m.Region, {"pais_id": pais.id,
+                                            "nombre": nombre},
+                             {"clave": clave})
+    for codigo, tipos in cat.TIPOS.items():
+        pais = db.query(m.Pais).filter_by(codigo=codigo).first()
+        if not pais or db.query(m.TipoEvento).filter_by(
+                pais_id=pais.id).first():
+            continue
+        for orden, (nombre, radio, definicion) in enumerate(tipos, 1):
+            db.add(m.TipoEvento(pais_id=pais.id, nombre=nombre,
+                                radio_m=radio, definicion=definicion,
+                                orden=orden))
+    db.flush()
+
+
 def sembrar() -> dict:
     db = SessionLocal()
     creados = {}
@@ -282,6 +307,10 @@ def sembrar() -> dict:
         # lleva sistema y calidad en Catalogos.
         from app import freelance as lista_del_freelance
         lista_del_freelance.sembrar_requisitos(db)
+
+        # La Central de Inteligencia (seccion 130): los estados de cada
+        # pais y los tipos de evento de la cifra negra.
+        sembrar_riesgo(db)
 
         db.commit()
 

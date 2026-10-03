@@ -10022,6 +10022,89 @@ consulta, «Monto fijo» que se queda, la moneda por versión, «Apto», el
 aviso de los 20 MB y el precio sugerido de Brasil sin separador de
 miles.
 
+
+## 130. La Central de Inteligencia, AI/CI: el evento de riesgo
+
+La segunda línea de operación de Connect. La propuesta completa, con
+las ocho decisiones de Salvador del 2 de octubre, está en el documento
+«Central de Inteligencia en Connect — propuesta»; esta sección es el
+primer pedazo de la fase 1: la pieza de la que sale todo lo demás.
+
+**El evento** (`EventoRiesgo`, `app/riesgo.py`): algo que pasó en un
+lugar y a una hora. Lleva su estado (región) y municipio, su tipo, su
+nivel (1 Informativo · 2 Precaución · 3 Alto · 4 Crítico), un punto con
+radio o la región entera, cuándo pasó y **hasta cuándo afecta**, su
+tendencia, el texto que lee el cliente, sus fuentes y su bitácora
+(`CambioEvento`). Folio `CI-0001`.
+
+- **Nada llega al cliente sin publicarse.** Nace `propuesto`; solo la
+  central lo ve.
+- **El nivel 4 lo confirma otra persona** (decisión 4): el supervisor de
+  central —jefe de turno— o dirección de operaciones
+  (`riesgo.confirmar`), y nunca quien lo pidió. Un evento ya publicado
+  que sube a 4 sigue en su nivel mientras tanto (`nivel_pendiente`). El
+  jefe lo puede devolver con su motivo.
+- **La verificación sale de las fuentes**, no la escoge el analista:
+  una, sin confirmar; dos o más, confirmado; una oficial, oficial.
+- **Todo evento vence.** El reloj (`riesgo-vencer`, cada 5 min) cierra
+  lo publicado vencido y descarta lo propuesto que nadie publicó. La
+  vigencia no pasa de 30 días: lo que dura meses es riesgo de fondo.
+- Las horas sin zona son las del país del evento, y salen en esa hora.
+
+**Los catálogos** (`app/riesgo_catalogo.py`, una sola copia para la
+migración y la semilla): los 32 estados de México con su clave INEGI y
+las 27 unidades de Brasil (`Region`); y los tipos de evento
+(`TipoEvento`): los **13 de la cifra negra** que la central ya publica
+en su resumen mensual, con sus definiciones tal cual, más tres del
+camino —bloqueo carretero, manifestación, fenómeno natural— con
+definiciones en borrador para que la central las corrija.
+
+**Permisos**: `riesgo.ver` y `riesgo.publicar` (central, dirección de
+operaciones), `riesgo.confirmar` (dirección de operaciones; el puesto
+«Supervisor de central» la trae), `riesgo.catalogo` (dirección de
+operaciones, sistema y calidad). La migración `c1a7e5d3b9f0` se las da a
+los puestos que ya existen.
+
+API en `/riesgo` (`app/routers/riesgo.py`). Pruebas:
+`tests/test_riesgo.py` (22).
+
+## 131. Los clientes de la Central y sus alertas
+
+El cliente de la Central es el de Odoo (decisión 2): `ClienteCentral`
+marca que tiene el servicio, `ZonaCliente` los estados que sigue y
+`UsuarioCliente` a su gente. Su gente no es personal de Centauro: tiene
+su propio acceso, sus teléfonos (`SuscripcionPushCliente`) y sus
+alertas, y entra a su propia app (ci.mycentauro.lat, sección siguiente).
+En la fase 1 solo hay gerentes; viajero y operador ya existen como
+perfil para las fases 3 y 4.
+
+**A quién le llega** (`app/alertas_riesgo.py`): al publicarse un evento,
+o al subir de nivel, a los gerentes activos de los clientes activos que
+siguen su estado. Nadie escoge a mano.
+
+**Por dónde, según el nivel** (decisión 3):
+
+| Nivel | Teléfono | Correo | Acuse |
+|---|---|---|---|
+| 1 | — | — | — (solo el mapa) |
+| 2 | sí | en el resumen de las 20:00 de su país | — |
+| 3 | sí, urgente | al momento | sí |
+| 4 | sí, urgente | al momento | sí; sin acuse a los 15 min, la central llama |
+
+- **Una alerta por evento, persona y nivel** (`AlertaCliente`): subir
+  de 2 a 3 es otra; corregir sin subir no avisa otra vez.
+- **Nivel 4 sin acuse**: aparece en `/riesgo/por-llamar` y la central
+  registra la llamada con su nota, que queda en la bitácora del evento.
+  Los 15 minutos son propuesta de la casa (`MINUTOS_PARA_LLAMAR`).
+- El correo sale con destinatario nuevo `CLIENTE_CI` y lleva al evento
+  en la app del cliente (`settings.url_ci`).
+- `push.entregar` se separó de `push.avisar` para servir a los dos lados
+  de la casa con el mismo envío.
+
+**Permiso** `riesgo.clientes` (dirección de operaciones, sistema y
+calidad): dar el servicio, las zonas y la gente. Migración
+`d4b2f8e6a1c3`. Pruebas: `tests/test_riesgo_clientes.py` (14).
+
 ## 14. Lo que falta
 
 ### Abierto

@@ -63,6 +63,21 @@ celery.conf.update(
             "task": "correo.despachar",
             "schedule": crontab(minute="*/5"),
         },
+        # La Central de Inteligencia (seccion 130): lo publicado cuya
+        # vigencia ya paso se cierra solo, y lo propuesto que nadie
+        # publico a tiempo se descarta. Cada cinco minutos: un evento
+        # vencido que sigue en el mapa cinco minutos de mas no le cuesta
+        # nada a nadie.
+        "riesgo-vencer": {
+            "task": "riesgo.vencer",
+            "schedule": crontab(minute="*/5"),
+        },
+        # El resumen del dia del nivel 2 (seccion 131): cada hora, y la
+        # tarea decide en que pais ya son las 20:00.
+        "riesgo-resumen": {
+            "task": "riesgo.resumen_del_dia",
+            "schedule": crontab(minute=7),
+        },
         # El camino al meet and greet. Cada cinco minutos manda los
         # toques que tocan y cobra los silencios: reponer a alguien toma
         # hora y media, asi que enterarse tarde es no enterarse.
@@ -385,6 +400,37 @@ def nomina_del_lunes():
     db = SessionLocal()
     try:
         return nomina.reloj_del_lunes(db)
+    finally:
+        db.close()
+
+
+@celery.task(name="riesgo.resumen_del_dia")
+def resumen_de_riesgo():
+    """El correo del nivel 2 al gerente del cliente, a las 20:00 de su
+    pais (seccion 131)."""
+    from app import alertas_riesgo
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        salida = alertas_riesgo.resumen_del_dia(db)
+        db.commit()
+        return salida
+    finally:
+        db.close()
+
+
+@celery.task(name="riesgo.vencer")
+def vencer_eventos():
+    """Cierra los eventos de riesgo cuya vigencia ya paso (seccion 130)."""
+    from app import riesgo
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        cuantos = riesgo.vencer(db)
+        db.commit()
+        return {"cerrados": cuantos}
     finally:
         db.close()
 

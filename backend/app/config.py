@@ -85,6 +85,9 @@ class Settings(BaseSettings):
     # para el proxy; la huella (30 sep) la necesita porque una llave de
     # acceso solo vale en las direcciones que el sistema reconoce.
     dominio_campo: str = ""        # "appep.mycentauro.lat"
+    # La app del cliente de la Central de Inteligencia (seccion 131). Los
+    # avisos de riesgo llevan a ella. Vacio: cuelga de url_publica, en /ci.
+    url_ci: str = ""               # "https://ci.mycentauro.lat"
 
     # Odoo, del lado de SALIDA: la factura del servicio aprobado.
     #

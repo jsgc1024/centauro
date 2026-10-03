@@ -76,8 +76,6 @@ def avisar(db: Session, persona_id: int, titulo: str, cuerpo: str,
     if not filas:
         return {"enviados": 0, "motivo": "sin telefonos suscritos"}
 
-    from pywebpush import WebPushException, webpush
-
     # Los botones de la notificacion, en el idioma de quien la recibe:
     # el trabajador de fondo no tiene diccionario (seccion 99).
     lengua = idioma_de(db, persona_id)
@@ -87,9 +85,24 @@ def avisar(db: Session, persona_id: int, titulo: str, cuerpo: str,
                         "botones": {"confirmar": tx(lengua, "accion_confirmar"),
                                     "en_camino": tx(lengua, "accion_en_camino"),
                                     "abrir": tx(lengua, "accion_abrir")}})
-    enviados, apagadas = 0, 0
+    return entregar(db, filas, carga, horas, urgente)
 
+
+def entregar(db: Session, filas: list, carga: str,
+             horas: int = HORAS_DE_ESPERA, urgente: bool = False) -> dict:
+    """Manda la misma carga a cada telefono suscrito.
+
+    Sirve a los dos lados de la casa: al personal de campo
+    (`SuscripcionPush`) y a la gente del cliente de la Central
+    (`SuscripcionPushCliente`, seccion 131). Lo unico que le importa de
+    cada fila es su direccion, sus llaves y si sigue viva.
+    """
+    from pywebpush import WebPushException, webpush
+
+    enviados, apagadas = 0, 0
     for fila in filas:
+        quien = getattr(fila, "persona_id", None) or \
+            getattr(fila, "usuario_cliente_id", None)
         try:
             webpush(
                 subscription_info={
@@ -116,11 +129,10 @@ def avisar(db: Session, persona_id: int, titulo: str, cuerpo: str,
                 fila.activa = False
                 apagadas += 1
             else:
-                registro.warning("aviso no entregado a %s: %s",
-                                 fila.persona_id, error)
+                registro.warning("aviso no entregado a %s: %s", quien, error)
         except Exception as error:                        # noqa: BLE001
             # Un aviso que no sale no puede tumbar lo que lo llamo.
-            registro.warning("fallo el aviso a %s: %s", fila.persona_id, error)
+            registro.warning("fallo el aviso a %s: %s", quien, error)
 
     if apagadas:
         db.flush()

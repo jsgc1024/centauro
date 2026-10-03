@@ -218,6 +218,25 @@ def ligas(cap: dict) -> list[str]:
 # izquierda del calendario): una tarea nueva sin su renglon aqui no pasa
 # las pruebas, y asi el manual no se entera tarde.
 TAREAS = {
+    "riesgo-resumen": {
+        "es": ("Mapa de riesgo: a las 20:00 de cada país manda a cada "
+               "gerente el resumen del día con los eventos de nivel 2 de sus "
+               "zonas.",
+               "Que el correo esté encendido y que el gerente tenga zonas."),
+        "pt": ("Mapa de risco: às 20:00 de cada país envia a cada gerente o "
+               "resumo do dia com os eventos de nível 2 das suas zonas.",
+               "Que o e-mail esteja ligado e que o gerente tenha zonas."),
+    },
+    "riesgo-vencer": {
+        "es": ("Mapa de riesgo: cierra los eventos publicados cuya vigencia "
+               "ya pasó y descarta lo propuesto que nadie publicó a tiempo.",
+               "Si un evento vencido sigue en el mapa más de diez minutos, "
+               "que el reloj esté corriendo."),
+        "pt": ("Mapa de risco: encerra os eventos publicados cuja vigência "
+               "já passou e descarta o proposto que ninguém publicou a tempo.",
+               "Se um evento vencido continua no mapa mais de dez minutos, "
+               "que o relógio esteja rodando."),
+    },
     "gps-leer": {
         "es": ("GPS: lee Pegasus. El pánico de la unidad, el camino al punto, "
                "la corriente y el segundo testigo de las "
@@ -644,10 +663,13 @@ AREAS = {
                 "pt": "Arquivo de comprovantes"},
     "freelance": {"es": "Freelance", "pt": "Freelance"},
     "gps": {"es": "GPS y unidades", "pt": "GPS e unidades"},
+    "riesgo": {"es": "Mapa de riesgo (AI/CI)",
+               "pt": "Mapa de risco (AI/CI)"},
     "sistema": {"es": "Sistema", "pt": "Sistema"},
 }
 
 AREA_DE_ARCHIVO = {
+    "riesgo.py": "riesgo", "routers/riesgo.py": "riesgo",
     "operacion.py": "operacion", "routers/operacion.py": "operacion",
     "routers/central.py": "operacion", "central.py": "operacion",
     "geocercas.py": "operacion", "intentos.py": "operacion",

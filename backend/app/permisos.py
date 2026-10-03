@@ -586,6 +586,38 @@ ACTIVIDADES: dict[str, dict] = {
         "roles": {R.ADMIN, R.SISTEMA_CALIDAD},
     },
 
+    # La Central de Inteligencia (seccion 130). Quien captura y publica
+    # es la central; el nivel 4 lo confirma el jefe de turno (decision de
+    # Salvador, 2 oct), que no es un rol sino un puesto: de fabrica la
+    # trae direccion de operaciones, y a la persona del turno se le da en
+    # su puesto. El codigo cuida ademas que no sea quien lo pidio.
+    "riesgo.ver": {
+        "descripcion": "Ver el mapa de riesgo de la central con lo que "
+                       "espera publicarse",
+        "roles": {R.CENTRAL, R.DIRECTOR_OPERACIONES},
+    },
+    "riesgo.publicar": {
+        "descripcion": "Capturar, publicar, actualizar y cerrar eventos de "
+                       "riesgo",
+        "roles": {R.CENTRAL, R.DIRECTOR_OPERACIONES},
+    },
+    "riesgo.confirmar": {
+        "descripcion": "Confirmar o devolver un evento de nivel 4 (jefe de "
+                       "turno)",
+        "roles": {R.DIRECTOR_OPERACIONES},
+    },
+    # Quien da el servicio de la Central a un cliente, sus zonas y su
+    # gente (seccion 131). Es una decision comercial, no de turno.
+    "riesgo.clientes": {
+        "descripcion": "Dar el servicio de la Central a un cliente, sus "
+                       "zonas y quien entra a su app",
+        "roles": {R.DIRECTOR_OPERACIONES, R.SISTEMA_CALIDAD},
+    },
+    "riesgo.catalogo": {
+        "descripcion": "Mantener los tipos de evento y sus definiciones",
+        "roles": {R.DIRECTOR_OPERACIONES, R.SISTEMA_CALIDAD},
+    },
+
     # ------------------------------------------ las que iban por rol
     #
     # Eran `auth.requiere(...)` con su lista de roles, y un puesto no las

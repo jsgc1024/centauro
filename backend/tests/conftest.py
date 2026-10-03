@@ -101,6 +101,12 @@ TABLAS_DE_OPERACION = [
     # lista de requisitos es catalogo y no se toca.
     "autorizacion_freelance", "archivo_freelance", "documento_freelance",
     "freelance",
+    # El mapa de riesgo (seccion 130): los eventos, sus fuentes y su
+    # bitacora. Los estados y los tipos de evento son catalogo.
+    # Sus clientes, su gente y sus alertas (seccion 131).
+    "alerta_cliente", "suscripcion_push_cliente", "usuario_cliente",
+    "zona_cliente", "cliente_central",
+    "cambio_evento", "fuente_evento", "evento_riesgo",
 ]
 
 
