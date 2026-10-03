@@ -39,6 +39,12 @@ async function pintar(zona) {
     h("div", { clase: "rejilla dos" },
       tarjetaCobros(d.cobros_por_autorizar),
       tarjetaPlazos(d.plazos_vencidos)),
+    /* Las tres que vivian en otras pantallas (seccion 131, decision 19
+       de Salvador): el panel avisa y abre; la firma sigue donde siempre. */
+    h("div", { clase: "rejilla tres" },
+      tarjetaComisiones(d.comisiones_por_firmar || []),
+      tarjetaCalificaciones(d.malas_calificaciones || []),
+      tarjetaCierres(d.cierres_por_firmar || [])),
     tablero(d.hoy));
 }
 
@@ -311,6 +317,89 @@ function tarjetaPlazos(filas) {
               ? h("a", { clase: "enlace", href: p.ruta }, t("dir_abrir"))
               : "")))
       : [h("div", { clase: "vacio" }, t("dir_plazos_vacio"))]));
+}
+
+/* ------------------------------- lo que vivia en otras pantallas (131) */
+
+/* El corte de comisiones de cada mes terminado que espera el visto
+   bueno: cuantos consultores y cuanto sale, y «Abrir» lleva a Nominas →
+   Comisiones con ese pais y ese mes puestos. */
+function tarjetaComisiones(filas) {
+  return h("div", { clase: "tarjeta" },
+    h("h3", {}, t("dir_com_titulo")),
+    h("p", { clase: "chico gris", style: "margin:0 0 12px" }, t("dir_com_pie")),
+    ...(filas.length
+      ? filas.map(c => h("div", { clase: "caso" },
+          h("div", { clase: "cabeza_caso" },
+            h("div", {},
+              h("b", {}, `${t(`bon_mes_${c.mes}`)} ${c.anio}`),
+              h("span", { clase: "chico gris" }, ` · ${c.pais}`),
+              h("div", { clase: "chico gris" },
+                t("dir_com_cuantos").replace("{n}", c.consultores)
+                + " · " + dinero(c.a_pagar, c.moneda)),
+              h("div", { clase: "chico" },
+                etiqueta(t(c.se_puede_autorizar ? "dir_com_por_firmar"
+                                                : "dir_com_mes_corre"), "alerta"))),
+            h("a", { clase: "enlace", href: c.ruta }, t("dir_abrir")))))
+      : [h("div", { clase: "vacio" }, t("dir_com_vacio"))]));
+}
+
+/* Las encuestas con 1, 2 o 3 estrellas que nadie ha clasificado: la del
+   solicitante la decide direccion; la del ejecutivo, el consultor. */
+function tarjetaCalificaciones(filas) {
+  return h("div", { clase: "tarjeta" },
+    h("h3", {}, t("dir_cal_titulo")),
+    h("p", { clase: "chico gris", style: "margin:0 0 12px" }, t("dir_cal_pie")),
+    ...(filas.length
+      ? filas.map(e => h("div", { clase: "caso" },
+          h("div", { clase: "cabeza_caso" },
+            h("div", {},
+              h("b", {}, e.folio || `#${e.servicio_id}`),
+              e.cliente ? h("span", { clase: "chico gris" }, ` · ${e.cliente}`) : "",
+              h("div", { clase: "chico gris" },
+                `${e.quien || t(e.tipo === "solicitante" ? "dir_cal_del_solicitante"
+                                                          : "dir_cal_del_ejecutivo")} · `
+                + t("dir_cal_estrellas").replace("{n}", e.calificacion ?? "—")
+                + (e.respondida_en ? ` · ${fecha(e.respondida_en.slice(0, 10))}` : "")),
+              e.comentario ? h("div", { clase: "chico" }, `«${e.comentario}»`) : "",
+              h("div", { clase: "chico" },
+                etiqueta(e.le_toca === "direccion" ? t("dir_cal_te_toca")
+                  : t("dir_cal_le_toca").replace("{c}", e.consultor || "—"),
+                  e.le_toca === "direccion" ? "alerta" : ""))),
+            h("a", { clase: "enlace", href: e.ruta }, t("dir_abrir")))))
+      : [h("div", { clase: "vacio" }, t("dir_cal_vacio"))]));
+}
+
+/* «Le quedan 5 h», «le quedan 2 dias». */
+function cuantoQueda(minutos) {
+  if (minutos >= 1440) return t("dir_quedan_dias").replace("{d}", Math.floor(minutos / 1440));
+  if (minutos >= 60) return t("dir_quedan_horas").replace("{h}", Math.floor(minutos / 60));
+  return t("dir_quedan_minutos").replace("{m}", Math.max(1, minutos));
+}
+
+/* Los cierres --servicios y meses-- que esperan el visto bueno y siguen
+   en plazo; los vencidos estan arriba. */
+function tarjetaCierres(filas) {
+  return h("div", { clase: "tarjeta" },
+    h("h3", {}, t("dir_cie_titulo")),
+    h("p", { clase: "chico gris", style: "margin:0 0 12px" }, t("dir_cie_pie")),
+    ...(filas.length
+      ? filas.map(c => h("div", { clase: "caso" },
+          h("div", { clase: "cabeza_caso" },
+            h("div", {},
+              h("b", {}, c.folio || `#${c.servicio_id}`),
+              c.periodo ? h("span", { clase: "chico gris" }, ` · ${c.periodo}`) : "",
+              c.cliente ? h("span", { clase: "chico gris" }, ` · ${c.cliente}`) : "",
+              h("div", { clase: "chico gris" },
+                (c.consultor || t("dir_sin_consultor"))
+                + " · " + t(c.regresado ? "dir_reloj_regreso" : "dir_reloj_consultor")
+                + (c.monto !== null && c.monto !== undefined
+                    ? ` · ${dinero(c.monto, c.moneda)}` : "")),
+              h("div", { clase: "chico" },
+                h("span", { clase: c.minutos_restantes < 240 ? "marca alerta" : "gris" },
+                  cuantoQueda(c.minutos_restantes)))),
+            c.ruta ? h("a", { clase: "enlace", href: c.ruta }, t("dir_abrir")) : "")))
+      : [h("div", { clase: "vacio" }, t("dir_cie_vacio"))]));
 }
 
 /* ----------------------------------------------------------- el tablero */

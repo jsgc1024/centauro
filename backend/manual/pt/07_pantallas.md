@@ -40,7 +40,7 @@ O que o cliente disse: as pesquisas, a taxa de resposta e as notas de 3 ou menos
 O mês em números: o que o cliente disse, a rua, o fechamento, as pessoas e os dados que faltam no Odoo e em Catálogos, contra o mês anterior, com o seu relatório em Excel para a reunião.
 
 ### Direção de operações {#direccion}
-O que espera o visto do diretor de operações —os incidentes por autorizar, o freelancer que alguém pede por urgência, os preços especiais das propostas, as cobranças ao cancelar e os prazos vencidos do fechamento— e os números de hoje por país: serviços hoje e amanhã, em andamento, com alerta, trocas por contingência e incidentes do mês. Cada número abre para mostrar quais serviços são. Veem o diretor de operações e a direção geral.
+O que espera o visto do diretor de operações —os incidentes por autorizar, o freelancer que alguém pede por urgência, os preços especiais das propostas, as cobranças ao cancelar e os prazos vencidos do fechamento—, as três que vivem em outras telas —as comissões do mês por assinar, que abrem Folha → Comissões nesse país e nesse mês; as avaliações ruins por revisar, que abrem Clientes; e os fechamentos por assinar que ainda estão no prazo, com quanto falta, que abrem o cartão do fechamento— e os números de hoje por país: serviços hoje e amanhã, em andamento, com alerta, trocas por contingência e incidentes do mês. Cada número abre para mostrar quais serviços são. Veem o diretor de operações e a direção geral.
 
 ## Operações CI
 
@@ -56,13 +56,13 @@ O código de quatro dígitos que se dita por telefone ao pessoal de campo que n�
 A caixa de entrada do financeiro: os depósitos a confirmar, as compras, os aluguéis, as devoluções e os descontos.
 
 ### Faturamento {#facturacion}
-O que já tem o aval do consultor —o serviço eventual ou o mês do implantado—: aprová-lo, devolvê-lo à operação com o seu motivo e acompanhar a sua fatura. Com a chave da fatura, «No Odoo» tem as pré-faturas que esperam o faturista e «Não foi possível enviar» as que não saíram, com o motivo, «Enviar de novo» e a nova tentativa de cada hora; «Ver» separa os eventuais dos implantados. Sem a chave, a fatura é feita no Odoo e registrada aqui, com «Já faturado no Odoo». Aqui vivem também as tabelas de preços e a tabela de produtos do Odoo que o financeiro confirma.
+O que já tem o aval do consultor —o serviço eventual ou o mês do implantado—: aprová-lo, devolvê-lo à operação com o seu motivo e acompanhar a sua fatura; o aprovado sem nota nem pré-fatura emitida também se devolve, com «Devolver» na sua linha. Com a chave da fatura, «No Odoo» tem as pré-faturas que esperam o faturista e «Não foi possível enviar» as que não saíram, com o motivo, «Enviar de novo» e a nova tentativa de cada hora; «Ver» separa os eventuais dos implantados. Sem a chave, a fatura é feita no Odoo e registrada aqui, com «Já faturado no Odoo». Aqui vivem também as tabelas de preços e a tabela de produtos do Odoo que o financeiro confirma.
 
 ### Folha {#nomina}
 O fechamento do pessoal de cada segunda-feira e a comissão dos consultores de cada mês: o que entra, o que ainda não e por quê.
 
 ### Acessos {#accesos}
-Quem pode entrar, com que cargo, e quando entrou pela última vez. Aqui se montam os cargos, se envia ou se copia o convite e se fecham os acessos. Ver [acessos, papéis e cargos](#/manual/leer/accesos).
+Quem pode entrar, com que cargo, e quando entrou pela última vez; filtra-se por país e por quem já entrou, nunca entrou ou está há meses sem entrar. Aqui se montam os cargos, se envia ou se copia o convite e se fecham os acessos. Ver [acessos, papéis e cargos](#/manual/leer/accesos).
 
 ### Odoo {#odoo}
 As cinco leituras do Odoo: aqui se fazem o ensaio e a primeira leitura de cada uma, e se vê o que falta corrigir lá. Em cima diz se o servidor já tem a chave da fatura do eventual. Ver [o que vem do Odoo](#/manual/leer/odoo).

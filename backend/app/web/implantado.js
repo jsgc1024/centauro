@@ -1553,7 +1553,28 @@ export async function pantallaImplantado(main, servicioId) {
     return;
   }
 
-  /* Quien no opera el implantado lo ve en modo consulta (seccion 85). */
+  /* Lo que todavia se borra (la misma lista que `models.ANTES_DE_ARRANCAR`
+   y que la pantalla del eventual): despues, se cancela. */
+const ANTES_DE_ARRANCAR = ["borrador", "solicitado", "cotizado", "autorizado",
+                           "planeado", "asignado"];
+
+/* Borrar pide el motivo: es la unica huella que queda de un implantado
+   que dejo de existir. La misma ruta que el eventual. */
+async function borrarImplantado(ficha) {
+  const motivo = prompt(t("srv_borrar_prompt").replace(
+    "{a}", t("imp_eliminar_srv").replace("{f}", ficha.folio)));
+  if (motivo === null) return;
+  try {
+    await api.borrar(`/servicios/${ficha.servicio_id}`,
+                     { motivo: motivo.trim() || null });
+    mensaje(t("imp_eliminado"));
+    location.hash = "#/implantados";
+  } catch (err) {
+    mensaje(err.message, "grave");
+  }
+}
+
+/* Quien no opera el implantado lo ve en modo consulta (seccion 85). */
   if (soloConsulta(sesion.usuario)) {
     main.classList.add("solo-consulta");
     main.append(aviso(t("imp_consulta"), "alerta"));
@@ -1593,7 +1614,15 @@ export async function pantallaImplantado(main, servicioId) {
          registra el consultor o la central; la firma direccion de
          operaciones desde su pantalla. Tambien en el cancelado: lo que
          paso, paso. */
-      botonIncidencia(servicioId, zonaIncidencia)),
+      botonIncidencia(servicioId, zonaIncidencia),
+      /* El implantado que no ha arrancado se elimina, como el eventual
+         (seccion 131): con su acuerdo, sus meses y su propuesta suelta
+         --que queda con «Volver a crear el implantado»--. El que ya
+         arranco se cancela desde la operacion. */
+      ANTES_DE_ARRANCAR.includes(ficha.estatus)
+        ? h("button", { clase: "claro chico", type: "button",
+            onclick: () => borrarImplantado(ficha) }, t("imp_eliminar"))
+        : ""),
     zonaIncidencia);
 
   /* --------------------------------------------------------- cliente */

@@ -10176,6 +10176,144 @@ detenida y «se detuvo» en el historial de Odoo, el botón «Pasarlo a
 Brasil» en Pendientes, el renglón por mes en los términos del implantado
 y lo que falta de Catálogos antes de mandar una cotización.
 
+## 131. La revisión 360 de lo nuevo, ola 4b: lo que se quedaba atorado y lo que faltaba firmar
+
+La segunda entrega de las decisiones del 2 de octubre (sección 130):
+las 1, 2, 9, 10, 11, 13, 16 y 19, el «Eliminar» del implantado que no
+arrancó, y dos cosas que Salvador pidió el 3 de octubre mientras se
+construía: en Accesos, ver quiénes ya entraron y quiénes no, y separar
+por país (no encontraba al personal de Brasil: sí tenía su acceso, solo
+estaba revuelto con el de México en una lista por correo). La decisión
+14 («sin IVA» a la prefactura) sigue esperando a Ari y al facturista.
+
+- **Decisión 1, descartar un borrador.** `cotizacion_cliente.descartar`
+  (para las dos clases): solo el borrador que es la última versión; la
+  V2 o siguiente se borra y la anterior vuelve a ser la última, con su
+  renglón en la bitácora de administración («version descartada»); la V1
+  que nunca se mandó se elimina con su `CotizacionEliminada` («borrador
+  que nunca se mandó, descartado», sin motivo) y el folio se queda
+  quemado como en la 126. `POST /cotizaciones/eventual/{id}/descartar` y
+  `POST /cotizaciones/propuesta/{id}/descartar` (`cotizaciones.armar`).
+  En los dos editores, el botón «Descartar este borrador» junto a
+  «Guardar», con su confirmación (`ctz_seguro_descartar_v` /
+  `_1`, `pro_seguro_descartar_v` / `_1`), que vuelve a la versión
+  anterior o a la lista.
+- **Decisión 2, la propuesta cuyo implantado se eliminó.**
+  `cotizacion_cliente.servicio_eliminado` ya cuenta para la propuesta
+  (autorizada, sin `servicio_id` y con `servicio_folio`, que
+  `desarmar_servicio` deja desde la 126). `propuesta.recrear_implantado`
+  hace nacer otro con `_nacer_implantado` —lo mismo que `autorizar`: el
+  servicio, el acuerdo, el folio nuevo— y liga todas las versiones;
+  queda «alta desde la propuesta … · otra vez: su implantado EP/IM-004
+  se había eliminado» en la bitácora del nuevo. Su primer mes se abre,
+  como siempre, con los términos de la propuesta. `POST
+  /cotizaciones/propuesta/{id}/servicio` y `POST …/eliminar`
+  (`EliminarIn` con motivo, `cc.eliminar` con el resumen «implantado»).
+  En la pantalla, el bloque del implantado borrado ofrece «Volver a
+  crear el implantado» y «Eliminar la propuesta» (`formularioEliminar`).
+- **Decisión 11, «N días ya pasaron».** `cotizacion_cliente.dias_pasados`
+  (los días de la cotización antes del hoy del país) en el detalle, y
+  `propuesta.detalle` trae `dias_pasados` desde su `inicio`. Las dos
+  pantallas lo dicen en ámbar antes de autorizar y antes de volver a
+  crear (`avisoDiasPasados`, `avisoInicioPasado`) y dejan seguir.
+- **Decisión 9, regresar lo aprobado.** `cierre.regresar` acepta
+  también lo `APROBADO` sin `factura_odoo`; la prefactura timbrada lo
+  detiene como en la 127 (`_la_prefactura_sigue_en_borrador`) y lo
+  `FACTURADO` dice «nota de crédito». Al regresar lo aprobado:
+  `aprobado_en` y `aprobado_por_id` se vacían, el eventual cerrado
+  vuelve a `SIN_VISTO_BUENO`, y la comisión que nació con la aprobación
+  (`comision_del_cierre`) se **borra** si no entró a un corte
+  (`_cancelar_la_comision`): con el nuevo visto bueno y la nueva
+  aprobación vuelve a nacer con sus reglas (plazo, incidencia grave). La
+  que ya tiene `corte_id` —o un ajuste en un corte— se queda, y lo que
+  cambie va como diferencia (`comisiones._volver_a_calcular`, como
+  siempre). La bitácora del servicio dice «estaba aprobado por …; su
+  comisión de … se cancela y vuelve a nacer…» o «ya quedó en el corte
+  de …». `facturacion.renglon` trae `aprobado_por`, `se_regresa` y
+  `comision` {estatus, en_corte, periodo}; «Cerrados» lo mezcla con lo
+  que ya traía (`_cerrado`). En `facturacion.js`, `lineaAprobado`
+  («aprobado por … · fecha · COMISIÓN GENERADA / EN EL CORTE DE …») y
+  `botonRegresar` en En Odoo, No se pudo mandar, Por facturar y
+  Cerrados, con el formulario de siempre y el pie de lo aprobado
+  (`pieDelRegresoAprobado`).
+- **Decisión 10, el mes sin días trabajados.** `cierre_mes.comparar`:
+  en mes completo sin días base, sin adicionales y sin horas extra, el
+  mes se cobra en cero (`desglose["mes_completo"] = 0`, el monto fijo de
+  gastos también en cero; los netos comprobados sí) y deja la desviación
+  `texto_sin_dias` marcada `aviso` con `monto` −mensual; `comparar`
+  devuelve `sin_dias` {cobro: cero | costo_fijo, justificacion}.
+  `revisar` la enseña como AVISO `mes_sin_dias` **justificable** sin
+  frenar el visto bueno; justificada (`POST
+  /cierre/{id}/desviaciones/respaldar`, que ahora acepta las del mes
+  con `cierre_mes.comparar`), se cobra el mensual completo y la nota lo
+  dice con la justificación. `enviar_a_finanzas` lo escribe en la
+  bitácora («sin dias trabajados: se cobra en cero» / «…como costo fijo
+  pactado (…)») y lo devuelve (`sin_dias`). `facturacion.sin_cobro`: el
+  cierre con `total_ejecutado` 0 no manda prefactura ni factura
+  («nada que facturar»), no entra a `sin_factura` ni a la vuelta de
+  cada hora, y al aprobarlo queda `FACTURADO` sin folio con su
+  `facturado_en`; la bandeja lo marca `sin_cobro` («Se cobra en cero»).
+  `armar_factura` no lleva el renglón del mes en cero. En `cierre.js`,
+  la observación traducida (`cie_msd_*`) y «Justificar» también en lo
+  de «Para revisar» cuando es justificable; `justificaEn` ya va en el
+  mes.
+- **Decisión 13, el precio cotizado en gris.** `cierre.precios_cotizados`
+  (lo que la cotización autorizada cobra por rol, unidad o paquete en
+  cada modalidad) y `precio_del_cierre`: lo que la lista pacta en negro
+  (`origen` vacío o `propio`) se cobra como está en la lista; lo que
+  toma en gris —de otra lista o del precio de venta, que en dólares se
+  recalcula cada hora— se cobra al precio cotizado si se cotizó, y si
+  no, al de hoy. `ejecutado` marca `precio_cotizado` en cada renglón y
+  `renglones` lo conserva; la tabla de renglones dice «el de la
+  cotización» (`cie_r_precio_cotizado`).
+- **Decisión 16, la cotización que manda otro.** `Notificacion.adjunto_id`
+  (migración `c3d7e9f2a1b4`, FK a `archivo_cotizacion`) y
+  `correo.entregar(adjuntos=[(nombre, tipo, contenido)])`, que el
+  despachador llena con `adjuntos_de` (el mismo MIME por SMTP y por
+  Microsoft). `cotizacion_cliente.avisar_al_titular`, desde los dos
+  `enviar`: si quien manda no es `cot.consultor_id`, el titular recibe
+  el correo (`ctz_otro_*` de `textos_aviso`, en su idioma, con el PDF
+  adjunto y el enlace a la pantalla) y el push (`ctz_otro_*` de
+  `push`), y queda «mandada con la firma de otro» en la bitácora de
+  administración. Quien arma sigue pudiendo mandar.
+- **Decisión 19, el panel de dirección de operaciones.**
+  `direccion_operaciones.bandeja` suma `comisiones_por_firmar` (los
+  meses terminados por país con comisiones o ajustes y sin
+  `CorteComision`, con `corte_del_mes`: consultores, a pagar, y la ruta
+  `#/nomina/comisiones/{pais}/{anio}-{mes}`), `malas_calificaciones`
+  (las encuestas por clasificar, con `le_toca` dirección | consultor y
+  el comentario) y `cierres_por_firmar` (los cierres sin visto bueno
+  que siguen en plazo, con lo que va a facturarse —la cotización
+  vigente, o el comparativo del mes— y los minutos que quedan; los
+  vencidos siguen en «Plazos vencidos»). En `direccion.js`, las tres
+  tarjetas en una rejilla de tres (`tarjetaComisiones`,
+  `tarjetaCalificaciones`, `tarjetaCierres`) con «Abrir»; la ruta de
+  Nóminas acepta `#/nomina/comisiones/<pais>/<anio>-<mes>` y
+  `pantallaNomina` abre esa pestaña con ese país y ese mes.
+- **El «Eliminar» del implantado.** `implantado.js`: en el encabezado,
+  antes de arrancar (`ANTES_DE_ARRANCAR`), «Eliminar» con su motivo
+  (`borrarImplantado`, `DELETE /servicios/{id}`, el mismo del eventual);
+  la propuesta queda con «Volver a crear el implantado».
+- **Accesos (3 de octubre).** `GET /auth/usuarios` trae `pais_id` y
+  `pais` (el de la ciudad de cada quien); en `accesos.js`, junto al
+  buscador, los filtros «País» (con «Sin país» para el acceso sin ficha;
+  se esconde con un solo país) y «Quiénes ya entraron» (todos · ya
+  entraron · nunca han entrado · más de 3 meses sin entrar) con su
+  cuenta cada opción, cruzados con el buscador y la casilla de cerrados;
+  cada renglón dice su país. Diagnóstico en producción del 3 de
+  octubre: Brasil 43 activas, 42 con acceso (40 de campo); México 109 de
+  Odoo y 85 con acceso —casi seguro correos repetidos en Odoo—, pendiente
+  de un bloque de cuenta para Ari.
+
+Pruebas en `tests/test_revision_131.py` (15). Manual: cotizaciones,
+propuesta, implantado, el dinero, accesos y las pantallas, en español y
+portugués; novedades §131. Lo que cambia de pantalla: «Descartar este
+borrador», las dos salidas de la propuesta, «N días ya pasaron»,
+«Regresar» sobre lo aprobado con su línea de comisión, el mes en cero
+con «Justificar», «el de la cotización» en los renglones, las tres
+tarjetas del panel, «Eliminar» en el implantado y los filtros de
+Accesos. Migración: `c3d7e9f2a1b4` (el adjunto del aviso).
+
 ## 14. Lo que falta
 
 ### Abierto

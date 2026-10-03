@@ -636,11 +636,32 @@ async function armar(main, cat, d) {
     t("ctz_guardar"));
   const botonPedir = h("button", { type: "button", onclick: () => pedir() });
   const botonMandar = h("button", { type: "button", onclick: () => mandar() }, t("ctz_mandar"));
+  /* «Descartar este borrador» (seccion 131, decision 1), como en la
+     cotizacion: solo sobre un borrador ya guardado. */
+  const botonDescartar = !e.id ? null : h("button", { type: "button", clase: "claro",
+    onclick: () => descartar() }, t("ctz_descartar"));
   const pie = h("div", { clase: "tarjeta" }, avisoPrecios,
     h("div", { clase: "cot-pie", style: "margin:0;border:0;padding:0" },
       h("div", {}, rotuloTotal, total, pieTotal),
       h("div", {}, h("div", { clase: "acciones", style: "margin:0;justify-content:flex-end" },
-        botonVer, botonGuardar, botonPedir, botonMandar), queFalta, notaFirma)));
+        botonVer, botonGuardar, botonPedir, botonMandar, botonDescartar), queFalta, notaFirma)));
+
+  async function descartar() {
+    const pregunta = e.version > 1
+      ? reemplazar(t("pro_seguro_descartar_v"), { v: e.version, a: e.version - 1 })
+      : reemplazar(t("pro_seguro_descartar_1"), { f: e.folio });
+    if (!confirm(pregunta)) return;
+    botonDescartar.disabled = true;
+    try {
+      const r = await api.post(`/cotizaciones/propuesta/${e.id}/descartar`);
+      mensaje(r.vuelve ? reemplazar(t("ctz_descartada_vuelve"), { v: r.vuelve.version })
+                       : reemplazar(t("pro_descartada_eliminada"), { f: e.folio }), "ok");
+      irA(r.vuelve ? `#/propuesta/${r.vuelve.id}` : "#/cotizaciones");
+    } catch (err) {
+      mensaje(err.message, "grave");
+      botonDescartar.disabled = false;
+    }
+  }
 
   caja.append(paraQuien, tarjetaLleva, tarjetaModalidad, tarjetaTexto, tarjetaEspecial, pie);
 
@@ -1008,12 +1029,34 @@ function pintarTarjeta(tarjeta, cat, d) {
         onclick: () => formularioRechazo(formulario, d) }, t("ctz_la_rechazo")) : null,
     ].filter(Boolean));
 
+  /* Su implantado se elimino (seccion 131, decision 2): se vuelve a crear
+     con los terminos de la propuesta, o se elimina la propuesta, como la
+     cotizacion desde la 126. Antes se quedaba atorada. */
+  const recrear = async (ev) => {
+    if (!confirm(t("pro_seguro_recrear"))) return;
+    ev.target.disabled = true;
+    try {
+      const r = await api.post(`/cotizaciones/propuesta/${d.id}/servicio`);
+      mensaje(reemplazar(t("pro_implantado_creado"), { f: r.folio }), "ok");
+      if (r.sin_consultor) mensaje(t("ctz_nacio_sin_consultor"), "alerta");
+      irA(`#/implantado/${r.servicio_id}`);
+    } catch (err) { mensaje(err.message, "grave"); ev.target.disabled = false; }
+  };
   const implantado = d.servicio
     ? h("p", { style: "margin:14px 0 0" }, t("pro_nacio_implantado"), " ",
       h("a", { href: `#/implantado/${d.servicio.id}`, clase: "enlace" }, d.servicio.folio))
     : d.servicio_folio
-      ? h("p", { clase: "gris", style: "margin:14px 0 0" },
-        reemplazar(t("ctz_servicio_borrado"), { f: d.servicio_folio }))
+      ? h("div", { style: "margin:14px 0 0" },
+        h("p", { clase: "gris", style: "margin:0" },
+          reemplazar(t("ctz_servicio_borrado"), { f: d.servicio_folio })),
+        d.se_recrea ? h("p", { clase: "chico", style: "margin:6px 0 0" },
+          t("pro_borrado_que_hacer")) : null,
+        d.se_recrea ? avisoInicioPasado(d) : null,
+        d.se_recrea ? h("div", { clase: "acciones", style: "margin:8px 0 0" },
+          h("button", { type: "button", onclick: recrear }, t("pro_recrear_implantado")),
+          h("button", { type: "button", clase: "claro",
+            onclick: () => formularioEliminar(formulario, d) }, t("pro_eliminar_propuesta")))
+          : null)
       : null;
   const vigente = !d.es_ultima
     ? h("p", { clase: "chico gris", style: "margin:12px 0 0" }, t("pro_hay_otra"), " ",
@@ -1171,7 +1214,44 @@ async function formularioAutorizar(tarjeta, cat, d) {
         x: dinero(d.subtotal, d.moneda),
         v: aMedia(t(d.viaticos === "incluidos" ? "pro_viaticos_incluidos"
                                                 : "pro_viaticos_aparte")) })),
+    avisoInicioPasado(d),
     h("div", { clase: "acciones", style: "margin:0" }, boton, cancelar)].filter(Boolean));
+}
+
+/* El inicio del trato que ya paso (seccion 131, decision 11): el
+   implantado que se autoriza o se vuelve a crear tarde nace con su primer
+   mes atrasado. Se dice en amarillo y se deja seguir. */
+function avisoInicioPasado(d) {
+  if (!d.dias_pasados) return null;
+  return h("div", { style: "margin:6px 0 10px" },
+    aviso(reemplazar(t(d.dias_pasados === 1 ? "pro_dia_pasado" : "pro_dias_pasados"),
+                     { n: d.dias_pasados, f: fechaCorta(d.inicio, false) }), "alerta"));
+}
+
+/* Eliminar la propuesta cuyo implantado se elimino (seccion 131), con su
+   porque, como la cotizacion desde la 126. */
+function formularioEliminar(caja, d) {
+  caja.replaceChildren();
+  const motivo = h("textarea", { rows: "2", maxlength: "300",
+                                 placeholder: t("ctz_eliminar_ayuda") });
+  const boton = h("button", { type: "button", clase: "peligro" }, t("ctz_eliminarla"));
+  boton.addEventListener("click", async () => {
+    if (!motivo.value.trim()) { mensaje(t("ctz_falta_motivo_eliminar"), "alerta"); return; }
+    if (!confirm(t("pro_seguro_eliminar"))) return;
+    boton.disabled = true;
+    try {
+      await api.post(`/cotizaciones/propuesta/${d.id}/eliminar`, { motivo: motivo.value });
+      mensaje(t("pro_eliminada"), "ok");
+      irA("#/cotizaciones");
+    } catch (err) { mensaje(err.message, "grave"); boton.disabled = false; }
+  });
+  caja.append(h("div", { clase: "ctz-forma" },
+    h("h4", { style: "margin:0 0 8px" }, t("pro_eliminar_propuesta")),
+    h("p", { clase: "chico gris", style: "margin:0 0 8px" }, t("ctz_eliminar_pie")),
+    campo(t("ctz_motivo_eliminar"), motivo, { obligatorio: true }),
+    h("div", { clase: "acciones", style: "margin:8px 0 0" }, boton,
+      h("button", { type: "button", clase: "claro", onclick: () => caja.replaceChildren() },
+        t("cot_cancelar")))));
 }
 
 function formularioRechazo(caja, d) {

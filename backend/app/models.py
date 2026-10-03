@@ -2320,6 +2320,13 @@ class Notificacion(Base):
     # crece con cada intento (correo.ESPERAS_MINUTOS). Vacio: en la
     # siguiente vuelta.
     reintentar_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # El archivo que viaja con el correo (seccion 131, decision 16 de
+    # Salvador): el PDF de la cotizacion que otro mando con la firma del
+    # titular. Se guarda la referencia, no otra copia: el PDF ya esta
+    # en `archivo_cotizacion` tal como salio.
+    adjunto_id: Mapped[int | None] = mapped_column(
+        ForeignKey("archivo_cotizacion.id", ondelete="SET NULL"),
+        nullable=True)
 
     servicio: Mapped[Servicio | None] = relationship()
 

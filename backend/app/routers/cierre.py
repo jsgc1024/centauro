@@ -491,11 +491,15 @@ def respaldar(cierre_id: int, descripcion: str, datos: RespaldoIn,
         raise HTTPException(400, "Di cuál desviación justificas")
 
     # La desviacion tiene que estar en el comparativo de hoy, con su
-    # texto: el dinero del personal no se justifica, se cierra.
+    # texto: el dinero del personal no se justifica, se cierra. El mes
+    # del implantado trae las suyas (seccion 131, decision 10: el mes sin
+    # dias trabajados que se cobra como costo fijo pactado).
     del_dinero = {m.TipoDesviacion.VIATICO_SIN_COMPROBAR.value,
                   m.TipoDesviacion.VIATICO_NO_CERRADO.value,
                   m.TipoDesviacion.VIATICO_EXCEDIDO.value}
-    viva = next((d for d in motor.comparar(db, cierre.servicio_id)["desviaciones"]
+    comparativo = (cierre_mes.comparar(db, cierre.contrato) if cierre.contrato_id
+                   else motor.comparar(db, cierre.servicio_id))
+    viva = next((d for d in comparativo["desviaciones"]
                  if d["descripcion"] == descripcion and not d.get("respaldada")),
                 None)
     if viva is None:
@@ -693,9 +697,11 @@ def autorizar_cobro(cierre_id: int, datos: CobroIn,
              summary="Finanzas regresa el servicio a operacion")
 def devolver(cierre_id: int, datos: DevolucionIn, db: Session = Depends(get_db),
              usuario: m.Usuario = Depends(FINANZAS)):
-    """Solo lo que esta en facturacion, con su motivo. El consultor tiene
-    24 horas desde el regreso y su primer visto bueno conserva su plazo;
-    si la factura ya habia salido, se anula (seccion 59)."""
+    """Lo que esta en facturacion y lo aprobado sin factura ni prefactura
+    timbrada (seccion 131), con su motivo. El consultor tiene 24 horas
+    desde el regreso y su primer visto bueno conserva su plazo; si la
+    factura ya habia salido, se anula (seccion 59); la comision que nacio
+    con la aprobacion se cancela y renace con el nuevo visto bueno."""
     cierre = db.get(m.Cierre, cierre_id)
     if not cierre:
         raise HTTPException(404, f"No existe el cierre {cierre_id}")

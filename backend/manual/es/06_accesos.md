@@ -29,6 +29,9 @@ Dan y cierran accesos administración, dirección general, recursos humanos y si
 - **A quien se va debiendo viáticos no se le cierra el acceso** hasta que compruebe; si ya no va a volver, finanzas lo cierra con su ajuste.
 - **Al consultor titular de servicios vivos no se le cierra el acceso**: el sistema dice cuántos y cuáles; dirección de operaciones los cambia primero desde cada ficha con «Cambiar titular».
 
+## Quién entró y quién no
+En [Accesos](#/accesos) → Personas, cada renglón dice de qué país es y cuándo entró por última vez. Junto al buscador hay dos filtros: **«País»** —todos, México, Brasil— y **«Quiénes ya entraron»** —todos, ya entraron, nunca han entrado, más de 3 meses sin entrar—, cada uno con su cuenta; se cruzan entre sí y con la casilla de los accesos cerrados. El personal de seguridad recibe su acceso cuando se aplica la lectura de Odoo y trae correo en Odoo; quien no tiene correo allá no aparece aquí hasta que se lo pongan.
+
 ## Cómo entra cada quien
 - **La oficina** recibe una **invitación por correo** para crear su contraseña. El enlace vale **72 horas** y sirve una sola vez. Reenviarla manda uno nuevo y apaga el anterior. Si el correo no le llega, dirección general o administración pueden **copiar el enlace** y dárselo en mano; queda escrito quién lo copió.
 - **Quien olvidó su contraseña** la recupera desde la entrada, con «¿Olvidaste tu contraseña?». Ese enlace vale **2 horas**. Las dos cosas necesitan el correo encendido.

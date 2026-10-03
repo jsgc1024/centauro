@@ -506,6 +506,37 @@ def comparar(db: Session, contrato: m.ContratoImplantado) -> dict:
     con_extra = [j for j in motor_implantado.jornadas_del_mes(contrato)
                  if j.personal and horas_extra.horas(j)]
     horas_mes = sum(horas_extra.horas(j) for j in con_extra)
+
+    # El mes a precio fijo sin ningun dia trabajado (seccion 131,
+    # decision 10 de Salvador): el cliente cancelo todos los dias, o el
+    # servicio se detuvo, y salio dinero --por eso hay cierre--. Se cobra
+    # lo trabajado, que es cero, y el visto bueno lo dice. Si de verdad
+    # es un costo fijo pactado, el consultor lo justifica en la revision
+    # y entonces se cobra el mensual completo. Antes se cobraba el
+    # mensual sin decir nada.
+    sin_dias = None
+    if mes_completo and not base and not adicionales and not horas_mes:
+        descripcion = texto_sin_dias(contrato)
+        fila = cierre_de(db, contrato)
+        justificada = next((d for d in (fila.desviaciones if fila else [])
+                            if d.respaldada and d.descripcion == descripcion),
+                           None)
+        if justificada:
+            sin_dias = {"cobro": "costo_fijo",
+                        "justificacion": justificada.justificacion}
+            notas.append("El mes no tuvo ningun dia trabajado y se cobra el "
+                         "mensual como costo fijo pactado: "
+                         f"{justificada.justificacion}")
+        else:
+            sin_dias = {"cobro": "cero", "justificacion": None}
+            desglose["mes_completo"] = CERO
+            trabajado = sum(desglose.values(), CERO)
+            notas.append("El mes no tuvo ningun dia trabajado: se cobra en "
+                         "cero")
+        desviaciones.append({
+            "tipo": m.TipoDesviacion.DIAS_DE_MENOS.value,
+            "descripcion": descripcion,
+            "monto": -precios["mes_completo"], "aviso": True})
     sin_precio = []
     if horas_mes:
         importe_extra = precios["hora_extra"] * horas_mes
@@ -554,7 +585,10 @@ def comparar(db: Session, contrato: m.ContratoImplantado) -> dict:
     otra = moneda != local
     tc_gastos = None
     if alzado:
-        por_cobrar = fijo
+        # El monto fijo de gastos del mes que no se trabajo tampoco se
+        # cobra (decision 10): lo comprobado --netos-- si, porque salio.
+        por_cobrar = (CERO if sin_dias and sin_dias["cobro"] == "cero"
+                      else fijo)
     elif not otra:
         por_cobrar = comprobado
     else:
@@ -624,7 +658,16 @@ def comparar(db: Session, contrato: m.ContratoImplantado) -> dict:
         "desviaciones": desviaciones,
         "notas": notas,
         "sin_desviaciones": not desviaciones,
+        # El mes sin dias trabajados (decision 10): como se cobra.
+        "sin_dias": sin_dias,
     }
+
+
+def texto_sin_dias(contrato: m.ContratoImplantado) -> str:
+    """La desviacion del mes sin dias trabajados, tal como la dice la
+    revision: es lo que `respaldar` acepta para justificarla."""
+    return (f"{periodo(contrato)}: el mes no tuvo ningun dia trabajado; se "
+            "cobra en cero salvo que sea un costo fijo pactado")
 
 
 # ------------------------------------------------------------ la revision
@@ -684,6 +727,21 @@ def revisar(db: Session, contrato: m.ContratoImplantado,
                 "nivel": INFO, "asunto": "Desviacion respaldada",
                 "mensaje": d["descripcion"],
                 "accion": "Ya tiene justificacion registrada, no escala."})
+            continue
+        if d.get("aviso"):
+            # El mes sin dias trabajados (decision 10): no frena el visto
+            # bueno --se manda en cero--; la pantalla ofrece «Justificar»
+            # para cobrarlo como costo fijo pactado.
+            observaciones.append({
+                "nivel": AVISO, "asunto": "Mes sin dias trabajados",
+                "clave": "mes_sin_dias",
+                "datos": {"mensual": str(-d["monto"]),
+                          "moneda": d.get("moneda")},
+                "mensaje": d["descripcion"], "justificable": True,
+                "accion": ("Si el cliente cancelo el mes, da el visto bueno "
+                           "asi: se cobra en cero. Si es un costo fijo "
+                           "pactado, justificalo aqui y se cobra el mensual "
+                           "completo.")})
             continue
         observaciones.append({
             "nivel": GRAVE, "asunto": d["tipo"], "mensaje": d["descripcion"],
@@ -838,14 +896,24 @@ def enviar_a_finanzas(db: Session, cierre: m.Cierre, usuario: m.Usuario,
     motor.dar_visto_bueno(cierre, momento)
     cierre.cerrado_por_id = usuario.persona_id
     moneda = comparativo["moneda"]
+    # El mes sin dias trabajados lo dice el visto bueno (decision 10):
+    # en cero, o el mensual como costo fijo con la justificacion.
+    sin_dias = comparativo.get("sin_dias")
+    del_mes_vacio = ""
+    if sin_dias:
+        del_mes_vacio = (", sin dias trabajados: se cobra en cero"
+                         if sin_dias["cobro"] == "cero" else
+                         ", sin dias trabajados: se cobra el mensual como "
+                         f"costo fijo pactado ({sin_dias['justificacion']})")
     auditoria.registrar(db, usuario, cierre.servicio, "enviar a finanzas",
-                        f"{periodo(contrato)}: contratado "
-                        f"{cierre.total_cotizado} {moneda}, trabajado "
-                        f"{cierre.total_ejecutado} {moneda}, "
-                        f"{'en plazo' if cierre.dentro_de_plazo else 'FUERA DE PLAZO'}"
-                        + (f", mes al tipo de cambio "
-                           f"{tipo_cambio.texto(contrato.tipo_cambio)}"
-                           if contrato.tipo_cambio else ""))
+                        (f"{periodo(contrato)}: contratado "
+                         f"{cierre.total_cotizado} {moneda}, trabajado "
+                         f"{cierre.total_ejecutado} {moneda}, "
+                         f"{'en plazo' if cierre.dentro_de_plazo else 'FUERA DE PLAZO'}"
+                         + (f", mes al tipo de cambio "
+                            f"{tipo_cambio.texto(contrato.tipo_cambio)}"
+                            if contrato.tipo_cambio else "")
+                         + del_mes_vacio)[:400])
 
     # Lo pagado cada semana contra lo que corresponde al corte del mes:
     # las diferencias van a la nomina siguiente, como en el eventual.
@@ -870,7 +938,8 @@ def enviar_a_finanzas(db: Session, cierre: m.Cierre, usuario: m.Usuario,
             "comision_consultor": ("se detona con la validacion de finanzas"
                                    if cierre.dentro_de_plazo
                                    else "se pierde por cierre fuera de plazo"),
-            "ajustes_de_nomina": ajustes["ajustes_generados"]}
+            "ajustes_de_nomina": ajustes["ajustes_generados"],
+            "sin_dias": sin_dias}
 
 
 def fijar_del_visto_bueno(db: Session, cierre: m.Cierre) -> None:
@@ -988,12 +1057,15 @@ def armar_factura(db: Session, cierre: m.Cierre) -> dict:
             "cantidad": mensual["dias_de_servicio"],
             "precio": str(mensual["precio_dia"]),
             "importe": str(trabajado["desglose"]["mes_completo"])})
-    elif contrato.esquema == m.EsquemaCotizacionImplantado.MES_COMPLETO:
+    elif (contrato.esquema == m.EsquemaCotizacionImplantado.MES_COMPLETO
+          and trabajado["desglose"].get("mes_completo")):
+        # El mes sin dias trabajados que se cobra en cero (decision 10)
+        # no lleva renglon.
         conceptos.append({
             "tipo": "mes_completo",
             "descripcion": f"Servicio implantado {de_que}, mes completo",
             "cantidad": 1, "precio": str(precios["mes_completo"]),
-            "importe": str(precios["mes_completo"])})
+            "importe": str(trabajado["desglose"]["mes_completo"])})
     if mensual and trabajado["dias_adicionales"]:
         # El dia fuera de la modalidad, aparte (seccion 115).
         conceptos.append({

@@ -907,11 +907,34 @@ async function armar(main, cat, d) {
     t("ctz_guardar"));
   const botonMandar = h("button", { type: "button", onclick: () => mandar() },
     t("ctz_mandar"));
+  /* «Descartar este borrador» (seccion 131, decision 1): la version 2 o
+     siguiente se borra y la anterior vuelve a ser la ultima; la version 1
+     que nunca se mando se elimina con registro y folio quemado. Solo
+     sobre un borrador ya guardado. */
+  const botonDescartar = !e.id ? null : h("button", { type: "button", clase: "claro",
+    onclick: () => descartar() }, t("ctz_descartar"));
   const pie = h("div", { clase: "tarjeta" }, avisoPrecios,
     h("div", { clase: "cot-pie", style: "margin:0;border:0;padding:0" },
       h("div", {}, rotuloTotal, total, pieTotal),
       h("div", {}, h("div", { clase: "acciones", style: "margin:0;justify-content:flex-end" },
-        botonVer, botonGuardar, botonMandar), queFalta, notaFirma)));
+        botonVer, botonGuardar, botonMandar, botonDescartar), queFalta, notaFirma)));
+
+  async function descartar() {
+    const pregunta = e.version > 1
+      ? reemplazar(t("ctz_seguro_descartar_v"), { v: e.version, a: e.version - 1 })
+      : reemplazar(t("ctz_seguro_descartar_1"), { f: e.folio });
+    if (!confirm(pregunta)) return;
+    botonDescartar.disabled = true;
+    try {
+      const r = await api.post(`/cotizaciones/eventual/${e.id}/descartar`);
+      mensaje(r.vuelve ? reemplazar(t("ctz_descartada_vuelve"), { v: r.vuelve.version })
+                       : reemplazar(t("ctz_descartada_eliminada"), { f: e.folio }), "ok");
+      irA(r.vuelve ? `#/cotizacion/${r.vuelve.id}` : "#/cotizaciones");
+    } catch (err) {
+      mensaje(err.message, "grave");
+      botonDescartar.disabled = false;
+    }
+  }
 
   caja.append(paraQuien, tarjetaEquipos, tarjetaGastos, tarjetaTexto, pie);
 
@@ -1211,6 +1234,7 @@ function pintarTarjeta(tarjeta, cat, d) {
           reemplazar(t("ctz_servicio_borrado"), { f: d.servicio_folio })),
         d.se_recrea ? h("p", { clase: "chico", style: "margin:6px 0 0" },
           t("ctz_borrado_que_hacer")) : null,
+        d.se_recrea ? avisoDiasPasados(d) : null,
         d.se_recrea ? h("div", { clase: "acciones", style: "margin:8px 0 0" },
           h("button", { type: "button", onclick: recrear }, t("ctz_recrear_servicio")),
           h("button", { type: "button", clase: "claro",
@@ -1381,7 +1405,21 @@ async function formularioAutorizar(tarjeta, cat, d) {
           : reemplazar(t("cot_n_equipos"), { n: equipos.length }),
         a: equipos.join(", "), f: rangoCorto(d.desde, d.hasta) })),
     notaCambio,
+    avisoDiasPasados(d),
     h("div", { clase: "acciones", style: "margin:0" }, boton, cancelar)].filter(Boolean));
+}
+
+/* Los dias que ya pasaron (seccion 131, decision 11): la vencida que se
+   autoriza tarde o el servicio que se vuelve a crear despues nace con
+   esos dias atras. Se dice en amarillo y se deja seguir: el consultor
+   los mueve o los cancela en el servicio. */
+function avisoDiasPasados(d) {
+  const p = d.dias_pasados;
+  if (!p || !p.n) return null;
+  return h("div", { style: "margin:6px 0 10px" },
+    aviso(reemplazar(t(p.n === 1 ? "ctz_dia_pasado" : "ctz_dias_pasados"), {
+      n: p.n, f: p.n === 1 ? fechaCorta(p.desde, false)
+        : `${fechaCorta(p.desde, false)} – ${fechaCorta(p.hasta, false)}` }), "alerta"));
 }
 
 /* Eliminar la cotizacion cuyo servicio se elimino (seccion 126): con su

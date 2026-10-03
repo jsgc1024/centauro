@@ -212,6 +212,10 @@ TEXTOS_PUSH = {
         "entrega_vencida_cuerpo": "El plazo para entregar la {placa} ({folio}) venció el {fecha} a las {hora}. Entrégala hoy con sus fotos y avisa a tu consultor.",
         "entrega_vencida_of_titulo": "{folio}: unidad sin entregar",
         "entrega_vencida_of_cuerpo": "{quien} no entregó la {placa} en el plazo ({fecha} {hora}). Sigue por entregar; el cierre la reclama hasta que se entregue o se registre sin revisión.",
+        # Seccion 131, decision 16: la cotizacion que otro manda con la
+        # firma del titular; el PDF va en el correo.
+        "ctz_otro_titulo": "{nombre}: {quien} la mandó con tu firma",
+        "ctz_otro_cuerpo": "Salió al cliente ({cliente}) con tu firma y tu contacto. El PDF va en tu correo; ábrela en Cotizaciones.",
     },
     "pt": {
         "vispera_titulo": "Amanhã você trabalha",
@@ -277,6 +281,8 @@ TEXTOS_PUSH = {
         "entrega_vencida_cuerpo": "O prazo para entregar a {placa} ({folio}) venceu em {fecha} às {hora}. Entregue hoje com as fotos e avise o seu consultor.",
         "entrega_vencida_of_titulo": "{folio}: unidade sem entregar",
         "entrega_vencida_of_cuerpo": "{quien} não entregou a {placa} no prazo ({fecha} {hora}). Continua por entregar; o fechamento cobra até que seja entregue ou registrada sem revisão.",
+        "ctz_otro_titulo": "{nombre}: {quien} enviou com a sua assinatura",
+        "ctz_otro_cuerpo": "Saiu ao cliente ({cliente}) com a sua assinatura e o seu contato. O PDF vai no seu e-mail; abra em Cotações.",
     },
 }
 

@@ -235,6 +235,19 @@ async function pantallaPersonas(main) {
   const buscar = entrada("buscar", { placeholder: t("acc_buscar"),
                                      autocomplete: "off" });
   const cerrados = h("input", { type: "checkbox" });
+  /* Quienes ya entraron y quienes no (Salvador, 3 oct, seccion 131): el
+     dato estaba en cada renglon y no habia como quedarse solo con los
+     que nunca han entrado, o con los que llevan meses dormidos. */
+  const entraron = lista("entraron", [
+    { valor: "", texto: t("acc_f_todos") },
+    { valor: "si", texto: t("acc_f_entraron") },
+    { valor: "no", texto: t("acc_f_nunca") },
+    { valor: "dormidos", texto: t("acc_f_dormidos").replace("{m}", MESES_DORMIDO) },
+  ]);
+  /* Y por pais (Salvador, 3 oct): el de la ciudad de cada quien. Las
+     opciones salen de la lista misma; quien no tiene ciudad --un acceso
+     de oficina sin ficha-- queda en «Sin país». */
+  const pais = lista("pais", [{ valor: "", texto: t("acc_f_pais_todos") }]);
   let sub = "con";
   let todos = [];
   let oficina = { sin_acceso: [], sin_correo: [], leido_en: null };
@@ -251,17 +264,58 @@ async function pantallaPersonas(main) {
       boton("sin_correo", t("ofi_tab_sin_correo").replace("{n}", oficina.sin_correo.length)));
   }
 
+  const yaEntro = (u) => !!u.ultimo_acceso;
+  const dormido = (u) => {
+    const meses = mesesSinEntrar(u.ultimo_acceso);
+    return yaEntro(u) && meses !== null && meses >= MESES_DORMIDO;
+  };
+  const porEntrada = (u) => {
+    const cual = entraron.value;
+    if (cual === "si") return yaEntro(u);
+    if (cual === "no") return !yaEntro(u);
+    if (cual === "dormidos") return dormido(u);
+    return true;
+  };
+
+  function ponerPaises() {
+    const antes = pais.value;
+    const vistos = new Map();
+    for (const u of todos) {
+      const clave = u.pais_id ? String(u.pais_id) : "sin";
+      if (!vistos.has(clave)) vistos.set(clave, u.pais || t("acc_f_sin_pais"));
+    }
+    pais.replaceChildren(h("option", { value: "" }, t("acc_f_pais_todos")),
+      ...[...vistos.entries()]
+        .sort((a, b) => (a[0] === "sin") - (b[0] === "sin") || a[1].localeCompare(b[1]))
+        .map(([clave, nombre]) => h("option", { value: clave }, nombre)));
+    if ([...pais.options].some(o => o.value === antes)) pais.value = antes;
+    /* Con un solo pais en la lista no hay nada que separar. */
+    pais.parentElement && (pais.parentElement.hidden = vistos.size < 2);
+  }
+
+  const delPais = (u) => !pais.value
+    || (pais.value === "sin" ? !u.pais_id : String(u.pais_id) === pais.value);
+
   function pintarLista() {
     const texto = buscar.value.trim().toLowerCase();
-    const filas = todos
-      .filter(u => cerrados.checked || u.activo)
+    const visibles = todos.filter(u => cerrados.checked || u.activo).filter(delPais);
+    /* Las cuentas en cada opcion, para leer de un vistazo cuantos no han
+       entrado sin tener que escogerla. */
+    const n = { si: visibles.filter(yaEntro).length,
+                no: visibles.filter(u => !yaEntro(u)).length,
+                dormidos: visibles.filter(dormido).length };
+    for (const o of entraron.options) {
+      if (o.value) o.textContent = o.textContent.replace(/ \(\d+\)$/, "") + ` (${n[o.value]})`;
+    }
+    const filas = visibles
+      .filter(porEntrada)
       .filter(u => !texto
         || (u.nombre || "").toLowerCase().includes(texto)
         || (u.correo || "").toLowerCase().includes(texto));
     cuerpo.replaceChildren(filas.length
       ? h("div", {}, ...filas.map(u => renglon(u, recargar, roles)))
       : h("div", { clase: "gris chico", style: "margin-top:12px" },
-          t("acc_nadie")));
+          t(entraron.value && !texto ? "acc_nadie_asi" : "acc_nadie")));
   }
 
   function pintarSub() {
@@ -296,13 +350,16 @@ async function pantallaPersonas(main) {
       return;
     }
     zona.replaceChildren(
-      buscar,
+      h("div", { clase: "rejilla tres" }, buscar,
+        campo(t("acc_f_pais"), pais),
+        campo(t("acc_f_titulo"), entraron)),
       /* La casilla junto a su texto. Con la etiqueta de bloque, la casilla
          tomaba el ancho entero y salía sola en un renglón, encima y
          desfasada del texto que la explica. */
       h("label", { clase: "casilla", style: "margin-top:8px" },
         cerrados, t("acc_ver_cerrados")),
       cuerpo);
+    ponerPaises();
     pintarLista();
   }
 
@@ -320,6 +377,8 @@ async function pantallaPersonas(main) {
 
   buscar.addEventListener("input", pintarLista);
   cerrados.addEventListener("change", pintarLista);
+  entraron.addEventListener("change", pintarLista);
+  pais.addEventListener("change", pintarLista);
 
   main.replaceChildren(pestanas, zona);
   await recargar();
@@ -445,7 +504,8 @@ function renglon(u, recargar, roles) {
        siguiera diciendo sólo "Consultor", la lista mentiría justo en la
        pantalla donde se reparte el acceso. */
     h("div", { clase: "chico" }, nombreDelRol(u.rol),
-      u.categoria ? h("div", { clase: "gris chico" }, u.categoria) : ""),
+      u.categoria ? h("div", { clase: "gris chico" }, u.categoria) : "",
+      u.pais ? h("div", { clase: "gris chico" }, u.pais) : ""),
     h("div", { clase: "chico gris" },
       u.ultimo_acceso ? desdeHace(u.ultimo_acceso) : t("acc_nunca")),
     h("button", { clase: "claro chico", type: "button",

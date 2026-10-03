@@ -29,6 +29,9 @@ Dão e fecham acessos a administração, a direção geral, os recursos humanos 
 - **A quem sai devendo diárias não se fecha o acesso** até que comprove; se não vai voltar, o financeiro o fecha com o seu ajuste.
 - **Ao consultor titular de serviços vivos não se fecha o acesso**: o sistema diz quantos e quais; a direção de operações os troca antes em cada ficha com «Trocar titular».
 
+## Quem entrou e quem não
+Em [Acessos](#/accesos) → Pessoas, cada linha diz de que país é e quando entrou pela última vez. Ao lado do buscador há dois filtros: **«País»** —todos, México, Brasil— e **«Quem já entrou»** —todos, já entraram, nunca entraram, mais de 3 meses sem entrar—, cada um com a sua conta; cruzam-se entre si e com a caixa dos acessos fechados. O pessoal de segurança recebe o seu acesso quando a leitura do Odoo é aplicada e traz e-mail no Odoo; quem não tem e-mail lá não aparece aqui até que o coloquem.
+
 ## Como cada um entra
 - **O escritório** recebe um **convite por e-mail** para criar a sua senha. O link vale **72 horas** e serve uma única vez. Reenviar manda um novo e desliga o anterior. Se o e-mail não chegar, a direção geral ou a administração podem **copiar o link** e entregá-lo em mãos; fica registrado quem o copiou.
 - **Quem esqueceu a senha** a recupera na entrada, com «Esqueceu sua senha?». Esse link vale **2 horas**. As duas coisas precisam do e-mail ligado.

@@ -43,6 +43,11 @@ def bandeja(db: Session, ahora: datetime | None = None) -> dict:
         "precios_especiales": propuesta.por_autorizar(db),
         "plazos_vencidos": plazos_vencidos(db, relojes),
         "cobros_por_autorizar": cobros_por_autorizar(db),
+        # Las tres que vivian en otras pantallas (seccion 131, decision 19
+        # de Salvador): el panel avisa y abre, no duplica la firma.
+        "comisiones_por_firmar": comisiones_por_firmar(db, relojes),
+        "malas_calificaciones": malas_calificaciones(db),
+        "cierres_por_firmar": cierres_por_firmar(db, relojes),
         "hoy": tablero_de_hoy(db, relojes),
     }
 
@@ -141,6 +146,158 @@ def cobros_por_autorizar(db: Session) -> list[dict]:
     for c in motor_cierre.cobros_por_autorizar(db):
         c["ruta"] = f"#/servicio/{c['servicio_id']}"
         salida.append(c)
+    return salida
+
+
+# ===================================================== lo que vivia en otras pantallas
+#
+# Seccion 131, decision 19 de Salvador (2 oct): de lo que direccion de
+# operaciones firma, tres cosas vivian solo en otras pantallas --el visto
+# bueno del corte de comisiones del mes (Nominas), las malas
+# calificaciones por clasificar (Encuestas) y los cierres que esperan su
+# visto bueno (la tarjeta de cada servicio)--. Entran al panel como
+# tarjetas con sus cuentas y «Abrir»; la firma sigue donde siempre.
+
+def comisiones_por_firmar(db: Session, relojes: reloj.Relojes | None = None
+                          ) -> list[dict]:
+    """Los meses terminados, por pais, cuyo corte de comisiones espera
+    el visto bueno: con lo que finanzas valido en el mes y las
+    diferencias que cayeron en el. Un mes sin nada no espera nada."""
+    from app import comisiones
+
+    relojes = relojes or reloj.Relojes(db)
+    salida = []
+    for pais in (db.query(m.Pais).filter_by(activo=True)
+                 .order_by(m.Pais.id).all()):
+        hoy = relojes.hoy(pais.id)
+        meses = set()
+        for c in (db.query(m.ComisionConsultor.anio, m.ComisionConsultor.mes)
+                  .join(m.Servicio,
+                        m.ComisionConsultor.servicio_id == m.Servicio.id)
+                  .filter(m.Servicio.pais_id == pais.id).distinct().all()):
+            meses.add((c.anio, c.mes))
+        for a in (db.query(m.AjusteComision.anio, m.AjusteComision.mes)
+                  .filter(m.AjusteComision.pais_id == pais.id)
+                  .distinct().all()):
+            meses.add((a.anio, a.mes))
+        for anio, mes in sorted(meses):
+            if (anio, mes) >= (hoy.year, hoy.month):
+                continue            # el mes que corre todavia no se firma
+            if comisiones.corte_de(db, pais.id, anio, mes):
+                continue
+            vista = comisiones.corte_del_mes(db, pais.id, anio, mes,
+                                             ahora=relojes.ahora(pais.id))
+            consultores = [f for f in vista["consultores"]
+                           if f["se_paga"] or f["diferencias"]
+                           or f["no_se_paga"]]
+            if not consultores:
+                continue
+            salida.append({
+                "pais_id": pais.id, "pais": pais.nombre,
+                "anio": anio, "mes": mes, "periodo": f"{mes:02d}/{anio}",
+                "consultores": len(consultores),
+                "a_pagar": vista["totales"]["a_pagar"],
+                "moneda": vista["moneda"],
+                "se_puede_autorizar": vista["se_puede_autorizar"],
+                "ruta": f"#/nomina/comisiones/{pais.id}/{anio}-{mes:02d}",
+            })
+    return salida
+
+
+def malas_calificaciones(db: Session) -> list[dict]:
+    """Las encuestas con calificacion baja que nadie ha clasificado, la
+    mas vieja primero: la del solicitante --que califica al consultor-- la
+    decide direccion de operaciones; la del ejecutivo, el consultor del
+    servicio, y aqui se ve si lleva dias esperando."""
+    filas = (db.query(m.Encuesta)
+             .filter_by(requiere_clasificacion=True, incidencia_id=None)
+             .filter(m.Encuesta.clasificada_en.is_(None))
+             .order_by(m.Encuesta.respondida_en, m.Encuesta.id).all())
+    salida = []
+    for e in filas:
+        servicio = e.servicio
+        consultor = (db.get(m.Persona, servicio.consultor_id)
+                     if servicio and servicio.consultor_id else None)
+        comentario = next((r.texto for r in e.respuestas if r.texto), None)
+        salida.append({
+            "encuesta_id": e.id, "servicio_id": e.servicio_id,
+            "folio": servicio.folio if servicio else None,
+            "cliente": (servicio.cliente.nombre
+                        if servicio and servicio.cliente else None),
+            "tipo": e.tipo.value,
+            "quien": e.destinatario_nombre or e.destinatario_correo,
+            "calificacion": e.calificacion,
+            "respondida_en": (e.respondida_en.isoformat()
+                              if e.respondida_en else None),
+            "comentario": comentario,
+            # A quien le toca: direccion, o el consultor del servicio.
+            "le_toca": ("direccion" if e.tipo == m.TipoEncuesta.SOLICITANTE
+                        else "consultor"),
+            "consultor": consultor.nombre if consultor else None,
+            "ruta": "#/encuestas",
+        })
+    return salida
+
+
+def cierres_por_firmar(db: Session, relojes: reloj.Relojes | None = None
+                       ) -> list[dict]:
+    """Los cierres --servicios y meses-- que esperan el visto bueno del
+    consultor y siguen en plazo, con lo que hay que cobrar y cuanto les
+    queda. Los que ya vencieron estan en «Plazos vencidos». Direccion de
+    operaciones puede dar ese visto bueno en lugar del consultor."""
+    from app import cierre_mes
+    from app import cotizacion as cot
+
+    relojes = relojes or reloj.Relojes(db)
+    filas = (db.query(m.Cierre)
+             .filter(m.Cierre.estatus.in_((
+                 m.EstatusCierre.SIN_VISTO_BUENO,
+                 m.EstatusCierre.EN_REVISION_IA,
+                 m.EstatusCierre.DEVUELTO_A_OPERACION)))
+             .all())
+    salida = []
+    for c in filas:
+        vigente = motor_cierre.limite_vigente(c)
+        if not vigente:
+            continue
+        quien, hasta = vigente
+        ahora = relojes.del_servicio(c.servicio)
+        if hasta < ahora:
+            continue            # vencido: esta en su propia tarjeta
+        consultor = (db.get(m.Persona, c.servicio.consultor_id)
+                     if c.servicio and c.servicio.consultor_id else None)
+        monto = moneda = None
+        try:
+            if c.contrato_id:
+                comparativo = cierre_mes.comparar(db, c.contrato)
+                monto = comparativo["a_facturar"]["total"]
+                moneda = comparativo["moneda"]
+            else:
+                vigente_cot = cot.vigente(db, c.servicio_id)
+                if vigente_cot is not None:
+                    monto = vigente_cot.total
+                    moneda = vigente_cot.moneda.value
+        except Exception:                                   # noqa: BLE001
+            # Sin precio o sin tipo de cambio no hay cifra: la tarjeta
+            # igual lo lista, sin monto.
+            monto = moneda = None
+        salida.append({
+            "cierre_id": c.id, "servicio_id": c.servicio_id,
+            "folio": c.servicio.folio, "tipo": c.servicio.tipo.value,
+            "cliente": c.servicio.cliente.nombre if c.servicio.cliente else None,
+            "periodo": (f"{c.contrato.mes:02d}/{c.contrato.anio}"
+                        if c.contrato_id and c.contrato else None),
+            "estatus": c.estatus.value,
+            "regresado": c.estatus == m.EstatusCierre.DEVUELTO_A_OPERACION,
+            "reloj": quien,
+            "consultor_id": consultor.id if consultor else None,
+            "consultor": consultor.nombre if consultor else None,
+            "vence": hasta.isoformat(),
+            "minutos_restantes": int((hasta - ahora).total_seconds() // 60),
+            "monto": monto, "moneda": moneda,
+            "ruta": _ruta(c.servicio, del_mes=True),
+        })
+    salida.sort(key=lambda x: x["minutos_restantes"])
     return salida
 
 
