@@ -594,7 +594,7 @@ ACTIVIDADES: dict[str, dict] = {
     "riesgo.ver": {
         "descripcion": "Ver el mapa de riesgo de la central con lo que "
                        "espera publicarse",
-        "roles": {R.CENTRAL, R.DIRECTOR_OPERACIONES},
+        "roles": {R.CENTRAL, R.DIRECTOR_OPERACIONES, R.SISTEMA_CALIDAD},
     },
     "riesgo.publicar": {
         "descripcion": "Capturar, publicar, actualizar y cerrar eventos de "
@@ -664,7 +664,8 @@ ACTIVIDADES: dict[str, dict] = {
 PANTALLAS = ("panorama", "cotizaciones", "servicios", "implantados",
              "equipo", "unidades", "bonos", "encuestas", "calidad",
              "central", "codigo", "finanzas", "facturacion", "nomina",
-             "accesos", "odoo", "catalogos", "manual", "direccion")
+             "accesos", "odoo", "catalogos", "manual", "direccion",
+             "riesgo")
 
 
 def roles_de(actividad: str) -> set:

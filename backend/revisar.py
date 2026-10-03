@@ -653,6 +653,7 @@ def _claves_de_ayuda(texto: str):
 # mismo dia y nadie lo vio hasta que una pantalla no abrio.
 AYUDA_POR_PANTALLA = {
     # --- las que llevan
+    "riesgo.js": 0,
     "accesos.js": 1,
     "bonos.js": 2,
     "bitacora.js": 3,

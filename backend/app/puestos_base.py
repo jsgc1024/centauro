@@ -68,7 +68,7 @@ PUESTOS: list[dict] = [
         "pantallas": ["panorama", "cotizaciones", "servicios", "implantados",
                       "equipo", "unidades", "bonos", "encuestas", "central",
                       "finanzas", "facturacion", "nomina", "catalogos",
-                      "calidad", "direccion"],
+                      "calidad", "direccion", "riesgo"],
         "actividades": _de(R.DIRECTOR_OPERACIONES),
         "puestos_odoo": "Director de Operaciones, Director Operativo",
     },
@@ -106,7 +106,7 @@ PUESTOS: list[dict] = [
         "descripcion": "Monitoreo, código y correcciones con su motivo. "
                        "Confirma el nivel 4 del mapa de riesgo.",
         "pantallas": ["panorama", "servicios", "implantados", "equipo",
-                      "unidades", "bonos", "central", "codigo"],
+                      "unidades", "bonos", "central", "codigo", "riesgo"],
         # El jefe de turno de la central (seccion 130): confirma lo que
         # sale como nivel 4 en el mapa de riesgo.
         "actividades": _de(R.CENTRAL) | {"riesgo.confirmar"},
@@ -121,7 +121,7 @@ PUESTOS: list[dict] = [
         "orden": 31,
         "descripcion": "Monitoreo y código; no corrige hitos.",
         "pantallas": ["panorama", "servicios", "implantados", "unidades",
-                      "central", "codigo"],
+                      "central", "codigo", "riesgo"],
         "actividades": _de(R.CENTRAL) - NO_MONITORISTA,
         "puestos_odoo": "Monitorista, Asistente CI, Analista de Monitoreo",
     },
@@ -273,7 +273,7 @@ PUESTOS: list[dict] = [
         # Cotizaciones (seccion 114): las consulta, como la operacion.
         "pantallas": ["panorama", "cotizaciones", "servicios", "implantados",
                       "equipo", "unidades", "bonos", "encuestas", "accesos",
-                      "odoo", "catalogos", "calidad", "manual"],
+                      "odoo", "catalogos", "calidad", "manual", "riesgo"],
         "actividades": _de(R.SISTEMA_CALIDAD),
         "puestos_odoo": None,
     },

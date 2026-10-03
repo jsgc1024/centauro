@@ -47,6 +47,9 @@ O que espera o visto do diretor de operações —os incidentes por autorizar, o
 ### Monitoramento {#central}
 A central: o que precisa de atenção agora —um pânico, uma unidade sem corrente, uma equipe calada—, as unidades que saíram do serviço e continuam por entregar, com quem responde e quanto lhes resta, e o que precisa ser resolvido antes do corte da véspera. Aqui se registram à mão as marcações que não chegaram, com a sua justificativa, e a entrega sem revisão quando as fotos já não podem ser tiradas.
 
+### Mapa de risco {#riesgo}
+O que acontece no país e a quem chega. Os analistas registram cada evento com o seu tipo, estado, nível de 1 a 4, ponto e até quando afeta; nada chega ao cliente sem ser publicado, e um nível 4 espera o chefe de turno confirmar. Ao publicar, o aviso vai para os gerentes dos clientes que acompanham esse estado: o nível 2 no resumo das 20:00, o 3 e o 4 na hora, e se um 4 não tiver confirmação em 15 minutos aparece no alto para ligar. Na aba de clientes se dá o serviço a um cliente do Odoo, se escolhem os seus estados e se cadastra o seu gerente.
+
 ### Código {#codigo}
 O código de quatro dígitos que se dita por telefone ao pessoal de campo que não consegue entrar no app. Vale 10 minutos.
 

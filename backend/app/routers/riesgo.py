@@ -77,6 +77,14 @@ def catalogos(pais_id: int, db: Session = Depends(get_db), _=Depends(VER)):
     }
 
 
+@router.get("/mapa-llave", summary="La llave de Google del mapa interactivo")
+def mapa_llave(_=Depends(VER)):
+    """Solo a quien ve el mapa. La llave va limitada en Google a las
+    direcciones del sistema: aun copiada, no sirve en otro sitio."""
+    from app.config import settings
+    return {"llave": settings.google_maps_key_navegador or None}
+
+
 @router.get("/mapa", summary="Lo vigente y la cola del analista")
 def mapa(pais_id: int | None = None, db: Session = Depends(get_db),
          ahora: datetime | None = None, _=Depends(VER)):

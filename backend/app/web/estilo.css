@@ -1736,3 +1736,37 @@ input.pro-mes { width: 132px; margin: 0; text-align: right;
 @media (max-width: 720px) {
   .ctz-tipos { flex-direction: column; }
 }
+
+/* ------------------------------------------- el mapa de riesgo (AI/CI)
+   Seccion 132. A la izquierda lo que espera una mano; al centro el mapa
+   y debajo la ficha del evento que se trabaja. */
+.rsg-barra { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 12px; }
+.rsg-mesa { display: grid; grid-template-columns: 340px 1fr; gap: 16px; align-items: start; }
+@media (max-width: 1000px) { .rsg-mesa { grid-template-columns: 1fr; } }
+.rsg-cola { display: flex; flex-direction: column; gap: 6px; max-height: calc(100vh - 220px); overflow: auto; }
+.rsg-cola h3 { margin: 12px 0 2px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--gris); }
+.rsg-cola h3.rsg-grave { color: var(--grave); }
+.rsg-renglon { width: 100%; text-align: left; background: #fff; color: var(--texto); border: 1px solid var(--linea); border-radius: 8px;
+  padding: 8px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
+.rsg-renglon:hover { border-color: var(--centauro); }
+.rsg-llamar { border-left: 4px solid var(--grave); cursor: default; }
+.rsg-nuevo { width: 100%; }
+.rsg-nivel { color: #fff; border-radius: 10px; padding: 1px 8px; font-size: 12px; font-weight: 600; }
+.rsg-mapa { background: #fff; border: 1px solid var(--linea); border-radius: 8px; overflow: hidden; }
+.rsg-lienzo { height: 460px; }
+.rsg-leyenda { display: flex; gap: 14px; padding: 6px 10px; font-size: 12px; color: var(--gris); }
+.rsg-leyenda i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; }
+.rsg-ficha { margin-top: 12px; display: flex; flex-direction: column; gap: 12px; }
+.rsg-cabeza { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.rsg-niveles { display: flex; gap: 6px; flex-wrap: wrap; }
+.rsg-n { background: #fff; color: var(--texto); border: 2px solid; border-radius: 16px; padding: 4px 12px; cursor: pointer; }
+.rsg-n.activo { color: #fff; font-weight: 600; }
+.rsg-n:disabled { opacity: 1; cursor: default; }
+.rsg-linea { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
+.rsg-linea > input, .rsg-linea > select { flex: 1 1 160px; width: auto; }
+.rsg-linea > input[type=checkbox] { flex: 0 0 auto; }
+.rsg-cliente > h3 { margin-top: 18px; }
+.rsg-definicion { margin: -4px 0 8px; }
+.rsg-zonas { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 2px 12px; margin: 6px 0; }
+.rsg-zonas label.casilla { font-weight: 400; margin: 2px 0; }
+.rsg-zonas label.casilla:has(input:checked) { font-weight: 600; }

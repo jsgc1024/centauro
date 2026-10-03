@@ -13,6 +13,7 @@ import { pantallaUnidades } from "./unidades.js";
 import { carteraImplantados, nuevoImplantado,
          pantallaImplantado } from "./implantado.js";
 import { detenerPanorama, pantallaPanorama } from "./panorama.js";
+import { detenerRiesgo, pantallaRiesgo } from "./riesgo.js";
 import { pantallaAccesos } from "./accesos.js";
 import { pantallaOdoo } from "./odoo.js";
 import { pantallaCatalogos } from "./catalogos_pantalla.js";
@@ -36,7 +37,7 @@ import { IDIOMAS, idioma, idiomaGuardado, ponerIdioma, t } from "./idioma.js";
 import { abrirRecorrido } from "./recorrido.js";
 import { firma } from "./firma.js";
 import { ADMINISTRA, CALIDAD, CATALOGOS, CODIGO, CONSULTA, DESEMPENO,
-         DINERO, DIRECCION, LEE_ODOO, MANUAL, MONITOREO, NOMINAS, PANORAMA,
+         DINERO, DIRECCION, LEE_ODOO, MANUAL, MONITOREO, NOMINAS, PANORAMA, RIESGO,
          VOZ_CLIENTE, abre, destinoDe, menuDe } from "./menu.js";
 
 /* La regla de captura vale para toda la consola, no para una
@@ -379,7 +380,7 @@ function quienSoy(rol) {
           pintar();        // la consola entera se vuelve a pintar
         } }, i.bandera))),
     h("button", { clase: "salir", type: "button", onclick: () => {
-      api.salir(); detener(); detenerPanorama();
+      api.salir(); detener(); detenerPanorama(); detenerRiesgo();
       location.hash = "#/entrar"; pintar();
     } }, t("salir")));
 
@@ -450,7 +451,7 @@ async function pantallaContrasena(main) {
       await api.post("/auth/mi-contrasena", { actual: actual.value, nueva: nueva.value });
       correoSugerido = sesion.usuario.correo;
       notaEntrada = t("cc_cambiada_vuelve");
-      api.salir(); detener(); detenerPanorama();
+      api.salir(); detener(); detenerPanorama(); detenerRiesgo();
       location.hash = "#/entrar"; pintar();
     } catch (err) {
       error.replaceChildren(aviso(err.message, "grave"));
@@ -490,6 +491,8 @@ const RUTAS = [
   [/^#\/implantado\/nuevo$/, nuevoImplantado, "implantados", CONSULTA],
   [/^#\/implantado\/(\d+)$/, pantallaImplantado, "implantados", CONSULTA],
   [/^#\/central$/, tableroCentral, "central", MONITOREO],
+  /* El mapa de riesgo de la Central de Inteligencia (seccion 132). */
+  [/^#\/riesgo$/, pantallaRiesgo, "riesgo", RIESGO],
   [/^#\/equipo$/, pantallaPersonal, "equipo", CONSULTA],
   /* La ficha de una persona, abierta directo: desde Calidad (seccion 89),
      el certificado vencido lleva a quien lo trae. */
@@ -579,6 +582,6 @@ async function pintar() {
 }
 
 window.addEventListener("hashchange", () => {
-  detener(); detenerPanorama(); pintar();
+  detener(); detenerPanorama(); detenerRiesgo(); pintar();
 });
 pintar();

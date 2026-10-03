@@ -47,6 +47,9 @@ Lo que espera la firma del director de operaciones —las incidencias por autori
 ### Monitoreo {#central}
 La central: lo que hay que atender ahora —un pánico, una unidad sin corriente, un equipo callado—, las unidades que salieron del servicio y siguen por entregar, con quién responde y cuánto les queda, y lo que hay que resolver antes del corte de la víspera. Aquí se registran a mano las marcas que no llegaron, con su justificación, y la entrega sin revisión cuando las fotos ya no se pueden tomar.
 
+### Mapa de riesgo {#riesgo}
+Lo que pasa en el país y a quién le llega. Los analistas capturan cada evento con su tipo, estado, nivel del 1 al 4, punto y hasta cuándo afecta; nada llega al cliente sin publicarse, y un nivel 4 espera a que el jefe de turno lo confirme. Al publicar, el aviso sale a los gerentes de los clientes que siguen ese estado: el nivel 2 en el resumen de las 20:00, el 3 y el 4 al momento, y si un 4 no tiene acuse en 15 minutos aparece arriba para llamar. En la pestaña de clientes se le da el servicio a un cliente de Odoo, se eligen sus estados y se da de alta a su gerente.
+
 ### Código {#codigo}
 El código de cuatro dígitos que se le dicta por teléfono al personal de campo que no puede entrar a la app. Vale 10 minutos.
 

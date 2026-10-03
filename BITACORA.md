@@ -10105,6 +10105,38 @@ siguen su estado. Nadie escoge a mano.
 calidad): dar el servicio, las zonas y la gente. Migración
 `d4b2f8e6a1c3`. Pruebas: `tests/test_riesgo_clientes.py` (14).
 
+## 132. La pantalla del mapa de riesgo
+
+Pantalla nueva `#/riesgo` en Operaciones CI (`app/web/riesgo.js`), para
+quien tiene `riesgo.ver`: dirección de operaciones, supervisor de
+central, monitorista y sistema y calidad. Dos pestañas:
+
+**Mapa y eventos.** A la izquierda la cola, en orden de urgencia: nivel
+4 sin acuse por llamar (con su nota de la llamada), críticos que esperan
+al jefe de turno, propuestos por publicar y vigentes. A la derecha el
+mapa de Google (decisión 12) con un círculo por evento del color de su
+nivel, y la ficha: al editar solo se mandan los campos que cambiaron; los
+motivos (devolver, descartar) se piden en un renglón, sin ventanas
+emergentes; fuentes, a quién le llegó y la bitácora del evento. La cola
+se refresca cada minuto y `detenerRiesgo` apaga el reloj al salir.
+
+**Clientes de la Central.** Dar el servicio a un cliente de Odoo, sus
+estados con casillas y su gente; sin `riesgo.clientes` se ve en consulta.
+
+**El mapa de Google** se carga en el navegador con la llave
+`GOOGLE_MAPS_KEY_NAVEGADOR` (nueva en `config.py`), que entrega
+`GET /riesgo/mapa-llave`. Es una llave distinta de la del servidor:
+restringida por referente a `mycentauro.lat/*` y `ci.mycentauro.lat/*` y
+solo con «Maps JavaScript API». Para que Google vea el referente, el
+`Caddyfile` pasa `Referrer-Policy` de `same-origin` a
+`strict-origin-when-cross-origin` (solo manda el dominio, nunca la ruta).
+Sin llave la pantalla avisa y el punto se escribe a mano.
+
+Migración `e6c4a2f0b8d1`: `riesgo.ver` para sistema y calidad y la
+pantalla en las categorías que ya existían. Textos en es/en/pt
+(`rsg_*`), su parte en «Cada pantalla, para qué es» y las novedades de
+las secciones 130 a 132.
+
 ## 14. Lo que falta
 
 ### Abierto

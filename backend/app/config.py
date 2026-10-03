@@ -13,6 +13,13 @@ class Settings(BaseSettings):
     # Google Maps Platform. La llave vive solo en el servidor: el navegador
     # nunca la ve, ni en el mapa ni en la busqueda.
     google_maps_key: str = ""
+    # La llave de Google para el mapa INTERACTIVO (seccion 132). Es otra,
+    # aparte de la de arriba, porque esta si sale al navegador: Google
+    # Maps JavaScript no se puede servir desde el servidor. Por eso en
+    # Google Cloud va limitada a las direcciones del sistema
+    # (mycentauro.lat/* y ci.mycentauro.lat/*) y solo a Maps JavaScript
+    # API. La del servidor nunca sale.
+    google_maps_key_navegador: str = ""
     # La linea de la central: el numero que el boton de panico marca.
     # Es una linea fija, no el celular de quien este de turno, porque el
     # turno cambia y el numero al que se llama en una emergencia no.

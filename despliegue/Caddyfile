@@ -82,7 +82,11 @@ www.{$DOMINIO} {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
-		Referrer-Policy "same-origin"
+		# Hacia otros sitios solo sale el dominio, nunca la ruta (seccion
+		# 132). Estaba en "same-origin", que no manda nada, y Google
+		# rechaza asi la llave del mapa interactivo: esa llave esta
+		# limitada a mycentauro.lat y Google lo comprueba con este dato.
+		Referrer-Policy "strict-origin-when-cross-origin"
 		# Que version corre no es asunto de nadie.
 		-Server
 	}

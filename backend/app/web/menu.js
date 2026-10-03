@@ -37,6 +37,9 @@ export const NOMINAS = [...DINERO, "consultor"];
    consultor porque conoce a su gente por la voz, que es lo unico que
    protege este camino. Direccion de operaciones no entra. */
 export const CODIGO = ["consultor", "central", "director_general", "admin"];
+/* El mapa de riesgo de la Central de Inteligencia (seccion 132). */
+export const RIESGO = ["central", "director_operaciones", "director_general",
+                       "sistema_calidad", "admin"];
 /* Quien reparte permisos. Direccion general quedo como super
    administrador por decision de la direccion (ver PROPUESTA_ACCESOS.md):
    quien puede abrir esta pantalla puede darle a alguien un permiso que
@@ -127,6 +130,11 @@ export const MENU = [
      mesa a las 5:40 de la manana. */
   { ruta: "/central", clave: "central", necesita: "operacion.ver", texto: "nav_central", grupo: "nav_operaciones_ci",
     cuenta: "rec_central", quienes: MONITOREO },
+  /* El mapa de riesgo (seccion 132): los eventos que publica la central y
+     a quien le llegan. Lo abre quien trae `riesgo.ver`; sin puesto, la
+     central y direccion de operaciones. */
+  { ruta: "/riesgo", clave: "riesgo", necesita: "riesgo.ver", texto: "nav_riesgo", grupo: "nav_operaciones_ci",
+    cuenta: "rec_riesgo", quienes: RIESGO, nueva: "2026-11-15" },
   /* Gestion Administrativa: lo que se paga y quien puede que cosa.
      Dos bolsas distintas y dos pantallas: los gastos del servicio
      —viaticos y compras— y las nominas: la del personal de seguridad y
